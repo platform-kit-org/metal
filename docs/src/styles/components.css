@@ -229,6 +229,27 @@ a.gl abbr {
   mask: var(--cat-i) center / contain no-repeat;
 }
 
+/* ---------- Legal links ---------- */
+
+.pk-legal {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1.25rem;
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--pk-rule);
+  font-size: 0.78rem;
+}
+.pk-legal a {
+  color: var(--pk-ink-3);
+  text-decoration: none;
+}
+.pk-legal a:hover,
+.pk-legal a:focus-visible {
+  color: var(--pk-link);
+  text-decoration: underline;
+}
+
 /* ---------- Definition lists ---------- */
 
 .sl-markdown-content dl:not(.pk-gloss) {

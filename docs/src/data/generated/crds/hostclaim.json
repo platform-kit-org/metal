@@ -1,0 +1,367 @@
+{
+  "kind": "HostClaim",
+  "listKind": "HostClaimList",
+  "group": "metal.platform-kit.org",
+  "version": "v1alpha1",
+  "plural": "hostclaims",
+  "singular": "hostclaim",
+  "shortNames": [],
+  "categories": [
+    "metal"
+  ],
+  "scope": "Namespaced",
+  "source": "metal/config/crd/metal.platform-kit.org_hostclaims.yaml",
+  "description": "HostClaim takes one machine for your use. What it does to the machine:\n\n- Creating it with spec.os proposes installing that TalosNode. Once the install is approved, the disk picked by the TalosNode's installDiskSelector is erased and overwritten.\n- Deleting it releases the machine. If the operator installed the machine, it is shut down: a graceful shutdown first, then forced off after 5 minutes (the manager's --release-shutdown-timeout). If the machine runs a node, the shutdown waits for approval unless spec.provisioning.approval is Automatic. A machine the claim never installed is left running.\n- Without spec.os the claim only reserves the machine; nothing is done to it.\n\nEach proposed step is a HostOperation; with approval Required (the default) it waits until you run pk-metal approve <namespace>/<operation>. To stop all proposals for a claim, set the metal.platform-kit.org/hold annotation on it. After a finished install, status.handOff records which machine runs which node; the operator does not install it again.\n\nA claim binds exactly one Host, and only one claim can hold a Host. Keep claims in git, so that taking a machine is a reviewed change.",
+  "statusSubresource": true,
+  "printerColumns": [
+    {
+      "name": "Asset",
+      "type": "string",
+      "jsonPath": ".spec.assetRef.name",
+      "priority": 0
+    },
+    {
+      "name": "Host",
+      "type": "string",
+      "jsonPath": ".status.hostRef.name",
+      "priority": 0
+    },
+    {
+      "name": "Node",
+      "type": "string",
+      "jsonPath": ".spec.os.nodeRef.name",
+      "priority": 0
+    },
+    {
+      "name": "Phase",
+      "type": "string",
+      "jsonPath": ".status.phase",
+      "priority": 0
+    },
+    {
+      "name": "Provisioned",
+      "type": "string",
+      "jsonPath": ".status.conditions[?(@.type==\"Provisioned\")].reason",
+      "priority": 0
+    },
+    {
+      "name": "Blocked",
+      "type": "string",
+      "jsonPath": ".status.blockedOn",
+      "priority": 1
+    },
+    {
+      "name": "Age",
+      "type": "date",
+      "jsonPath": ".metadata.creationTimestamp",
+      "priority": 0
+    }
+  ],
+  "validations": [],
+  "fields": [
+    {
+      "path": "spec",
+      "name": "spec",
+      "parent": "",
+      "depth": 0,
+      "type": "object",
+      "required": true,
+      "description": "HostClaimSpec says which machine you want and what it should run. You pick the machine by its Asset, because you know the Asset name before the operator has found the machine and named its Host.\n\nA claim that you point at another machine (pk-metal replace) moves. The operator first releases the machine that the claim holds, as a deletion of the claim does: the node leaves the cluster, and the machine is reset or marked as not wiped. This needs approval where it turns a node off. Only then does the operator bind the new machine, so two machines never run the same node. Only an admin can do this (config/policy/hostclaim-provisioning.yaml). It moves the config of a node to another machine, and on a control plane also the keys of the cluster."
+    },
+    {
+      "path": "spec.assetRef",
+      "name": "assetRef",
+      "parent": "spec",
+      "depth": 1,
+      "type": "object",
+      "required": true,
+      "description": "AssetRef names the Asset whose machine this claim binds."
+    },
+    {
+      "path": "spec.assetRef.name",
+      "name": "name",
+      "parent": "spec.assetRef",
+      "depth": 2,
+      "type": "string",
+      "required": true,
+      "description": "The name of the object."
+    },
+    {
+      "path": "spec.labels",
+      "name": "labels",
+      "parent": "spec",
+      "depth": 1,
+      "type": "map[string]string",
+      "required": false,
+      "pattern": "^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$",
+      "maxProperties": 16,
+      "description": "Labels are copied onto the bound Host and removed when the claim goes away, for example role: worker. EndpointProfiles and firmware plans select machines by them. Keys have no prefix (no \"/\"), so they never clash with the labels the operator sets under metal.platform-kit.org/.",
+      "validations": [
+        {
+          "rule": "self.all(k, size(k) <= 63 && k.matches('^[A-Za-z0-9]([-A-Za-z0-9_.]*[A-Za-z0-9])?$'))",
+          "message": "label keys must be unprefixed valid label names"
+        }
+      ]
+    },
+    {
+      "path": "spec.os",
+      "name": "os",
+      "parent": "spec",
+      "depth": 1,
+      "type": "object",
+      "required": false,
+      "description": "OS names the TalosNode the machine should run. Setting it proposes an install that erases the disk chosen by the TalosNode's installDiskSelector. Without it the claim only reserves the machine and nothing is done to it.",
+      "validations": [
+        {
+          "rule": "self.nodeRef == oldSelf.nodeRef",
+          "message": "os.nodeRef is immutable: drop the OS intent first, or create another claim"
+        }
+      ]
+    },
+    {
+      "path": "spec.os.nodeRef",
+      "name": "nodeRef",
+      "parent": "spec.os",
+      "depth": 2,
+      "type": "object",
+      "required": true,
+      "description": "NodeRef names the TalosNode (os.platform-kit.org) whose config the machine boots."
+    },
+    {
+      "path": "spec.os.nodeRef.name",
+      "name": "name",
+      "parent": "spec.os.nodeRef",
+      "depth": 3,
+      "type": "string",
+      "required": true,
+      "description": "The name of the object."
+    },
+    {
+      "path": "spec.provisioning",
+      "name": "provisioning",
+      "parent": "spec",
+      "depth": 1,
+      "type": "object",
+      "required": false,
+      "description": "Provisioning tunes how the operator installs the OS onto the machine."
+    },
+    {
+      "path": "spec.provisioning.approval",
+      "name": "approval",
+      "parent": "spec.provisioning",
+      "depth": 2,
+      "type": "string",
+      "required": false,
+      "default": "Required",
+      "enum": [
+        "Required",
+        "Automatic"
+      ],
+      "description": "Approval: Required (default) or Automatic."
+    },
+    {
+      "path": "spec.systemRef",
+      "name": "systemRef",
+      "parent": "spec",
+      "depth": 1,
+      "type": "object",
+      "required": false,
+      "description": "SystemRef picks one machine by its Redfish system id when the BMC manages more than one (a multi-node chassis). Leave it out when the BMC manages one machine."
+    },
+    {
+      "path": "spec.systemRef.name",
+      "name": "name",
+      "parent": "spec.systemRef",
+      "depth": 2,
+      "type": "string",
+      "required": true,
+      "description": "The name of the object."
+    },
+    {
+      "path": "status",
+      "name": "status",
+      "parent": "",
+      "depth": 0,
+      "type": "object",
+      "required": false,
+      "description": "HostClaimStatus says which machine the claim holds and how far its install got. The Host's spec.claimRef is what actually holds the machine; the first claim to set it wins."
+    },
+    {
+      "path": "status.blockedOn",
+      "name": "blockedOn",
+      "parent": "status",
+      "depth": 1,
+      "type": "string",
+      "required": false,
+      "description": "BlockedOn says why the claim does not continue. Before the bind, it tells why the claim cannot bind (AssetNotFound, AssetNotMaterialized, HostAlreadyClaimed). After the bind, it tells why the install waits (Approval(Provisioning), HeldByUser, HostInMaintenance, OperationFailed). kubectl describe shows the message with the command to run."
+    },
+    {
+      "path": "status.conditions",
+      "name": "conditions",
+      "parent": "status",
+      "depth": 1,
+      "type": "[]object",
+      "required": false,
+      "listType": "map",
+      "listMapKeys": [
+        "type"
+      ],
+      "description": "Conditions are the truth — the only thing reconcilers branch on."
+    },
+    {
+      "path": "status.conditions[].lastTransitionTime",
+      "name": "lastTransitionTime",
+      "parent": "status.conditions",
+      "depth": 2,
+      "type": "string",
+      "format": "date-time",
+      "required": true,
+      "description": "The time of the last change of the status."
+    },
+    {
+      "path": "status.conditions[].message",
+      "name": "message",
+      "parent": "status.conditions",
+      "depth": 2,
+      "type": "string",
+      "required": true,
+      "maxLength": 32768,
+      "description": "A message for people about the last change. It can be empty."
+    },
+    {
+      "path": "status.conditions[].observedGeneration",
+      "name": "observedGeneration",
+      "parent": "status.conditions",
+      "depth": 2,
+      "type": "integer",
+      "format": "int64",
+      "required": false,
+      "minimum": 0,
+      "description": "The generation of the object that the condition is for. A lower value than metadata.generation shows an old condition."
+    },
+    {
+      "path": "status.conditions[].reason",
+      "name": "reason",
+      "parent": "status.conditions",
+      "depth": 2,
+      "type": "string",
+      "required": true,
+      "pattern": "^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$",
+      "minLength": 1,
+      "maxLength": 1024,
+      "description": "A word in CamelCase that tells why the condition has its status."
+    },
+    {
+      "path": "status.conditions[].status",
+      "name": "status",
+      "parent": "status.conditions",
+      "depth": 2,
+      "type": "string",
+      "required": true,
+      "enum": [
+        "True",
+        "False",
+        "Unknown"
+      ],
+      "description": "The status of the condition: True, False or Unknown."
+    },
+    {
+      "path": "status.conditions[].type",
+      "name": "type",
+      "parent": "status.conditions",
+      "depth": 2,
+      "type": "string",
+      "required": true,
+      "pattern": "^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$",
+      "maxLength": 316,
+      "description": "The type of the condition."
+    },
+    {
+      "path": "status.handOff",
+      "name": "handOff",
+      "parent": "status",
+      "depth": 1,
+      "type": "object",
+      "required": false,
+      "description": "HandOff records that the machine was installed: which host runs which TalosNode, from which config, since when. The operator writes it one time, when the boot finishes. This record tells the operator that the work is done. A node that is down later is not installed again. A deletion of old HostOperations changes nothing. It goes away with the claim."
+    },
+    {
+      "path": "status.handOff.at",
+      "name": "at",
+      "parent": "status.handOff",
+      "depth": 2,
+      "type": "string",
+      "format": "date-time",
+      "required": true,
+      "description": "At is when the operator saw the hand-off."
+    },
+    {
+      "path": "status.handOff.configDigest",
+      "name": "configDigest",
+      "parent": "status.handOff",
+      "depth": 2,
+      "type": "string",
+      "required": false,
+      "description": "ConfigDigest is sha256:<hex> of the rendered config the machine booted with; empty when the record was rebuilt from an operation that did not carry it."
+    },
+    {
+      "path": "status.handOff.host",
+      "name": "host",
+      "parent": "status.handOff",
+      "depth": 2,
+      "type": "string",
+      "required": true,
+      "description": "Host is the Host the node was installed on."
+    },
+    {
+      "path": "status.handOff.node",
+      "name": "node",
+      "parent": "status.handOff",
+      "depth": 2,
+      "type": "string",
+      "required": true,
+      "description": "Node is the TalosNode the machine runs."
+    },
+    {
+      "path": "status.handOff.operation",
+      "name": "operation",
+      "parent": "status.handOff",
+      "depth": 2,
+      "type": "string",
+      "required": false,
+      "description": "Operation is the boot operation (namespace/name) that installed the machine. Empty when the machine already ran the node when the claim found it: the operator never touched it, so a release leaves its power alone."
+    },
+    {
+      "path": "status.hostRef",
+      "name": "hostRef",
+      "parent": "status",
+      "depth": 1,
+      "type": "object",
+      "required": false,
+      "description": "HostRef names the bound Host."
+    },
+    {
+      "path": "status.hostRef.name",
+      "name": "name",
+      "parent": "status.hostRef",
+      "depth": 2,
+      "type": "string",
+      "required": true,
+      "description": "The name of the object."
+    },
+    {
+      "path": "status.phase",
+      "name": "phase",
+      "parent": "status",
+      "depth": 1,
+      "type": "string",
+      "required": false,
+      "enum": [
+        "Pending",
+        "Bound",
+        "Ambiguous"
+      ],
+      "description": "Phase summarizes the conditions below for people and for kubectl columns. It is a summary, not the contract: automation should read conditions."
+    }
+  ]
+}

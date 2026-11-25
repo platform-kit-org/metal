@@ -1,0 +1,400 @@
+{
+  "kind": "Host",
+  "listKind": "HostList",
+  "group": "metal.platform-kit.org",
+  "version": "v1alpha1",
+  "plural": "hosts",
+  "singular": "host",
+  "shortNames": [],
+  "categories": [
+    "metal"
+  ],
+  "scope": "Cluster",
+  "source": "metal/config/crd/metal.platform-kit.org_hosts.yaml",
+  "description": "Host is one physical machine as the operator found it through its BMC. The operator creates it and names it after the machine's serial number, in lower case; the label metal.platform-kit.org/asset names the Asset it was found by. Read it to see the state of the machine. kubectl get hosts shows the asset, serial, vendor and phase. kubectl describe host <name> shows why it waits.\n\nA HostClaim binds a Host for use. To take a machine out of the operator's hands for hardware work, set the metal.platform-kit.org/maintenance annotation on it.",
+  "statusSubresource": true,
+  "printerColumns": [
+    {
+      "name": "Asset",
+      "type": "string",
+      "jsonPath": ".metadata.labels.metal\\.platform-kit\\.org/asset",
+      "priority": 0
+    },
+    {
+      "name": "Serial",
+      "type": "string",
+      "jsonPath": ".status.identity.serial",
+      "priority": 0
+    },
+    {
+      "name": "Vendor",
+      "type": "string",
+      "jsonPath": ".status.identity.vendor",
+      "priority": 0
+    },
+    {
+      "name": "Phase",
+      "type": "string",
+      "jsonPath": ".status.phase",
+      "priority": 0
+    },
+    {
+      "name": "Blocked",
+      "type": "string",
+      "jsonPath": ".status.blockedOn",
+      "priority": 1
+    },
+    {
+      "name": "Claim",
+      "type": "string",
+      "jsonPath": ".spec.claimRef.name",
+      "priority": 1
+    },
+    {
+      "name": "Age",
+      "type": "date",
+      "jsonPath": ".metadata.creationTimestamp",
+      "priority": 0
+    }
+  ],
+  "validations": [],
+  "fields": [
+    {
+      "path": "spec",
+      "name": "spec",
+      "parent": "",
+      "depth": 0,
+      "type": "object",
+      "required": false,
+      "description": "HostSpec is written by the operator from the HostClaim that binds the machine; you do not edit it. Everything else about a Host is what the operator found, not what anyone wrote."
+    },
+    {
+      "path": "spec.claimRef",
+      "name": "claimRef",
+      "parent": "spec",
+      "depth": 1,
+      "type": "object",
+      "required": false,
+      "description": "ClaimRef names the HostClaim that holds this machine. The first claim to set it wins; any other claim on the same machine waits (HostAlreadyClaimed). The UID pins the exact claim: a claim deleted and created again under the same name is a new claim."
+    },
+    {
+      "path": "spec.claimRef.name",
+      "name": "name",
+      "parent": "spec.claimRef",
+      "depth": 2,
+      "type": "string",
+      "required": true,
+      "description": "The name of the object."
+    },
+    {
+      "path": "spec.claimRef.namespace",
+      "name": "namespace",
+      "parent": "spec.claimRef",
+      "depth": 2,
+      "type": "string",
+      "required": true,
+      "description": "The namespace of the object."
+    },
+    {
+      "path": "spec.claimRef.uid",
+      "name": "uid",
+      "parent": "spec.claimRef",
+      "depth": 2,
+      "type": "string",
+      "required": false,
+      "description": "The UID of the object. An object made again with the same name has a different UID."
+    },
+    {
+      "path": "spec.os",
+      "name": "os",
+      "parent": "spec",
+      "depth": 1,
+      "type": "object",
+      "required": false,
+      "description": "OS is the TalosNode this machine should run, copied from the claim and cleared when the claim is released. Until it is set, a bound machine is reserved and nothing is done to it."
+    },
+    {
+      "path": "spec.os.nodeRef",
+      "name": "nodeRef",
+      "parent": "spec.os",
+      "depth": 2,
+      "type": "object",
+      "required": true,
+      "description": "NodeRef names the TalosNode (os.platform-kit.org) whose config this machine boots."
+    },
+    {
+      "path": "spec.os.nodeRef.name",
+      "name": "name",
+      "parent": "spec.os.nodeRef",
+      "depth": 3,
+      "type": "string",
+      "required": true,
+      "description": "The name of the object."
+    },
+    {
+      "path": "status",
+      "name": "status",
+      "parent": "",
+      "depth": 0,
+      "type": "object",
+      "required": false,
+      "description": "HostStatus is what the operator found out about the machine itself."
+    },
+    {
+      "path": "status.blockedOn",
+      "name": "blockedOn",
+      "parent": "status",
+      "depth": 1,
+      "type": "string",
+      "required": false,
+      "description": "BlockedOn says why the host is not moving on (Approval(Provisioning), SerialMismatch, HostInMaintenance); a reason, not a phase, because it can happen in any phase."
+    },
+    {
+      "path": "status.conditions",
+      "name": "conditions",
+      "parent": "status",
+      "depth": 1,
+      "type": "[]object",
+      "required": false,
+      "listType": "map",
+      "listMapKeys": [
+        "type"
+      ],
+      "description": "Conditions are the truth — the only thing reconcilers branch on."
+    },
+    {
+      "path": "status.conditions[].lastTransitionTime",
+      "name": "lastTransitionTime",
+      "parent": "status.conditions",
+      "depth": 2,
+      "type": "string",
+      "format": "date-time",
+      "required": true,
+      "description": "The time of the last change of the status."
+    },
+    {
+      "path": "status.conditions[].message",
+      "name": "message",
+      "parent": "status.conditions",
+      "depth": 2,
+      "type": "string",
+      "required": true,
+      "maxLength": 32768,
+      "description": "A message for people about the last change. It can be empty."
+    },
+    {
+      "path": "status.conditions[].observedGeneration",
+      "name": "observedGeneration",
+      "parent": "status.conditions",
+      "depth": 2,
+      "type": "integer",
+      "format": "int64",
+      "required": false,
+      "minimum": 0,
+      "description": "The generation of the object that the condition is for. A lower value than metadata.generation shows an old condition."
+    },
+    {
+      "path": "status.conditions[].reason",
+      "name": "reason",
+      "parent": "status.conditions",
+      "depth": 2,
+      "type": "string",
+      "required": true,
+      "pattern": "^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$",
+      "minLength": 1,
+      "maxLength": 1024,
+      "description": "A word in CamelCase that tells why the condition has its status."
+    },
+    {
+      "path": "status.conditions[].status",
+      "name": "status",
+      "parent": "status.conditions",
+      "depth": 2,
+      "type": "string",
+      "required": true,
+      "enum": [
+        "True",
+        "False",
+        "Unknown"
+      ],
+      "description": "The status of the condition: True, False or Unknown."
+    },
+    {
+      "path": "status.conditions[].type",
+      "name": "type",
+      "parent": "status.conditions",
+      "depth": 2,
+      "type": "string",
+      "required": true,
+      "pattern": "^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$",
+      "maxLength": 316,
+      "description": "The type of the condition."
+    },
+    {
+      "path": "status.firmwareProposed",
+      "name": "firmwareProposed",
+      "parent": "status",
+      "depth": 1,
+      "type": "object",
+      "required": false,
+      "description": "FirmwareProposed remembers the last firmware plan proposed for this machine, so the same plan is not proposed twice. Written by the firmware lane only."
+    },
+    {
+      "path": "status.firmwareProposed.operation",
+      "name": "operation",
+      "parent": "status.firmwareProposed",
+      "depth": 2,
+      "type": "string",
+      "required": true,
+      "description": "Operation is the proposed HostOperation as namespace/name."
+    },
+    {
+      "path": "status.firmwareProposed.planHash",
+      "name": "planHash",
+      "parent": "status.firmwareProposed",
+      "depth": 2,
+      "type": "string",
+      "required": true,
+      "description": "PlanHash is the sha256 of the desired state the operation serves."
+    },
+    {
+      "path": "status.identity",
+      "name": "identity",
+      "parent": "status",
+      "depth": 1,
+      "type": "object",
+      "required": false,
+      "description": "HostIdentity identifies the machine, whichever BMC it is reached through: the same machine seen through two BMCs gets the same identity, and so one Host. Vendors put the serial number in different places (Huawei on the system, Supermicro on the board); the operator reads the right one for each."
+    },
+    {
+      "path": "status.identity.serial",
+      "name": "serial",
+      "parent": "status.identity",
+      "depth": 2,
+      "type": "string",
+      "required": false,
+      "description": "Serial is the machine's serial number: the board serial on Supermicro, the system serial on Huawei and other vendors."
+    },
+    {
+      "path": "status.identity.uuid",
+      "name": "uuid",
+      "parent": "status.identity",
+      "depth": 2,
+      "type": "string",
+      "required": false,
+      "description": ""
+    },
+    {
+      "path": "status.identity.vendor",
+      "name": "vendor",
+      "parent": "status.identity",
+      "depth": 2,
+      "type": "string",
+      "required": false,
+      "description": ""
+    },
+    {
+      "path": "status.lastResetTime",
+      "name": "lastResetTime",
+      "parent": "status",
+      "depth": 1,
+      "type": "string",
+      "format": "date-time",
+      "required": false,
+      "description": "LastResetTime is when the BMC last saw the machine reset. If it changes and no operation explains it, the Drifted condition shows it. Then a person reset the machine in a different way (ipmitool, the BMC web page, the power button). Not every BMC reports it (Huawei iBMC does not); drift is then not detected."
+    },
+    {
+      "path": "status.managedBy",
+      "name": "managedBy",
+      "parent": "status",
+      "depth": 1,
+      "type": "[]object",
+      "required": false,
+      "listType": "atomic",
+      "description": "ManagedBy lists the ways to reach the machine — usually one BMC."
+    },
+    {
+      "path": "status.managedBy[].endpointRef",
+      "name": "endpointRef",
+      "parent": "status.managedBy",
+      "depth": 2,
+      "type": "object",
+      "required": true,
+      "description": "EndpointRef names the ManagementEndpoint (the BMC)."
+    },
+    {
+      "path": "status.managedBy[].endpointRef.name",
+      "name": "name",
+      "parent": "status.managedBy[].endpointRef",
+      "depth": 3,
+      "type": "string",
+      "required": true,
+      "description": "The name of the object."
+    },
+    {
+      "path": "status.managedBy[].reachable",
+      "name": "reachable",
+      "parent": "status.managedBy",
+      "depth": 2,
+      "type": "boolean",
+      "required": true,
+      "description": "Reachable says whether this BMC answers."
+    },
+    {
+      "path": "status.managedBy[].systemId",
+      "name": "systemId",
+      "parent": "status.managedBy",
+      "depth": 2,
+      "type": "string",
+      "required": true,
+      "description": "SystemID is the Redfish ComputerSystem id behind that BMC."
+    },
+    {
+      "path": "status.phase",
+      "name": "phase",
+      "parent": "status",
+      "depth": 1,
+      "type": "string",
+      "required": false,
+      "enum": [
+        "Enrolling",
+        "Inspecting",
+        "Available",
+        "Assigned",
+        "Provisioning",
+        "Provisioned",
+        "Releasing",
+        "Failed",
+        "Maintenance"
+      ],
+      "description": "Phase summarizes the conditions below for people and for kubectl columns. It is a summary, not the contract: automation should read conditions."
+    },
+    {
+      "path": "status.systemFirmwareProposed",
+      "name": "systemFirmwareProposed",
+      "parent": "status",
+      "depth": 1,
+      "type": "object",
+      "required": false,
+      "description": "SystemFirmwareProposed is the system-firmware lane's plan memory, the same guard as firmwareProposed for the components a reset applies."
+    },
+    {
+      "path": "status.systemFirmwareProposed.operation",
+      "name": "operation",
+      "parent": "status.systemFirmwareProposed",
+      "depth": 2,
+      "type": "string",
+      "required": true,
+      "description": "Operation is the proposed HostOperation as namespace/name."
+    },
+    {
+      "path": "status.systemFirmwareProposed.planHash",
+      "name": "planHash",
+      "parent": "status.systemFirmwareProposed",
+      "depth": 2,
+      "type": "string",
+      "required": true,
+      "description": "PlanHash is the sha256 of the desired state the operation serves."
+    }
+  ]
+}

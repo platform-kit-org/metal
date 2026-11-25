@@ -1,0 +1,120 @@
+{
+  "kind": "BiosProfile",
+  "listKind": "BiosProfileList",
+  "group": "metal.platform-kit.org",
+  "version": "v1alpha1",
+  "plural": "biosprofiles",
+  "singular": "biosprofile",
+  "shortNames": [],
+  "categories": [
+    "metal"
+  ],
+  "scope": "Cluster",
+  "source": "metal/config/crd/metal.platform-kit.org_biosprofiles.yaml",
+  "description": "BiosProfile is a set of BIOS settings for a group of machines. You keep it in git, and it applies to the Hosts that match its selector. Several profiles can match one machine. The operator merges them by layer into the BiosSettings of the machine, which records the profile of each value.\n\nNothing reconciles a BiosProfile directly. It states intent; the settings it produces are what a machine is held against.",
+  "statusSubresource": false,
+  "printerColumns": [
+    {
+      "name": "Layer",
+      "type": "integer",
+      "jsonPath": ".spec.layer",
+      "priority": 0
+    },
+    {
+      "name": "Age",
+      "type": "date",
+      "jsonPath": ".metadata.creationTimestamp",
+      "priority": 0
+    }
+  ],
+  "validations": [],
+  "fields": [
+    {
+      "path": "spec",
+      "name": "spec",
+      "parent": "",
+      "depth": 0,
+      "type": "object",
+      "required": true,
+      "description": "BiosProfileSpec is one layer of desired BIOS configuration for the Hosts it matches. Profiles are git-authored data — no controller reconciles a profile; the convergence reconciler materializes the merged result per host into a BiosSettings object."
+    },
+    {
+      "path": "spec.attributes",
+      "name": "attributes",
+      "parent": "spec",
+      "depth": 1,
+      "type": "map[string]any",
+      "required": true,
+      "minProperties": 1,
+      "description": "Attributes are the BIOS attributes this profile manages, values as the vendor's attribute registry types them (enum string, boolean, integer). An attribute omitted here is unmanaged — a higher layer can override a value but not retract management."
+    },
+    {
+      "path": "spec.layer",
+      "name": "layer",
+      "parent": "spec",
+      "depth": 1,
+      "type": "integer",
+      "format": "int32",
+      "required": false,
+      "default": 0,
+      "description": "Layer orders profiles that overlap. The merge sorts the matched profiles by layer and name, and a higher layer overrides a lower one. For example, a role profile (layer 10) overrides a hardware baseline (layer 0). Two profiles on the SAME layer that set one attribute to different values conflict. A conflict holds the whole merge."
+    },
+    {
+      "path": "spec.match",
+      "name": "match",
+      "parent": "spec",
+      "depth": 1,
+      "type": "object",
+      "required": true,
+      "mapType": "atomic",
+      "description": "Match selects Hosts by label. There are two types of labels. Intent labels come from the bound claim (role: worker); a machine without a claim has none. Fact labels come from discovery (metal.platform-kit.org/vendor, …/model); every machine has them, so use them for hardware baselines."
+    },
+    {
+      "path": "spec.match.matchExpressions",
+      "name": "matchExpressions",
+      "parent": "spec.match",
+      "depth": 2,
+      "type": "[]object",
+      "required": false,
+      "listType": "atomic",
+      "description": "Label requirements that the object must meet. All must match."
+    },
+    {
+      "path": "spec.match.matchExpressions[].key",
+      "name": "key",
+      "parent": "spec.match.matchExpressions",
+      "depth": 3,
+      "type": "string",
+      "required": true,
+      "description": "The label key."
+    },
+    {
+      "path": "spec.match.matchExpressions[].operator",
+      "name": "operator",
+      "parent": "spec.match.matchExpressions",
+      "depth": 3,
+      "type": "string",
+      "required": true,
+      "description": "In, NotIn, Exists or DoesNotExist."
+    },
+    {
+      "path": "spec.match.matchExpressions[].values",
+      "name": "values",
+      "parent": "spec.match.matchExpressions",
+      "depth": 3,
+      "type": "[]string",
+      "required": false,
+      "listType": "atomic",
+      "description": "The values for In and NotIn. Exists and DoesNotExist take no values."
+    },
+    {
+      "path": "spec.match.matchLabels",
+      "name": "matchLabels",
+      "parent": "spec.match",
+      "depth": 2,
+      "type": "map[string]string",
+      "required": false,
+      "description": "Labels that the object must have, as key and value pairs. All must match."
+    }
+  ]
+}

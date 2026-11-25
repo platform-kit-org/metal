@@ -1,0 +1,201 @@
+{
+  "kind": "BiosSettings",
+  "listKind": "BiosSettingsList",
+  "group": "metal.platform-kit.org",
+  "version": "v1alpha1",
+  "plural": "biossettings",
+  "singular": "biossettings",
+  "shortNames": [],
+  "categories": [
+    "metal"
+  ],
+  "scope": "Cluster",
+  "source": "metal/config/crd/metal.platform-kit.org_biossettings.yaml",
+  "description": "BiosSettings is one machine's BIOS state: what is wanted, what is actually set, and where each wanted value came from. It is the merge of the BiosProfiles that match the Host. Read it before an apply, to see what changes and why.\n\nCluster-scoped like its Host, named after it, and owned by it: deleting the machine takes its settings with it.",
+  "statusSubresource": true,
+  "printerColumns": [
+    {
+      "name": "Converged",
+      "type": "string",
+      "jsonPath": ".status.conditions[?(@.type==\"Converged\")].status",
+      "priority": 0
+    },
+    {
+      "name": "Reason",
+      "type": "string",
+      "jsonPath": ".status.conditions[?(@.type==\"Converged\")].reason",
+      "priority": 0
+    },
+    {
+      "name": "Age",
+      "type": "date",
+      "jsonPath": ".metadata.creationTimestamp",
+      "priority": 0
+    }
+  ],
+  "validations": [],
+  "fields": [
+    {
+      "path": "spec",
+      "name": "spec",
+      "parent": "",
+      "depth": 0,
+      "type": "object",
+      "required": false,
+      "description": "BiosSettingsSpec is the rendered desired BIOS state for ONE host — the merge of every matched BiosProfile, written by the convergence reconciler (its sole author). Named after its Host and owned by it."
+    },
+    {
+      "path": "spec.attributes",
+      "name": "attributes",
+      "parent": "spec",
+      "depth": 1,
+      "type": "map[string]any",
+      "required": false,
+      "description": "Attributes is the merged desired attribute map. When two profiles conflict, the previous merge stays as it is: the operator alerts and holds, and never applies part of a conflicted state. status.provenance names the profile of each key."
+    },
+    {
+      "path": "status",
+      "name": "status",
+      "parent": "",
+      "depth": 0,
+      "type": "object",
+      "required": false,
+      "description": "BiosSettingsStatus carries the observation side: the managed keys as the machine last served them, and the plan memory."
+    },
+    {
+      "path": "status.conditions",
+      "name": "conditions",
+      "parent": "status",
+      "depth": 1,
+      "type": "[]object",
+      "required": false,
+      "listType": "map",
+      "listMapKeys": [
+        "type"
+      ],
+      "description": "Conditions are the truth — the only thing reconcilers branch on."
+    },
+    {
+      "path": "status.conditions[].lastTransitionTime",
+      "name": "lastTransitionTime",
+      "parent": "status.conditions",
+      "depth": 2,
+      "type": "string",
+      "format": "date-time",
+      "required": true,
+      "description": "The time of the last change of the status."
+    },
+    {
+      "path": "status.conditions[].message",
+      "name": "message",
+      "parent": "status.conditions",
+      "depth": 2,
+      "type": "string",
+      "required": true,
+      "maxLength": 32768,
+      "description": "A message for people about the last change. It can be empty."
+    },
+    {
+      "path": "status.conditions[].observedGeneration",
+      "name": "observedGeneration",
+      "parent": "status.conditions",
+      "depth": 2,
+      "type": "integer",
+      "format": "int64",
+      "required": false,
+      "minimum": 0,
+      "description": "The generation of the object that the condition is for. A lower value than metadata.generation shows an old condition."
+    },
+    {
+      "path": "status.conditions[].reason",
+      "name": "reason",
+      "parent": "status.conditions",
+      "depth": 2,
+      "type": "string",
+      "required": true,
+      "pattern": "^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$",
+      "minLength": 1,
+      "maxLength": 1024,
+      "description": "A word in CamelCase that tells why the condition has its status."
+    },
+    {
+      "path": "status.conditions[].status",
+      "name": "status",
+      "parent": "status.conditions",
+      "depth": 2,
+      "type": "string",
+      "required": true,
+      "enum": [
+        "True",
+        "False",
+        "Unknown"
+      ],
+      "description": "The status of the condition: True, False or Unknown."
+    },
+    {
+      "path": "status.conditions[].type",
+      "name": "type",
+      "parent": "status.conditions",
+      "depth": 2,
+      "type": "string",
+      "required": true,
+      "pattern": "^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$",
+      "maxLength": 316,
+      "description": "The type of the condition."
+    },
+    {
+      "path": "status.observed",
+      "name": "observed",
+      "parent": "status",
+      "depth": 1,
+      "type": "map[string]any",
+      "required": false,
+      "description": "Observed caches the managed attributes as last read from the machine — status-as-cache: an unreachable pass keeps the last view."
+    },
+    {
+      "path": "status.pending",
+      "name": "pending",
+      "parent": "status",
+      "depth": 1,
+      "type": "map[string]any",
+      "required": false,
+      "description": "Pending caches the managed attributes staged in the @Redfish.Settings object — applied at the next system reset."
+    },
+    {
+      "path": "status.proposed",
+      "name": "proposed",
+      "parent": "status",
+      "depth": 1,
+      "type": "object",
+      "required": false,
+      "description": "Proposed is the plan memory for the BIOS domain."
+    },
+    {
+      "path": "status.proposed.operation",
+      "name": "operation",
+      "parent": "status.proposed",
+      "depth": 2,
+      "type": "string",
+      "required": true,
+      "description": "Operation is the proposed HostOperation as namespace/name."
+    },
+    {
+      "path": "status.proposed.planHash",
+      "name": "planHash",
+      "parent": "status.proposed",
+      "depth": 2,
+      "type": "string",
+      "required": true,
+      "description": "PlanHash is the sha256 of the desired state the operation serves."
+    },
+    {
+      "path": "status.provenance",
+      "name": "provenance",
+      "parent": "status",
+      "depth": 1,
+      "type": "map[string]string",
+      "required": false,
+      "description": "Provenance names the profile that gave each attribute. Thus the object tells what the host gets and why, and you need not do the merge yourself."
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+# Whether a person may approve an operation or a rollout that they proposed
+# themselves. The admission policies read it from this ConfigMap, together
+# with the operator's identity and the admin group (config/policy).
+#
+#   Allowed    one person can propose and approve. The record still names
+#              them twice, and the operator still approves nothing. For a
+#              team too small for two-person review. The default.
+#   Forbidden  another person must approve, so one account alone cannot
+#              change a machine.
+#
+# Any other value counts as Forbidden.
+#
+# How long the operator keeps a finished operation or rollout that it may
+# delete (the operator reads this key, admission does not):
+#
+#   30d        a number of days, or a duration such as 720h. The default.
+#   Forever    nothing finished is deleted; a person deletes old records.
+#
+# A value the operator cannot read keeps every record.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hostoperation-approval
+  namespace: pk-metal
+data:
+  selfApproval: Allowed
+  retention: 30d

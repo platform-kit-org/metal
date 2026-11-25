@@ -1,0 +1,161 @@
+# The HostOperation human gate: approval is a CEL-guarded
+# FIELD, not a subresource — a ValidatingAdmissionPolicy (no webhook, no cert, no pod)
+# enforces the identity rules that schema CEL cannot (they need request.userInfo).
+# Structural immutability (hostRef, actions, approval.required, proposedBy frozen)
+# lives in the CRD schema, so "patch" is "approve" and ordinary RBAC recovers the CSR
+# permission split: metal-operator may CREATE (propose), metal-approver may PATCH
+# (approve).
+#
+# The rules, in order:
+#   - nobody creates an operation pre-approved;
+#   - the creator records themselves in spec.proposedBy (admission checks the name,
+#     so the record cannot lie);
+#   - only the operator's own identity, or a member of the admin group, may create an
+#     operation that needs no approval — anyone else would simply skip the gate;
+#   - approval is write-once and stamped as yourself;
+#   - the operator never approves anything;
+#   - a person approves their own proposal, or a change they asked for (a
+#     name in spec.requestedBy: whose edit made the operator propose it,
+#     config/policy/requested-by.yaml), only where the site allows it
+#     (selfApproval below; the same rules as talosrollout-approval.yaml).
+#
+# Who the operator is, which group administers it and whether a person may
+# approve their own proposal are deployment facts, so they come from the
+# ConfigMap below (the binding's params). A missing ConfigMap denies every create
+# and update: the gate fails closed.
+#
+# CEL note: oldObject is null on CREATE — every reference to it sits behind a
+# lazily-evaluated request.operation ternary (the null-oldObject guard).
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: hostoperation-approval
+spec:
+  failurePolicy: Fail
+  paramKind:
+    apiVersion: v1
+    kind: ConfigMap
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["metal.platform-kit.org"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["hostoperations"]
+  variables:
+    - name: newApprover
+      expression: >-
+        has(object.spec.approval) && has(object.spec.approval.approvedBy)
+        ? object.spec.approval.approvedBy : ''
+    - name: oldApprover
+      expression: >-
+        request.operation == 'UPDATE'
+        && has(oldObject.spec.approval) && has(oldObject.spec.approval.approvedBy)
+        ? oldObject.spec.approval.approvedBy : ''
+    - name: proposer
+      expression: "has(object.spec.proposedBy) ? object.spec.proposedBy : ''"
+    - name: approvalRequired
+      expression: >-
+        !has(object.spec.approval) || !has(object.spec.approval.required)
+        || object.spec.approval.required
+    - name: operator
+      expression: "has(params.data) && has(params.data.operator) ? params.data.operator : ''"
+    - name: isOperator
+      expression: "variables.operator != '' && request.userInfo.username == variables.operator"
+    - name: isAdmin
+      expression: >-
+        has(params.data) && has(params.data.adminGroup) && params.data.adminGroup != ''
+        && has(request.userInfo.groups) && params.data.adminGroup in request.userInfo.groups
+    - name: requesters
+      expression: "object.spec.?requestedBy.orValue([])"
+    - name: selfApproval
+      expression: >-
+        has(params.data) && has(params.data.selfApproval) ? params.data.selfApproval : 'Allowed'
+    - name: paramsRef
+      expression: "params.metadata.namespace + '/' + params.metadata.name"
+  validations:
+    - expression: "request.operation != 'CREATE' || variables.newApprover == ''"
+      message: an operation cannot be created pre-approved
+      reason: Forbidden
+    - expression: "request.operation != 'CREATE' || variables.proposer == request.userInfo.username"
+      messageExpression: >-
+        'spec.proposedBy must name you: set it to ' + request.userInfo.username
+      reason: Forbidden
+    - expression: >-
+        request.operation != 'CREATE' || variables.approvalRequired
+        || variables.isOperator || variables.isAdmin
+      message: only the operator or an admin may create an operation that needs no approval
+      reason: Forbidden
+    - expression: "variables.oldApprover == '' || variables.newApprover == variables.oldApprover"
+      message: approval is write-once
+      reason: Forbidden
+    - expression: >-
+        variables.newApprover == variables.oldApprover
+        || variables.newApprover == request.userInfo.username
+      message: you may only approve as yourself (approvedBy must equal your username)
+      reason: Forbidden
+    - expression: >-
+        variables.newApprover == variables.oldApprover || variables.newApprover != variables.operator
+      message: >-
+        the operator approves nothing: a person with the pk-metal-approver role must approve
+      reason: Forbidden
+    # Any value other than Allowed counts as Forbidden, so a mistyped setting
+    # closes the gate rather than opening it.
+    - expression: >-
+        variables.newApprover == variables.oldApprover || variables.newApprover != variables.proposer
+        || variables.selfApproval == 'Allowed'
+      messageExpression: >-
+        variables.selfApproval == 'Forbidden'
+        ? 'this site forbids approving your own proposal (selfApproval: Forbidden in ConfigMap '
+          + variables.paramsRef + '): another person must approve'
+        : 'selfApproval in ConfigMap ' + variables.paramsRef + ' is "' + variables.selfApproval
+          + '", which is not Allowed or Forbidden, so it counts as Forbidden: another person must approve,'
+          + ' or an admin sets it to Allowed or Forbidden'
+      reason: Forbidden
+    - expression: >-
+        variables.newApprover == variables.oldApprover || !(variables.newApprover in variables.requesters)
+        || variables.selfApproval == 'Allowed'
+      messageExpression: >-
+        'you asked for this change (spec.requestedBy names you: your edit made the operator propose it),'
+        + ' and this site does not allow approving your own change (selfApproval in ConfigMap '
+        + variables.paramsRef + ' is "' + variables.selfApproval + '"): another person must approve'
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: hostoperation-approval
+spec:
+  policyName: hostoperation-approval
+  validationActions: ["Deny"]
+  paramRef:
+    name: hostoperation-approval
+    namespace: pk-metal
+    parameterNotFoundAction: Deny
+---
+# The policy's parameters: who the operator runs as (the manager's service account),
+# the group whose members may create pre-cleared operations by hand, and whether a
+# person may approve an operation or a rollout that they proposed themselves.
+#
+# selfApproval is Allowed or Forbidden; a missing key means Allowed. Allowed suits
+# a team too small for two-person review: the record still names the proposer and
+# the approver, and the operator still approves nothing. Forbidden makes every
+# change need two people, so one stolen or careless account cannot change a
+# machine alone. Any other value counts as Forbidden.
+#
+# retention is not an admission setting: the operator reads it. It says how long
+# the operator keeps a finished HostOperation or TalosRollout that it may delete
+# (an operation it proposed with a TTL, a rollout that succeeded): Forever, a
+# number of days (30d) or a duration (720h). A missing key means 30d. A value it
+# cannot read keeps every record. The operator writes an audit line before every
+# delete. This ConfigMap holds it because it holds the site's other settings and
+# exists in every install.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hostoperation-approval
+  namespace: pk-metal
+data:
+  operator: system:serviceaccount:pk-metal:pk-metal-manager
+  adminGroup: pk-metal:admins
+  selfApproval: Allowed
+  retention: 30d

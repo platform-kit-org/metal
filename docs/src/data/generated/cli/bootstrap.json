@@ -1,0 +1,51 @@
+{
+  "name": "bootstrap",
+  "summary": "start a new Talos cluster on booted machines and wait until every node is ready, without the operator",
+  "synopsis": "--dir <manifests> --secrets <secrets.yaml|-> [flags]",
+  "usage": [
+    "pk-metal bootstrap --dir <manifests> --secrets <secrets.yaml|-> [flags]"
+  ],
+  "changes": true,
+  "needsCluster": false,
+  "description": "",
+  "examples": [],
+  "exitStatus": [],
+  "flags": [
+    {
+      "name": "dir",
+      "type": "string",
+      "default": "",
+      "usage": "directory with TalosCluster/TalosNode manifests (required)",
+      "global": false
+    },
+    {
+      "name": "endpoint",
+      "type": "string",
+      "default": "",
+      "usage": "address of --node (default: its spec.address or first static address)",
+      "global": false
+    },
+    {
+      "name": "node",
+      "type": "string",
+      "default": "",
+      "usage": "drive only this TalosNode (default: every node in --dir)",
+      "global": false
+    },
+    {
+      "name": "secrets",
+      "type": "talosctl gen secrets",
+      "default": "",
+      "usage": "secrets bundle from talosctl gen secrets, or - for stdin (required)",
+      "global": false
+    },
+    {
+      "name": "timeout",
+      "type": "duration",
+      "default": "15m0s",
+      "usage": "overall deadline: bootstrap retries, readiness",
+      "global": false
+    }
+  ],
+  "subcommands": []
+}

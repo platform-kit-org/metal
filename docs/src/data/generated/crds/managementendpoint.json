@@ -1,0 +1,643 @@
+{
+  "kind": "ManagementEndpoint",
+  "listKind": "ManagementEndpointList",
+  "group": "metal.platform-kit.org",
+  "version": "v1alpha1",
+  "plural": "managementendpoints",
+  "singular": "managementendpoint",
+  "shortNames": [
+    "mep"
+  ],
+  "categories": [
+    "metal"
+  ],
+  "scope": "Cluster",
+  "source": "metal/config/crd/metal.platform-kit.org_managementendpoints.yaml",
+  "description": "ManagementEndpoint is one BMC — iDRAC, iLO, XCC, iBMC or any other Redfish controller — that the operator talks to. The operator creates it from an Asset; you read it to see whether the BMC answers and what it reports (kubectl get mep).\n\nIts status holds what the BMC reports: vendor, model, serial numbers, the machines behind it, virtual media slots and firmware. The Verified condition compares that with the Asset. Phase Mismatch means the BMC at this address is not the machine that the Asset describes. The operator then does nothing to it. Phase Unreachable means that nothing answered at the address.",
+  "statusSubresource": true,
+  "printerColumns": [
+    {
+      "name": "Address",
+      "type": "string",
+      "jsonPath": ".spec.address",
+      "priority": 0
+    },
+    {
+      "name": "Vendor",
+      "type": "string",
+      "jsonPath": ".status.vendor",
+      "priority": 0
+    },
+    {
+      "name": "Phase",
+      "type": "string",
+      "jsonPath": ".status.phase",
+      "priority": 0
+    },
+    {
+      "name": "Blocked",
+      "type": "string",
+      "jsonPath": ".status.blockedOn",
+      "priority": 1
+    },
+    {
+      "name": "Age",
+      "type": "date",
+      "jsonPath": ".metadata.creationTimestamp",
+      "priority": 0
+    }
+  ],
+  "validations": [],
+  "fields": [
+    {
+      "path": "spec",
+      "name": "spec",
+      "parent": "",
+      "depth": 0,
+      "type": "object",
+      "required": true,
+      "description": "ManagementEndpointSpec is written by the operator from the Asset and the ledger; you do not edit it."
+    },
+    {
+      "path": "spec.address",
+      "name": "address",
+      "parent": "spec",
+      "depth": 1,
+      "type": "string",
+      "required": true,
+      "pattern": "^https://",
+      "description": "Address is the BMC's https URL, from the ledger. It is how the operator reaches the machine, not what identifies it: a Host is identified by the serial number the BMC reports."
+    },
+    {
+      "path": "spec.assetRef",
+      "name": "assetRef",
+      "parent": "spec",
+      "depth": 1,
+      "type": "object",
+      "required": true,
+      "description": "AssetRef names the Asset this endpoint was made from, and whose serial and MAC it is checked against."
+    },
+    {
+      "path": "spec.assetRef.name",
+      "name": "name",
+      "parent": "spec.assetRef",
+      "depth": 2,
+      "type": "string",
+      "required": true,
+      "description": "The name of the object."
+    },
+    {
+      "path": "spec.credentialsRef",
+      "name": "credentialsRef",
+      "parent": "spec",
+      "depth": 1,
+      "type": "object",
+      "required": false,
+      "mapType": "atomic",
+      "description": "CredentialsRef names the Secret (operator namespace) used to connect, defaulted from the Asset at materialization — the factory credentials, kept as standing break-glass. Once an EndpointProfile rotates the endpoint onto a managed account, every connect prefers the managed Secret and this ref is the repair fallback."
+    },
+    {
+      "path": "spec.credentialsRef.name",
+      "name": "name",
+      "parent": "spec.credentialsRef",
+      "depth": 2,
+      "type": "string",
+      "required": false,
+      "default": "",
+      "description": "The name of the object."
+    },
+    {
+      "path": "spec.tls",
+      "name": "tls",
+      "parent": "spec",
+      "depth": 1,
+      "type": "object",
+      "required": false,
+      "description": "TLS says how the BMC's HTTPS certificate is checked, from the manager's --bmc-ca-secret or --bmc-insecure. Unset pins the BMC's key on first use (status.tlsPin): the operator trusts the key the BMC presents at the first contact, before it sends a password, and refuses any other key until a person approves it."
+    },
+    {
+      "path": "spec.tls.caSecretRef",
+      "name": "caSecretRef",
+      "parent": "spec.tls",
+      "depth": 2,
+      "type": "object",
+      "required": false,
+      "mapType": "atomic",
+      "description": "CASecretRef names a Secret (operator namespace, key ca.crt) with the CA that signed the BMC's certificate. Wins over insecureSkipVerify."
+    },
+    {
+      "path": "spec.tls.caSecretRef.name",
+      "name": "name",
+      "parent": "spec.tls.caSecretRef",
+      "depth": 3,
+      "type": "string",
+      "required": false,
+      "default": "",
+      "description": "The name of the object."
+    },
+    {
+      "path": "spec.tls.insecureSkipVerify",
+      "name": "insecureSkipVerify",
+      "parent": "spec.tls",
+      "depth": 2,
+      "type": "boolean",
+      "required": false,
+      "description": "InsecureSkipVerify accepts any certificate and pins nothing: every device that answers at the address gets the BMC password. For simulated BMCs in the lab only. The approval plan of an operation shows it, and the operator uploads no private key over it."
+    },
+    {
+      "path": "status",
+      "name": "status",
+      "parent": "",
+      "depth": 0,
+      "type": "object",
+      "required": false,
+      "description": "ManagementEndpointStatus is what the BMC reports; what your records say is on the Asset."
+    },
+    {
+      "path": "status.asset",
+      "name": "asset",
+      "parent": "status",
+      "depth": 1,
+      "type": "object",
+      "required": false,
+      "description": "Asset caches the last-resolved assertion, so an asset-source outage degrades to the snapshot rather than failing resolution."
+    },
+    {
+      "path": "status.asset.bmcMac",
+      "name": "bmcMac",
+      "parent": "status.asset",
+      "depth": 2,
+      "type": "string",
+      "required": false,
+      "description": ""
+    },
+    {
+      "path": "status.asset.cid",
+      "name": "cid",
+      "parent": "status.asset",
+      "depth": 2,
+      "type": "string",
+      "required": false,
+      "description": ""
+    },
+    {
+      "path": "status.asset.observedGeneration",
+      "name": "observedGeneration",
+      "parent": "status.asset",
+      "depth": 2,
+      "type": "integer",
+      "format": "int64",
+      "required": false,
+      "description": "ObservedGeneration is the Asset generation this snapshot was resolved at."
+    },
+    {
+      "path": "status.asset.serial",
+      "name": "serial",
+      "parent": "status.asset",
+      "depth": 2,
+      "type": "string",
+      "required": false,
+      "description": ""
+    },
+    {
+      "path": "status.asset.vlan",
+      "name": "vlan",
+      "parent": "status.asset",
+      "depth": 2,
+      "type": "integer",
+      "required": false,
+      "description": ""
+    },
+    {
+      "path": "status.authentication",
+      "name": "authentication",
+      "parent": "status",
+      "depth": 1,
+      "type": "string",
+      "required": false,
+      "enum": [
+        "Session",
+        "Basic"
+      ],
+      "description": "Authentication is how the operator's requests to this BMC authenticate: Session (a Redfish session; the password crosses the network once per pass, in the login) or Basic (the BMC offers no session, so each request carries the password)."
+    },
+    {
+      "path": "status.blockedOn",
+      "name": "blockedOn",
+      "parent": "status",
+      "depth": 1,
+      "type": "string",
+      "required": false,
+      "description": "BlockedOn is derived — why the endpoint isn't advancing (e.g. SerialMismatch)."
+    },
+    {
+      "path": "status.boardSerial",
+      "name": "boardSerial",
+      "parent": "status",
+      "depth": 1,
+      "type": "string",
+      "required": false,
+      "description": "BoardSerial is the chassis board serial — the Supermicro identity anchor (its ComputerSystem serves none; Huawei's matches the system serial)."
+    },
+    {
+      "path": "status.capabilities",
+      "name": "capabilities",
+      "parent": "status",
+      "depth": 1,
+      "type": "object",
+      "required": false,
+      "description": "EndpointCapabilities is what this BMC can do, as discovered. Vendors differ here, and the operator records the difference instead of assuming it."
+    },
+    {
+      "path": "status.capabilities.dualMedia",
+      "name": "dualMedia",
+      "parent": "status.capabilities",
+      "depth": 2,
+      "type": "boolean",
+      "required": false,
+      "description": "DualMedia is true when two virtual media slots can hold an image at the same time (Supermicro X12 yes, Huawei iBMC no). The install needs this to mount the installer and the config of the node together."
+    },
+    {
+      "path": "status.capabilities.identityDialect",
+      "name": "identityDialect",
+      "parent": "status.capabilities",
+      "depth": 2,
+      "type": "string",
+      "required": false,
+      "description": "IdentityDialect is how the HTTPS certificate of the BMC is replaced (\"csr-native\" | \"key-upload\" | \"none\"). The iBMC makes its CSR itself, and the key never leaves it. The X12 takes a certificate and a key that the operator makes, through an OEM upload."
+    },
+    {
+      "path": "status.capabilities.mediaDialects",
+      "name": "mediaDialects",
+      "parent": "status.capabilities",
+      "depth": 2,
+      "type": "map[string]string",
+      "required": false,
+      "description": "MediaDialects maps media slot id → insert dialect (\"insert-media\" | \"vmm-control\" | \"none\")."
+    },
+    {
+      "path": "status.capabilities.updateDialect",
+      "name": "updateDialect",
+      "parent": "status.capabilities",
+      "depth": 2,
+      "type": "string",
+      "required": false,
+      "description": "UpdateDialect is the firmware-update method the BMC offers (\"multipart-push\" | \"simple-update\" | \"none\"). The operator proposes a firmware flash only over multipart-push, the one it has been tested with."
+    },
+    {
+      "path": "status.conditions",
+      "name": "conditions",
+      "parent": "status",
+      "depth": 1,
+      "type": "[]object",
+      "required": false,
+      "listType": "map",
+      "listMapKeys": [
+        "type"
+      ],
+      "description": "Conditions are the truth — the only thing reconcilers branch on."
+    },
+    {
+      "path": "status.conditions[].lastTransitionTime",
+      "name": "lastTransitionTime",
+      "parent": "status.conditions",
+      "depth": 2,
+      "type": "string",
+      "format": "date-time",
+      "required": true,
+      "description": "The time of the last change of the status."
+    },
+    {
+      "path": "status.conditions[].message",
+      "name": "message",
+      "parent": "status.conditions",
+      "depth": 2,
+      "type": "string",
+      "required": true,
+      "maxLength": 32768,
+      "description": "A message for people about the last change. It can be empty."
+    },
+    {
+      "path": "status.conditions[].observedGeneration",
+      "name": "observedGeneration",
+      "parent": "status.conditions",
+      "depth": 2,
+      "type": "integer",
+      "format": "int64",
+      "required": false,
+      "minimum": 0,
+      "description": "The generation of the object that the condition is for. A lower value than metadata.generation shows an old condition."
+    },
+    {
+      "path": "status.conditions[].reason",
+      "name": "reason",
+      "parent": "status.conditions",
+      "depth": 2,
+      "type": "string",
+      "required": true,
+      "pattern": "^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$",
+      "minLength": 1,
+      "maxLength": 1024,
+      "description": "A word in CamelCase that tells why the condition has its status."
+    },
+    {
+      "path": "status.conditions[].status",
+      "name": "status",
+      "parent": "status.conditions",
+      "depth": 2,
+      "type": "string",
+      "required": true,
+      "enum": [
+        "True",
+        "False",
+        "Unknown"
+      ],
+      "description": "The status of the condition: True, False or Unknown."
+    },
+    {
+      "path": "status.conditions[].type",
+      "name": "type",
+      "parent": "status.conditions",
+      "depth": 2,
+      "type": "string",
+      "required": true,
+      "pattern": "^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$",
+      "maxLength": 316,
+      "description": "The type of the condition."
+    },
+    {
+      "path": "status.firmware",
+      "name": "firmware",
+      "parent": "status",
+      "depth": 1,
+      "type": "[]object",
+      "required": false,
+      "listType": "atomic",
+      "description": "Firmware lists the UpdateService inventory — the firmware-convergence observable (desired version vs the entries here), small and bounded (~5 members per vendor). Sorted by id."
+    },
+    {
+      "path": "status.firmware[].id",
+      "name": "id",
+      "parent": "status.firmware",
+      "depth": 2,
+      "type": "string",
+      "required": true,
+      "description": ""
+    },
+    {
+      "path": "status.firmware[].updateable",
+      "name": "updateable",
+      "parent": "status.firmware",
+      "depth": 2,
+      "type": "boolean",
+      "required": false,
+      "description": ""
+    },
+    {
+      "path": "status.firmware[].version",
+      "name": "version",
+      "parent": "status.firmware",
+      "depth": 2,
+      "type": "string",
+      "required": false,
+      "description": ""
+    },
+    {
+      "path": "status.firmwareVersion",
+      "name": "firmwareVersion",
+      "parent": "status",
+      "depth": 1,
+      "type": "string",
+      "required": false,
+      "description": "FirmwareVersion is the manager's firmware as served."
+    },
+    {
+      "path": "status.identityPushed",
+      "name": "identityPushed",
+      "parent": "status",
+      "depth": 1,
+      "type": "object",
+      "required": false,
+      "description": "IdentityPushed is written by the endpoint convergence reconciler alone; the observing endpoint reconciler leaves it untouched — the two share this status with disjoint fields."
+    },
+    {
+      "path": "status.identityPushed.fingerprint",
+      "name": "fingerprint",
+      "parent": "status.identityPushed",
+      "depth": 2,
+      "type": "string",
+      "required": true,
+      "description": "Fingerprint (sha256, hex) of the pushed leaf certificate."
+    },
+    {
+      "path": "status.identityPushed.planHash",
+      "name": "planHash",
+      "parent": "status.identityPushed",
+      "depth": 2,
+      "type": "string",
+      "required": true,
+      "description": "PlanHash of the desired identity the push belonged to."
+    },
+    {
+      "path": "status.identityPushed.publicKey",
+      "name": "publicKey",
+      "parent": "status.identityPushed",
+      "depth": 2,
+      "type": "string",
+      "required": false,
+      "description": "PublicKey of the pushed leaf certificate, in the form of TLSPin.PublicKey. Connections accept it next to the pinned key, so the BMC is reachable when it serves the pushed certificate."
+    },
+    {
+      "path": "status.managerType",
+      "name": "managerType",
+      "parent": "status",
+      "depth": 1,
+      "type": "string",
+      "required": false,
+      "description": "ManagerType is the discovered Redfish Manager type, kept opaque (BMC | EnclosureManager | RackManager | …)."
+    },
+    {
+      "path": "status.model",
+      "name": "model",
+      "parent": "status",
+      "depth": 1,
+      "type": "string",
+      "required": false,
+      "description": ""
+    },
+    {
+      "path": "status.phase",
+      "name": "phase",
+      "parent": "status",
+      "depth": 1,
+      "type": "string",
+      "required": false,
+      "enum": [
+        "Pending",
+        "Connecting",
+        "Inventorying",
+        "Verifying",
+        "Configuring",
+        "Ready",
+        "Unreachable",
+        "Mismatch"
+      ],
+      "description": "Phase summarizes the conditions below for people and for kubectl columns. It is a summary, not the contract: automation should read conditions."
+    },
+    {
+      "path": "status.systems",
+      "name": "systems",
+      "parent": "status",
+      "depth": 1,
+      "type": "[]object",
+      "required": false,
+      "listType": "atomic",
+      "description": "Systems lists the machines (Redfish ComputerSystems) behind this BMC — usually one, several for a chassis with more than one node. It is kept like the rest of status: an unreachable endpoint keeps its last view."
+    },
+    {
+      "path": "status.systems[].bootOverrideMode",
+      "name": "bootOverrideMode",
+      "parent": "status.systems",
+      "depth": 2,
+      "type": "string",
+      "required": false,
+      "description": "BootOverrideMode is the BootSourceOverrideMode the system serves (\"UEFI\" | \"Legacy\"); empty when it serves none. A boot override asks for UEFI only where this field shows a different mode. The X12 reports Legacy on a machine that boots UEFI, and a system that serves no mode can refuse one."
+    },
+    {
+      "path": "status.systems[].bootTargets",
+      "name": "bootTargets",
+      "parent": "status.systems",
+      "depth": 2,
+      "type": "[]string",
+      "required": false,
+      "listType": "atomic",
+      "description": "BootTargets are the boot override targets the system allows (BootSourceOverrideTarget@Redfish.AllowableValues) — what a proposed boot override picks from, never assumed."
+    },
+    {
+      "path": "status.systems[].id",
+      "name": "id",
+      "parent": "status.systems",
+      "depth": 2,
+      "type": "string",
+      "required": true,
+      "description": "ID is the Redfish ComputerSystem member id behind this endpoint."
+    },
+    {
+      "path": "status.systems[].lastResetTime",
+      "name": "lastResetTime",
+      "parent": "status.systems",
+      "depth": 2,
+      "type": "string",
+      "format": "date-time",
+      "required": false,
+      "description": "LastResetTime as served by the ComputerSystem — the baseline-and-advance observable (X12 serves it, iBMC doesn't). Micro precision so back-to-back resets stay distinguishable."
+    },
+    {
+      "path": "status.systems[].manufacturer",
+      "name": "manufacturer",
+      "parent": "status.systems",
+      "depth": 2,
+      "type": "string",
+      "required": false,
+      "description": "Manufacturer as served by the ComputerSystem — the machine's vendor, which on an aggregator path differs from the endpoint's vendor."
+    },
+    {
+      "path": "status.systems[].model",
+      "name": "model",
+      "parent": "status.systems",
+      "depth": 2,
+      "type": "string",
+      "required": false,
+      "description": ""
+    },
+    {
+      "path": "status.systems[].serialNumber",
+      "name": "serialNumber",
+      "parent": "status.systems",
+      "depth": 2,
+      "type": "string",
+      "required": false,
+      "description": "SerialNumber as served by the ComputerSystem — the Huawei anchor; empty on Supermicro X12 (there the chassis board serial anchors)."
+    },
+    {
+      "path": "status.systems[].uuid",
+      "name": "uuid",
+      "parent": "status.systems",
+      "depth": 2,
+      "type": "string",
+      "required": false,
+      "description": ""
+    },
+    {
+      "path": "status.tlsPin",
+      "name": "tlsPin",
+      "parent": "status",
+      "depth": 1,
+      "type": "object",
+      "required": false,
+      "description": "TLSPin is the BMC key the operator trusts when no CA checks the BMC (spec.tls names no CA and does not skip the check). A connection to a BMC that presents another key fails before a password is sent."
+    },
+    {
+      "path": "status.tlsPin.publicKey",
+      "name": "publicKey",
+      "parent": "status.tlsPin",
+      "depth": 2,
+      "type": "string",
+      "required": true,
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "PublicKey is \"sha256:\" and the hex SHA-256 of the certificate's SubjectPublicKeyInfo. A renewed certificate with the same key keeps the pin."
+    },
+    {
+      "path": "status.tlsPin.source",
+      "name": "source",
+      "parent": "status.tlsPin",
+      "depth": 2,
+      "type": "string",
+      "required": true,
+      "enum": [
+        "FirstUse",
+        "Approved",
+        "Pushed"
+      ],
+      "description": "Source says how the key came to be trusted: FirstUse, Approved or Pushed."
+    },
+    {
+      "path": "status.vendor",
+      "name": "vendor",
+      "parent": "status",
+      "depth": 1,
+      "type": "string",
+      "required": false,
+      "description": "Vendor is the discovered manufacturer (\"Huawei\" | \"Supermicro\" | …)."
+    },
+    {
+      "path": "status.virtualMedia",
+      "name": "virtualMedia",
+      "parent": "status",
+      "depth": 1,
+      "type": "[]object",
+      "required": false,
+      "listType": "atomic",
+      "description": "VirtualMedia lists the media slots in the order of the endpoint's collection, with the media types of each slot. A boot selects its slots by this list: optical slots first, in this order. capabilities.mediaDialects tells how to insert media in each slot."
+    },
+    {
+      "path": "status.virtualMedia[].id",
+      "name": "id",
+      "parent": "status.virtualMedia",
+      "depth": 2,
+      "type": "string",
+      "required": true,
+      "description": "ID is the slot's Redfish member id (\"CD\", \"VirtualMedia1\", …)."
+    },
+    {
+      "path": "status.virtualMedia[].mediaTypes",
+      "name": "mediaTypes",
+      "parent": "status.virtualMedia",
+      "depth": 2,
+      "type": "[]string",
+      "required": false,
+      "listType": "atomic",
+      "description": "MediaTypes the slot advertises (\"CD\", \"DVD\", \"USBStick\", …). Empty says nothing — the iBMC's CD slot serves none."
+    }
+  ]
+}

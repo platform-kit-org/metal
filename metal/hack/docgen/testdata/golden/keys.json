@@ -1,0 +1,28 @@
+{
+  "keys": [
+    {
+      "key": "metal.platform-kit.org/hold",
+      "kind": "annotation",
+      "exported": true,
+      "description": "AnnotationHold on a claim stops new proposals.",
+      "constants": [
+        {
+          "name": "AnnotationHold",
+          "source": "api/v1alpha1/types.go"
+        }
+      ]
+    },
+    {
+      "key": "metal.platform-kit.org/release",
+      "kind": "finalizer",
+      "exported": false,
+      "description": "",
+      "constants": [
+        {
+          "name": "releaseFinalizer",
+          "source": "api/v1alpha1/controller.go"
+        }
+      ]
+    }
+  ]
+}

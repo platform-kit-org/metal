@@ -1,0 +1,107 @@
+---
+title: Pivot the operator
+description: Move the operator and its objects from the bootstrap cluster onto the Talos cluster that it built.
+type: howto
+day: 1
+xref: { cat: howto, id: pivot }
+sidebar:
+  order: 9
+sources:
+  - /repo/metal/cmd/pk-metal/pivot.go
+---
+
+import { Steps } from '@astrojs/starlight/components';
+import Callout from '../../../../components/Callout.astro';
+import Pivot from '../../../../components/explainers/Pivot.astro';
+
+## Goal
+
+Run the operator on the Talos cluster that it installed, and stop the bootstrap cluster on your workstation.
+
+## Before you start
+
+- The bootstrap cluster (usually kind) is the current kubeconfig context.
+- You have the kubeconfig of the target cluster, for example `mgmt.kubeconfig`.
+- No operation runs. No rollout is under way. No claim is in deletion. [](cli:status) shows this.
+- The target has storage for the [](term:media-store), or you accept `--media-store=ephemeral`.
+- The target can reach each BMC, and each BMC can reach the target. See [](howto:network-checklist).
+- The operator image is in a registry that the nodes of the target can pull from. An image that you loaded into kind is not. See [](howto:install-operator).
+- The target has a node that accepts ordinary pods: a worker, or control planes with `controlPlane.allowScheduling: true`.
+
+## How the move works
+
+<Pivot start={1} />
+
+[](cli:pivot) has the full list of what each step does.
+
+## Steps
+
+<Steps>
+
+1. Make sure that nothing runs.
+
+   ```sh
+   pk-metal status
+   ```
+
+   No operation is in the phase `Running`.
+
+2. Start the move. Give the media address on a node of the target, and the image in your registry.
+
+   ```sh
+   pk-metal pivot --to mgmt.kubeconfig --media-url https://192.0.2.11:30443 \
+     --image registry.example.org/platform/pk-metal:4f0c2d1a9b3e
+   ```
+
+   Without `--image`, the target uses the image reference of the source.
+
+3. Read the list of network paths that the command shows. Check it with your network team.
+
+4. Type `y` to start.
+
+   The last lines say that the new manager runs and settled.
+
+5. Make the target your current context, and examine the fleet.
+
+   ```sh
+   pk-metal --kubeconfig mgmt.kubeconfig status
+   ```
+
+6. When you do not need the bootstrap cluster, delete it. Use the name of your kind cluster.
+
+   ```sh
+   kind delete cluster --name bootstrap
+   ```
+
+</Steps>
+
+<Callout type="caution">
+Do not delete only the pk-metal objects in the bootstrap cluster.
+Their finalizers wait for an operator that does not run there, and the deletion does not end. Delete the full cluster.
+</Callout>
+
+## Verify
+
+- `pk-metal status` on the target shows each Host in the same phase as before.
+- Each handed-off claim shows `HandedOff`.
+- No new [](kind:HostOperation) exists.
+
+## Roll back
+
+See [](howto:move-back).
+
+## If it fails
+
+| What you see | Fix |
+| --- | --- |
+| The move refuses to start | The message says what to do. Do it, then run the same command again. |
+| The move stops in the middle | Run the same command again. It continues from where it stopped. |
+| The target has no storage | Give it a default StorageClass, or use `--media-store=ephemeral`. |
+| The manager pod on the target shows `ImagePullBackOff` | The nodes cannot pull the image. Push it to a registry, then run the command again with `--image`. |
+| The manager pod on the target stays `Pending` | No node accepts the pod. Add a worker, or set `controlPlane.allowScheduling: true` and let the rollout complete. Then run the command again. |
+| The new operator proposed an operation | The move fails and names it. See [](howto:move-back). |
+
+## Related
+
+- [](cli:pivot), [](concept:pivot-model), [](concept:self-protection)
+- [](lab:pivot) runs the move in the virtual lab.

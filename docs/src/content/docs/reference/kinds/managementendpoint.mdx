@@ -1,0 +1,194 @@
+---
+title: ManagementEndpoint
+description: One BMC and the facts that it reports through Redfish. The operator writes it. You read it.
+type: kind
+eyebrow: Kind · metal.platform-kit.org/v1alpha1
+xref: { cat: kind, id: ManagementEndpoint }
+sources:
+  - /repo/metal/api/v1alpha1/managementendpoint_types.go
+  - /repo/metal/internal/controller/managementendpoint_controller.go
+  - /repo/metal/internal/controller/bmctls.go
+  - /repo/metal/internal/phase/phase.go
+---
+
+import Callout from '../../../../components/Callout.astro';
+import FieldTable from '../../../../components/FieldTable.astro';
+import EndpointPhases from '../../../../components/catalog/EndpointPhases.astro';
+import PhaseTable from '../../../../components/catalog/PhaseTable.astro';
+
+A ManagementEndpoint is one BMC that the operator speaks to through Redfish.
+The operator makes it from an Asset. You read it to see if the BMC answers and what it reports.
+
+## At a glance
+
+<dl class="pk-glance">
+  <dt>Group and version</dt>
+  <dd>`metal.platform-kit.org/v1alpha1`</dd>
+  <dt>Scope</dt>
+  <dd>Cluster. Short name: `mep`.</dd>
+  <dt>Written by</dt>
+  <dd>The operator. Do not write or edit a ManagementEndpoint.</dd>
+  <dt>Reconciled by</dt>
+  <dd>[](ctrl:managementendpoint) reads the BMC. [](ctrl:endpointconvergence) configures it.</dd>
+  <dt>Name</dt>
+  <dd>The name of the [](kind:Asset).</dd>
+  <dt>Owned by</dt>
+  <dd>The Asset. One endpoint can own one or more [Hosts](kind:Host).</dd>
+  <dt>Phases</dt>
+  <dd>Pending, Connecting, Inventorying, Verifying, Configuring, Ready, Unreachable, Mismatch.</dd>
+  <dt>Source</dt>
+  <dd>[managementendpoint_types.go](/repo/metal/api/v1alpha1/managementendpoint_types.go)</dd>
+</dl>
+
+## How it connects
+
+The [](ctrl:asset) makes the endpoint and writes all of its spec.
+The address comes from the [ledger](concept:ledger), the Secret from the Asset, and the TLS rule from the manager.
+The [](ctrl:managementendpoint) opens a session, reads the facts and compares them with the Asset. It does not write to the BMC.
+The [](ctrl:host) makes one Host for each entry in [`status.systems`](kind:ManagementEndpoint#status.systems).
+
+An [](kind:EndpointProfile) selects endpoints by their labels. The [](ctrl:endpointconvergence) then configures the BMC and writes the condition `Configured`.
+A [](kind:HostOperation) uses the endpoint to change the machine, for example with [](act:InsertMedia).
+Use [](cli:status) to see all endpoints, or [](cli:check) to test one BMC without the operator.
+
+## Lifecycle
+
+<EndpointPhases />
+
+1. The Asset controller makes the endpoint. The phase is Pending.
+2. The operator opens a Redfish session. The phase is Connecting.
+3. The operator reads the vendor, the model, the systems, the media slots and the firmware. The phase is Inventorying.
+4. The operator compares the MAC address and the serial number with the Asset. The phase is Verifying.
+5. If an EndpointProfile applies, the operator configures the BMC. The phase is Configuring.
+6. All conditions agree. The phase is Ready.
+
+The operator reads the BMC again each 5 minutes. The flag `--poll-interval` of the [manager](ctrl:manager) sets this time.
+
+<PhaseTable kind="ManagementEndpoint" />
+
+### How the operator verifies a BMC
+
+<dl>
+  <dt>MAC address</dt>
+  <dd>If the BMC reports a MAC address and it is not `spec.bmcMac` of the Asset, `Verified` is False with the reason `MACMismatch`.</dd>
+  <dt>Serial number</dt>
+  <dd>The operator collects the board serial number of the chassis and the serial number of each system. If `spec.serial` of the Asset is one of them, `Verified` is True.</dd>
+  <dt>No match</dt>
+  <dd>`Verified` is False with the reason `SerialMismatch`. The phase is Mismatch.</dd>
+  <dt>No data</dt>
+  <dd>If the BMC reports no serial number, `Verified` is Unknown and the phase stays Verifying.</dd>
+</dl>
+
+[](concept:identity) explains why the operator uses two sources.
+
+## Trust the BMC certificate
+
+`spec.tls` tells how the operator checks the BMC. The manager flags set it for all endpoints.
+
+| `spec.tls` | Check | Flag |
+| --- | --- | --- |
+| `caSecretRef` | The certificate chain against the CA. | `--bmc-ca-secret` |
+| Not set | The key that the BMC showed at the first contact (`status.tlsPin`). | No flag |
+| `insecureSkipVerify` | Nothing. For simulated BMCs only. | `--bmc-insecure` |
+
+Without a CA, the operator reads the certificate of the BMC before it sends a login. At the first contact, it pins the key: `status.tlsPin.source` is `FirstUse`. After that, each session accepts only the pinned key, and the key of a certificate that an [](kind:EndpointProfile) pushed (`Pushed`).
+
+If the BMC shows a different key, `Reachable` is False with the reason `TLSKeyChanged`, and the phase is Unreachable. The operator sends nothing to the BMC. The message gives the new key and the command to approve it.
+
+1. Find out why the key changed. A new certificate on the BMC, a firmware update or a new board can change it. A device that poses as the BMC can also cause it.
+
+2. Compare the key in the message with the key of the BMC. Run this on a workstation on the BMC network:
+
+   ```sh
+   openssl s_client -connect 192.0.2.21:443 </dev/null 2>/dev/null \
+     | openssl x509 -pubkey -noout | openssl pkey -pubin -outform der \
+     | sha256sum
+   ```
+
+3. If the change is correct, approve the key. Use the value from the message.
+
+   ```sh
+   kubectl annotate managementendpoint asset-07 \
+     metal.platform-kit.org/approve-tls-key=sha256:<64 hex digits>
+   ```
+
+The operator pins the approved key (`Approved`) only while the BMC shows it. Then it removes the annotation. Only a person who can update ManagementEndpoints can approve a key. The default roles give this to the admin group only.
+
+`status.authentication` tells how the requests log in. `Session` is a Redfish session: the password crosses the network one time for each pass. `Basic` means that the BMC has no sessions, and each request carries the password.
+
+## Spec
+
+The Asset controller writes the spec. A change that you make does not stay.
+
+<FieldTable kind="ManagementEndpoint" part="spec" />
+
+## Status
+
+<FieldTable kind="ManagementEndpoint" part="status" />
+
+### Conditions
+
+| Condition | True means | Effect on the phase |
+| --- | --- | --- |
+| `Reachable` | The BMC answers with a trusted certificate and the login works. Reason `TLSKeyChanged` when the BMC shows a key that is not pinned. | Unreachable when False |
+| `Inventoried` | The operator has the facts of the BMC. | Inventorying until True |
+| `Verified` | The MAC address and the serial number agree with the Asset. | Mismatch when False |
+| `Configured` | The BMC has the configuration of its EndpointProfiles. Absent when no profile applies. | Configuring until True |
+| `DeletionHeld` | A person deleted the endpoint, but a claim holds its machine. | None |
+
+### Labels
+
+The operator puts labels on each endpoint. An EndpointProfile selects endpoints with them.
+
+| Label | Value |
+| --- | --- |
+| `metal.platform-kit.org/vendor` | The vendor that the BMC reports. |
+| `metal.platform-kit.org/model` | The model that the BMC reports. |
+| `metal.platform-kit.org/vlan` | `spec.vlan` of the Asset. |
+
+[](ref:labels-annotations) has all keys.
+
+## Example
+
+You do not write a ManagementEndpoint. Read it with `kubectl`:
+
+```console
+$ kubectl get mep -o wide
+NAME       ADDRESS                        VENDOR   PHASE      BLOCKED          AGE
+asset-07   https://[2001:db8:0:100::14]   Huawei   Ready                       3d
+asset-08   https://[2001:db8:0:100::15]   Huawei   Mismatch   SerialMismatch   3d
+```
+
+## Find why an endpoint is not Ready
+
+1. Read the phase and the column BLOCKED.
+
+   ```sh
+   kubectl get mep -o wide
+   ```
+
+2. Read the conditions of the endpoint. The message of the condition gives the cause.
+
+   ```sh
+   kubectl describe mep asset-08
+   ```
+
+3. Use the table to find the next step.
+
+| Phase | Cause | Next step |
+| --- | --- | --- |
+| Unreachable | The address, the network, the login, the CA or the pinned key is wrong. | [](rb:bmc-unreachable) |
+| Mismatch | The Asset or the ledger names a different machine. | [](rb:host-mismatch) |
+| Configuring | A profile is in progress, or the operator cannot apply it. | Read the reason of `Configured` in [](kind:EndpointProfile). |
+
+<Callout type="caution">
+Do not correct a Mismatch on the endpoint. Correct the Asset or the ledger.
+The operator stops all work on the machine until the facts agree.
+</Callout>
+
+## Tasks
+
+- [](howto:enroll-hosts)
+- [](flow:credential-rotation)
+- [](rb:bmc-unreachable)
+- [](rb:host-mismatch)

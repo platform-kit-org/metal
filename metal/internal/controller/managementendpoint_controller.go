@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -57,6 +58,11 @@ type ManagementEndpointReconciler struct {
 	Probe TLSProbe
 	// Audit writes a line when the pinned TLS key changes.
 	Audit *audit.Logger
+	// pinned is the last TLS pin written to the trail, per endpoint UID. A
+	// pass can read an endpoint from the cache before the cache has the
+	// status that the pass before it stored; that pass pins the same key
+	// again, and this keeps the trail at one line for it.
+	pinned sync.Map
 }
 
 // +kubebuilder:rbac:groups=metal.platform-kit.org,resources=managementendpoints,verbs=get;list;watch;update
@@ -105,7 +111,9 @@ func (r *ManagementEndpointReconciler) Reconcile(ctx context.Context, req ctrl.R
 		// The trail gets the pin once it is stored: a pass whose write
 		// fails pins again, and writes the line then.
 		if p := ep.Status.TLSPin; p != nil && !equality.Semantic.DeepEqual(orig.Status.TLSPin, p) {
-			r.Audit.BMCKeyPinned(endpointObject(ep), p.PublicKey, p.Source)
+			if last, ok := r.pinned.Swap(ep.UID, *p); !ok || last != *p {
+				r.Audit.BMCKeyPinned(endpointObject(ep), p.PublicKey, p.Source)
+			}
 		}
 	}
 	return ctrl.Result{RequeueAfter: r.PollInterval}, nil

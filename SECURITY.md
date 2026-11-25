@@ -6,7 +6,7 @@ Do not open a public issue, discussion or pull request for a vulnerability.
 
 Use GitHub private vulnerability reporting for this repository:
 
-1. Open <https://github.com/platform-kit-org/metal-operator/security/advisories/new>.
+1. Open <https://github.com/platform-kit-org/metal/security/advisories/new>.
    You can also go to the **Security** tab and select **Report a vulnerability**.
 2. Describe the problem, the affected commit, and the steps to reproduce it.
 3. Say what an attacker needs: for example, access to the BMC network, a

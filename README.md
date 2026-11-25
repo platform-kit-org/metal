@@ -1,6 +1,6 @@
 # platform-kit
 
-[![ci](https://github.com/platform-kit-org/metal-operator/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/platform-kit-org/metal-operator/actions/workflows/ci.yml)
+[![ci](https://github.com/platform-kit-org/metal/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/platform-kit-org/metal/actions/workflows/ci.yml)
 
 pk-metal is a Kubernetes operator that installs Talos Linux on bare-metal
 servers through their BMCs (Redfish and virtual media). You write what must be

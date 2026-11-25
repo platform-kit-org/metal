@@ -1,8 +1,8 @@
 // Where the site and its repository live. GitHub Actions sets GITHUB_REPOSITORY, so a
 // build in a fork links to the fork. A local build uses the default below.
-const slug = process.env.GITHUB_REPOSITORY || 'platform-kit-org/metal-operator';
+const slug = process.env.GITHUB_REPOSITORY || 'platform-kit-org/metal';
 
-/** The repository on GitHub, for example "https://github.com/platform-kit-org/metal-operator". */
+/** The repository on GitHub, for example "https://github.com/platform-kit-org/metal". */
 export const repoUrl = `https://github.com/${slug}`;
 /**
  * The host of the site: the custom domain in the Pages settings of the repository.

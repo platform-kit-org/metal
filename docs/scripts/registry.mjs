@@ -96,7 +96,7 @@ export function loadPages() {
 let cache;
 
 /**
- * @param {string} base the site base, for example "" (root) or "/metal-operator"
+ * @param {string} base the site base, for example "" (root) or "/metal"
  * @returns {Map<string, {cat: string, id: string, href: string, title: string, description?: string, planned: boolean, file?: string}>}
  */
 export function loadRegistry(base) {

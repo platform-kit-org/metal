@@ -35,19 +35,23 @@ import (
 
 func init() {
 	verbHelp["top"] = `
-A live view of every machine, updated as the cluster changes. One tile per
-machine shows its BMC, the Host phase and what blocks it, the claim, the
-operation that runs (for example "5/9 setBootOverride") and whether it waits
-for approval, and the TalosNode. The header shows each TalosCluster and how
-many nodes are Ready, and each TalosRollout that has not succeeded: its nodes
-done and where it stands (approve and resume it with pk-metal rollout).
+A live view of every machine, updated as the cluster changes. One small tile
+per machine shows where it is on its way from BMC to node, the Host phase and
+what blocks it, and the operation that runs or else its node. The operation
+shows as its step, for example "5/9 setBootOverride". Below the tiles, a panel as wide as the
+terminal shows the selected machine in full: its BMC, the Host, the claim, the
+operation and whether it waits for approval, and the TalosNode. The header
+shows each TalosCluster and how many nodes are Ready, and each TalosRollout
+that has not succeeded: its nodes done and where it stands (approve and resume
+it with pk-metal rollout).
 
-With --fleet (the simulator's state endpoint, as in the virtual lab) each
-tile also shows what the simulated BMC holds (power, media, boot override,
-the last Redfish call), whether the VM runs, and the last console lines.
-Without it, top works the same against real hardware.
+With --fleet (the simulator's state endpoint, as in the virtual lab) the panel
+also shows what the simulated BMC holds (power, media, boot override, the last
+Redfish call), whether the VM runs, and the last console lines, as many as the
+terminal height leaves room for. Without it, top works the same against real
+hardware.
 
-With --workload-kubeconfig the tiles also show whether each node is Ready in
+With --workload-kubeconfig the panel also shows whether the node is Ready in
 the workload cluster itself.
 
 keys:

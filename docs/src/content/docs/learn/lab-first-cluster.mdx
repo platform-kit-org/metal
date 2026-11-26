@@ -20,7 +20,7 @@ The result is a Kubernetes cluster that the operator installed through simulated
 
 ## What you make
 
-<Shot src="top-3-all-ready.png" alt="pk-metal top with three tiles. Each machine is Provisioned, and each node is Ready." caption="The end of this tutorial, as lab:top shows it. A mock screen with example data." width={1600} height={529} />
+<Shot src="top-3-all-ready.png" alt="pk-metal top with three tiles and the panel of the selected machine. Each machine is Provisioned, and each node is Ready." caption="The end of this tutorial, as lab:top shows it. A mock screen with example data." width={1600} height={624} />
 
 - A management cluster in kind that runs the operator.
 - Three QEMU virtual machines, each with a simulated BMC.
@@ -158,7 +158,7 @@ The control plane, `node-1`, installs first. The workers join after the control 
 [](flow:rack-to-node) explains each step.
 
 <Checkpoint>
-Each tile shows `host Provisioned` and `Talos ready`. The cluster line shows `Bootstrapped` and `Available`.
+Each tile shows `Provisioned` and `Ready`. The cluster line shows `Bootstrapped` and `Available`.
 </Checkpoint>
 
 ### 6. Use the cluster

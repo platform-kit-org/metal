@@ -263,6 +263,7 @@ The kustomize component `config/name-stamp` has three MutatingAdmissionPolicies.
 - They have no parameters and apply in the two modes of `selfApproval`.
 - `failurePolicy: Ignore`. A stamp only saves typing. If it does not apply, the validating policy refuses a request that names nobody. The settings controller does not count a stamp as a gate policy.
 - Some seconds after a CRD install, the API server can refuse a write of the new kind with `Resource kind … not found`. Try again after some seconds.
+- [](cli:pivot) moves them to the target cluster with the other policies.
 
 ### `requested-by-stamp`
 

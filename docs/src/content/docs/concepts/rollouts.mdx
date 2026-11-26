@@ -62,6 +62,8 @@ The operator writes the plan, a person approves its hash, and each node operatio
 | kube-proxy (Kubernetes upgrade only) | After the control planes |
 | Workers | `spec.maxUnavailableWorkers`, default 1 |
 
+`spec.maxUnavailableWorkers` counts the steps of the rollout only. An operation outside the rollout, for example a BIOS change or a wipe, can take one more worker down at the same time. The next step of the rollout then waits until each Node is `Ready` again. Approve such an operation when no rollout runs on its cluster.
+
 ## In the reference
 
 - [](kind:TalosRollout), [](ctrl:talosrollout), [](ctrl:rolloutproposer)

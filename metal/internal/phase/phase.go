@@ -73,7 +73,7 @@ type HostFacts struct {
 }
 
 // ForHost derives the Host phase. Precedence: parked states first (Maintenance,
-// Releasing), then a failed OS-ladder observation (Status=False means attempted and
+// Releasing), then, for a claimed host only, a failed OS-ladder observation (Status=False means attempted and
 // failed; Unknown means in flight; absent means not attempted), then the ladder
 // downwards (Provisioned → Provisioning → Assigned → Available → Inspecting →
 // Enrolling).
@@ -92,19 +92,22 @@ func ForHost(conds []metav1.Condition, f HostFacts) (metalv1alpha1.HostPhase, st
 		return metalv1alpha1.HostReleasing, blocked
 	}
 
-	for _, t := range []string{metalv1alpha1.ConditionBooted, metalv1alpha1.ConditionOSReady} {
-		if c := meta.FindStatusCondition(conds, t); c != nil && c.Status == metav1.ConditionFalse {
-			return metalv1alpha1.HostFailed, blocked
+	// The OS ladder describes the claim's install, so a free host has none.
+	// The host reconciler drops Booted and OSReady with the hand-off, but a
+	// read from before that pass still has them.
+	if f.Claimed {
+		for _, t := range []string{metalv1alpha1.ConditionBooted, metalv1alpha1.ConditionOSReady} {
+			if c := meta.FindStatusCondition(conds, t); c != nil && c.Status == metav1.ConditionFalse {
+				return metalv1alpha1.HostFailed, blocked
+			}
 		}
-	}
-
-	osReady := meta.FindStatusCondition(conds, metalv1alpha1.ConditionOSReady)
-	switch {
-	case osReady != nil && osReady.Status == metav1.ConditionTrue:
-		return metalv1alpha1.HostProvisioned, blocked
-	case f.Claimed && (osReady != nil || meta.FindStatusCondition(conds, metalv1alpha1.ConditionBooted) != nil):
-		return metalv1alpha1.HostProvisioning, blocked
-	case f.Claimed:
+		osReady := meta.FindStatusCondition(conds, metalv1alpha1.ConditionOSReady)
+		switch {
+		case osReady != nil && osReady.Status == metav1.ConditionTrue:
+			return metalv1alpha1.HostProvisioned, blocked
+		case osReady != nil || meta.FindStatusCondition(conds, metalv1alpha1.ConditionBooted) != nil:
+			return metalv1alpha1.HostProvisioning, blocked
+		}
 		return metalv1alpha1.HostAssigned, blocked
 	}
 

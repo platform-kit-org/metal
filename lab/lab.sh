@@ -574,7 +574,7 @@ resources:
 images:
   - name: pk-metal
     newName: ${image%:*}
-    newTag: ${image##*:}
+    newTag: "${image##*:}"
 configMapGenerator:
   - name: pk-metal-ledger
     namespace: $NAMESPACE

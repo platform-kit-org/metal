@@ -80,7 +80,7 @@ Step through the figure, or use the arrow keys.
   <dt>No retry</dt>
   <dd>A step that fails ends the operation for good. A person reads why, then uses [](cli:retry) or deletes it.</dd>
   <dt>A network error is a wait</dt>
-  <dd>If the BMC or the cluster API does not answer this pass, the step waits. It does not fail.</dd>
+  <dd>If the BMC or the cluster API does not answer this pass, the step waits. It does not fail. A busy answer is a wait too. For a BMC, that is 429, 502, 503 or 504. For a Kubernetes API server, that is 429, 503 or a timeout. A firmware flash is the exception: only a missing session makes it wait.</dd>
   <dt>Running work finishes</dt>
   <dd>Maintenance, a closed window and the self guard hold only an operation that did not start. Stopping between a mount and its boot leaves the machine worse off.</dd>
   <dt>Abort undoes what it can</dt>

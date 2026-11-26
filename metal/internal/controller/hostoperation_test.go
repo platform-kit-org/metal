@@ -10,6 +10,7 @@ import (
 	"time"
 
 	godigest "github.com/opencontainers/go-digest"
+	"github.com/stmcginnis/gofish/schemas"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
@@ -550,6 +551,15 @@ func TestUnreachableMachineHoldsTheStep(t *testing.T) {
 		},
 		"connection refused": func(_ *HostOperationReconciler, rec *recordingClient) {
 			rec.powerErr = &net.OpError{Op: "dial", Net: "tcp", Err: fmt.Errorf("connection refused")}
+		},
+		// A manager whose Redfish service restarts, or whose sessions are
+		// used up, answers 503; the request did not run. It failed the
+		// operation for good before.
+		"manager busy (503)": func(_ *HostOperationReconciler, rec *recordingClient) {
+			rec.powerErr = fmt.Errorf("get power: %w", &schemas.Error{HTTPReturnedStatusCode: http.StatusServiceUnavailable})
+		},
+		"proxy timeout (504)": func(_ *HostOperationReconciler, rec *recordingClient) {
+			rec.powerErr = fmt.Errorf("get power: %w", &schemas.Error{HTTPReturnedStatusCode: http.StatusGatewayTimeout})
 		},
 	} {
 		t.Run(name, func(t *testing.T) {

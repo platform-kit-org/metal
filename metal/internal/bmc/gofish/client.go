@@ -501,6 +501,20 @@ func statusOf(err error) int {
 	return 0
 }
 
+// Busy reports whether err is a manager, or a proxy in front of it, saying
+// it cannot serve the request now: 429 Too Many Requests, 502 Bad Gateway,
+// 503 Service Unavailable or 504 Gateway Timeout. Managers answer so while
+// their Redfish service restarts, while a job holds them, or when their
+// sessions are used up. The request did not run; asking again later is the
+// remedy, as for a connection that was refused.
+func Busy(err error) bool {
+	switch statusOf(err) {
+	case http.StatusTooManyRequests, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+		return true
+	}
+	return false
+}
+
 // LoginRefused reports whether err is a manager refusing the credentials of
 // a request (401). Every refused login counts towards the manager's lockout,
 // so a caller backs off a credential that got this answer.

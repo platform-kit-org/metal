@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
 	"net/http"
 	"slices"
 	"strings"
@@ -773,14 +772,17 @@ type holdError struct{ reason, msg string }
 
 func (e *holdError) Error() string { return e.reason + ": " + e.msg }
 
-// transient: the error says this pass could not talk to the machine, not that
-// the machine refused — a hold, the pass deadline, or a network failure
-// (refused or reset connections, dial and read timeouts).
+// transient: the error says this pass could not talk to the machine or the
+// cluster, not that either refused — a hold, the pass deadline, a network
+// failure (refused or reset connections, dial and read timeouts), a Talos
+// API that is not up, or a server that answers it is busy and did not run
+// the request: a BMC's 429, 502, 503 or 504, and a Kubernetes API server's
+// 429, 503 or timeout (it restarts on a control plane that reboots).
 func transient(passCtx context.Context, err error) bool {
 	var hold *holdError
-	var nerr net.Error
-	return errors.As(err, &hold) || passCtx.Err() != nil ||
-		errors.Is(err, context.DeadlineExceeded) || errors.As(err, &nerr)
+	return errors.As(err, &hold) || passCtx.Err() != nil || unavailable(err) || gofishclient.Busy(err) ||
+		apierrors.IsServiceUnavailable(err) || apierrors.IsTooManyRequests(err) ||
+		apierrors.IsServerTimeout(err) || apierrors.IsTimeout(err)
 }
 
 // stepTransient is transient for a step. A flash is the exception for

@@ -25,7 +25,6 @@ import (
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
 	"github.com/dennisklein/platform-kit/metal/internal/asset"
 	"github.com/dennisklein/platform-kit/metal/internal/audit"
-	"github.com/dennisklein/platform-kit/metal/internal/baseline"
 	"github.com/dennisklein/platform-kit/metal/internal/bmc"
 	gofishclient "github.com/dennisklein/platform-kit/metal/internal/bmc/gofish"
 	"github.com/dennisklein/platform-kit/metal/internal/phase"
@@ -398,7 +397,7 @@ func (r *HostOperationReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		// The BMC baseline is taken only when a step uses the BMC: an
 		// operation made of Talos and Kubernetes steps runs while the BMC is
 		// down, and its steps record their own proof (the node's boot time).
-		var obs baseline.Observation
+		var obs bmc.System
 		if usesBMC(op) {
 			var hold string
 			var err error
@@ -579,7 +578,7 @@ func (r *HostOperationReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 // down; two passes on two control planes deciding at the same time would
 // each count the other as up, and both would start.
 func (r *HostOperationReconciler) begin(ctx context.Context, op *metalv1alpha1.HostOperation, host *metalv1alpha1.Host,
-	obs baseline.Observation, setCond func(string, metav1.ConditionStatus, string, string), flush func() error) (res ctrl.Result, started bool, err error) {
+	obs bmc.System, setCond func(string, metav1.ConditionStatus, string, string), flush func() error) (res ctrl.Result, started bool, err error) {
 	if (r.Self != nil || r.Guard != nil) && disrupts(op) {
 		r.startMu.Lock()
 		defer r.startMu.Unlock()
@@ -1137,18 +1136,19 @@ func (r *HostOperationReconciler) dialHost(ctx context.Context, host *metalv1alp
 	return cl, cl.(*pathClient).systemID, "", "", nil
 }
 
-// observe reads the current reset observables; a connection hold comes back
-// as a message, not an error, so the caller can surface it.
-func (x *exec) observe(ctx context.Context) (baseline.Observation, string, error) {
+// observe reads the system's current view, of which an operation's baseline
+// keeps the reset observables (power state, last reset time); a connection
+// hold comes back as a message, not an error, so the caller can surface it.
+func (x *exec) observe(ctx context.Context) (bmc.System, string, error) {
 	cl, sysID, err := x.client(ctx)
 	if err != nil {
-		return baseline.Observation{}, err.Error(), nil
+		return bmc.System{}, err.Error(), nil
 	}
 	sys, err := systemOf(ctx, cl, sysID)
 	if err != nil {
-		return baseline.Observation{}, err.Error(), nil
+		return bmc.System{}, err.Error(), nil
 	}
-	return baseline.FromSystem(sys), "", nil
+	return sys, "", nil
 }
 
 // systemOf reads one system's current view.

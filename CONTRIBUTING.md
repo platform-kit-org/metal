@@ -40,6 +40,7 @@ your change, and let CI run the rest.
 | Unit | `mise run test` | Go | CI, every push and pull request |
 | Controllers (envtest) | `mise run envtest` | Go; downloads kube-apiserver and etcd | CI, every push and pull request |
 | Race detector | `mise run test:race` | cgo and a C compiler | CI, every push and pull request |
+| TLA+ model check | `mise run spec` | A Java runtime; downloads the TLA+ tools | CI, every push and pull request |
 | e2e, kind tier | `mise run e2e:kind` | Docker and a kind cluster | CI, pushes to `main` and `metal` (see `.github/workflows/ci.yml`) |
 | e2e, VM tier | `mise run e2e:qemu` | KVM, QEMU, OVMF | Your machine only |
 | Fuzz | `mise run fuzz` | Go | Your machine only |

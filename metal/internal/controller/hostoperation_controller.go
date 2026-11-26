@@ -406,8 +406,11 @@ func (r *HostOperationReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 				return ctrl.Result{}, err
 			}
 			if hold != "" {
-				setCond(metalv1alpha1.ConditionExecuted, metav1.ConditionUnknown, metalv1alpha1.ReasonNoReachablePath, hold)
-				return ctrl.Result{}, client.IgnoreNotFound(flush())
+				// Nothing else wakes the operation: the Host does not
+				// change when only this pass failed to reach its BMC.
+				setCond(metalv1alpha1.ConditionExecuted, metav1.ConditionUnknown, metalv1alpha1.ReasonNoReachablePath,
+					redact.String(hold)+"; retrying")
+				return ctrl.Result{RequeueAfter: r.waitInterval()}, client.IgnoreNotFound(flush())
 			}
 		}
 		if res, started, err := r.begin(ctx, op, host, obs, setCond, flush); !started {

@@ -131,6 +131,7 @@ An Unknown reason other than `Executing` is the `blockedOn` of the operation. Th
 | Waits with `OutsideMaintenanceWindow` | A window covers the Host and is closed. | Wait, or set `metal.platform-kit.org/ignore-window`. See [](ctrl:maintenancewindow). |
 | Waits with `ClusterDisruption` | Etcd would not stay healthy. | Use [](rb:etcd-unhealthy). |
 | Waits with `OperationQueued` | Another operation holds the Host. | Approve or delete that one first. See [](howto:approve-hold-retry). |
+| Waits with `NoReachablePath` before the first step | The executor could not read the BMC for the baseline. It tries again every 5 seconds. | Use [](rb:bmc-unreachable). |
 
 <Callout type="note">
 The guards are described on the [](ctrl:protection) page. The window rules are on the [](ctrl:maintenancewindow) page.

@@ -587,6 +587,33 @@ func TestUnreachableMachineHoldsTheStep(t *testing.T) {
 	}
 }
 
+// A start whose baseline read could not reach the BMC comes back by itself.
+// Before, it set NoReachablePath and asked for no requeue: only a change of
+// the Host woke it, and the Host does not change when only the executor's
+// session failed (the observer's poll went through).
+func TestStartHeldByAnUnreachableBMCComesBack(t *testing.T) {
+	op := preClearedOp(metalv1alpha1.HostOperationAction{PowerOff: &metalv1alpha1.PowerOffAction{}})
+	r, _, _ := executorFor(t, "huawei-2288h-v5", op)
+	connect := r.Connect
+	r.Connect = func(context.Context, *metalv1alpha1.Host) (bmc.Client, string, string, string, error) {
+		return nil, "", "", "", fmt.Errorf("connect: %w", &schemas.Error{HTTPReturnedStatusCode: http.StatusServiceUnavailable})
+	}
+
+	key := client.ObjectKeyFromObject(op)
+	res, err := r.Reconcile(t.Context(), ctrl.Request{NamespacedName: key})
+	require.NoError(t, err)
+	got := &metalv1alpha1.HostOperation{}
+	require.NoError(t, r.Get(t.Context(), key, got))
+	require.Nil(t, got.Status.Baseline, "nothing started")
+	ex := meta.FindStatusCondition(got.Status.Conditions, metalv1alpha1.ConditionExecuted)
+	require.NotNil(t, ex)
+	assert.Equal(t, metalv1alpha1.ReasonNoReachablePath, ex.Reason)
+	assert.Positive(t, res.RequeueAfter, "the operation comes back without a Host event")
+
+	r.Connect = connect
+	require.True(t, opSucceeded(runOp(t, r)))
+}
+
 func TestPassStopsBeforeItsBudgetRunsOut(t *testing.T) {
 	op := preClearedOp(
 		metalv1alpha1.HostOperationAction{SetBootOverride: &metalv1alpha1.SetBootOverrideAction{Target: "Cd"}},

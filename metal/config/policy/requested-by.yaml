@@ -44,7 +44,10 @@
 # Deletes by the controllers of kube-system (the garbage collector, the
 # namespace controller) need no name: a person who deleted the owner or the
 # namespace asked for them. The operator changes no intent, so it has no
-# exemption. A GitOps controller puts its own service account name into the
+# exemption. Where the site installs ../name-stamp (Kubernetes 1.36
+# or later), the API server sets the name on each create and each change of
+# the intent, so only a delete needs it set by hand. Elsewhere pk-metal sets
+# it, and a GitOps controller puts its own service account name into the
 # manifests it applies; the commit names the person.
 #
 # CEL note: oldObject is null on CREATE and object is null on DELETE; every

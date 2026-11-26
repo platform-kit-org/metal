@@ -268,10 +268,10 @@ These annotations lift a safety rule or decide a step of a change:
 The value must be `<username>: <reason>`. The username is the username of the request, and the reason is not empty. The [admission policy](ref:admission-policies#guard-lift) `guard-lift` refuses each other value. So the object records who lifted the rule and why.
 
 ```sh
-kubectl -n pk-metal annotate hostoperation reboot-node-1 \
-  metal.platform-kit.org/ignore-window="$(kubectl auth whoami -o jsonpath='{.status.userInfo.username}'): CVE fix"
+kubectl -n pk-metal annotate hostoperation reboot-node-1 metal.platform-kit.org/ignore-window="CVE fix"
 ```
 
+- The API server writes your username in front of the reason, if the site installs [`guard-lift-stamp`](ref:admission-policies#guard-lift-stamp) (Kubernetes 1.36 or later). Without it, write `<username>: ` in front yourself.
 - `pk-metal` writes this value for you: [](cli:reinstall), [](cli:replace), [](cli:scale), [](cli:restore) and [](cli:abort).
 - [](cli:approve) shows the person and the reason of each lift in the plan.
 - A person who may update the object can always remove a lift. That puts the rule back.

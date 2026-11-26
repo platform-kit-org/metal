@@ -35,7 +35,9 @@
 # The operator itself sets none of these annotations, so it has no exemption
 # from the named form. A GitOps controller that applies one must name its own
 # identity: the commit names the person. pk-metal writes the form for its
-# caller.
+# caller. Where the site installs ../name-stamp (Kubernetes 1.36 or later),
+# the API server writes the username in front of a bare reason
+# (guard-lift-stamp.yaml there; keep its list of annotations the same).
 #
 # The params are the hostoperation-approval ConfigMap: it says who the
 # operator is. A missing ConfigMap denies every create and update of the

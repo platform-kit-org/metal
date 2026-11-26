@@ -1,6 +1,6 @@
 ---
 title: Admission policies
-description: The ten ValidatingAdmissionPolicies that guard approval, provisioning, backups, BMC settings, guard lifts, the name of the requester and the site settings, rule by rule.
+description: The ten ValidatingAdmissionPolicies that guard approval, provisioning, backups, BMC settings, guard lifts, the name of the requester and the site settings, rule by rule, and the MutatingAdmissionPolicies that write your username for you.
 type: reference
 eyebrow: Reference · security
 xref: { cat: ref, id: admission-policies }
@@ -14,6 +14,8 @@ sources:
   - /repo/metal/config/policy/guard-lift.yaml
   - /repo/metal/config/policy/requested-by.yaml
   - /repo/metal/config/policy/requested-by-patches.yaml
+  - /repo/metal/config/name-stamp/requested-by-stamp.yaml
+  - /repo/metal/config/name-stamp/guard-lift-stamp.yaml
   - /repo/metal/config/policy/settings-guard.yaml
   - /repo/metal/internal/controller/settings.go
 ---
@@ -25,6 +27,7 @@ import Callout from '../../../../components/Callout.astro';
 
 RBAC says who may create or patch an object. It cannot see the name that a person writes into a field.
 Ten [ValidatingAdmissionPolicies](term:vap) close that gap. They are [CEL](term:cel) in the API server: no webhook, no certificate, no pod.
+Three MutatingAdmissionPolicies write your username into the annotations that these policies check. See [The name stamps](#the-name-stamps).
 
 ## At a glance
 
@@ -212,7 +215,7 @@ These annotations lift a safety rule of the operator, or decide a step of a chan
 - A request that leaves the value as it is passes. So the writes of the operator and a value from before the policy pass.
 - The operator sets none of these annotations, so it has no exemption from rule 1.
 - The policy takes the ConfigMap `hostoperation-approval` as parameters, to know the operator. Without the ConfigMap, it refuses each create and update of the four kinds.
-- A GitOps controller that applies a lift must name its own identity. The commit names the person.
+- A GitOps controller that applies a lift names its own identity, or [`guard-lift-stamp`](#guard-lift-stamp) names it. The commit names the person.
 - See [](ref:audit-trail) for the records that show the lift.
 
 ## `requested-by`
@@ -247,10 +250,35 @@ An edit asks for work in these cases:
 - Rules 1 and 2 apply under `Allowed` to an object with the annotation. Thus the annotation never names a person as the requester of the change of another person.
 - Rule 3 applies under `Allowed` too. The operator proposes some time after the edit. The annotation is the record of who asked for a change that is not proposed yet. The next user of a change can replace the name with their own name, so a removal is never necessary.
 - If the ConfigMap `hostoperation-approval` is missing, the two policies refuse each request that they check, also a delete by the namespace controller. Restore the ConfigMap.
-- The pk-metal commands and [](cli:pivot) set the annotation in the two modes. The operator copies it into `spec.requestedBy`, so the audit trail names the requester. See [](howto:approval-permissions#who-asked-for-a-change).
+- Where the site installs [`requested-by-stamp`](#requested-by-stamp), the API server sets the annotation for each create and update that asks for work. Then rule 1 refuses no such request. The operator copies the annotation into `spec.requestedBy`, so the audit trail names the requester. See [](howto:approval-permissions#who-asked-for-a-change).
 - The operator has no exemption. It changes no spec of these kinds.
 - [](cli:pivot) writes each object as the user that the annotation names. An object without the annotation gets `pk-metal-pivot`.
-- A GitOps controller names its own service account. See [](concept:gitops).
+- The annotation of an object that a GitOps controller applies names the service account of that controller. See [](concept:gitops).
+
+## The name stamps
+
+The kustomize component `config/name-stamp` has three MutatingAdmissionPolicies. They write your username into the annotations that the policies `requested-by`, `requested-by-patches`, and `guard-lift` check. So you do not type your username: not with `kubectl`, not in the manifests of a GitOps controller. The API server applies them before the validating policies, which still check each name.
+
+- They need Kubernetes 1.36 or later, so the base `config/default` does not include them. The sample site overlay and the lab add the component.
+- They have no parameters and apply in the two modes of `selfApproval`.
+- `failurePolicy: Ignore`. A stamp only saves typing. If it does not apply, the validating policy refuses a request that names nobody. The settings controller does not count a stamp as a gate policy.
+- Some seconds after a CRD install, the API server can refuse a write of the new kind with `Resource kind … not found`. Try again after some seconds.
+
+### `requested-by-stamp`
+
+For each create and update that asks for work, as the tables of [`requested-by`](#requested-by) say, the API server sets `metal.platform-kit.org/requested-by` to the username of the request. `requested-by-stamp-patches` does the same for the Talos config patches.
+
+- A request that asks for no work stays as it is. A person can still set the annotation to their own name, to take on a change. Nobody can remove it (rule 3).
+- A request that writes another name gets the name of its user.
+- A delete is not stamped. The API server cannot change an object that goes. A delete that asks for work needs the annotation first (rule 2).
+
+### `guard-lift-stamp`
+
+For each create and update that sets a lift of [`guard-lift`](#guard-lift) to a reason, the API server writes `<username>: ` in front of the reason. For example, `metal.platform-kit.org/ignore-window="CVE fix"` from `alice` becomes `alice: CVE fix`.
+
+- A value that starts with the username of the request stays as it is. The pk-metal commands write that form.
+- A value that starts with another name gets the name of the request in front. Nobody writes a lift in the name of another person.
+- An empty value and a removal stay as they are. Rule 1 of `guard-lift` refuses the empty value.
 
 ## `settings-guard`
 

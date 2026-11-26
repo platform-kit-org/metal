@@ -38,7 +38,7 @@ These annotations are commands. Most of them have a `pk-metal` command that sets
 | <KeyRef k="metal.platform-kit.org/approve-tls-key" /> | [](kind:ManagementEndpoint) | The operator pins this TLS key of the BMC when the BMC shows it. See [Trust the BMC certificate](kind:ManagementEndpoint#trust-the-bmc-certificate). | `kubectl annotate` |
 | <KeyRef k="os.platform-kit.org/resume" /> | [](kind:TalosRollout) | The rollout continues after the pause on the first node. | [](cli:rollout) |
 | <KeyRef k="os.platform-kit.org/restore-pending" /> | [](kind:TalosCluster) | The operator does not bootstrap etcd, because you restore it. | `kubectl annotate` |
-| <KeyRef k="metal.platform-kit.org/requested-by" /> | TalosCluster, TalosNode, HostClaim, Host, TalosRollout, profiles, patch ConfigMaps | Names you as the person who asked for the change that the operator proposes. The [`requested-by`](ref:admission-policies#requested-by) policies need it if `selfApproval` is `Forbidden`. If it is set, it must name you in the two modes. | The `pk-metal` commands, or `kubectl annotate` with your username |
+| <KeyRef k="metal.platform-kit.org/requested-by" /> | TalosCluster, TalosNode, HostClaim, Host, TalosRollout, profiles, patch ConfigMaps | Names you as the person who asked for the change that the operator proposes. The [`requested-by`](ref:admission-policies#requested-by) policies need it if `selfApproval` is `Forbidden`. If it is set, it must name you in the two modes. | The API server with [`requested-by-stamp`](ref:admission-policies#requested-by-stamp), the `pk-metal` commands, or `kubectl annotate` with your username |
 
 In the table, each name is without its prefix `metal.platform-kit.org/` or `os.platform-kit.org/`.
 
@@ -49,7 +49,7 @@ Do not set `metal.platform-kit.org/allow-self-disruption` or `metal.platform-kit
 These annotations remove a protection of the cluster that the operator runs in.
 </Callout>
 
-The value of `metal.platform-kit.org/ignore-window`, `metal.platform-kit.org/override-cluster-guard` and `metal.platform-kit.org/ack-etcd-risk` is `<username>: <reason>`. The username is your own username in the API server. The [`guard-lift`](ref:admission-policies#guard-lift) policy refuses each other value, and an empty reason. For example: `metal.platform-kit.org/ignore-window="alice: CVE fix, agreed with on-call"`. Get your username with `kubectl auth whoami`. `pk-metal` writes the value for you with `--ack-etcd-risk`.
+The value of `metal.platform-kit.org/ignore-window`, `metal.platform-kit.org/override-cluster-guard` and `metal.platform-kit.org/ack-etcd-risk` is `<username>: <reason>`. The username is your own username in the API server. The [`guard-lift`](ref:admission-policies#guard-lift) policy refuses each other value, and an empty reason. For example: `metal.platform-kit.org/ignore-window="alice: CVE fix, agreed with on-call"`. If the site installs [`guard-lift-stamp`](ref:admission-policies#guard-lift-stamp), give the reason only: the API server writes your username in front of it. Else get your username with `kubectl auth whoami`. `pk-metal` writes the value for you with `--ack-etcd-risk`.
 
 You can always remove the annotation. That puts the guard back. A value from before the policy, or an empty value, stays until somebody changes it. An empty value does not count: the operator ignores the annotation, and the guard stays. See [](ref:audit-trail).
 

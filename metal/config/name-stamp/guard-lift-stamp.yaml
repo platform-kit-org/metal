@@ -1,0 +1,76 @@
+# A guard lift in the named form, written by the API server: a request that
+# sets one of the annotations of ../policy/guard-lift.yaml to a reason only
+# gets the value "<username>: <reason>", with its own username. So a person
+# writes
+#
+#   kubectl annotate hostoperation <name> \
+#     metal.platform-kit.org/override-cluster-guard="the cluster has one control plane"
+#
+# and the guard-lift policy then finds the form it asks for. A value that
+# already starts with the username of the request stays as it is (pk-metal
+# writes that form itself). A value that starts with another name gets the
+# name of the request in front: nobody writes a lift in the name of another
+# person.
+#
+# An empty value and a removal stay as they are: the guard-lift policy
+# refuses the first, and allows the second.
+#
+# The list of annotations is the one of guard-lift.yaml; keep the two the
+# same.
+#
+# failurePolicy is Ignore: the stamp only saves typing. If it does not
+# apply, the guard-lift policy still refuses a lift that names nobody.
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingAdmissionPolicy
+metadata:
+  name: guard-lift-stamp
+spec:
+  failurePolicy: Ignore
+  reinvocationPolicy: Never
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["metal.platform-kit.org"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["hostoperations", "hostclaims", "hosts"]
+      - apiGroups: ["os.platform-kit.org"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["talosnodes"]
+  variables:
+    - name: lifts
+      expression: >-
+        ['metal.platform-kit.org/override-cluster-guard', 'metal.platform-kit.org/ignore-window', 'metal.platform-kit.org/ack-etcd-risk',
+         'metal.platform-kit.org/allow-self-disruption', 'metal.platform-kit.org/wipe-waived', 'metal.platform-kit.org/abort',
+         'metal.platform-kit.org/etcd-snapshot-uploaded']
+    - name: newAnnotations
+      expression: "object.metadata.?annotations.orValue({})"
+    - name: oldAnnotations
+      expression: >-
+        request.operation == 'UPDATE' ? oldObject.metadata.?annotations.orValue({}) : {}
+    - name: prefix
+      expression: "request.userInfo.username + ': '"
+    # The lifts this request sets or changes to a reason without its own
+    # name in front.
+    - name: bare
+      expression: >-
+        variables.lifts.filter(k, k in variables.newAnnotations
+          && (!(k in variables.oldAnnotations) || variables.oldAnnotations[k] != variables.newAnnotations[k])
+          && variables.newAnnotations[k].trim() != ''
+          && !variables.newAnnotations[k].startsWith(variables.prefix))
+  mutations:
+    - patchType: JSONPatch
+      jsonPatch:
+        expression: >-
+          variables.bare.map(k, JSONPatch{
+            op: 'replace',
+            path: '/metadata/annotations/' + jsonpatch.escapeKey(k),
+            value: variables.prefix + variables.newAnnotations[k]
+          })
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingAdmissionPolicyBinding
+metadata:
+  name: guard-lift-stamp
+spec:
+  policyName: guard-lift-stamp

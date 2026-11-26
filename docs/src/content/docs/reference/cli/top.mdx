@@ -20,7 +20,8 @@ import Terminal from '../../../../components/cli/Terminal.astro';
 
 <CliBadges cmd="top" />
 
-`pk-metal top` shows one tile for each machine and updates the tiles when the cluster changes.
+`pk-metal top` shows one small tile for each machine and, below the tiles, all the details of the selected machine.
+The screen updates when the cluster changes.
 Three keys do the same work as [](cli:approve), [](cli:hold) and [](cli:retry).
 
 ## Synopsis
@@ -39,11 +40,13 @@ The command takes no arguments. It needs a terminal. In a script, use [](cli:sta
   <dt>Header</dt>
   <dd>Each [](kind:TalosCluster) and the number of its nodes that are Ready.</dd>
   <dt>Tile</dt>
-  <dd>One machine: its BMC, the phase of the [](kind:Host) and its block, the claim, the operation and the [](kind:TalosNode).</dd>
+  <dd>One machine in four lines. The lines show its name and a mark for each step from the BMC to the node. They also show the phase of the [](kind:Host), its block, and the operation or the node.</dd>
+  <dt>Detail panel</dt>
+  <dd>The selected machine, as wide as the terminal: its BMC, the [](kind:Host), the claim, the operation and the [](kind:TalosNode). Long messages continue on the next lines. In a wide terminal, the machine and the cluster show in two columns.</dd>
   <dt>Operation line</dt>
   <dd>The step that runs, for example `5/9 setBootOverride`, or a mark that the operation waits for approval.</dd>
   <dt>With [`--fleet`](cli:top#--fleet)</dt>
-  <dd>The state of the simulated BMC: power, media, boot override and the last Redfish call. Also the state of the virtual machine and the last console lines.</dd>
+  <dd>The state of the simulated BMC: power, media, boot override and the last Redfish call. Also the state of the virtual machine and the last console lines. The console fills the remaining height of the terminal.</dd>
   <dt>With [`--workload-kubeconfig`](cli:top#--workload-kubeconfig)</dt>
   <dd>The Ready condition of each node in the workload cluster.</dd>
 </dl>

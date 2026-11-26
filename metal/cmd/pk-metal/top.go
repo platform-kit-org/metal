@@ -269,7 +269,7 @@ func (s *watchSource) Read(ctx context.Context) topInput {
 			in.Consoles = map[string][]string{}
 			for _, m := range st.Machines {
 				if m.ConsoleLog != "" {
-					in.Consoles[m.Name] = consoleTail(m.ConsoleLog, consoleLines)
+					in.Consoles[m.Name] = consoleTail(m.ConsoleLog, consoleKeep)
 				}
 			}
 		}
@@ -296,6 +296,10 @@ func (s *watchSource) readFleet(ctx context.Context) (*fleet.State, error) {
 	}
 	return &st, nil
 }
+
+// consoleKeep is how many console lines are read per machine: more than
+// the tallest detail panel shows.
+const consoleKeep = 200
 
 // consoleTail reads the last lines of a console capture as text: escape
 // sequences, carriage returns and blank lines removed.

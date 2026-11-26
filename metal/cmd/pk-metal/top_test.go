@@ -250,6 +250,24 @@ func TestTopViewWithFleet(t *testing.T) {
 	golden(t, "fleet-100.golden", screen(m))
 }
 
+// A wide terminal shows the selected machine's fields in two columns and
+// its console lines in full; the panel fills the terminal's height.
+func TestTopViewWideDetail(t *testing.T) {
+	in := labRack()
+	in.Consoles["node-2"] = append(in.Consoles["node-2"],
+		`[talos] controller failed {"component": "controller-runtime", "controller": "k8s.NodeApplyController", "error": "1 error occurred: timeout"}`)
+	m, _ := feed(t, newTopModel(nil, &fakeActions{}, nil, 0),
+		tea.WindowSizeMsg{Width: 180, Height: 30}, topDataMsg(in), key("tab"))
+	out := screen(m)
+	golden(t, "fleet-180-node-2.golden", out)
+	assert.Contains(t, out, `"error": "1 error occurred: timeout"}`, "a console line is not cut short")
+	lines := strings.Split(out, "\n")
+	assert.Len(t, lines, 30, "the view fills the terminal's height")
+	for _, l := range lines {
+		assert.LessOrEqual(t, ansi.StringWidth(l), 180, "no line is wider than the terminal: %q", l)
+	}
+}
+
 func TestTopViewRealHardware(t *testing.T) {
 	in := labRack()
 	in.Fleet, in.FleetURL, in.Consoles, in.K8sNodes = nil, "", nil, nil

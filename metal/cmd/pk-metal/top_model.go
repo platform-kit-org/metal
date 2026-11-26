@@ -69,6 +69,7 @@ type topModel struct {
 	loaded  bool
 	reading bool
 	width   int
+	height  int
 	sel     int
 	mode    topMode
 	busy    bool // an action runs
@@ -172,7 +173,7 @@ func (m topModel) tick() tea.Cmd {
 func (m topModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.width = msg.Width
+		m.width, m.height = msg.Width, msg.Height
 		return m, nil
 	case topDataMsg:
 		m.reading, m.loaded = false, true
@@ -321,6 +322,9 @@ var (
 	styleTile  = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.BrightBlack).Padding(0, 1)
 	styleSel   = lipgloss.NewStyle().Border(lipgloss.ThickBorder()).BorderForeground(lipgloss.Cyan).Padding(0, 1)
 	styleBox   = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).Padding(0, 1)
+	// styleDetail is the panel of the selected machine: the colour of the
+	// selected tile ties the two together.
+	styleDetail = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Cyan).Padding(0, 1)
 )
 
 func (s state) style() lipgloss.Style {
@@ -368,7 +372,18 @@ func (m topModel) render() string {
 	case len(m.data.Tiles) == 0:
 		b.WriteString("no machines: no Host in the cluster and no fleet machine")
 	default:
-		b.WriteString(m.grid(width))
+		// The tiles, then the selected machine in full: it takes the lines
+		// the header, the tiles and the footer leave.
+		grid := m.grid(width)
+		b.WriteString(grid)
+		if t := m.selected(); t != nil {
+			left := 0
+			if m.height > 0 {
+				left = m.height - lipgloss.Height(b.String()) - lipgloss.Height(m.footer(width))
+			}
+			b.WriteString("\n")
+			b.WriteString(m.detail(*t, width, left))
+		}
 	}
 	b.WriteString("\n")
 	b.WriteString(m.footer(width))
@@ -415,12 +430,13 @@ func (m topModel) header(width int) string {
 	return strings.Join(lines, "\n")
 }
 
-// tileWidth is the outer width of one tile; as many as fit go side by side.
-const tileWidth = 50
+// tileWidth is the least outer width of one tile; as many as fit go side by
+// side, and they share what is left over.
+const tileWidth = 40
 
 func (m topModel) grid(width int) string {
-	cols := max(1, width/tileWidth)
-	w := tileWidth
+	cols := max(1, min(width/tileWidth, len(m.data.Tiles)))
+	w := max(tileWidth, width/cols)
 	if cols == 1 {
 		w = width
 	}
@@ -435,126 +451,234 @@ func (m topModel) grid(width int) string {
 	return strings.Join(rows, "\n")
 }
 
-// consoleLines is how many console lines a tile shows.
+// consoleLines is the least number of console lines the detail panel shows;
+// a taller terminal shows more.
 const consoleLines = 3
 
+// renderTile is one machine at a glance, in four lines: what it is, where
+// along the flow it is, the Host, and what happens to it now. The detail
+// panel below the tiles has the rest.
 func (m topModel) renderTile(t tile, selected bool, w int) string {
 	style := styleTile
 	if selected {
 		style = styleSel
 	}
 	inner := w - style.GetHorizontalFrameSize()
-	var l []string
-	add := func(s string) { l = append(l, ansi.Truncate(s, inner, "…")) }
-	label := func(s string) string { return styleDim.Render(fmt.Sprintf("%-6s", s)) }
+	l := []string{titleLine(t), flowLine(t, false), hostLine(t)}
 
+	switch {
+	case t.Op != nil:
+		text := "op " + t.Op.Step
+		if t.Op.Waits {
+			text += ", waits for approval"
+		}
+		l = append(l, marked(t.Op.state(), text))
+	case t.NodeName != "":
+		node := t.Flow[len(t.Flow)-1]
+		l = append(l, marked(node.State, t.NodeName+" "+node.Text))
+	default:
+		l = append(l, styleDim.Render("no operation, no node"))
+	}
+	for i := range l {
+		l[i] = ansi.Truncate(l[i], inner, "…")
+	}
+	return style.Width(w).Render(strings.Join(l, "\n"))
+}
+
+func titleLine(t tile) string {
 	title := styleTitle.Render(t.Title)
 	if t.Subtitle != "" {
 		title += " " + styleDim.Render(t.Subtitle)
 	}
-	add(title)
+	return title
+}
 
-	// The flow, BMC → media → VM → node, as marks; the lines below say
-	// what each mark stands for. A wide tile has room for the words too.
+// flowLine is the flow BMC → media → VM → node as marks; with words, what
+// each mark stands for too.
+func flowLine(t tile, words bool) string {
 	var parts []string
 	for _, st := range t.Flow {
 		part := st.Name + " " + st.State.style().Render(st.State.mark())
-		if inner >= 76 {
+		if words {
 			part = st.Name + " " + marked(st.State, st.Text)
 		}
 		parts = append(parts, part)
 	}
-	add(strings.Join(parts, styleDim.Render(" ─▶ ")))
+	return strings.Join(parts, styleDim.Render(" ─▶ "))
+}
 
-	bmcLine := orDash(hostPort(t.BMCAddress))
-	if t.Sim {
-		bmcLine += fmt.Sprintf("  power %s  boot %s", strings.ToLower(t.Power), t.Override)
-	} else if t.BMCPhase != "" {
-		bmcLine += "  " + t.BMCPhase
-	}
-	add(label("BMC") + bmcLine)
-	if t.Sim {
-		if len(t.Media) == 0 {
-			add(label("media") + "none")
-		}
-		for i, md := range t.Media {
-			add(label(map[bool]string{true: "media", false: ""}[i == 0]) + md)
-		}
-		add(label("last") + orDash(t.LastCall))
-		vm := t.VM
-		if t.HangCycles > 0 {
-			vm += " · " + styleBad.Render(fmt.Sprintf("hang-cycled %d×", t.HangCycles))
-		}
-		add(label("VM") + t.VMState.style().Render(t.VMState.mark()) + " " + vm)
-	}
-
-	host := "-"
-	if t.Phase != "" {
-		host = t.Phase
-	}
+// hostLine is the Host's phase, what blocks it, and its hold.
+func hostLine(t tile) string {
+	host := orDash(t.Phase)
 	if t.BlockedOn != "" {
 		host += " · " + t.BlockedOn
 	}
-	add(label("host") + t.hostState().style().Render(host))
-	if t.hostState() == stBad && t.Message != "" {
-		add(label("") + styleBad.Render(t.Message))
+	line := marked(t.hostState(), host)
+	if t.OnHold {
+		line += "  " + styleWait.Render("ON HOLD")
 	}
-	claim := "-"
-	if t.ClaimName != "" {
-		claim = t.ClaimNS + "/" + t.ClaimName
-		if t.OnHold {
-			claim += "  " + styleWait.Render("ON HOLD")
-		}
-	}
-	add(label("claim") + claim)
+	return line
+}
 
-	if t.Op == nil {
-		add(label("op") + "-")
-	} else {
-		st := stOK
-		switch {
-		case t.Op.Failed:
-			st = stBad
-		case t.Op.Waits:
-			st = stWait
-		}
-		add(label("op") + st.style().Render(t.Op.Step+", "+t.Op.Approval))
-		add(label("") + styleDim.Render(t.Op.Namespace+"/"+t.Op.Name))
-		if t.Op.Failed && t.Op.Message != "" {
-			add(label("") + styleBad.Render(t.Op.Message))
-		}
+// state is how an operation reads.
+func (o *opLine) state() state {
+	switch {
+	case o.Failed:
+		return stBad
+	case o.Waits:
+		return stWait
 	}
+	return stOK
+}
 
-	if t.NodeName == "" {
-		add(label("node") + "-")
+// detailLabel is the width of the labels in the detail panel.
+const detailLabel = 8
+
+// detailColumns is the least inner width at which the detail panel shows
+// the machine and the cluster side by side.
+const detailColumns = 100
+
+// detail is the selected machine in full, as wide as the terminal: every
+// field, long messages wrapped, and as many console lines as the height
+// leaves room for. height is the number of lines the panel may take; zero
+// or less shows the least.
+func (m topModel) detail(t tile, width, height int) string {
+	style := styleDetail
+	inner := width - style.GetHorizontalFrameSize()
+	machine, cluster := t.machineFields(), t.clusterFields()
+
+	l := []string{titleLine(t), flowLine(t, true)}
+	if t.Sim && inner >= detailColumns {
+		// Side by side: the machine on the left, the cluster on the right.
+		half := (inner - 2) / 2
+		left := fieldLines(machine, half)
+		right := fieldLines(cluster, inner-half-2)
+		for i := 0; i < max(len(left), len(right)); i++ {
+			var a, b string
+			if i < len(left) {
+				a = left[i]
+			}
+			if i < len(right) {
+				b = right[i]
+			}
+			l = append(l, a+strings.Repeat(" ", max(0, half-ansi.StringWidth(a)))+"  "+b)
+		}
 	} else {
-		add(label("node") + strings.TrimSpace(t.NodeName+" "+t.NodeAddress))
-		talos := "Talos ready"
-		if t.TalosReady != stOK {
-			talos = "Talos " + orDash(t.TalosWhy)
-		}
-		ready := marked(t.TalosReady, talos)
-		if t.K8sKnown {
-			ready += "  " + marked(t.K8sReady, map[bool]string{true: "kubelet Ready", false: "kubelet not Ready"}[t.K8sReady == stOK])
-		}
-		add(label("") + ready)
+		l = append(l, fieldLines(append(machine, cluster...), inner)...)
 	}
 
 	if t.Sim {
-		add(styleDim.Render("console " + orDash(t.ConsoleLog)))
+		l = append(l, styleDim.Render(fmt.Sprintf("%-*s", detailLabel, "console"))+orDash(t.ConsoleLog))
+		n := max(consoleLines, height-style.GetVerticalFrameSize()-len(l))
 		lines := t.Console
-		if len(lines) > consoleLines {
-			lines = lines[len(lines)-consoleLines:]
+		if len(lines) > n {
+			lines = lines[len(lines)-n:]
 		}
-		for i := 0; i < consoleLines; i++ {
+		for i := 0; i < n; i++ {
 			s := ""
 			if i < len(lines) {
 				s = lines[i]
 			}
-			add(styleDim.Render("│ ") + s)
+			l = append(l, styleDim.Render("│ ")+s)
 		}
 	}
-	return style.Width(w).Render(strings.Join(l, "\n"))
+	for i := range l {
+		l[i] = ansi.Truncate(l[i], inner, "…")
+	}
+	return style.Width(width).Render(strings.Join(l, "\n"))
+}
+
+// field is one labelled fact of the detail panel. A fact that does not fit
+// its column goes on over the next lines when wrap is set, and is cut short
+// otherwise.
+type field struct {
+	label, text string
+	wrap        bool
+}
+
+// fieldLines lays fields out in a column of the given width.
+func fieldLines(fs []field, width int) []string {
+	var out []string
+	for _, f := range fs {
+		label := styleDim.Render(fmt.Sprintf("%-*s", detailLabel, f.label))
+		room := max(1, width-detailLabel)
+		parts := []string{f.text}
+		if f.wrap {
+			parts = strings.Split(ansi.Wrap(f.text, room, " /,"), "\n")
+		}
+		for i, p := range parts {
+			if i > 0 {
+				label = strings.Repeat(" ", detailLabel)
+			}
+			out = append(out, ansi.Truncate(label+p, width, "…"))
+		}
+	}
+	return out
+}
+
+// machineFields are the BMC and, with the simulator, the machine behind it.
+func (t tile) machineFields() []field {
+	bmc := orDash(hostPort(t.BMCAddress))
+	if t.Sim {
+		bmc += fmt.Sprintf("  power %s  boot %s", strings.ToLower(t.Power), t.Override)
+	} else if t.BMCPhase != "" {
+		bmc += "  " + t.BMCPhase
+	}
+	fs := []field{{label: "BMC", text: bmc}}
+	if !t.Sim {
+		return fs
+	}
+	if len(t.Media) == 0 {
+		fs = append(fs, field{label: "media", text: "none"})
+	}
+	for i, md := range t.Media {
+		fs = append(fs, field{label: map[bool]string{true: "media"}[i == 0], text: md})
+	}
+	fs = append(fs, field{label: "last", text: orDash(t.LastCall)})
+	vm := t.VMState.style().Render(t.VMState.mark()) + " " + t.VM
+	if t.HangCycles > 0 {
+		vm += " · " + styleBad.Render(fmt.Sprintf("hang-cycled %d×", t.HangCycles))
+	}
+	return append(fs, field{label: "VM", text: vm})
+}
+
+// clusterFields are the Host, its claim, its operation and its node.
+func (t tile) clusterFields() []field {
+	fs := []field{{label: "host", text: hostLine(t)}}
+	if t.hostState() == stBad && t.Message != "" {
+		fs = append(fs, field{text: styleBad.Render(t.Message), wrap: true})
+	}
+	claim := "-"
+	if t.ClaimName != "" {
+		claim = t.ClaimNS + "/" + t.ClaimName
+	}
+	fs = append(fs, field{label: "claim", text: claim})
+
+	if t.Op == nil {
+		fs = append(fs, field{label: "op", text: "-"})
+	} else {
+		fs = append(fs,
+			field{label: "op", text: t.Op.state().style().Render(t.Op.Step + ", " + t.Op.Approval)},
+			field{text: styleDim.Render(t.Op.Namespace + "/" + t.Op.Name)})
+		if t.Op.Failed && t.Op.Message != "" {
+			fs = append(fs, field{text: styleBad.Render(t.Op.Message), wrap: true})
+		}
+	}
+
+	if t.NodeName == "" {
+		return append(fs, field{label: "node", text: "-"})
+	}
+	talos := "Talos ready"
+	if t.TalosReady != stOK {
+		talos = "Talos " + orDash(t.TalosWhy)
+	}
+	ready := marked(t.TalosReady, talos)
+	if t.K8sKnown {
+		ready += "  " + marked(t.K8sReady, map[bool]string{true: "kubelet Ready", false: "kubelet not Ready"}[t.K8sReady == stOK])
+	}
+	return append(fs,
+		field{label: "node", text: strings.TrimSpace(t.NodeName + " " + t.NodeAddress)},
+		field{text: ready})
 }
 
 func (m topModel) footer(width int) string {

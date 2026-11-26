@@ -145,6 +145,20 @@ run = [
   "go run ./hack/docgen",
 ]
 
+[tasks."crd:diff"]
+description = "Say what the CRDs of the working tree change against a git ref (CRD_DIFF_BASE, default: the merge base with origin/main): kinds, versions and fields that go, new required fields, narrower enums and limits, new rules"
+dir = "metal"
+run = '''
+base=${CRD_DIFF_BASE:-$(git merge-base HEAD origin/main)}
+old=$(mktemp -d)
+trap 'rm -rf "$old"' EXIT
+for f in $(git ls-tree --name-only "$base" -- config/crd/); do
+  git show "$base:metal/$f" > "$old/$(basename "$f")"
+done
+echo "CRDs of $(git rev-parse --short "$base") against the working tree"
+go run ./hack/crddiff ${CRD_DIFF_STRICT:+-strict} "$old" config/crd
+'''
+
 [tasks."generate:check"]
 description = "Fail when a generated file is out of date with its source"
 depends = ["generate"]

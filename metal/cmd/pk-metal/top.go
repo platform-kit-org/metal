@@ -15,6 +15,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -22,8 +23,10 @@ import (
 	"k8s.io/client-go/rest"
 	toolscache "k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
@@ -78,6 +81,7 @@ func topCmd(args []string) {
 		badUsage(fs, err.Error())
 	}
 
+	silenceLogs()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	cfg, err := restConfig()
@@ -97,6 +101,15 @@ func topCmd(args []string) {
 	if _, err := tea.NewProgram(m).Run(); err != nil {
 		die(err)
 	}
+}
+
+// silenceLogs stops client-go (klog) and controller-runtime from writing to
+// the terminal that the full-screen view owns. Without it, klog prints watch
+// errors, and controller-runtime prints a stack dump 30 seconds after start
+// because no logger is set; both draw over the tiles.
+func silenceLogs() {
+	klog.SetLogger(logr.Discard())
+	ctrllog.SetLogger(logr.Discard())
 }
 
 // fleetStateURL accepts the endpoint with or without its path.

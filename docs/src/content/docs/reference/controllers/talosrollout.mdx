@@ -86,7 +86,7 @@ The TalosRollout lane changes a running cluster one node at a time: a Talos upgr
     { label: 'Failed or aborted?', out: 'Skip pending steps', outSub: 'RolloutFailed / RolloutAborted', outVariant: 'err', outEdge: 'yes' },
     { label: 'Pick the next steps', out: 'Complete = True', outSub: 'RolloutSucceeded', outVariant: 'ok', outEdge: 'none left' },
     { label: 'Paused?', out: 'Paused = True', outSub: 'PausedByPerson / CanaryPause', outEdge: 'yes' },
-    { label: 'Health gate', sub: 'earlier rollout, etcd, Nodes', out: 'Progressing', outSub: 'WaitingForHealth' },
+    { label: 'Health gate', sub: 'other rollout, etcd, Nodes', out: 'Progressing', outSub: 'WaitingForHealth' },
     { label: 'Start: create HostOperations', variant: 'ok' },
   ]}
   loop="next pass: 15 s"
@@ -98,12 +98,12 @@ The TalosRollout lane changes a running cluster one node at a time: a Talos upgr
 4. If a step failed or a person aborted, mark the pending steps Skipped. Wait for running steps to finish. Nodes that changed stay changed.
 5. Pick the next steps: control planes and kube-proxy one at a time, workers up to `maxUnavailableWorkers`.
 6. Pause if `spec.paused` is set, or after the first node until a person resumes it with the plan hash.
-7. Gate: no earlier rollout of the cluster runs, every etcd member answers and votes, and every Kubernetes Node is Ready. The gate reads live, not from a status.
+7. Gate: no other rollout holds the cluster, every etcd member answers and votes, and every Kubernetes Node is Ready. The gate reads live, not from a status. The rollouts come from the API server, not from the cache.
 8. Start each step: create a [](kind:HostOperation) with `rolloutRef` and no approval of its own.
 
 ## The proposer
 
-`rolloutproposer` acts only on a bootstrapped cluster with no unfinished rollout. It proposes the first need in this order:
+`rolloutproposer` acts only on a bootstrapped cluster with no unfinished rollout. It reads the rollouts from the API server, not from the cache. It proposes the first need in this order:
 
 1. A `TalosUpgrade` when a node runs another Talos version than the spec.
 2. A `KubernetesUpgrade` when the API runs another Kubernetes version.
@@ -119,7 +119,7 @@ The name comes from a hash of what it proposes, so the same need is not proposed
   <dt>Canary pause</dt>
   <dd>After the first node succeeds, the rollout stops until the annotation `os.platform-kit.org/resume` equals the plan hash. Use [](cli:rollout).</dd>
   <dt>One rollout for each cluster</dt>
-  <dd>Two rollouts side by side could take two control planes down at once.</dd>
+  <dd>Two rollouts side by side could take two control planes down at once, and their workers would add up past `maxUnavailableWorkers`. A rollout that started a step holds the cluster until it ends. If no approved rollout started, the oldest one goes first.</dd>
 </dl>
 
 <Callout type="caution">

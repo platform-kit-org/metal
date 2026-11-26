@@ -77,6 +77,10 @@ type TalosRolloutReconciler struct {
 	GateInterval time.Duration
 	// Audit writes the audit trail; nil writes none.
 	Audit *audit.Logger
+	// APIReader reads straight from the API server, bypassing the informer
+	// cache, for the check that no other rollout holds the cluster before a
+	// step starts. Defaults to the manager's API reader in SetupWithManager.
+	APIReader client.Reader
 
 	// resolved caches pinned images by reference for a while, so that an
 	// unapproved rollout re-planned every pass does not ask the registry
@@ -380,7 +384,7 @@ func (r *TalosRolloutReconciler) runPass(ctx context.Context, ro *osv1alpha1.Tal
 	}
 	r.set(ro, osv1alpha1.ConditionPaused, metav1.ConditionFalse, osv1alpha1.ReasonNotPaused, "")
 
-	if other, err := r.earlierActive(ctx, ro); err != nil {
+	if other, err := r.otherHolder(ctx, ro); err != nil {
 		return ctrl.Result{}, err
 	} else if other != "" {
 		r.set(ro, osv1alpha1.ConditionProgressing, metav1.ConditionTrue, osv1alpha1.ReasonWaitingForHealth,
@@ -620,26 +624,71 @@ func (r *TalosRolloutReconciler) workload(ctx context.Context, cluster *osv1alph
 	return w, "", nil
 }
 
-// earlierActive names an approved, unfinished rollout of the same cluster
-// that was created before this one, "" when there is none. Two rollouts
-// running side by side could each take a control plane down at once.
-func (r *TalosRolloutReconciler) earlierActive(ctx context.Context, ro *osv1alpha1.TalosRollout) (string, error) {
+// otherHolder names the approved, unfinished rollout of ro's cluster that
+// holds the cluster when it is not ro, "" when ro may go on. Two rollouts
+// running side by side could each take a control plane down at once, and
+// their workers would add up past maxUnavailableWorkers.
+//
+// The rollouts are read from the API server: a cache that has not yet seen
+// another rollout's approval or its first step would let both start.
+func (r *TalosRolloutReconciler) otherHolder(ctx context.Context, ro *osv1alpha1.TalosRollout) (string, error) {
 	rollouts := &osv1alpha1.TalosRolloutList{}
-	if err := r.List(ctx, rollouts); err != nil {
+	if err := r.reader().List(ctx, rollouts); err != nil {
 		return "", err
 	}
-	for i := range rollouts.Items {
-		o := &rollouts.Items[i]
-		if o.UID == ro.UID || o.Spec.ClusterRef.Name != ro.Spec.ClusterRef.Name ||
-			o.Spec.Approval.ApprovedBy == "" || rolloutFinished(o) {
+	h := clusterHolder(rollouts.Items, ro.Spec.ClusterRef.Name)
+	if h == nil || h.UID == ro.UID {
+		return "", nil
+	}
+	return h.Name, nil
+}
+
+// clusterHolder picks the one rollout of cluster that may start steps, or
+// nil when none is approved and unfinished. A rollout that started a step
+// holds the cluster until it ends: an older one approved later waits, as a
+// started HostOperation holds its host (hostHolder). Among rollouts that
+// have not started, the oldest wins; the name breaks a tie.
+func clusterHolder(rollouts []osv1alpha1.TalosRollout, cluster string) *osv1alpha1.TalosRollout {
+	var h *osv1alpha1.TalosRollout
+	for i := range rollouts {
+		o := &rollouts[i]
+		if o.Spec.ClusterRef.Name != cluster || o.Spec.Approval.ApprovedBy == "" || rolloutFinished(o) ||
+			!o.DeletionTimestamp.IsZero() {
 			continue
 		}
-		if o.CreationTimestamp.Before(&ro.CreationTimestamp) ||
-			(o.CreationTimestamp.Equal(&ro.CreationTimestamp) && o.Name < ro.Name) {
-			return o.Name, nil
+		if h == nil || rolloutBefore(o, h) {
+			h = o
 		}
 	}
-	return "", nil
+	return h
+}
+
+// rolloutBefore orders two rollouts of one cluster for clusterHolder.
+func rolloutBefore(a, b *osv1alpha1.TalosRollout) bool {
+	if sa, sb := rolloutStarted(a), rolloutStarted(b); sa != sb {
+		return sa
+	}
+	if !a.CreationTimestamp.Equal(&b.CreationTimestamp) {
+		return a.CreationTimestamp.Before(&b.CreationTimestamp)
+	}
+	return a.Name < b.Name
+}
+
+// rolloutStarted: a step of the rollout left Pending, so it may have changed
+// a node already.
+func rolloutStarted(ro *osv1alpha1.TalosRollout) bool {
+	return slices.ContainsFunc(ro.Status.Steps, func(st osv1alpha1.RolloutStepStatus) bool {
+		return st.State == osv1alpha1.RolloutNodeRunning || st.State == osv1alpha1.RolloutNodeSucceeded ||
+			st.State == osv1alpha1.RolloutNodeFailed
+	})
+}
+
+// reader is the uncached reader when one is wired, the client otherwise.
+func (r *TalosRolloutReconciler) reader() client.Reader {
+	if r.APIReader != nil {
+		return r.APIReader
+	}
+	return r.Client
 }
 
 // healthGate checks, live, that the cluster can take the next step: every
@@ -1048,6 +1097,9 @@ func (r *TalosRolloutReconciler) etcdLeader(ctx context.Context, cluster *osv1al
 }
 
 func (r *TalosRolloutReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if r.APIReader == nil {
+		r.APIReader = mgr.GetAPIReader()
+	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&osv1alpha1.TalosRollout{}).
 		Owns(&metalv1alpha1.HostOperation{}).

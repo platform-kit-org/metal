@@ -25,10 +25,11 @@ import (
 // asks for, then a KubernetesUpgrade when the API runs another Kubernetes
 // version, then a Config rollout for the nodes whose dry run reports drift.
 // While the cluster's secrets bundle is held (SecretsBundleHeld=True) it
-// proposes no rollout that applies configs. One rollout per cluster at a time: while one is unfinished nothing new is
-// proposed. A proposal is named after what it proposes, so the same need
-// never spawns twice; a failed or aborted rollout stays until a person
-// deletes it, which is how they ask for the proposal again.
+// proposes no rollout that applies configs. One rollout per cluster at a
+// time: while one is unfinished nothing new is proposed. A proposal is named
+// after what it proposes, so the same need never spawns twice; a failed or
+// aborted rollout stays until a person deletes it, which is how they ask for
+// the proposal again.
 type RolloutProposer struct {
 	client.Client
 	// Proposer is the operator's own username, stamped as proposedBy.
@@ -36,6 +37,9 @@ type RolloutProposer struct {
 	// Namespace is the operator's: the only one it reads patch ConfigMaps
 	// from.
 	Namespace string
+	// APIReader lists the rollouts straight from the API server before a
+	// proposal. Defaults to the manager's API reader in SetupWithManager.
+	APIReader client.Reader
 }
 
 // labelProposal marks a rollout the operator proposed with the hash of what
@@ -59,8 +63,16 @@ func (r *RolloutProposer) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	if !cluster.DeletionTimestamp.IsZero() || cluster.Status.BootstrappedAt == nil {
 		return ctrl.Result{}, nil
 	}
+	// The rollouts come from the API server, not the cache. The event of a
+	// node whose drift moves on can arrive before the cache shows the
+	// rollout this lane proposed a moment ago; from the cache, the cluster
+	// would get a second rollout for another set of nodes.
+	reader := client.Reader(r.Client)
+	if r.APIReader != nil {
+		reader = r.APIReader
+	}
 	rollouts := &osv1alpha1.TalosRolloutList{}
-	if err := r.List(ctx, rollouts); err != nil {
+	if err := reader.List(ctx, rollouts); err != nil {
 		return ctrl.Result{}, err
 	}
 	existing := map[string]*osv1alpha1.TalosRollout{}
@@ -201,6 +213,9 @@ func needed(cluster *osv1alpha1.TalosCluster, members []osv1alpha1.TalosNode, ho
 }
 
 func (r *RolloutProposer) SetupWithManager(mgr ctrl.Manager) error {
+	if r.APIReader == nil {
+		r.APIReader = mgr.GetAPIReader()
+	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&osv1alpha1.TalosCluster{}).
 		Watches(&osv1alpha1.TalosNode{}, handler.EnqueueRequestsFromMapFunc(clusterForNode)).

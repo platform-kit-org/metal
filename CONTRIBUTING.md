@@ -50,6 +50,12 @@ A change to code comes with a test. BMC behavior goes in the simulator
 (`metal/internal/bmc/sim`). Controller behavior goes in
 `metal/internal/envtest`.
 
+The TLA+ specifications in `metal/spec` name the Go functions they model.
+`go test ./spec` fails when one of these functions changes. Then read the
+part of the specification above it, change it if needed, run
+`mise run spec`, and record the change with
+`go test ./spec -run TestSpecSync -update`.
+
 ## Lint
 
 ```sh

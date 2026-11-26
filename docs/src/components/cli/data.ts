@@ -87,6 +87,12 @@ export const groups = [
     lead: 'Run simulated BMCs for tests and for the virtual lab.',
     commands: ['sim'],
   },
+  {
+    id: 'shell',
+    title: 'Shell',
+    lead: 'Make the program easier to use in your terminal.',
+    commands: ['completion'],
+  },
 ];
 
 /**

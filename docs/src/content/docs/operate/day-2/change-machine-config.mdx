@@ -39,7 +39,7 @@ Send a changed [](term:machine-config) to the running nodes, one node at a time.
 2. Wait for the drift check. It runs each 10 minutes on each `Ready` node.
 
    ```sh
-   kubectl get talosnodes
+   kubectl get talosnodes -o wide
    ```
 
    The column `INSYNC` shows `False` for the nodes that differ.

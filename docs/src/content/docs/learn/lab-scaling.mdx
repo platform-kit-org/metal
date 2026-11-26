@@ -165,6 +165,8 @@ The Hosts `pklab0002` and `pklab0003` are `Available`.
    mise run lab:approve
    ```
 
+   Do this step again until etcd has three members, as the checkpoint below shows.
+
 3. Watch etcd. A new member is a learner first. Then it becomes a voter.
 
    ```sh
@@ -184,7 +186,7 @@ etcd has three members and no learner. `kubectl --kubeconfig .lab/workload.kubec
      --control-planes 3 --workers 1 --apply
    ```
 
-2. Approve the operation.
+2. Approve the operation. If the command shows `no operation waits for approval`, wait some seconds and do this step again.
 
    ```sh
    mise run lab:approve
@@ -217,26 +219,46 @@ You move `node-2` from the Host `pklab0002` to the free Host `pklab0005`, as you
    claim default/node-2 now selects host pklab0005 (asset node-5); it ran on host pklab0002.
    ```
 
-2. Approve the release of the old machine. Wait until `pklab0002` is `Available`.
+2. List the operations that wait. Find the operation for the Host `pklab0002`.
 
    ```sh
-   mise run lab:approve
-   kubectl get host pklab0002
+   metal/bin/pk-metal approve
    ```
 
-3. Change the disk and the network link of the [](kind:TalosNode) to the values of the new machine.
+3. Read its plan and approve it. Use the name from the list.
 
    ```sh
-   kubectl patch talosnode node-2 --type json --patch '[
+   metal/bin/pk-metal approve pk-metal/<operation>
+   ```
+
+   Do not use `lab:approve` here. After the release, the operator proposes the install on `pklab0005` with the disk and the link of the old machine. `lab:approve` approves this install too.
+
+4. Wait until `pklab0002` is `Available`.
+
+   ```sh
+   kubectl get host pklab0002 --watch
+   ```
+
+5. Change the disk and the network link of the [](kind:TalosNode) to the values of the new machine, as the admin.
+   The same request sets the annotation `metal.platform-kit.org/requested-by` to `lab-admin`. The [`requested-by`](ref:admission-policies#requested-by) policy refuses the change without it.
+
+   ```sh
+   kubectl --kubeconfig .lab/admin.kubeconfig patch talosnode node-2 --type json --patch '[
+     {"op": "add", "path": "/metadata/annotations/metal.platform-kit.org~1requested-by", "value": "lab-admin"},
      {"op": "replace", "path": "/spec/installDiskSelector/serial", "value": "pklab-disk-5"},
      {"op": "replace", "path": "/spec/network/links/0/hardwareAddr", "value": "52:54:00:77:00:15"}]'
    ```
 
-4. Approve the install on the new machine.
+   The operator withdraws the install that nobody approved, and it proposes a new one with these values.
+   The install names `lab-admin` as the person who asked for it, so the kind admin can approve it.
+
+6. Approve the install on the new machine.
 
    ```sh
    mise run lab:approve
    ```
+
+   If the command shows `no operation waits for approval`, wait some seconds and do this step again.
 
 The values come from the machine number. See [lab.yaml](lab:page/lab-yaml#what-comes-from-the-machine-number).
 For a real site, see [](howto:replace-a-node) and [](cli:replace).

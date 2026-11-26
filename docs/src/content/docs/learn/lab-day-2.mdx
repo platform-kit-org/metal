@@ -106,7 +106,7 @@ The lab forbids self-approval (`selfApproval: Forbidden`): the person who propos
    ```console
    proposed pk-metal/reboot-node-2-x7k2p: a clean reboot of TalosNode node-2 on host pklab0002 (5 steps).
    Approve it after reading the plan (another person must, if the site forbids self-approval): pk-metal approve pk-metal/reboot-node-2-x7k2p
-   To withdraw it: pk-metal abort pk-metal/reboot-node-2-x7k2p
+   To withdraw it: pk-metal abort --reason "<reason>" pk-metal/reboot-node-2-x7k2p
    ```
 
 3. Read the plan and approve it as the admin. Use the name from your output.
@@ -134,12 +134,17 @@ The operation is `Succeeded`. `kubectl --kubeconfig .lab/workload.kubeconfig get
 
 ### 3. Change the configuration without a reboot
 
-1. Add a label to each [](kind:TalosNode). No policy guards this change. The rollout that follows needs the approval.
+A change of a [](kind:TalosNode) makes the operator propose a rollout. The annotation `metal.platform-kit.org/requested-by` names the person who asked for the change.
+After `lab:up`, it names `lab-admin`. The [`requested-by`](ref:admission-policies#requested-by) policy accepts a change of the spec only if the same request sets the annotation to your username.
+The operator copies these names into the rollout, and a person in the list cannot approve it. Thus you change the nodes as `lab-proposer`, and you approve the rollout as the admin.
+
+1. Add a label to each TalosNode as `lab-proposer`. The same request sets the annotation to `lab-proposer`.
 
    ```sh
    for node in node-1 node-2 node-3; do
-     kubectl patch talosnode "$node" --type merge \
-       --patch '{"spec":{"labels":{"lab.platform-kit.org/day2":"tutorial"}}}'
+     kubectl --kubeconfig .lab/proposer.kubeconfig patch talosnode "$node" --type merge --patch '{
+       "metadata": {"annotations": {"metal.platform-kit.org/requested-by": "lab-proposer"}},
+       "spec": {"labels": {"lab.platform-kit.org/day2": "tutorial"}}}'
    done
    ```
 
@@ -183,16 +188,17 @@ kubectl --kubeconfig .lab/workload.kubeconfig get nodes -L lab.platform-kit.org/
 
 ### 4. Upgrade Talos
 
-1. Set the release that the cluster asks for. The target is the release in `lab/lab.yaml`.
+1. Set the release that the cluster asks for, as `lab-proposer`. The target is the release in `lab/lab.yaml`.
 
    ```sh
-   metal/bin/pk-metal upgrade talos lab v1.14.6
+   metal/bin/pk-metal --kubeconfig .lab/proposer.kubeconfig upgrade talos lab v1.14.6
    ```
 
    ```console
-   cluster lab now asks for Talos v1.14.6 (was v1.14.5); nothing on a machine changed yet
+   cluster lab now asks for talos v1.14.6 (was v1.14.5); nothing on a machine changed yet
    ```
 
+   The command sets the annotation `metal.platform-kit.org/requested-by` of the [](kind:TalosCluster) to its user. If the admin sets the release, the admin cannot approve the rollout, as in step 3.
    The command then shows the rollout that the operator proposes.
 
 2. Read the plan. Each step shows `v1.14.5 -> v1.14.6` and `REBOOTS`.

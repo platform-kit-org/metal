@@ -131,14 +131,16 @@ func (s *Server) task(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	for _, t := range s.st.tasksView() {
 		if t.id == id {
-			s.reply(w, r, taskDoc(t))
+			s.reply(w, r, taskDoc(t, s.f.Protocol.TaskFailureCompleted))
 			return
 		}
 	}
 	s.fail(w, notFound("Task", id))
 }
 
-func taskDoc(t task) map[string]any {
+// taskDoc serves a task. With failCompleted, a failed task reads Completed
+// and says the failure only in TaskStatus.
+func taskDoc(t task, failCompleted bool) map[string]any {
 	uri := taskServiceURI + "/Tasks/" + t.id
 	doc := resource("#Task.v1_7_4.Task", uri, t.id, t.name)
 	doc["TaskMonitor"] = uri
@@ -150,6 +152,9 @@ func taskDoc(t task) map[string]any {
 		doc["PercentComplete"] = 100
 		doc["EndTime"] = t.ended.UTC().Format(time.RFC3339)
 	case "Exception":
+		if failCompleted {
+			doc["TaskState"] = "Completed"
+		}
 		doc["TaskStatus"] = "Critical"
 		doc["EndTime"] = t.ended.UTC().Format(time.RFC3339)
 		doc["Messages"] = []map[string]any{{

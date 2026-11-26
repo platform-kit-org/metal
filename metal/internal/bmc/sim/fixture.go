@@ -228,6 +228,11 @@ type Protocol struct {
 	// it out. A client that follows only the header takes the operation as
 	// done at once.
 	TaskInBody bool `yaml:"task_in_body"`
+	// TaskFailureCompleted ends a failed task with TaskState Completed and
+	// TaskStatus Critical. The specification names Exception for a failure;
+	// some services say it only in TaskStatus. A client that reads TaskState
+	// alone takes the failure for success.
+	TaskFailureCompleted bool `yaml:"task_failure_completed"`
 	// Latency delays every HTTP answer by this much: a real BMC answers in
 	// 0.3 to 1.5 seconds. Zero answers at once.
 	Latency time.Duration `yaml:"latency"`

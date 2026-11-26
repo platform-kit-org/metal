@@ -87,6 +87,7 @@ A BMC that follows the DMTF specification can work without a change. Each vendor
 - A firmware version in a [](kind:FirmwareProfile) must be the string that the BMC shows in its inventory, character for character.
 - The operator opens a Redfish session for each pass, and deletes it after the pass. A BMC without sessions gets the user name and password with each request (HTTP Basic). Some BMCs then write an audit log entry for each request.
 - A restart of the BMC ends its sessions. A firmware update and a new HTTPS certificate restart it. The session also ends when it gets no request for the timeout of the BMC. Then the operator logs in again one time. If the BMC refuses that login, the operator does not try again, because each refused login counts towards the lockout of the account.
+- Some BMCs end a failed task with the state `Completed` and the status `Critical`. The operator reads this as a failure, and shows the message of the BMC.
 
 ## Licenses
 

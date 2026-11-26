@@ -306,5 +306,5 @@ func (s *Server) accepted(w http.ResponseWriter, t task) {
 	if !s.f.Protocol.TaskInBody {
 		w.Header().Set("Location", taskServiceURI+"/Tasks/"+t.id)
 	}
-	writeJSON(w, http.StatusAccepted, taskDoc(t))
+	writeJSON(w, http.StatusAccepted, taskDoc(t, s.f.Protocol.TaskFailureCompleted))
 }

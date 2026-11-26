@@ -592,13 +592,14 @@ func (c *client) pollTask(ctx context.Context, uri string) error {
 		}
 		switch task.TaskState {
 		case "Completed":
+			// The specification ends a failure as Exception. Some services
+			// end it as Completed, and say Critical in TaskStatus.
+			if strings.EqualFold(task.TaskStatus, "Critical") {
+				return false, fmt.Errorf("bmc: task %s: Completed with status Critical %s", uri, task.why())
+			}
 			return true, nil
 		case "Exception", "Killed", "Cancelled":
-			var why []string
-			for _, m := range task.Messages {
-				why = append(why, m.Message)
-			}
-			return false, fmt.Errorf("bmc: task %s: %s %s", uri, task.TaskState, strings.Join(why, "; "))
+			return false, fmt.Errorf("bmc: task %s: %s %s", uri, task.TaskState, task.why())
 		case "":
 			// A task monitor answers 202 while the operation runs and with the
 			// operation's own response once it is done — which is no Task.
@@ -610,8 +611,18 @@ func (c *client) pollTask(ctx context.Context, uri string) error {
 
 // taskAnswer is what pollTask reads from a task monitor.
 type taskAnswer struct {
-	TaskState string
-	Messages  []struct{ Message string }
+	TaskState  string
+	TaskStatus string
+	Messages   []struct{ Message string }
+}
+
+// why is the reason text of the task's messages.
+func (t taskAnswer) why() string {
+	var why []string
+	for _, m := range t.Messages {
+		why = append(why, m.Message)
+	}
+	return strings.Join(why, "; ")
 }
 
 // decodeTask reads a task monitor's answer. An empty body or a JSON object

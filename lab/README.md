@@ -129,6 +129,7 @@ root on that machine; on a shared workstation, decide that on purpose.
 | `mise run lab:up` | Render, network, kind cluster, operator, fleet, manifests. Safe to rerun. |
 | `mise run lab:status` | The rack as the operator sees it, then every object. |
 | `mise run lab:top` | Live view of every machine. Keys approve, hold and retry. |
+| `mise run lab:radar [flags]` | Opens [Skyhook Radar](https://github.com/skyhook-io/radar) at `http://localhost:9280` on the kind cluster and on the Talos clusters (`.lab/workload.kubeconfig`, `.lab/second.kubeconfig`). Switch clusters with the context picker in the header. Flags pass through, for example `-- --port 9281`. |
 | `mise run lab:approve` | Approves every operation that waits for a person. |
 | `mise run lab:apply [path...]` | `kubectl apply` as a member of the admin group. Default: `.lab/generated/manifests/`. |
 | `mise run lab:kubeconfig` | Writes `.lab/workload.kubeconfig` and `.lab/talosconfig`. |
@@ -154,6 +155,7 @@ mise run lab:approve      # the one human step: this installs three machines
 mise run lab:status       # repeat until the three hosts are Provisioned
 mise run lab:kubeconfig
 kubectl --kubeconfig .lab/workload.kubeconfig get nodes
+mise run lab:radar        # optional: a web UI over both clusters
 mise run lab:down
 ```
 

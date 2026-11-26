@@ -30,7 +30,7 @@ Each task calls one verb of [lab/lab.sh](/repo/lab/lab.sh). mise puts the pinned
   <dt>Script</dt>
   <dd>[lab/lab.sh](/repo/lab/lab.sh)</dd>
   <dt>Cluster access</dt>
-  <dd>`.lab/kubeconfig` only. No task reads `~/.kube/config`.</dd>
+  <dd>The kubeconfig files in `.lab/`. No task reads `~/.kube/config`.</dd>
   <dt>Unattended tasks</dt>
   <dd>They approve each operation that the operator proposes. Use them only where that is correct.</dd>
 </dl>
@@ -48,6 +48,7 @@ Each task calls one verb of [lab/lab.sh](/repo/lab/lab.sh). mise puts the pinned
 | [`approve`](#approve) | Approves each operation that waits. | Machines |
 | [`apply`](#apply) | Applies manifests as a member of the admin group. | Cluster |
 | [`kubeconfig`](#kubeconfig) | Writes the access files of the Talos cluster. | `.lab/` |
+| [`radar`](#radar) | Opens Skyhook Radar on the lab clusters. | Nothing |
 | [`wait`](#wait) | Approves and waits for all nodes. | Machines |
 | [`release`](#release) | Deletes one claim and waits for its Host. | Machines |
 | [`day2`](#day2) | Reboots two nodes and makes a change without a reboot. | Machines |
@@ -260,6 +261,21 @@ Writes `.lab/workload.kubeconfig` and `.lab/talosconfig` from the Secrets that t
   <dd>`lab/lab.sh kubeconfig`</dd>
   <dt>Needs</dt>
   <dd>A bootstrapped first control plane.</dd>
+</dl>
+
+### radar
+
+Opens [Skyhook Radar](https://github.com/skyhook-io/radar), a web view of Kubernetes objects. It shows the kind cluster and each Talos cluster in one window. Use the context picker in the header to change the cluster.
+
+<dl class="pk-glance">
+  <dt>Verb</dt>
+  <dd>`kubectl-radar`, with `KUBECONFIG` set to the files below</dd>
+  <dt>Needs</dt>
+  <dd>`.lab/kubeconfig`. `.lab/workload.kubeconfig` and `.lab/second.kubeconfig` are optional. A cluster whose file is missing is not listed.</dd>
+  <dt>Runs first</dt>
+  <dd>`lab/lab.sh kubeconfig`, to refresh the Talos file. A failure is ignored.</dd>
+  <dt>Address</dt>
+  <dd>`http://localhost:9280`. Pass `-- --port 9281` to change it.</dd>
 </dl>
 
 ### collect

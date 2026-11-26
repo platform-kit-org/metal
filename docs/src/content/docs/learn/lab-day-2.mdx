@@ -135,18 +135,19 @@ The operation is `Succeeded`. `kubectl --kubeconfig .lab/workload.kubeconfig get
 ### 3. Change the configuration without a reboot
 
 A change of a [](kind:TalosNode) makes the operator propose a rollout. The annotation `metal.platform-kit.org/requested-by` names the person who asked for the change.
-After `lab:up`, it names `lab-admin`. The [`requested-by`](ref:admission-policies#requested-by) policy accepts a change of the spec only if the same request sets the annotation to your username.
+The API server sets it to the username of each change of the spec. See [`requested-by-stamp`](ref:admission-policies#requested-by-stamp).
 The operator copies these names into the rollout, and a person in the list cannot approve it. Thus you change the nodes as `lab-proposer`, and you approve the rollout as the admin.
 
-1. Add a label to each TalosNode as `lab-proposer`. The same request sets the annotation to `lab-proposer`.
+1. Add a label to each TalosNode as `lab-proposer`.
 
    ```sh
    for node in node-1 node-2 node-3; do
-     kubectl --kubeconfig .lab/proposer.kubeconfig patch talosnode "$node" --type merge --patch '{
-       "metadata": {"annotations": {"metal.platform-kit.org/requested-by": "lab-proposer"}},
-       "spec": {"labels": {"lab.platform-kit.org/day2": "tutorial"}}}'
+     kubectl --kubeconfig .lab/proposer.kubeconfig patch talosnode "$node" --type merge \
+       --patch '{"spec": {"labels": {"lab.platform-kit.org/day2": "tutorial"}}}'
    done
    ```
+
+   The annotation of each node now names `lab-proposer`.
 
 2. Wait until the operator proposes a rollout. This can take some minutes.
 
@@ -227,12 +228,11 @@ kubectl --kubeconfig .lab/workload.kubeconfig get nodes -L lab.platform-kit.org/
 
    The column `BLOCKED` shows `ClusterDisruption`. The [cluster guard](concept:cluster-guard) holds the operation, because the cluster has no second control plane.
 
-5. Lift the guard for this operation. The value is your username and your reason. Use the name of the operation from step 4.
+5. Lift the guard for this operation with your reason. The API server writes your username in front of it. Use the name of the operation from step 4.
 
    ```sh
-   me=$(kubectl auth whoami -o jsonpath='{.status.userInfo.username}')
    kubectl -n pk-metal annotate hostoperation <operation> \
-     metal.platform-kit.org/override-cluster-guard="$me: the cluster has one control plane"
+     metal.platform-kit.org/override-cluster-guard="the cluster has one control plane"
    ```
 
    The Kubernetes API of the lab cluster does not answer while `node-1` restarts.

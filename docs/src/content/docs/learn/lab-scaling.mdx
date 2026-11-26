@@ -240,11 +240,10 @@ You move `node-2` from the Host `pklab0002` to the free Host `pklab0005`, as you
    ```
 
 5. Change the disk and the network link of the [](kind:TalosNode) to the values of the new machine, as the admin.
-   The same request sets the annotation `metal.platform-kit.org/requested-by` to `lab-admin`. The [`requested-by`](ref:admission-policies#requested-by) policy refuses the change without it.
+   The API server sets the annotation `metal.platform-kit.org/requested-by` to `lab-admin`.
 
    ```sh
    kubectl --kubeconfig .lab/admin.kubeconfig patch talosnode node-2 --type json --patch '[
-     {"op": "add", "path": "/metadata/annotations/metal.platform-kit.org~1requested-by", "value": "lab-admin"},
      {"op": "replace", "path": "/spec/installDiskSelector/serial", "value": "pklab-disk-5"},
      {"op": "replace", "path": "/spec/network/links/0/hardwareAddr", "value": "52:54:00:77:00:15"}]'
    ```

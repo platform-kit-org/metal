@@ -233,6 +233,9 @@ func (s *Server) sessionService(w http.ResponseWriter, r *http.Request) {
 	doc := resource("#SessionService.v1_1_9.SessionService", sessionServiceURI, "SessionService", "Session Service")
 	doc["ServiceEnabled"] = true
 	doc["SessionTimeout"] = 1800
+	if d := s.f.Protocol.SessionTimeout; d > 0 {
+		doc["SessionTimeout"] = max(1, int(d/time.Second))
+	}
 	doc["Sessions"] = link(sessionServiceURI + "/Sessions")
 	s.reply(w, r, doc)
 }

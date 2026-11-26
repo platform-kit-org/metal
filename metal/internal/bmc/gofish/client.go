@@ -82,6 +82,8 @@ type client struct {
 	readOnly bool
 	// auth is how the requests authenticate: AuthSession or AuthBasic.
 	auth string
+	// renew logs in again when the manager forgets the session.
+	renew *renewal
 
 	// Where the manager, the chassis and the services live does not change
 	// while a session lasts, so each is looked up once per session. The
@@ -157,7 +159,9 @@ func Connect(ctx context.Context, cfg Config) (bmc.Client, error) {
 	// The header timeout starts after the request body is sent, so it also
 	// holds for an upload.
 	t.ResponseHeaderTimeout = timeout
-	hc := &http.Client{Transport: guard{next: t, timeout: timeout}}
+	g := guard{next: t, timeout: timeout, renew: &renewal{}}
+	g.renew.send = g.send
+	hc := &http.Client{Transport: g}
 	fail := func(err error) (bmc.Client, error) {
 		t.CloseIdleConnections()
 		return nil, fmt.Errorf("bmc: connect %s: %w", cfg.Endpoint, err)
@@ -188,6 +192,8 @@ func Connect(ctx context.Context, cfg Config) (bmc.Client, error) {
 				api = nil
 			} else {
 				auth = AuthSession
+				g.renew.arm(strings.TrimRight(cfg.Endpoint, "/")+root.Links.Sessions.ODataID,
+					cfg.Username, cfg.Password)
 			}
 		} else if LoginRefused(err) || statusOf(err) == 0 {
 			// Refused credentials, or no answer at all: Basic would fare
@@ -204,7 +210,7 @@ func Connect(ctx context.Context, cfg Config) (bmc.Client, error) {
 			return fail(err)
 		}
 	}
-	c := &client{api: api, svc: api.GetService(), readOnly: cfg.ReadOnly, auth: auth}
+	c := &client{api: api, svc: api.GetService(), readOnly: cfg.ReadOnly, auth: auth, renew: g.renew}
 	c.memo.root = &root.rootLinks
 	return c, nil
 }
@@ -320,7 +326,7 @@ func readServiceRoot(ctx context.Context, hc *http.Client, endpoint string) (ser
 // Close logs out and closes the connections the session kept open. Each
 // session has a transport of its own, so nothing else would close them.
 func (c *client) Close() error {
-	if c.auth == AuthSession {
+	if c.auth == AuthSession && !c.renew.logout() {
 		c.api.Logout()
 	}
 	c.api.HTTPClient.CloseIdleConnections()
@@ -378,13 +384,37 @@ func readBody(r io.Reader) ([]byte, error) {
 // can catch, so such an answer must never reach it.
 //
 // The guard also bounds each request, the body read included: gofish sets no
-// deadline of its own.
+// deadline of its own. And it renews a session that the manager forgot (see
+// renewal).
 type guard struct {
 	next    http.RoundTripper
 	timeout time.Duration
+	renew   *renewal
 }
 
 func (g guard) RoundTrip(req *http.Request) (*http.Response, error) {
+	if !g.renew.covers(req) {
+		return g.send(req)
+	}
+	token := g.renew.current(req.Header.Get("X-Auth-Token"))
+	resp, err := g.send(withToken(req, token, nil))
+	if err != nil || resp.StatusCode != http.StatusUnauthorized {
+		return resp, err
+	}
+	body, ok := replayBody(req)
+	if !ok {
+		return resp, nil
+	}
+	fresh, ok := g.renew.renew(req.Context(), token)
+	if !ok {
+		return resp, nil
+	}
+	_ = resp.Body.Close()
+	return g.send(withToken(req, fresh, body))
+}
+
+// send is one bounded request and its checked answer.
+func (g guard) send(req *http.Request) (*http.Response, error) {
 	timeout := g.timeout
 	if req.ContentLength > bulkBody {
 		timeout = max(timeout, UploadTimeout)

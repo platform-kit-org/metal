@@ -213,8 +213,13 @@ type Protocol struct {
 	// echoes the header unchanged gets 412 on every PATCH.
 	ETagGzipSuffix bool `yaml:"etag_gzip_suffix"`
 	// Sessions serves the SessionService and accepts X-Auth-Token next to
-	// Basic authentication.
+	// Basic authentication. A restart of the manager ends every session, as
+	// on each real manager: it keeps them in memory.
 	Sessions bool `yaml:"sessions"`
+	// SessionTimeout ends a session that no request used for this long, as
+	// the SessionService says in SessionTimeout. Zero keeps a session until
+	// it is deleted or the manager restarts.
+	SessionTimeout time.Duration `yaml:"session_timeout"`
 	// TaskDuration is how long an asynchronous operation runs before its task
 	// completes and its effect lands. Zero completes inside the request.
 	TaskDuration time.Duration `yaml:"task_duration"`

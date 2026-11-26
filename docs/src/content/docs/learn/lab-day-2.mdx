@@ -106,7 +106,7 @@ The lab forbids self-approval (`selfApproval: Forbidden`): the person who propos
    ```console
    proposed pk-metal/reboot-node-2-x7k2p: a clean reboot of TalosNode node-2 on host pklab0002 (5 steps).
    Approve it after reading the plan (another person must, if the site forbids self-approval): pk-metal approve pk-metal/reboot-node-2-x7k2p
-   To withdraw it: pk-metal abort pk-metal/reboot-node-2-x7k2p
+   To withdraw it: pk-metal abort --reason "<reason>" pk-metal/reboot-node-2-x7k2p
    ```
 
 3. Read the plan and approve it as the admin. Use the name from your output.

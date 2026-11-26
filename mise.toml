@@ -24,6 +24,10 @@ node = "24.22"
 vale = "3.28"
 # promtool checks and unit-tests the alerting rules (mise run metrics:rules).
 promtool = "3"
+# Skyhook Radar, a read-mostly Kubernetes UI (mise run lab:radar). The release ships one
+# binary, kubectl-radar, so it also runs as the kubectl plugin `kubectl radar`. Unlike the
+# rest, it floats on the latest release: it is a viewer, and nothing must match it.
+"github:skyhook-io/radar" = "latest"
 
 [env]
 GOTOOLCHAIN = "local"
@@ -223,6 +227,27 @@ lab=${PK_LAB_DIR:-.lab}
 set -- --kubeconfig "$lab/kubeconfig" top --fleet http://127.0.0.1:8440/state
 [ -s "$lab/workload.kubeconfig" ] && set -- "$@" --workload-kubeconfig "$lab/workload.kubeconfig"
 exec metal/bin/pk-metal "$@"
+'''
+
+[tasks."lab:radar"]
+description = "Open Skyhook Radar on the lab's clusters: the kind cluster and every Talos cluster whose kubeconfig lab:kubeconfig wrote; extra flags pass through (--port 9281)"
+# Radar merges the files of a colon-separated KUBECONFIG and lists each context in its
+# header picker. Only files that exist go in: the workload kubeconfig appears once the
+# first Talos cluster is up, the second one after lab:pivot. lab:kubeconfig runs first
+# (quietly, and its failure does not matter) so that a rebuilt cluster does not leave a
+# stale file.
+run = '''
+lab=$(cd "${PK_LAB_DIR:-.lab}" 2>/dev/null && pwd) || { echo "lab:radar: there is no lab directory. Bring the lab up: mise run lab:up" >&2; exit 1; }
+command -v kubectl-radar >/dev/null || { echo "lab:radar: kubectl-radar is not on PATH; install it: mise install" >&2; exit 1; }
+[ -s "$lab/kubeconfig" ] && lab/lab.sh kubeconfig >/dev/null 2>&1 || true
+files=
+for name in kubeconfig workload.kubeconfig second.kubeconfig; do
+  [ -s "$lab/$name" ] || { echo "lab:radar: no $lab/$name yet, so its cluster is not listed" >&2; continue; }
+  files=${files:+$files:}$lab/$name
+done
+[ -n "$files" ] || { echo "lab:radar: the lab has no kubeconfig. Bring the lab up: mise run lab:up" >&2; exit 1; }
+echo "lab:radar: http://localhost:9280 (Ctrl-C stops it)" >&2
+KUBECONFIG=$files exec kubectl-radar "$@"
 '''
 
 [tasks."lab:approve"]

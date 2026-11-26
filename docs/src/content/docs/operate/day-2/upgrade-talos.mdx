@@ -119,7 +119,7 @@ If your TalosCluster is in git, change `spec.talosVersion` there, and use [](cli
 4. Make sure that the first node runs the new release and is `Ready`.
 
    ```sh
-   kubectl get talosnodes
+   kubectl get talosnodes -o wide
    ```
 
    The `VERSION` column shows `v1.14.7` for the first node.

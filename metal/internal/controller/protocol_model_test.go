@@ -46,7 +46,7 @@ import (
 // that helper, over real API objects built from the model state: the
 // HostOperation methods Finished, AwaitsApproval and ApprovalRequired, and
 // opActive, opSucceeded, hostHolder,
-// bootRan, handedOff, powerOffDecided, heldBy, inMaintenance,
+// bootRan, installedOnRecord, runsNode, powerOffDecided, heldBy, inMaintenance,
 // releaseNeedsPerson, approvalWaived, disruptionVerdict, and the phase
 // derivations. The control flow around them
 // (release, provision, the executor's Reconcile) is mirrored by hand, branch
@@ -458,7 +458,7 @@ func (p *pass) release(v view) {
 	boot := v.Ops[slotBoot]
 	var provisionOps []metalv1alpha1.HostOperation
 	if boot.Exists {
-		provisionOps = append(provisionOps, *opObj(boot))
+		provisionOps = append(provisionOps, *bootObj(boot))
 	}
 	if v.Host.Claimed {
 		host := v.Host
@@ -467,14 +467,16 @@ func (p *pass) release(v view) {
 		if rel.Exists {
 			op = opObj(rel)
 		}
-		powerOff := op != nil || bootRan(provisionOps, "") || handedOff(claim, "host-a") ||
-			powerOffDecided(hostObj(host), claim)
+		h := hostObj(host)
+		h.Name = "host-a"
+		powerOff := op != nil || runsNode(h) || bootRan(provisionOps, h.Name) ||
+			installedOnRecord(claim, h.Name, provisionOps) || powerOffDecided(h, claim)
 		if !powerOff {
 			// bootRanUncached: the boot operations as the API server holds
 			// them; when none ran, the unfinished ones are deleted at the
 			// version just read, which this turn does at once.
 			live := p.next.Ops[slotBoot]
-			if live.Exists && bootRan([]metalv1alpha1.HostOperation{*opObj(live)}, "") {
+			if live.Exists && bootRan([]metalv1alpha1.HostOperation{*bootObj(live)}, h.Name) {
 				powerOff = true
 			} else if live.Exists && !opObj(live).Finished() {
 				p.delete(slotBoot)

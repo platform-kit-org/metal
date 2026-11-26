@@ -1264,14 +1264,6 @@ func opExists(ops []metalv1alpha1.HostOperation, name string) bool {
 	return slices.ContainsFunc(ops, func(op metalv1alpha1.HostOperation) bool { return op.Name == name })
 }
 
-// handedOff: the claim's hand-off record says a boot of the claim installed
-// the host — true even when that boot operation was deleted since. A machine
-// found already running the node was never touched, and is not counted.
-func handedOff(claim *metalv1alpha1.HostClaim, hostName string) bool {
-	h := claim.Status.HandOff
-	return h != nil && h.Host == hostName && h.Operation != ""
-}
-
 // releaseOp takes the machine's node out of its cluster, shuts the machine
 // down and empties every insertable slot (see removal.go for the steps).
 // When the node does not answer, or the executor cannot run the Talos steps,

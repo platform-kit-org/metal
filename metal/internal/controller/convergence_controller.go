@@ -26,7 +26,6 @@ import (
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
 	"github.com/dennisklein/platform-kit/metal/internal/audit"
 	"github.com/dennisklein/platform-kit/metal/internal/bmc"
-	"github.com/dennisklein/platform-kit/metal/internal/phase"
 )
 
 // proposalTTL marks a convergence proposal as one the operator may delete
@@ -117,10 +116,11 @@ func (r *ConvergenceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 
-	facts := hostFacts(ctx, r.Client, host)
-	phase.StampHost(host, facts)
+	// No phase here: the host reconciler is its one writer, and it re-derives
+	// it after this write, which is a Host event. None of this lane's
+	// conditions is an input of the phase.
 	if !equality.Semantic.DeepEqual(orig.Status, host.Status) {
-		if err := r.applyStatus(ctx, host, facts); err != nil {
+		if err := r.applyStatus(ctx, host); err != nil {
 			return ctrl.Result{}, client.IgnoreNotFound(err)
 		}
 	}
@@ -130,19 +130,19 @@ func (r *ConvergenceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	return ctrl.Result{}, nil
 }
 
-// applyStatus declares only what this lane decides: its two conditions and the
-// firmware plan memory. The projected facts belong to the host reconciler and
-// are left out entirely.
+// applyStatus declares only what this lane decides: its conditions and the
+// firmware plan memory. The projected facts and the phase belong to the host
+// reconciler and are left out entirely. A phase derived here would come from
+// this pass's read of the host reconciler's conditions, which can be older
+// than the phase that reconciler wrote last, and would replace it.
 //
 // Unlike the endpoint's identity lane, this one needs no uncached read. Losing
 // the plan memory costs a re-proposal, and a re-proposal is harmless by
 // construction: the operation is created before the memory is recorded and its
 // name is derived from the plan hash, so the second attempt is an AlreadyExists
 // and nothing is done twice.
-func (r *ConvergenceReconciler) applyStatus(ctx context.Context, host *metalv1alpha1.Host, facts phase.HostFacts) error {
-	apply := hostConvergenceShare(host)
-	phase.StampHostOnto(apply, host, facts)
-	return applyOwnedStatus(ctx, r.Client, apply, fieldOwnerHostConvergence)
+func (r *ConvergenceReconciler) applyStatus(ctx context.Context, host *metalv1alpha1.Host) error {
+	return applyOwnedStatus(ctx, r.Client, hostConvergenceShare(host), fieldOwnerHostConvergence)
 }
 
 // matchedProfiles selects both profile kinds against the host's labels.

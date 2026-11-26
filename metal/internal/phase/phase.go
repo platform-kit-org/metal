@@ -8,6 +8,11 @@
 // previous phase, every call re-derives from observations. Phases whose inputs are
 // not observations (claimed, releasing, maintenance) hang off HostFacts booleans the
 // owning reconcilers compute from spec and metadata.
+//
+// Each kind has one writer of its phase, the reconciler that observes it. A
+// second writer would derive the phase from its own read of the first writer's
+// conditions; that read can be older than the phase already written, and the
+// phase would then step back.
 package phase
 
 import (
@@ -54,12 +59,13 @@ func ForEndpoint(conds []metav1.Condition) (metalv1alpha1.EndpointPhase, string)
 
 // HostFacts are the spec-derived inputs to the Host derivation — booleans the owning
 // reconcilers compute (Claimed from spec.claimRef, Releasing from the claim's
-// deletion, Maintenance from the metal.platform-kit.org/maintenance annotation). They keep the function total: every phase in the enum is reachable
+// deletion or absence, Maintenance from the metal.platform-kit.org/maintenance annotation). They keep the function total: every phase in the enum is reachable
 // and tested.
 type HostFacts struct {
 	// Claimed: a HostClaim is bound to this host.
 	Claimed bool
-	// Releasing: the claim is gone and cleanup (wipe, eject, unbind) is underway.
+	// Releasing: the claim that spec.claimRef names is in deletion or gone, and
+	// cleanup (wipe, eject, unbind) is underway.
 	Releasing bool
 	// Maintenance: a person parked the machine outside the lifecycle
 	// (annotation metal.platform-kit.org/maintenance).
@@ -210,8 +216,8 @@ func StampEndpoint(ep *metalv1alpha1.ManagementEndpoint) {
 // StampEndpointOnto derives from src's conditions and writes the result onto
 // dst. It exists for server-side apply: an apply object carries only the
 // fields its field manager means to own, so it holds a partial condition set —
-// but the phase is a summary of ALL of them, and deriving it from the fragment
-// would publish a different answer per writer.
+// but the phase is a summary of ALL of them. Only the endpoint reconciler calls
+// it; the convergence lane's apply carries no phase.
 func StampEndpointOnto(dst, src *metalv1alpha1.ManagementEndpoint) {
 	dst.Status.Phase, dst.Status.BlockedOn = ForEndpoint(src.Status.Conditions)
 }
@@ -223,7 +229,8 @@ func StampHost(h *metalv1alpha1.Host, f HostFacts) {
 
 // StampHostOnto derives from src's conditions and writes onto dst, for the same
 // reason StampEndpointOnto exists: an apply object holds only its owner's share
-// of the conditions, and the phase summarizes all of them.
+// of the conditions, and the phase summarizes all of them. Only the host
+// reconciler calls it; the convergence lane's apply carries no phase.
 func StampHostOnto(dst, src *metalv1alpha1.Host, f HostFacts) {
 	dst.Status.Phase, dst.Status.BlockedOn = ForHost(src.Status.Conditions, f)
 }

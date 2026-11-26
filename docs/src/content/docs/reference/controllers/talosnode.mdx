@@ -94,6 +94,7 @@ The [](ctrl:talosrollout) proposes a rollout from these conditions.
 2. No unfinished operation acts on the node.
 3. For a control plane of a running cluster, etcd lists no member with its name.
 
+It reads the claims and the operations from the API server, not from the cache: after the finalizer goes, the node is gone.
 While it waits, `RemovalBlocked` is True with `MachineAssigned`, `EtcdMemberRemains` or `EtcdUnreadable`.
 It proposes nothing. The claim that holds the machine proposes the removal. See [](howto:remove-a-node).
 

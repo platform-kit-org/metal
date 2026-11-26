@@ -1,0 +1,15 @@
+{
+  "name": "completion",
+  "summary": "print the shell completion script: TAB then completes commands, flags, and the names of objects in the cluster",
+  "synopsis": "bash|zsh|fish",
+  "usage": [
+    "pk-metal completion bash|zsh|fish"
+  ],
+  "changes": false,
+  "needsCluster": false,
+  "description": "The script completes the commands, their subcommands and flags, and the\nnames of the objects that the arguments and flags take: operations, claims,\nnodes, hosts, clusters, snapshots, rollouts, BMC addresses, namespaces and\nkubeconfig contexts. The names come from the cluster that --kubeconfig and\n--context on the same command line select (default: as for every other\ncommand). Each lookup stops after 2 seconds; then there are no names.\n\nOperations are shown by state: approve completes the operations that wait\nfor approval, retry the failed and aborted ones, abort the unfinished ones.\nType a \"/\" to complete namespace/name from every namespace.\n\nbash (needs the bash-completion package):\n  echo 'source <(pk-metal completion bash)' >> ~/.bashrc\n\nzsh:\n  echo 'source <(pk-metal completion zsh)' >> ~/.zshrc   (after compinit)\n\nfish:\n  pk-metal completion fish > ~/.config/fish/completions/pk-metal.fish\n\nOpen a new shell after the change.",
+  "examples": [],
+  "exitStatus": [],
+  "flags": [],
+  "subcommands": []
+}

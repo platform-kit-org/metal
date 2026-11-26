@@ -34,6 +34,11 @@
       "changes": false
     },
     {
+      "name": "completion",
+      "summary": "print the shell completion script: TAB then completes commands, flags, and the names of objects in the cluster",
+      "changes": false
+    },
+    {
       "name": "version",
       "summary": "print the version of this program",
       "changes": false

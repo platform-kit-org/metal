@@ -76,6 +76,8 @@ func init() {
 			summary: "run on a host that can reach the BMCs: BMCs download boot media from it, and it forwards that traffic to pk-metal boot"},
 		{name: "sim", synopsis: "serve [flags] | fleet --config <file>", run: simCmd,
 			summary: "run simulated BMCs for tests: serve one, or a fleet with a virtual machine behind each"},
+		{name: "completion", synopsis: "bash|zsh|fish", run: completionCmd,
+			summary: "print the shell completion script: TAB then completes commands, flags, and the names of objects in the cluster"},
 		{name: "version", run: versionCmd,
 			summary: "print the version of this program"},
 	}
@@ -100,6 +102,10 @@ func lookup(name string) *command {
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == completeVerb {
+		completeMain(os.Args[2:])
+		return
+	}
 	args, err := parseGlobal(os.Args[1:])
 	if err != nil {
 		die(err)
@@ -186,6 +192,9 @@ var verbHelp = map[string]string{}
 // call. -h prints the verb's help to stdout and exits 0; a bad flag prints
 // the error and the usage to stderr and exits 1.
 func parseFlags(fs *flag.FlagSet, args []string) {
+	if flagCapture != nil {
+		flagCapture(fs) // shell completion reads the flags; it does not return
+	}
 	for _, a := range args {
 		if a == "--" {
 			break

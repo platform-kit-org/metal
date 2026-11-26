@@ -11,6 +11,7 @@ import (
 
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
 	"github.com/dennisklein/platform-kit/metal/internal/identity"
+	"github.com/dennisklein/platform-kit/metal/internal/phase"
 )
 
 // endpointFor builds a ManagementEndpoint whose PATH facts (name, address,
@@ -217,4 +218,56 @@ func TestEndpointOwnerRefs(t *testing.T) {
 	require.Len(t, refs, 2)
 	assert.Equal(t, "keep", refs[0].Name, "refs of other kinds survive")
 	assert.Equal(t, "ci-a", refs[1].Name, "endpoint refs are rebuilt to the fronting set")
+}
+
+// TestHostPhaseAcrossCaches is the release race: the claim cache can be newer
+// than the host cache. A pass that reads the host as it was before the release
+// (pointer, hand-off and OSReady still there) beside a claim that is already
+// gone must not show the host as Provisioned again.
+func TestHostPhaseAcrossCaches(t *testing.T) {
+	ready := []metav1.Condition{
+		{Type: metalv1alpha1.ConditionInspected, Status: metav1.ConditionTrue, Reason: "InventoryGathered"},
+		{Type: metalv1alpha1.ConditionVerified, Status: metav1.ConditionTrue, Reason: "SerialMatch"},
+		{Type: metalv1alpha1.ConditionBooted, Status: metav1.ConditionTrue, Reason: "Reachable"},
+		{Type: metalv1alpha1.ConditionOSReady, Status: metav1.ConditionTrue, Reason: "Ready"},
+	}
+	bound := func() *metalv1alpha1.Host {
+		return &metalv1alpha1.Host{
+			ObjectMeta: metav1.ObjectMeta{Name: "pklab0005"},
+			Spec: metalv1alpha1.HostSpec{
+				ClaimRef: &metalv1alpha1.ClaimReference{Namespace: "default", Name: "node-5", UID: "uid-1"},
+				OS:       &metalv1alpha1.HostOS{NodeRef: metalv1alpha1.Reference{Name: "node-5"}},
+			},
+			Status: metalv1alpha1.HostStatus{Conditions: ready},
+		}
+	}
+	claim := func(deleting bool) *metalv1alpha1.HostClaim {
+		c := &metalv1alpha1.HostClaim{ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "node-5", UID: "uid-1"}}
+		if deleting {
+			c.DeletionTimestamp = &metav1.Time{Time: time.Unix(1, 0)}
+			c.Finalizers = []string{releaseFinalizer}
+		}
+		return c
+	}
+	free := &metalv1alpha1.Host{
+		ObjectMeta: metav1.ObjectMeta{Name: "pklab0005"},
+		Status:     metalv1alpha1.HostStatus{Conditions: ready[:2]},
+	}
+
+	for _, tc := range []struct {
+		name  string
+		host  *metalv1alpha1.Host
+		claim *metalv1alpha1.HostClaim
+		want  metalv1alpha1.HostPhase
+	}{
+		{"bound, claim lives", bound(), claim(false), metalv1alpha1.HostProvisioned},
+		{"bound, claim in deletion", bound(), claim(true), metalv1alpha1.HostReleasing},
+		{"old host beside a gone claim", bound(), nil, metalv1alpha1.HostReleasing},
+		{"released", free, nil, metalv1alpha1.HostAvailable},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, _ := phase.ForHost(tc.host.Status.Conditions, factsFor(tc.host, tc.claim))
+			assert.Equal(t, tc.want, got)
+		})
+	}
 }

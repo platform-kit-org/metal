@@ -29,7 +29,8 @@ Four kinds have a phase. This page lists each phase, what it tells you, and the 
   <dt>For people</dt>
   <dd>The controllers read conditions and do not read the phase. Your scripts must also read the [conditions](ref:conditions).</dd>
   <dt>One writer</dt>
-  <dd>Only the package [phase.go](/repo/metal/internal/phase/phase.go) writes `status.phase` and `status.blockedOn`.</dd>
+  <dd>Only the package [phase.go](/repo/metal/internal/phase/phase.go) writes `status.phase` and `status.blockedOn`. For each kind, one controller calls it.
+  A second writer would calculate the phase from an older copy of the conditions. The phase would then return to an old value for a short time.</dd>
 </dl>
 
 [](concept:phases-and-conditions) explains why the operator works in this way.
@@ -49,6 +50,7 @@ A [](kind:Host) has nine phases. The [](ctrl:host) calculates the inputs.
 ## ManagementEndpoint
 
 A [](kind:ManagementEndpoint) has eight phases. Two controllers write its conditions: one [observes](ctrl:managementendpoint) the BMC, and one [configures](ctrl:endpointconvergence) it.
+Only the controller that observes the BMC writes the phase.
 
 <EndpointPhases />
 

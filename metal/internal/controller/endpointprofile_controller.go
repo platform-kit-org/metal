@@ -29,7 +29,6 @@ import (
 	"github.com/dennisklein/platform-kit/metal/internal/audit"
 	"github.com/dennisklein/platform-kit/metal/internal/bmc"
 	gofishclient "github.com/dennisklein/platform-kit/metal/internal/bmc/gofish"
-	"github.com/dennisklein/platform-kit/metal/internal/phase"
 )
 
 // rotatedAtAnnotation on the managed-credential Secret records when the
@@ -193,7 +192,8 @@ func (r *EndpointConvergenceReconciler) Reconcile(ctx context.Context, req ctrl.
 		setCondition(&ep.Status.Conditions, ep.Generation, metalv1alpha1.ConditionConfigured, status, reason, msg)
 	}
 
-	phase.StampEndpoint(ep)
+	// No phase here: the endpoint reconciler is its one writer, and it
+	// re-derives it after this write, which is an endpoint event.
 	if !equality.Semantic.DeepEqual(orig.Status, ep.Status) {
 		if err := r.applyStatus(ctx, ep); err != nil {
 			return ctrl.Result{}, client.IgnoreNotFound(err)
@@ -206,9 +206,11 @@ func (r *EndpointConvergenceReconciler) Reconcile(ctx context.Context, req ctrl.
 }
 
 // applyStatus declares only what this reconciler decides: the Configured
-// condition it alone maintains, the push memory, and the phase derived from
-// them. The discovered facts are the other author's and are left out entirely,
-// so a pass here cannot write over them.
+// condition it alone maintains and the push memory. The discovered facts and
+// the phase are the other author's and are left out entirely, so a pass here
+// cannot write over them. A phase derived here would come from this pass's
+// read of the discovered conditions, which can be older than the phase the
+// endpoint reconciler wrote last, and would replace it.
 //
 // The push memory is why this is an apply and not an update. It records
 // something PHYSICAL that already happened — the manager accepted a
@@ -218,9 +220,7 @@ func (r *EndpointConvergenceReconciler) Reconcile(ctx context.Context, req ctrl.
 // no fresh request is generated, and the manager refuses to import one it has
 // already consumed. The lane then wedges on an error no retry can clear.
 func (r *EndpointConvergenceReconciler) applyStatus(ctx context.Context, ep *metalv1alpha1.ManagementEndpoint) error {
-	apply := endpointConvergenceShare(ep)
-	phase.StampEndpointOnto(apply, ep)
-	return applyOwnedStatus(ctx, r.Client, apply, fieldOwnerConvergence)
+	return applyOwnedStatus(ctx, r.Client, endpointConvergenceShare(ep), fieldOwnerConvergence)
 }
 
 // converge merges the matched profiles and runs every declared lane in

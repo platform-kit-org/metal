@@ -8,6 +8,11 @@
 // previous phase, every call re-derives from observations. Phases whose inputs are
 // not observations (claimed, releasing, maintenance) hang off HostFacts booleans the
 // owning reconcilers compute from spec and metadata.
+//
+// Each kind has one writer of its phase, the reconciler that observes it. A
+// second writer would derive the phase from its own read of the first writer's
+// conditions; that read can be older than the phase already written, and the
+// phase would then step back.
 package phase
 
 import (
@@ -54,12 +59,13 @@ func ForEndpoint(conds []metav1.Condition) (metalv1alpha1.EndpointPhase, string)
 
 // HostFacts are the spec-derived inputs to the Host derivation — booleans the owning
 // reconcilers compute (Claimed from spec.claimRef, Releasing from the claim's
-// deletion, Maintenance from the metal.platform-kit.org/maintenance annotation). They keep the function total: every phase in the enum is reachable
+// deletion or absence, Maintenance from the metal.platform-kit.org/maintenance annotation). They keep the function total: every phase in the enum is reachable
 // and tested.
 type HostFacts struct {
 	// Claimed: a HostClaim is bound to this host.
 	Claimed bool
-	// Releasing: the claim is gone and cleanup (wipe, eject, unbind) is underway.
+	// Releasing: the claim that spec.claimRef names is in deletion or gone, and
+	// cleanup (wipe, eject, unbind) is underway.
 	Releasing bool
 	// Maintenance: a person parked the machine outside the lifecycle
 	// (annotation metal.platform-kit.org/maintenance).
@@ -67,7 +73,7 @@ type HostFacts struct {
 }
 
 // ForHost derives the Host phase. Precedence: parked states first (Maintenance,
-// Releasing), then a failed OS-ladder observation (Status=False means attempted and
+// Releasing), then, for a claimed host only, a failed OS-ladder observation (Status=False means attempted and
 // failed; Unknown means in flight; absent means not attempted), then the ladder
 // downwards (Provisioned → Provisioning → Assigned → Available → Inspecting →
 // Enrolling).
@@ -86,19 +92,22 @@ func ForHost(conds []metav1.Condition, f HostFacts) (metalv1alpha1.HostPhase, st
 		return metalv1alpha1.HostReleasing, blocked
 	}
 
-	for _, t := range []string{metalv1alpha1.ConditionBooted, metalv1alpha1.ConditionOSReady} {
-		if c := meta.FindStatusCondition(conds, t); c != nil && c.Status == metav1.ConditionFalse {
-			return metalv1alpha1.HostFailed, blocked
+	// The OS ladder describes the claim's install, so a free host has none.
+	// The host reconciler drops Booted and OSReady with the hand-off, but a
+	// read from before that pass still has them.
+	if f.Claimed {
+		for _, t := range []string{metalv1alpha1.ConditionBooted, metalv1alpha1.ConditionOSReady} {
+			if c := meta.FindStatusCondition(conds, t); c != nil && c.Status == metav1.ConditionFalse {
+				return metalv1alpha1.HostFailed, blocked
+			}
 		}
-	}
-
-	osReady := meta.FindStatusCondition(conds, metalv1alpha1.ConditionOSReady)
-	switch {
-	case osReady != nil && osReady.Status == metav1.ConditionTrue:
-		return metalv1alpha1.HostProvisioned, blocked
-	case f.Claimed && (osReady != nil || meta.FindStatusCondition(conds, metalv1alpha1.ConditionBooted) != nil):
-		return metalv1alpha1.HostProvisioning, blocked
-	case f.Claimed:
+		osReady := meta.FindStatusCondition(conds, metalv1alpha1.ConditionOSReady)
+		switch {
+		case osReady != nil && osReady.Status == metav1.ConditionTrue:
+			return metalv1alpha1.HostProvisioned, blocked
+		case osReady != nil || meta.FindStatusCondition(conds, metalv1alpha1.ConditionBooted) != nil:
+			return metalv1alpha1.HostProvisioning, blocked
+		}
 		return metalv1alpha1.HostAssigned, blocked
 	}
 
@@ -210,8 +219,8 @@ func StampEndpoint(ep *metalv1alpha1.ManagementEndpoint) {
 // StampEndpointOnto derives from src's conditions and writes the result onto
 // dst. It exists for server-side apply: an apply object carries only the
 // fields its field manager means to own, so it holds a partial condition set —
-// but the phase is a summary of ALL of them, and deriving it from the fragment
-// would publish a different answer per writer.
+// but the phase is a summary of ALL of them. Only the endpoint reconciler calls
+// it; the convergence lane's apply carries no phase.
 func StampEndpointOnto(dst, src *metalv1alpha1.ManagementEndpoint) {
 	dst.Status.Phase, dst.Status.BlockedOn = ForEndpoint(src.Status.Conditions)
 }
@@ -223,7 +232,8 @@ func StampHost(h *metalv1alpha1.Host, f HostFacts) {
 
 // StampHostOnto derives from src's conditions and writes onto dst, for the same
 // reason StampEndpointOnto exists: an apply object holds only its owner's share
-// of the conditions, and the phase summarizes all of them.
+// of the conditions, and the phase summarizes all of them. Only the host
+// reconciler calls it; the convergence lane's apply carries no phase.
 func StampHostOnto(dst, src *metalv1alpha1.Host, f HostFacts) {
 	dst.Status.Phase, dst.Status.BlockedOn = ForHost(src.Status.Conditions, f)
 }

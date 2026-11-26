@@ -171,12 +171,21 @@ func projectDiskWiped(host *metalv1alpha1.Host) {
 }
 
 // factsFor derives the spec-side phase inputs: claimed while a pointer is set,
-// releasing while the claim holding it is being deleted.
+// releasing while the claim it names is being deleted or is gone. claim is the
+// claim the pointer names (same UID), or nil when the cache has none.
+//
+// The pointer and the claim come from two caches, and a pass can see a new
+// claim beside an old host. A release clears the pointer before it lets the
+// claim go, so a pointer whose claim is gone is a host whose release has not
+// reached this cache yet, or a claim deleted without its finalizer, which the
+// claim reconciler releases. Both are a release. Reading the pointer alone
+// would show the host as it was before the release: Provisioned, for a pass.
 func factsFor(host *metalv1alpha1.Host, claim *metalv1alpha1.HostClaim) phase.HostFacts {
 	_, maintenance := inMaintenance(host)
+	claimed := host.Spec.ClaimRef != nil
 	return phase.HostFacts{
-		Claimed:     host.Spec.ClaimRef != nil,
-		Releasing:   claim != nil && !claim.DeletionTimestamp.IsZero(),
+		Claimed:     claimed,
+		Releasing:   claimed && (claim == nil || !claim.DeletionTimestamp.IsZero()),
 		Maintenance: maintenance,
 	}
 }
@@ -216,20 +225,6 @@ func projectMaintenance(host *metalv1alpha1.Host, setCond func(string, metav1.Co
 	}
 	setCond(metalv1alpha1.ConditionMaintenance, metav1.ConditionTrue, metalv1alpha1.ReasonHostInMaintenance,
 		why+"; the operator proposes and starts nothing on it. To give it back: "+endMaintenanceCommand(host))
-}
-
-// hostFacts is factsFor for writers that have not read the claim yet — every
-// writer of the host's phase must derive it from the same facts, or two
-// writers publish two phases in turn.
-func hostFacts(ctx context.Context, c client.Client, host *metalv1alpha1.Host) phase.HostFacts {
-	var claim *metalv1alpha1.HostClaim
-	if ref := host.Spec.ClaimRef; ref != nil {
-		cl := &metalv1alpha1.HostClaim{}
-		if err := c.Get(ctx, types.NamespacedName{Namespace: ref.Namespace, Name: ref.Name}, cl); err == nil && cl.UID == ref.UID {
-			claim = cl
-		}
-	}
-	return factsFor(host, claim)
 }
 
 // projectDeletionHold makes the claim protection visible: a Host whose

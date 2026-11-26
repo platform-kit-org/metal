@@ -11,6 +11,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -75,18 +76,20 @@ var (
 		"pk-metal-host-convergence": {owns: []string{
 			"condition:" + metalv1alpha1.ConditionBiosConverged,
 			"condition:" + metalv1alpha1.ConditionFirmwareConverged,
-			"firmwareProposed", "phase", "blockedOn",
+			"condition:" + metalv1alpha1.ConditionSystemFirmwareConverged,
+			"firmwareProposed", "systemFirmwareProposed",
 		}},
 		"pk-metal-host": {never: []string{
 			"condition:" + metalv1alpha1.ConditionBiosConverged,
 			"condition:" + metalv1alpha1.ConditionFirmwareConverged,
-			"firmwareProposed",
+			"condition:" + metalv1alpha1.ConditionSystemFirmwareConverged,
+			"firmwareProposed", "systemFirmwareProposed",
 		}},
 	}
 	endpointOwners = map[string]ownerRule{
 		"pk-metal-endpoint-convergence": {owns: []string{
 			"condition:" + metalv1alpha1.ConditionConfigured,
-			"identityPushed", "phase", "blockedOn",
+			"identityPushed",
 		}},
 		"pk-metal-protection": {owns: []string{
 			"condition:" + metalv1alpha1.ConditionDeletionHeld,
@@ -204,8 +207,8 @@ func violations(ctx context.Context, cl client.Client) ([]string, error) {
 
 // hostFactsOf recomputes the spec-derived host facts the way the rule states
 // them, independent of the reconcilers' code: claimed from spec.claimRef,
-// releasing from the deletion of the claim it names (same UID), maintenance
-// from the annotation.
+// releasing from the deletion or the absence of the claim it names (same
+// UID), maintenance from the annotation.
 func hostFactsOf(ctx context.Context, cl client.Client, h *metalv1alpha1.Host) (phase.HostFacts, error) {
 	_, maintenance := h.Annotations[metalv1alpha1.AnnotationMaintenance]
 	f := phase.HostFacts{Claimed: h.Spec.ClaimRef != nil, Maintenance: maintenance}
@@ -214,8 +217,10 @@ func hostFactsOf(ctx context.Context, cl client.Client, h *metalv1alpha1.Host) (
 		err := cl.Get(ctx, types.NamespacedName{Namespace: ref.Namespace, Name: ref.Name}, c)
 		switch {
 		case err == nil:
-			f.Releasing = c.UID == ref.UID && !c.DeletionTimestamp.IsZero()
-		case client.IgnoreNotFound(err) != nil:
+			f.Releasing = c.UID != ref.UID || !c.DeletionTimestamp.IsZero()
+		case apierrors.IsNotFound(err):
+			f.Releasing = true
+		default:
 			return f, err
 		}
 	}

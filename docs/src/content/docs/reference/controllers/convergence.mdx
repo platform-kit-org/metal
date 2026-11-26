@@ -57,7 +57,7 @@ It never changes a machine itself. It proposes a [](kind:HostOperation), and a p
     { label: 'Manager firmware', sub: 'compare, propose flashFirmware', out: 'FirmwareConverged', outSub: 'False: AwaitingOperation, …' },
     { label: 'System firmware', sub: 'compare, propose stageFirmware', out: 'SystemFirmwareConverged', outSub: 'False: AwaitingOperation, …' },
     { label: 'BIOS', sub: 'merge, read, validate, drift', out: 'BiosConverged', outSub: 'False: SchemaViolation, …' },
-    { label: 'Stamp phase, apply share', variant: 'ok' },
+    { label: 'Apply share', variant: 'ok' },
   ]}
   loop="next pass: --poll-interval or an event"
 />
@@ -68,7 +68,7 @@ It never changes a machine itself. It proposes a [](kind:HostOperation), and a p
 4. Compare the system firmware. It waits for the manager firmware. If it differs, propose an operation that uses [](act:StageFirmware) and a reboot.
 5. Merge the BIOS profiles in layers into the BiosSettings. Read the BIOS over the BMC. Write the attribute registry into a BiosSchema. Validate the settings against it.
 6. If attributes drifted, propose an [](act:ApplyBios) operation. For a Host that runs a node, the operation drains the node first and waits for it after.
-7. Stamp the phase and apply the share of this lane.
+7. Apply the share of this lane. The share has no phase: the [](ctrl:host) writes the phase of the Host.
 
 ## Guards and decisions
 

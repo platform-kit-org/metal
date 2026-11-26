@@ -197,10 +197,11 @@ The API server gets the groups of a person from the login. The source is the `O=
 
 | Group | What only its members can do | Default name |
 | --- | --- | --- |
-| Admin group | Apply a [](kind:HostClaim) that installs a node, set automatic approval, move a claim to a different machine | `pk-metal:admins` |
+| Admin group | Apply a [](kind:HostClaim) that installs a node, set automatic approval, move a claim to a different machine. `bindings.yaml` gives it the role `pk-metal-admin`. | `pk-metal:admins` |
 | Approvers | Approve an operation or a rollout. Also their own proposal, if `selfApproval` is `Allowed`. | No default. `bindings.yaml` binds a group to the role `pk-metal-approver`. |
 
 - The admission policies ask for the admin group by name. A cluster admin is not a member.
+- Do not bind `cluster-admin` to the admin group. A member could then impersonate an approver and approve in that name. `pk-metal-admin` has no `impersonate`. See [](ref:rbac).
 - The name of the admin group is in the ConfigMap `hostoperation-approval`, key `adminGroup`.
 - [](ref:rbac) and [](ref:admission-policies) have the rules. [](howto:approval-permissions) helps you choose the groups and the setting.
 

@@ -7,8 +7,11 @@
 # the comment next to it.
 name: ci
 
+# Push on main only: a branch with a pull request is tested by the
+# pull_request run, and a push run beside it would test the same commit again.
 on:
   push:
+    branches: [main]
   pull_request:
 
 permissions:

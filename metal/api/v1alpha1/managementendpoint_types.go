@@ -220,11 +220,6 @@ type DiscoveredMedia struct {
 // ManagementEndpointStatus is what the BMC reports; what your records say is
 // on the Asset.
 type ManagementEndpointStatus struct {
-	// ManagerType is the discovered Redfish Manager type, kept opaque
-	// (BMC | EnclosureManager | RackManager | …).
-	// +optional
-	ManagerType string `json:"managerType,omitempty"`
-
 	// Vendor is the discovered manufacturer ("Huawei" | "Supermicro" | …).
 	// +optional
 	Vendor string `json:"vendor,omitempty"`

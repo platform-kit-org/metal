@@ -67,13 +67,37 @@ The result is a Kubernetes cluster that the operator installed through simulated
 
    Without this step, `kubectl`, `talosctl`, `kind` and `yq` are available only in `mise run` tasks.
 
-5. Run the doctor. The doctor can ask for your `sudo` password. It runs nothing as root.
+5. Build `pk-metal` into `metal/bin/`, and put it on the `PATH` of this terminal.
+
+   ```sh
+   mise run build
+   export PATH="$PWD/metal/bin:$PATH"
+   ```
+
+   To keep `pk-metal` on the `PATH` in each new terminal, add the line to `~/.bashrc`. The line has the full path of your clone.
+
+   ```sh
+   echo "export PATH=\"$PWD/metal/bin:\$PATH\"" >> ~/.bashrc
+   ```
+
+   After this step, `pk-metal` and `metal/bin/pk-metal` are the same program.
+
+6. Optional: install the completion of the `tab` key. It completes the commands, the flags, and the names of operations, claims and nodes from the cluster. The bash script needs the `bash-completion` package. For zsh and fish, see [](cli:completion).
+
+   ```sh
+   source <(pk-metal completion bash)
+   echo 'source <(pk-metal completion bash)' >> ~/.bashrc
+   ```
+
+   The completion reads the cluster that `--kubeconfig` on the same line selects. When the lab is up, `pk-metal --kubeconfig .lab/kubeconfig approve <tab>` shows the operations that wait for approval.
+
+7. Run the doctor. The doctor can ask for your `sudo` password. It runs nothing as root.
 
    ```sh
    mise run lab:doctor
    ```
 
-6. If a line starts with `MISS`, do what its `fix:` line says. Then run the doctor again.
+8. If a line starts with `MISS`, do what its `fix:` line says. Then run the doctor again.
 
 <Checkpoint>
 The last line is `the workstation has what the lab needs`.

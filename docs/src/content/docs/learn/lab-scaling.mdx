@@ -260,6 +260,12 @@ You move `node-2` from the Host `pklab0002` to the free Host `pklab0005`, as you
 
    If the command shows `no operation waits for approval`, wait some seconds and do this step again.
 
+<Callout type="note">
+If you approved the install before step 5, the install has the disk and the link of `pklab0002`. It fails, or you abort it.
+You do not have to release `pklab0005`. Do step 5 now. The operator then proposes a new install with the new values. Read its plan with `metal/bin/pk-metal approve`, then do step 6.
+Do not use `pk-metal retry` before step 5: it proposes the same install with the old values again.
+</Callout>
+
 The values come from the machine number. See [lab.yaml](lab:page/lab-yaml#what-comes-from-the-machine-number).
 For a real site, see [](howto:replace-a-node) and [](cli:replace).
 

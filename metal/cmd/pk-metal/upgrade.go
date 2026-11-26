@@ -136,7 +136,7 @@ func upgrade(ctx context.Context, cl client.Client, what, name, version string, 
 		return nil
 	}
 	deadline := time.Now().Add(wait)
-	for {
+	for said := false; ; said = true {
 		ro, err := proposedRollout(ctx, cl, name, kind, version)
 		if err != nil {
 			return err
@@ -148,9 +148,17 @@ func upgrade(ctx context.Context, cl client.Client, what, name, version string, 
 			}
 			return nil
 		}
+		if !said {
+			// The operator proposes and plans the rollout on its own
+			// schedule, which can take minutes: say so, or the wait looks
+			// like a hang.
+			fmt.Fprintf(w, "waiting up to %s for the operator to propose and plan the rollout "+
+				"(interrupting stops only the wait; see it later with: pk-metal rollout list)\n", shortDuration(wait))
+		}
 		if time.Now().After(deadline) {
 			return fmt.Errorf("no rollout planned for %s %s on cluster %s after %s; the operator proposes one once it "+
-				"has seen every node's version. See: pk-metal rollout list, and the cluster's conditions",
+				"has seen every node's version and no other rollout of the cluster is open. See: pk-metal rollout list, "+
+				"and the cluster's conditions",
 				what, version, name, shortDuration(wait))
 		}
 		select {

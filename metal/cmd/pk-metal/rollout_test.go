@@ -258,7 +258,9 @@ func TestUpgrade(t *testing.T) {
 	})
 	t.Run("times out when nothing is proposed", func(t *testing.T) {
 		cl := fakeClientAs("bob", cluster())
-		err := upgrade(ctx, cl, "kubernetes", "lab", "v1.36.3", 5*time.Millisecond, time.Millisecond, &bytes.Buffer{})
+		var out bytes.Buffer
+		err := upgrade(ctx, cl, "kubernetes", "lab", "v1.36.3", 5*time.Millisecond, time.Millisecond, &out)
 		require.ErrorContains(t, err, "no rollout planned")
+		assert.Equal(t, 1, strings.Count(out.String(), "waiting up to"), "the wait is said once, so it does not look like a hang")
 	})
 }

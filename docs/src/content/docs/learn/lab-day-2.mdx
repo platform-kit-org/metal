@@ -160,7 +160,7 @@ The operator copies these names into the rollout, and a person in the list canno
    metal/bin/pk-metal rollout show <rollout>
    ```
 
-   Each step of the plan ends with `no reboot`.
+   Each step of the plan shows `no reboot`.
 
 4. Approve the plan.
 
@@ -191,15 +191,21 @@ kubectl --kubeconfig .lab/workload.kubeconfig get nodes -L lab.platform-kit.org/
 1. Set the release that the cluster asks for, as `lab-proposer`. The target is the release in `lab/lab.yaml`.
 
    ```sh
-   metal/bin/pk-metal --kubeconfig .lab/proposer.kubeconfig upgrade talos lab v1.14.6
+   metal/bin/pk-metal --kubeconfig .lab/proposer.kubeconfig upgrade --wait 5m talos lab v1.14.6
    ```
 
    ```console
    cluster lab now asks for talos v1.14.6 (was v1.14.5); nothing on a machine changed yet
+   waiting up to 5m for the operator to propose and plan the rollout (interrupting stops only the wait; see it later with: pk-metal rollout list)
    ```
 
    The command sets the annotation `metal.platform-kit.org/requested-by` of the [](kind:TalosCluster) to its user. If the admin sets the release, the admin cannot approve the rollout, as in step 3.
-   The command then shows the rollout that the operator proposes.
+   Then the command waits until the operator proposes a rollout and makes its plan. This can take some minutes. Then the command shows the plan.
+   The operator proposes no rollout while the rollout of step 3 is not complete. If the wait ends without a plan, the release stays set. Examine the rollouts:
+
+   ```sh
+   metal/bin/pk-metal rollout list
+   ```
 
 2. Read the plan. Each step shows `v1.14.5 -> v1.14.6` and `REBOOTS`.
 

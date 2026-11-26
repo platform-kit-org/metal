@@ -48,7 +48,7 @@ Nothing on a machine changes until a person approves that plan.
    - A Talos upgrade from a release that Talos does not support as a source.
    - A pair of Talos and Kubernetes versions that Talos does not support.
 3. It writes the version into `spec.talosVersion` or `spec.kubernetesVersion`.
-4. It waits for the rollout, at most the time of [`--wait`](cli:upgrade#--wait).
+4. It waits for the rollout, at most the time of [`--wait`](cli:upgrade#--wait). It prints one line when it starts to wait. If you stop the command during the wait, the version stays set.
 5. It prints the plan of the rollout and the command that approves it.
 
 <dl>
@@ -70,6 +70,7 @@ mark={['Nothing runs until']}
 text={`
     $ pk-metal upgrade talos lab v1.14.7
     cluster lab now asks for talos v1.14.7 (was v1.14.6); nothing on a machine changed yet
+    waiting up to 2m for the operator to propose and plan the rollout (interrupting stops only the wait; see it later with: pk-metal rollout list)
 
     rollout lab-talosupgrade-1a2b3c4d: TalosUpgrade on cluster lab to Talos v1.14.7
       proposed by system:serviceaccount:pk-metal:pk-metal

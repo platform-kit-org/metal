@@ -12,6 +12,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
+	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
 	"github.com/dennisklein/platform-kit/metal/internal/talos/render"
 )
 
@@ -88,6 +89,21 @@ func configMapReader(ctx context.Context, c client.Reader, namespace string) ren
 		}
 		return v, nil
 	}
+}
+
+// hostsByNode maps each TalosNode that a Host's spec.os names to that Host.
+func hostsByNode(ctx context.Context, c client.Reader) (map[string]string, error) {
+	hosts := &metalv1alpha1.HostList{}
+	if err := c.List(ctx, hosts); err != nil {
+		return nil, err
+	}
+	out := map[string]string{}
+	for i := range hosts.Items {
+		if os := hosts.Items[i].Spec.OS; os != nil {
+			out[os.NodeRef.Name] = hosts.Items[i].Name
+		}
+	}
+	return out, nil
 }
 
 // clusterMembers lists the TalosNodes naming the cluster, sorted by name.

@@ -325,8 +325,8 @@ Runs two day-2 rounds on a lab that is complete.
 
 1. It reboots one worker and one control plane with [](cli:reboot). A second user, `lab-proposer`, proposes each reboot. The admin approves it.
 2. It checks that the boot ID of each node changed, and that the node is Ready and schedulable.
-3. It adds the label `lab.platform-kit.org/day2` to each TalosNode. The operator proposes a Config rollout.
-4. It approves the rollout, continues it after the pause, and checks that no machine rebooted.
+3. As `lab-proposer`, it adds the label `lab.platform-kit.org/day2` to each TalosNode. The operator proposes a Config rollout.
+4. As the admin, it approves the rollout, continues it after the pause, and checks that no machine rebooted.
 
 <dl class="pk-glance">
   <dt>Verb</dt>
@@ -354,8 +354,8 @@ Upgrades the Talos release of the cluster through an approved [](kind:TalosRollo
   <dd>`PK_LAB_ROLLOUT_TIMEOUT`, default 2400 seconds.</dd>
 </dl>
 
-1. It runs [](cli:upgrade) with the target release.
-2. It approves the rollout with [](cli:rollout).
+1. As `lab-proposer`, it runs [](cli:upgrade) with the target release.
+2. As the admin, it approves the rollout with [](cli:rollout).
 3. After the first node, the rollout pauses. The task checks that all nodes are Ready. Then it continues the rollout.
 4. It checks that each TalosNode reports the target release.
 

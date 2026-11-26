@@ -264,6 +264,38 @@ func TestRenderOptions(t *testing.T) {
 		assert.ErrorContains(t, err, "strategic merge")
 	})
 
+	// The install decides which disk Talos erases. Before, a patch could
+	// point it at every disk and turn the wipe on, or swap the installer
+	// image, and the render passed.
+	t.Run("a patch does not move the install", func(t *testing.T) {
+		install := "apiVersion: v1alpha1\nkind: UnattendedInstallConfig\n"
+		for name, tc := range map[string]struct{ patch, err string }{
+			"disk":      {install + "provisioning:\n  diskSelector:\n    match: \"true\"\n", "provisioning.diskSelector"},
+			"wipe":      {install + "provisioning:\n  wipe: true\n", "provisioning.wipe"},
+			"installer": {install + "installer:\n  image: registry.example/installer:v1.14.6\n", "installer.image"},
+			"deleted":   {install + "$patch: delete\n", "document is deleted"},
+			"reboot":    {install + "reboot: false\n", ""},
+		} {
+			t.Run(name, func(t *testing.T) {
+				installer, _ := render.NewFactory("").InstallerImage(nil, "v1.14.6")
+				for _, in := range []render.Input{
+					{Cluster: m.Cluster, Node: m.Node("node-3"), Bundle: testBundle(t), InstallerImage: installer,
+						ClusterPatches: [][]byte{[]byte(tc.patch)}},
+					{Cluster: m.Cluster, Node: m.Node("node-3"), Bundle: testBundle(t), InstallerImage: installer,
+						NodePatches: [][]byte{[]byte(tc.patch)}},
+				} {
+					_, err := render.Node(in)
+					if tc.err == "" {
+						assert.NoError(t, err, "a field the operator does not decide stays open")
+						continue
+					}
+					assert.ErrorContains(t, err, tc.err)
+					assert.ErrorContains(t, err, "spec.installDiskSelector")
+				}
+			})
+		}
+	})
+
 	t.Run("a VIP no link can carry is an error", func(t *testing.T) {
 		m.Cluster.Spec.ControlPlane.VIP = "192.0.2.10"
 		defer func() { m.Cluster.Spec.ControlPlane.VIP = "10.77.0.10" }()

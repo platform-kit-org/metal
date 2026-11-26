@@ -201,8 +201,7 @@ func TestPlanNodeSaysWhenTheNodeRestarts(t *testing.T) {
 		Spec: osv1alpha1.TalosNodeSpec{Role: osv1alpha1.RoleControlPlane}, Status: osv1alpha1.TalosNodeStatus{Version: "v1.14.5"}}
 	for _, kind := range []osv1alpha1.RolloutKind{osv1alpha1.RolloutTalosUpgrade, osv1alpha1.RolloutReboot} {
 		ro := &osv1alpha1.TalosRollout{Spec: osv1alpha1.TalosRolloutSpec{Kind: kind}}
-		step, why, err := r.planNode(t.Context(), ro, cluster, n, "box-a", osv1alpha1.RolloutTarget{TalosVersion: "v1.14.6"})
-		require.NoError(t, err)
+		step, why := r.planNode(t.Context(), ro, cluster, n, "box-a", osv1alpha1.RolloutTarget{TalosVersion: "v1.14.6"})
 		require.Empty(t, why)
 		require.NotNil(t, step)
 		assert.True(t, step.RebootRequired, "a %s restarts the node", kind)

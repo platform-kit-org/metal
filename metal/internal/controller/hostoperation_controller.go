@@ -400,11 +400,7 @@ func (r *HostOperationReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		var obs bmc.System
 		if usesBMC(op) {
 			var hold string
-			var err error
-			if obs, hold, err = x.observe(bctx); err != nil {
-				return ctrl.Result{}, err
-			}
-			if hold != "" {
+			if obs, hold = x.observe(bctx); hold != "" {
 				// Nothing else wakes the operation: the Host does not
 				// change when only this pass failed to reach its BMC.
 				setCond(metalv1alpha1.ConditionExecuted, metav1.ConditionUnknown, metalv1alpha1.ReasonNoReachablePath,
@@ -555,7 +551,7 @@ func (r *HostOperationReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	// The closing observation: proof of the reset (baseline-and-advance), and what
 	// marks the Host's next reset-time advance as explained rather than Drifted.
 	if x.cl != nil {
-		if after, hold, err := x.observe(bctx); err == nil && hold == "" && !after.LastResetTime.IsZero() {
+		if after, hold := x.observe(bctx); hold == "" && !after.LastResetTime.IsZero() {
 			op.Status.ObservedResetTime = &metav1.MicroTime{Time: after.LastResetTime}
 		}
 	}
@@ -1129,26 +1125,26 @@ func (x *exec) close() {
 // WRITE-capable client — one of the two places the read-only rail is
 // deliberately opened (the other is the convergence reconciler's read pass).
 func (r *HostOperationReconciler) dialHost(ctx context.Context, host *metalv1alpha1.Host) (bmc.Client, string, string, string, error) {
-	cl, reason, msg, err := hostPathClient(ctx, r.Client, r.CredentialsNamespace, host, false)
-	if err != nil || reason != "" {
-		return nil, "", reason, msg, err
+	cl, reason, msg := hostPathClient(ctx, r.Client, r.CredentialsNamespace, host, false)
+	if reason != "" {
+		return nil, "", reason, msg, nil
 	}
 	return cl, cl.(*pathClient).systemID, "", "", nil
 }
 
 // observe reads the system's current view, of which an operation's baseline
 // keeps the reset observables (power state, last reset time); a connection
-// hold comes back as a message, not an error, so the caller can surface it.
-func (x *exec) observe(ctx context.Context) (bmc.System, string, error) {
+// failure comes back as the hold message, so the caller can surface it.
+func (x *exec) observe(ctx context.Context) (bmc.System, string) {
 	cl, sysID, err := x.client(ctx)
 	if err != nil {
-		return bmc.System{}, err.Error(), nil
+		return bmc.System{}, err.Error()
 	}
 	sys, err := systemOf(ctx, cl, sysID)
 	if err != nil {
-		return bmc.System{}, err.Error(), nil
+		return bmc.System{}, err.Error()
 	}
-	return sys, "", nil
+	return sys, ""
 }
 
 // systemOf reads one system's current view.
@@ -1169,7 +1165,8 @@ func systemOf(ctx context.Context, cl bmc.Client, systemID string) (bmc.System, 
 // shared by the executor (write-capable) and the convergence observer
 // (read-only). ctx is the caller's pass-bounded context: gofish pins it to
 // the client's whole lifetime, so no narrower dial timeout here.
-func hostPathClient(ctx context.Context, c client.Client, credentialsNamespace string, host *metalv1alpha1.Host, readOnly bool) (bmc.Client, string, string, error) {
+// A path that fails is skipped; reason and msg say why none is left.
+func hostPathClient(ctx context.Context, c client.Client, credentialsNamespace string, host *metalv1alpha1.Host, readOnly bool) (cl bmc.Client, reason, msg string) {
 	for _, path := range host.Status.ManagedBy {
 		if !path.Reachable {
 			continue
@@ -1180,16 +1177,15 @@ func hostPathClient(ctx context.Context, c client.Client, credentialsNamespace s
 		}
 		cfg, reason, err := endpointClientConfig(ctx, c, credentialsNamespace, ep, readOnly)
 		if err != nil {
-			return nil, reason, err.Error(), nil
+			return nil, reason, err.Error()
 		}
 		cl, err := gofishclient.Connect(ctx, cfg)
 		if err != nil {
 			continue
 		}
-		return &pathClient{Client: cl, systemID: path.SystemID}, "", "", nil
+		return &pathClient{Client: cl, systemID: path.SystemID}, "", ""
 	}
-	return nil, metalv1alpha1.ReasonNoReachablePath,
-		fmt.Sprintf("host %s has no reachable management path", host.Name), nil
+	return nil, metalv1alpha1.ReasonNoReachablePath, fmt.Sprintf("host %s has no reachable management path", host.Name)
 }
 
 // pathClient pins the chosen path's system id alongside the connection.

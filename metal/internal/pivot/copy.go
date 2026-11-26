@@ -231,7 +231,7 @@ func (m *Mover) Copy(ctx context.Context, plan *Plan) (*Report, error) {
 		}
 	}
 	for _, so := range objs {
-		if err := m.copyStatus(ctx, so, rw); err != nil {
+		if err := m.copyStatus(ctx, so); err != nil {
 			return nil, fmt.Errorf("copy the status of %s %s: %w", so.kind.gvk.Kind, objectRef(so.obj), err)
 		}
 		rep.Copied[so.kind.gvk.Kind]++
@@ -518,7 +518,7 @@ func mergeInto(cur, want *unstructured.Unstructured, isOp bool) bool {
 // copyStatus writes the source's status onto the target object. The Host's
 // and the endpoint's status have several writers, each with its own field
 // manager; they are applied as those writers apply them.
-func (m *Mover) copyStatus(ctx context.Context, so sourceObject, rw *rewriter) error {
+func (m *Mover) copyStatus(ctx context.Context, so sourceObject) error {
 	status, found, _ := unstructured.NestedFieldNoCopy(so.obj.Object, "status")
 	if !found || status == nil {
 		return nil

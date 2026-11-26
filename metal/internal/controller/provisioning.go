@@ -403,7 +403,11 @@ func (r *HostClaimReconciler) provision(ctx context.Context, claim *metalv1alpha
 		if reason != "" {
 			return hold(reason, msg)
 		}
-		op := r.provisionOp(claim, hostName, name, plan, node, config, installer)
+		requesters, err := r.installRequesters(ctx, claim, node, cluster)
+		if err != nil {
+			return err
+		}
+		op := r.provisionOp(claim, hostName, name, plan, node, config, installer, requesters)
 		op.Spec.Actions = append(prefix, op.Spec.Actions...)
 		if prior != "" || moved {
 			// Either way the node checked in before, from this machine or
@@ -580,11 +584,26 @@ func bootsNode(op *metalv1alpha1.HostOperation, hostName, nodeName string) bool 
 	})
 }
 
+// installRequesters names who asked for what an install puts on the
+// machine: whoever last changed the claim (a reinstall mark, a new
+// machine), the node, its cluster or a patch ConfigMap either reads. The
+// install applies their edits, as a rollout of the cluster would.
+func (r *HostClaimReconciler) installRequesters(ctx context.Context, claim *metalv1alpha1.HostClaim,
+	node *osv1alpha1.TalosNode, cluster *osv1alpha1.TalosCluster) ([]string, error) {
+	names, err := clusterRequesters(ctx, r.Client, r.CredentialsNamespace, cluster, []osv1alpha1.TalosNode{*node})
+	if err != nil {
+		return nil, err
+	}
+	names = append(names, metalv1alpha1.RequestedBy(claim.Annotations)...)
+	slices.Sort(names)
+	return slices.Compact(names), nil
+}
+
 // provisionOp builds the boot operation for a plan. config is nil for an
 // embedded plan, installer is nil for a config-only one. Each medium is
 // pinned to the digest the plan was made from.
 func (r *HostClaimReconciler) provisionOp(claim *metalv1alpha1.HostClaim, hostName, name string, plan provisionPlan,
-	node *osv1alpha1.TalosNode, config, installer *osv1alpha1.BootAsset) *metalv1alpha1.HostOperation {
+	node *osv1alpha1.TalosNode, config, installer *osv1alpha1.BootAsset, requestedBy []string) *metalv1alpha1.HostOperation {
 	var actions []metalv1alpha1.HostOperationAction
 	for _, s := range plan.Slots {
 		actions = append(actions, metalv1alpha1.HostOperationAction{EjectMedia: &metalv1alpha1.EjectMediaAction{MediaID: s}})
@@ -629,11 +648,9 @@ func (r *HostClaimReconciler) provisionOp(claim *metalv1alpha1.HostClaim, hostNa
 			Annotations: map[string]string{annotationConfigDigest: plan.ConfigDigest},
 		},
 		Spec: metalv1alpha1.HostOperationSpec{
-			HostRef:    metalv1alpha1.Reference{Name: hostName},
-			ProposedBy: r.Proposer,
-			// Whoever last changed the claim (a reinstall mark, a new
-			// machine) or the node asked for this install.
-			RequestedBy: metalv1alpha1.RequestedBy(claim.Annotations, node.Annotations),
+			HostRef:     metalv1alpha1.Reference{Name: hostName},
+			ProposedBy:  r.Proposer,
+			RequestedBy: requestedBy,
 			Reason:      reasonProvisioning,
 			PlanHash:    planHash(plan),
 			Actions:     actions,

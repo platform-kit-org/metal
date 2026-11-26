@@ -72,3 +72,29 @@ func TestRolloutEndsWhenItsRequestersMove(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, stop, "a rollout a person created names that person; the check is for the operator's")
 }
+
+// An install puts the cluster's config and patches on the machine, not the
+// claim's and the node's alone. Before, it named only who last changed the
+// claim or the node: under selfApproval: Forbidden, the editor of a patch
+// could approve the install that carries the edit, the review the rollout
+// of the same patch asks for.
+func TestInstallNamesWhoChangedWhatItApplies(t *testing.T) {
+	patch := osv1alpha1.Patch{ConfigMapRef: &osv1alpha1.ConfigMapKeyReference{Namespace: "pk-metal", Name: "net", Key: "p"}}
+	cluster := &osv1alpha1.TalosCluster{ObjectMeta: metav1.ObjectMeta{Name: "c", Annotations: requested("alice")},
+		Spec: osv1alpha1.TalosClusterSpec{Patches: []osv1alpha1.Patch{patch}}}
+	node := &osv1alpha1.TalosNode{ObjectMeta: metav1.ObjectMeta{Name: "w-1", Annotations: requested("bob")},
+		Spec: osv1alpha1.TalosNodeSpec{ClusterRef: osv1alpha1.Reference{Name: "c"}}}
+	other := &osv1alpha1.TalosNode{ObjectMeta: metav1.ObjectMeta{Name: "w-2", Annotations: requested("dave")},
+		Spec: osv1alpha1.TalosNodeSpec{ClusterRef: osv1alpha1.Reference{Name: "c"}}}
+	claim := testClaim("w-1")
+	claim.Annotations = requested("bob")
+	cl := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(other,
+		&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "pk-metal", Name: "net", Annotations: requested("carol")}},
+	).Build()
+	r := &HostClaimReconciler{Client: cl, CredentialsNamespace: "pk-metal"}
+
+	got, err := r.installRequesters(t.Context(), claim, node, cluster)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"alice", "bob", "carol"}, got,
+		"the cluster, the patch, the node and the claim; not another node of the cluster")
+}

@@ -78,7 +78,7 @@ func TestEveryPlanShapeMountsPowersWaitsEjects(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			op := r.provisionOp(testClaim("node"), "host-a", "op", tc.plan, node, tc.config, tc.installer)
+			op := r.provisionOp(testClaim("node"), "host-a", "op", tc.plan, node, tc.config, tc.installer, nil)
 			var mounts []string
 			phase := 0 // 0 ejects, 1 mounts, 2 override, 3 power, 4 await, 5 ejects
 			advance := func(to int) {

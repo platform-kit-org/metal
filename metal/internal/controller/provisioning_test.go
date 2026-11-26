@@ -499,7 +499,7 @@ func TestBootOverrideAsksForUEFIOnlyWhereNeeded(t *testing.T) {
 	installer := &osv1alpha1.BootAsset{ObjectMeta: metav1.ObjectMeta{Name: "installer"}}
 	for served, want := range map[string]string{"Legacy": "UEFI", "UEFI": "", "": ""} {
 		plan := provisionPlan{Slots: []string{"VirtualMedia1", "VirtualMedia2"}, Target: "UsbCd", Mode: overrideMode(served)}
-		op := r.provisionOp(testClaim("node"), "host-a", "op", plan, node, config, installer)
+		op := r.provisionOp(testClaim("node"), "host-a", "op", plan, node, config, installer, nil)
 		var got *metalv1alpha1.SetBootOverrideAction
 		for _, a := range op.Spec.Actions {
 			if a.SetBootOverride != nil {
@@ -665,7 +665,7 @@ func TestTwoMediaPlanPinsBothMedia(t *testing.T) {
 	installerDigest, configDigest := "sha256:"+strings.Repeat("1", 64), "sha256:"+strings.Repeat("2", 64)
 	plan := provisionPlan{Slots: []string{"VirtualMedia1", "VirtualMedia2"}, Target: "UsbCd",
 		ArtifactDigest: configDigest, Installer: "https://factory.test/image.iso", InstallerDigest: installerDigest}
-	op := r.provisionOp(testClaim("node"), "host-a", "op", plan, node, config, installer)
+	op := r.provisionOp(testClaim("node"), "host-a", "op", plan, node, config, installer, nil)
 	pins := map[string]string{}
 	for _, a := range op.Spec.Actions {
 		if in := a.InsertMedia; in != nil {

@@ -145,6 +145,7 @@ The operator proposes most changes itself, as the result of an edit. For example
 
 - You can set the annotation to your own username only. You cannot remove it. To make a change of another person your own, set your own username.
 - The operator copies the names from the objects behind a proposal into `spec.requestedBy` of the operation or rollout. This field cannot change after the create.
+- An install applies the config of the node. So the install also names the last editor of the [](kind:TalosCluster). It also names the last editor of each patch ConfigMap of the node. A rollout names the same persons.
 - A rollout that the operator proposed ends with `PlanChanged` if a person who is not in its `spec.requestedBy` changes what it applies. The operator then proposes it again, with the new names.
 - A Talos config patch in a ConfigMap must have the label `os.platform-kit.org/patch: "true"`. The operator reads no ConfigMap without it. So the policy `requested-by-patches` can find the patches and ask for a name.
 

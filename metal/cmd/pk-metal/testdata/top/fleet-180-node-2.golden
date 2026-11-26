@@ -1,0 +1,30 @@
+pk-metal top   TalosNodes Ready 1/3   Kubernetes nodes Ready 1/1   needs a person: 2
+cluster lab: ● Bootstrapped  ✗ Available (NodesNotReady)  control planes 1/1, workers 0/2
+fleet http://127.0.0.1:8440/state
+╭───────────────────────────────────────────╮┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓╭───────────────────────────────────────────╮╭───────────────────────────────────────────╮
+│ pklab0001 · node-1 generic                │┃ pklab0002 · node-2 generic                ┃│ pklab0003 · node-3 supermicro-x12         ││ pk-real-1 QEMU                            │
+│ BMC ● ─▶ media ○ ─▶ VM ● ─▶ node ●        │┃ BMC ● ─▶ media ● ─▶ VM ✗ ─▶ node ◐        ┃│ BMC ○ ─▶ media ○ ─▶ VM ○ ─▶ node ◐        ││ BMC ● ─▶ host ✗ ─▶ node ○                 │
+│ ● Provisioned                             │┃ ◐ Provisioning                            ┃│ ◐ Assigned · Approval(Provisioning)       ││ ✗ Assigned  ON HOLD                       │
+│ ● node-1 Ready                            │┃ ● op 7/9 awaitCheckIn                     ┃│ ◐ op 1/9 ejectMedia, waits for approval   ││ ✗ op 3/9 insertMedia failed               │
+╰───────────────────────────────────────────╯┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛╰───────────────────────────────────────────╯╰───────────────────────────────────────────╯
+╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ pklab0002 · node-2 generic                                                                                                                                                       │
+│ BMC ● on ─▶ media ● 2 mounted ─▶ VM ✗ running OSBootStarted ─▶ node ◐ MaintenanceMode                                                                                            │
+│ BMC     10.77.0.1:8442  power on  boot Cd/Once                                           host    ◐ Provisioning                                                                  │
+│ media   CD: metal-amd64.iso                                                              claim   default/node-2                                                                  │
+│         USBStick: node-2-config.iso                                                      op      7/9 awaitCheckIn, approved by alice                                             │
+│ last    POST /Systems/1/ComputerSystem.Reset 204                                                 pk-metal/provision-node2-1a2b3c4d                                               │
+│ VM      ◐ running OSBootStarted · hang-cycled 1×                                         node    node-2 10.77.0.12                                                               │
+│                                                                                                  ◐ Talos MaintenanceMode                                                         │
+│ console .lab/state/node-2/console.log                                                                                                                                            │
+│ │ BdsDxe: loading Boot0002 "UEFI QEMU DVD-ROM QM00001"                                                                                                                           │
+│ │ [    0.000000] Linux version 6.12.40-talos                                                                                                                                     │
+│ │ [talos] controller failed {"component": "controller-runtime", "controller": "k8s.NodeApplyController", "error": "1 error occurred: timeout"}                                   │
+│ │                                                                                                                                                                                │
+│ │                                                                                                                                                                                │
+│ │                                                                                                                                                                                │
+│ │                                                                                                                                                                                │
+│ │                                                                                                                                                                                │
+│ │                                                                                                                                                                                │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+tab select  a approve  h hold/unhold  r retry  q quit

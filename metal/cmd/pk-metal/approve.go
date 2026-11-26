@@ -428,29 +428,47 @@ type planContext struct {
 	Endpoints  []metalv1alpha1.ManagementEndpoint // the host's BMC paths, in path order
 	BootAssets map[string]*osv1alpha1.BootAsset
 	Nodes      map[string]*osv1alpha1.TalosNode
+	// Hidden are the kinds the caller may not read. The plan says so: an
+	// approver who cannot read a BMC's endpoint does not see that nobody
+	// checks its certificate, and must not take that for "none".
+	Hidden []string
+}
+
+// missing says why the plan lacks an object of kind.
+func (pc planContext) missing(kind string) string {
+	if slices.Contains(pc.Hidden, kind) {
+		return "not readable with your rights"
+	}
+	return "not found in the cluster"
 }
 
 func loadPlanContext(ctx context.Context, cl client.Client, op *metalv1alpha1.HostOperation) (planContext, error) {
 	pc := planContext{BootAssets: map[string]*osv1alpha1.BootAsset{}, Nodes: map[string]*osv1alpha1.TalosNode{}}
-	// optional reads a cluster-scoped object; not found leaves it out.
-	optional := func(name string, obj client.Object) (bool, error) {
+	// optional reads a cluster-scoped object; not found, or not readable,
+	// leaves it out.
+	optional := func(name string, obj client.Object, kind string) (bool, error) {
 		err := cl.Get(ctx, client.ObjectKey{Name: name}, obj)
 		switch {
 		case err == nil:
 			return true, nil
-		case apierrors.IsNotFound(err) || apierrors.IsForbidden(err):
+		case apierrors.IsForbidden(err):
+			if !slices.Contains(pc.Hidden, kind) {
+				pc.Hidden = append(pc.Hidden, kind)
+			}
+			return false, nil
+		case apierrors.IsNotFound(err):
 			return false, nil
 		}
 		return false, fmt.Errorf("read %s for the plan: %w", name, err)
 	}
 	h := &metalv1alpha1.Host{}
-	if ok, err := optional(op.Spec.HostRef.Name, h); err != nil {
+	if ok, err := optional(op.Spec.HostRef.Name, h, "Host"); err != nil {
 		return pc, err
 	} else if ok {
 		pc.Host = h
 		for _, p := range h.Status.ManagedBy {
 			ep := &metalv1alpha1.ManagementEndpoint{}
-			if ok, err := optional(p.EndpointRef.Name, ep); err != nil {
+			if ok, err := optional(p.EndpointRef.Name, ep, "ManagementEndpoint"); err != nil {
 				return pc, err
 			} else if ok {
 				pc.Endpoints = append(pc.Endpoints, *ep)
@@ -461,7 +479,7 @@ func loadPlanContext(ctx context.Context, cl client.Client, op *metalv1alpha1.Ho
 		if a.InsertMedia != nil && a.InsertMedia.BootAssetRef != nil {
 			name := a.InsertMedia.BootAssetRef.Name
 			ba := &osv1alpha1.BootAsset{}
-			if ok, err := optional(name, ba); err != nil {
+			if ok, err := optional(name, ba, "BootAsset"); err != nil {
 				return pc, err
 			} else if ok {
 				pc.BootAssets[name] = ba
@@ -469,7 +487,7 @@ func loadPlanContext(ctx context.Context, cl client.Client, op *metalv1alpha1.Ho
 		}
 		if name := talosNodeRef(a); name != "" && pc.Nodes[name] == nil {
 			n := &osv1alpha1.TalosNode{}
-			if ok, err := optional(name, n); err != nil {
+			if ok, err := optional(name, n, "TalosNode"); err != nil {
 				return pc, err
 			} else if ok {
 				pc.Nodes[name] = n
@@ -494,9 +512,13 @@ func renderPlan(op *metalv1alpha1.HostOperation, pc planContext) string {
 		fmt.Fprintf(&b, "  rollout:     %s (plan %s); the rollout's approval covers this operation\n", r.Name, r.PlanHash)
 	}
 
+	if len(pc.Hidden) > 0 {
+		fmt.Fprintf(&b, "INCOMPLETE: you may not read %s, so this plan leaves out what they say; get read access before you approve\n",
+			strings.Join(pc.Hidden, ", "))
+	}
 	fmt.Fprintf(&b, "host %s", op.Spec.HostRef.Name)
 	if pc.Host == nil {
-		b.WriteString(" (not found in the cluster)\n")
+		fmt.Fprintf(&b, " (%s)\n", pc.missing("Host"))
 	} else {
 		var facts []string
 		if assets := assetsOf(pc.Endpoints); len(assets) > 0 {
@@ -509,7 +531,9 @@ func renderPlan(op *metalv1alpha1.HostOperation, pc planContext) string {
 			fmt.Fprintf(&b, " (%s)", strings.Join(facts, ", "))
 		}
 		b.WriteString("\n")
-		if len(pc.Endpoints) == 0 {
+		if slices.Contains(pc.Hidden, "ManagementEndpoint") {
+			b.WriteString("  BMC: not readable with your rights\n")
+		} else if len(pc.Endpoints) == 0 {
 			b.WriteString("  BMC: none known\n")
 		}
 		for _, ep := range pc.Endpoints {
@@ -543,7 +567,7 @@ func renderPlan(op *metalv1alpha1.HostOperation, pc planContext) string {
 		name := a.AwaitCheckIn.NodeRef.Name
 		n := pc.Nodes[name]
 		if n == nil {
-			fmt.Fprintf(&b, "boots TalosNode %s (not found in the cluster: the disk it installs onto is unknown)\n", name)
+			fmt.Fprintf(&b, "boots TalosNode %s (%s: the disk it installs onto is unknown)\n", name, pc.missing("TalosNode"))
 			continue
 		}
 		fmt.Fprintf(&b, "boots TalosNode %s: address %s, role %s\n", name, orDash(nodeAddress(n)), n.Spec.Role)
@@ -593,7 +617,7 @@ func describeAction(a metalv1alpha1.HostOperationAction, pc planContext) string 
 		im := a.InsertMedia
 		what := "the image " + im.ImageURL
 		if im.BootAssetRef != nil {
-			what = describeBootAsset(im.BootAssetRef.Name, pc.BootAssets[im.BootAssetRef.Name])
+			what = describeBootAsset(im.BootAssetRef.Name, pc.BootAssets[im.BootAssetRef.Name], pc.missing("BootAsset"))
 		}
 		s := fmt.Sprintf("mount %s on virtual media slot %s", what, im.MediaID)
 		if im.Digest != "" {
@@ -659,9 +683,9 @@ func describeAction(a metalv1alpha1.HostOperationAction, pc planContext) string 
 	return "unknown step (this pk-metal is older than the operator; update it)"
 }
 
-func describeBootAsset(name string, ba *osv1alpha1.BootAsset) string {
+func describeBootAsset(name string, ba *osv1alpha1.BootAsset, missing string) string {
 	if ba == nil {
-		return fmt.Sprintf("boot asset %s (not found in the cluster)", name)
+		return fmt.Sprintf("boot asset %s (%s)", name, missing)
 	}
 	switch ba.Spec.Strategy {
 	case osv1alpha1.StrategyFactory:

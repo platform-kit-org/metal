@@ -13,6 +13,11 @@
 # at creation and its plan is the operator's status, so a patch approves it,
 # pauses or resumes it, or aborts it. One approval there covers every node's
 # operation of the plan.
+#
+# It reads what the plan of pk-metal approve names: the Host, its BMC
+# endpoints (whether anybody checks the BMC's certificate), the boot assets
+# (what the BMC mounts), and the clusters and nodes. A plan that the
+# approver cannot read in full says so.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -22,11 +27,11 @@ rules:
     resources: ["hostoperations"]
     verbs: ["get", "list", "watch", "patch"]
   - apiGroups: ["metal.platform-kit.org"]
-    resources: ["hosts"]
+    resources: ["hosts", "managementendpoints"]
     verbs: ["get", "list", "watch"]
   - apiGroups: ["os.platform-kit.org"]
     resources: ["talosrollouts"]
     verbs: ["get", "list", "watch", "patch"]
   - apiGroups: ["os.platform-kit.org"]
-    resources: ["talosclusters", "talosnodes"]
+    resources: ["talosclusters", "talosnodes", "bootassets"]
     verbs: ["get", "list", "watch"]

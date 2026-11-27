@@ -140,7 +140,7 @@ The [](ctrl:host) sets `DeletionHeld` on the Host itself.
 
 | You see | Cause | Do this |
 | --- | --- | --- |
-| Endpoint stays in deletion, `DeletionHeld=True` | A claim holds the Host behind it. | Delete the claim. See [](howto:release-a-host). |
+| Endpoint stays in deletion, `DeletionHeld=True` | A claim holds the Host behind it. | Delete the claim. See [](howto:remove-a-node). |
 | Operation waits with `SelfDisruption` | The operator runs on the machine. | Move the operator first with [](cli:pivot), or set the annotation on the Host. |
 | Operation waits with `ClusterDisruption` | Etcd would lose its majority. | Use [](rb:etcd-unhealthy). |
 

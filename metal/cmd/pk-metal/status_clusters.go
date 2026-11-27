@@ -10,7 +10,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
-	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
 )
 
 // clusterStatus is one TalosCluster row of -o json.
@@ -86,15 +85,15 @@ func backedUp(policies []osv1alpha1.EtcdBackupPolicy, cluster string) (state, ms
 	return clusterCond([]metav1.Condition{*worst}, osv1alpha1.ConditionBackedUp)
 }
 
-// addClusters fills the cluster and node tables. Hosts give the NODE table
-// its HOST column (the Host whose spec.os names the node); the backup
-// policies its BACKUP column.
-func addClusters(rep *statusReport, clusters []osv1alpha1.TalosCluster, nodes []osv1alpha1.TalosNode, hosts []metalv1alpha1.Host,
+// addClusters fills the cluster and node tables. The HOST rows give the
+// NODE table its HOST column, so that both tables join a host and its node
+// the same way; the backup policies give the BACKUP column.
+func addClusters(rep *statusReport, clusters []osv1alpha1.TalosCluster, nodes []osv1alpha1.TalosNode,
 	policies []osv1alpha1.EtcdBackupPolicy) {
 	hostOf := map[string]string{}
-	for _, h := range hosts {
-		if h.Spec.OS != nil {
-			hostOf[h.Spec.OS.NodeRef.Name] = h.Name
+	for _, h := range rep.Hosts {
+		if h.Node != nil {
+			hostOf[h.Node.Name] = h.Name
 		}
 	}
 	running := map[string][]string{}

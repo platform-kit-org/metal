@@ -16,7 +16,8 @@ import (
 )
 
 // lab is a running three-node cluster: two control planes Ready on the
-// wanted version, one that stopped answering after it had run.
+// wanted version, one that stopped answering after it had run. The host of
+// node-2 has no spec.os yet; its claim names the node.
 func lab() topInput {
 	at := metav1.NewTime(time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC))
 	ready := func(s metav1.ConditionStatus, reason, msg string) []metav1.Condition {
@@ -50,8 +51,15 @@ func lab() topInput {
 	hosts := []metalv1alpha1.Host{{
 		ObjectMeta: metav1.ObjectMeta{Name: "simx12b000001"},
 		Spec:       metalv1alpha1.HostSpec{OS: &metalv1alpha1.HostOS{NodeRef: metalv1alpha1.Reference{Name: "node-1"}}},
+	}, {
+		ObjectMeta: metav1.ObjectMeta{Name: "simx12b000002"},
+		Spec:       metalv1alpha1.HostSpec{ClaimRef: &metalv1alpha1.ClaimReference{Namespace: "default", Name: "cp-2"}},
 	}}
-	return topInput{Clusters: clusters, Nodes: nodes, Hosts: hosts}
+	claims := []metalv1alpha1.HostClaim{{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "cp-2"},
+		Spec:       metalv1alpha1.HostClaimSpec{OS: &metalv1alpha1.ClaimOS{NodeRef: metalv1alpha1.Reference{Name: "node-2"}}},
+	}}
+	return topInput{Clusters: clusters, Nodes: nodes, Hosts: hosts, Claims: claims}
 }
 
 func TestStatusClusterTables(t *testing.T) {
@@ -69,6 +77,8 @@ func TestStatusClusterTables(t *testing.T) {
 
 	require.Len(t, rep.Nodes, 3)
 	assert.Equal(t, "simx12b000001", rep.Nodes[0].Host)
+	assert.Equal(t, "node-2", rep.Hosts[1].Node.Name, "the claim names the node of a host without spec.os")
+	assert.Equal(t, "simx12b000002", rep.Nodes[1].Host, "the NODE table joins as the HOST table does")
 	assert.False(t, rep.Nodes[0].NeedsAttention)
 	assert.True(t, rep.Nodes[2].NeedsAttention, "a node that ran and stopped answering needs a person")
 	assert.True(t, rep.NeedsAttention)

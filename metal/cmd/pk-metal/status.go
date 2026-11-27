@@ -244,7 +244,7 @@ func buildStatus(in topInput, policies []osv1alpha1.EtcdBackupPolicy) statusRepo
 	rep := statusReport{Version: 1, Hosts: []hostStatus{}, Operations: []opStatus{}, Endpoints: []epStatus{}, Claims: []claimStatus{},
 		Clusters: []clusterStatus{}, Nodes: []talosNodeStatus{}, Rollouts: []rolloutStatus{}}
 	addMachines(&rep, in)
-	addClusters(&rep, in.Clusters, in.Nodes, in.Hosts, policies)
+	addClusters(&rep, in.Clusters, in.Nodes, policies)
 	addRollouts(&rep, in.Rollouts)
 	return rep
 }

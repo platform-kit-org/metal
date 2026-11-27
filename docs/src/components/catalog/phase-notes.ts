@@ -14,13 +14,11 @@ export interface PhaseNote {
 
 export const phaseNotes: Record<string, Record<string, PhaseNote>> = {
   HostPhase: {
-    Enrolling: { order: 9, means: 'The Host exists. The BMC did not answer yet.', rule: 'No other rule applies.' },
-    Inspecting: { order: 8, means: 'The BMC answers. The operator reads the hardware and compares the serial number.', rule: '`Inspected` is present, or `Reachable` is True.' },
-    Available: { order: 7, tone: 'accent', means: 'The operator knows the machine, and no claim holds it.', rule: '`Inspected` and `Verified` are True.' },
-    Assigned: { order: 6, means: 'A claim holds the machine. No work on the machine started.', rule: 'A claim holds the Host.' },
-    Provisioning: { order: 5, means: 'An install runs on the machine.', rule: 'A claim holds the Host, and `Booted` or `OSReady` is present.' },
-    Provisioned: { order: 4, tone: 'ok', means: 'The node on the machine reports that it is ready.', rule: 'A claim holds the Host, and `OSReady` is True.' },
-    Failed: { order: 3, tone: 'err', means: 'An install did not work. The operator does not try it again.', rule: 'A claim holds the Host, and `Booted` or `OSReady` is False.' },
+    Inspecting: { order: 7, means: 'The BMC answers. The operator reads the hardware and compares the serial number.', rule: 'No other rule applies.' },
+    Available: { order: 6, tone: 'accent', means: 'The operator knows the machine, and no claim holds it.', rule: '`Inspected` and `Verified` are True.' },
+    Assigned: { order: 5, means: 'A claim holds the machine. No work on the machine started.', rule: 'A claim holds the Host.' },
+    Provisioning: { order: 4, means: 'An install runs on the machine, or its node does not answer now.', rule: 'A claim holds the Host, and `OSReady` is present.' },
+    Provisioned: { order: 3, tone: 'ok', means: 'The node on the machine reports that it is ready.', rule: 'A claim holds the Host, and `OSReady` is True.' },
     Releasing: { order: 2, tone: 'warn', means: 'The claim is gone. The operator cleans the machine and frees it.', rule: 'The claim that holds the Host is in deletion, or it is gone and the Host still names it.' },
     Maintenance: { order: 1, tone: 'soft', means: 'A person took the machine out of the lifecycle for hardware work.', rule: 'The Host has the annotation `metal.platform-kit.org/maintenance`.' },
   },
@@ -38,13 +36,11 @@ export const phaseNotes: Record<string, Record<string, PhaseNote>> = {
     Aborted: { order: 2, tone: 'soft', means: 'A person stopped the operation. This phase is final.', rule: '`Executed` is False with the reason `Aborted`.' },
   },
   EndpointPhase: {
-    Pending: { order: 1, means: 'The ManagementEndpoint exists. The operator did not examine it yet.', rule: 'The object has no conditions.' },
-    Connecting: { order: 2, means: 'The operator tries to open a Redfish session.', rule: '`Reachable` is absent or Unknown.' },
-    Unreachable: { order: 3, tone: 'err', means: 'Nothing answered at the address, or the login failed.', rule: '`Reachable` is False.' },
-    Mismatch: { order: 4, tone: 'err', means: 'The BMC at this address is not the machine that the Asset describes. The operator does nothing to it.', rule: '`Verified` is False.' },
-    Inventorying: { order: 5, means: 'The operator reads the facts of the BMC: vendor, model, systems, media slots and firmware.', rule: '`Inventoried` is not True.' },
-    Verifying: { order: 6, means: 'The operator compares the MAC address and the serial number with the Asset.', rule: '`Verified` is not True.' },
-    Configuring: { order: 7, tone: 'warn', means: 'An EndpointProfile applies, and the operator configures the BMC.', rule: '`Configured` is present and not True.' },
-    Ready: { order: 8, tone: 'ok', means: 'The BMC answers, the identity agrees, and the configuration is complete.', rule: 'No other rule applies.' },
+    Unreachable: { order: 1, tone: 'err', means: 'Nothing answered at the address, or the login failed.', rule: '`Reachable` is not True.' },
+    Mismatch: { order: 2, tone: 'err', means: 'The BMC at this address is not the machine that the Asset describes. The operator does nothing to it.', rule: '`Verified` is False.' },
+    Inventorying: { order: 3, means: 'The operator reads the facts of the BMC: vendor, model, systems, media slots and firmware.', rule: '`Inventoried` is not True.' },
+    Verifying: { order: 4, means: 'The operator compares the MAC address and the serial number with the Asset.', rule: '`Verified` is not True.' },
+    Configuring: { order: 5, tone: 'warn', means: 'An EndpointProfile applies, and the operator configures the BMC.', rule: '`Configured` is present and not True.' },
+    Ready: { order: 6, tone: 'ok', means: 'The BMC answers, the identity agrees, and the configuration is complete.', rule: 'No other rule applies.' },
   },
 };

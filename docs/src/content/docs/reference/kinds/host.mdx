@@ -33,7 +33,7 @@ The operator makes the Host and writes all of it. You read it to see the state o
   <dt>Bound by</dt>
   <dd>A [](kind:HostClaim), through [`spec.claimRef`](kind:Host#spec.claimRef).</dd>
   <dt>Phases</dt>
-  <dd>Enrolling, Inspecting, Available, Assigned, Provisioning, Provisioned, Releasing, Failed, Maintenance. [](ref:phases) has the rule for each.</dd>
+  <dd>Inspecting, Available, Assigned, Provisioning, Provisioned, Releasing, Maintenance. [](ref:phases) has the rule for each.</dd>
   <dt>Source</dt>
   <dd>[host_types.go](/repo/metal/api/v1alpha1/host_types.go)</dd>
 </dl>
@@ -52,15 +52,14 @@ The operator reads the machine through [Redfish](https://www.dmtf.org/standards/
 
 <HostPhases />
 
-1. The [](ctrl:asset) finds the BMC. The operator makes the Host. The phase is Enrolling.
-2. The BMC answers. The phase is Inspecting.
-3. The inventory is complete and the serial number agrees with the Asset. The phase is Available.
-4. A HostClaim binds the Host. The phase is Assigned.
-5. The install operation boots the machine. The phase is Provisioning.
-6. The node reports that it is ready. The phase is Provisioned.
-7. You delete the claim. The operator wipes the disk and releases the Host. The phase is Releasing, then Available.
+1. The [](ctrl:asset) finds the BMC. The BMC answers, and the operator makes the Host. The phase is Inspecting.
+2. The inventory is complete and the serial number agrees with the Asset. The phase is Available.
+3. A HostClaim binds the Host. The phase is Assigned.
+4. The claim names a TalosNode, and the install operation boots the machine. The phase is Provisioning.
+5. The node reports that it is ready. The phase is Provisioned.
+6. You delete the claim. The operator wipes the disk and releases the Host. The phase is Releasing, then Available.
 
-The steps below show the install from step 4 to step 6.
+A node that stops after the install shows Provisioning again. The steps below show the install from step 3 to step 5.
 
 <Provision />
 
@@ -78,11 +77,11 @@ The operator writes the spec from the claim that binds the machine.
 
 | Condition | True means | Effect on the phase |
 | --- | --- | --- |
-| `Reachable` | At least one BMC of the machine answers Redfish. | Inspecting when True and no inventory exists yet |
+| `Reachable` | At least one BMC of the machine answers Redfish. | None |
 | `Inspected` | The operator has the hardware inventory. | Inspecting until True |
 | `Verified` | The serial number from the BMC agrees with the Asset. | Stays in Inspecting when False. Sets `blockedOn`. |
-| `Booted` | The machine started the installed system. | Failed when False |
-| `OSReady` | The node reports that it is ready. | Provisioned when True. Failed when False. |
+| `Booted` | The machine started the installed system. Absent in all other cases. | None |
+| `OSReady` | The node reports that it is ready. Unknown when it does not. Absent when the Host has no hand-off. | Provisioned when True. Provisioning when Unknown. |
 | `FirmwareConverged` | The BMC firmware is the version of the [](kind:FirmwareProfile). Absent without a profile. | None |
 | `SystemFirmwareConverged` | The system firmware is the version of the profiles. Absent without a profile. | None |
 | `BiosConverged` | The BIOS settings agree with the [](kind:BiosSettings) of the machine. | None |

@@ -174,7 +174,7 @@ func TestStaleReadClaimHost(t *testing.T) {
 // judged on the writes of one stale pass.
 func staleClaimHostInvariants(w *staleWorld) {
 	bound := []metalv1alpha1.HostPhase{metalv1alpha1.HostAssigned, metalv1alpha1.HostProvisioning,
-		metalv1alpha1.HostProvisioned, metalv1alpha1.HostFailed}
+		metalv1alpha1.HostProvisioned}
 	refUID := func(h *metalv1alpha1.Host) types.UID {
 		if h.Spec.ClaimRef == nil {
 			return ""

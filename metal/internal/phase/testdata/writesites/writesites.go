@@ -7,13 +7,13 @@ import (
 )
 
 func direct(h *metalv1alpha1.Host) {
-	h.Status.Phase = metalv1alpha1.HostFailed // want write
-	h.Status.BlockedOn = "x"                  // want write
+	h.Status.Phase = metalv1alpha1.HostMaintenance // want write
+	h.Status.BlockedOn = "x"                       // want write
 }
 
 func alias(h *metalv1alpha1.Host) {
 	st := &h.Status
-	st.Phase = metalv1alpha1.HostFailed // want write
+	st.Phase = metalv1alpha1.HostMaintenance // want write
 }
 
 func pointer(op *metalv1alpha1.HostOperation) *metalv1alpha1.OperationPhase {
@@ -29,7 +29,7 @@ func compound(ep *metalv1alpha1.ManagementEndpoint) {
 }
 
 func read(h *metalv1alpha1.Host) bool {
-	return h.Status.Phase == metalv1alpha1.HostFailed // want read
+	return h.Status.Phase == metalv1alpha1.HostMaintenance // want read
 }
 
 // A step's phase is not a summary phase: it is the outcome of one action, and

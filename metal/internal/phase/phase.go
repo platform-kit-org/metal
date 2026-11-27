@@ -26,17 +26,11 @@ import (
 
 // ForEndpoint derives the ManagementEndpoint phase. Precedence: hard stops first
 // (Unreachable, Mismatch), then the pipeline position in observation order
-// (Pending → Connecting → Inventorying → Verifying → Configuring → Ready).
+// (Inventorying → Verifying → Configuring → Ready). Each observing pass sets
+// Reachable before the phase is stamped.
 func ForEndpoint(conds []metav1.Condition) (metalv1alpha1.EndpointPhase, string) {
 	blocked := blockedOn(conds)
-
-	reach := meta.FindStatusCondition(conds, metalv1alpha1.ConditionReachable)
-	switch {
-	case reach == nil && len(conds) == 0:
-		return metalv1alpha1.EndpointPending, blocked
-	case reach == nil || reach.Status == metav1.ConditionUnknown:
-		return metalv1alpha1.EndpointConnecting, blocked
-	case reach.Status == metav1.ConditionFalse:
+	if !meta.IsStatusConditionTrue(conds, metalv1alpha1.ConditionReachable) {
 		return metalv1alpha1.EndpointUnreachable, blocked
 	}
 
@@ -88,10 +82,10 @@ type HostFacts struct {
 }
 
 // ForHost derives the Host phase. Precedence: parked states first (Maintenance,
-// Releasing), then, for a claimed host only, a failed OS-ladder observation (Status=False means attempted and
-// failed; Unknown means in flight; absent means not attempted), then the ladder
-// downwards (Provisioned → Provisioning → Assigned → Available → Inspecting →
-// Enrolling).
+// Releasing), then the ladder downwards (Provisioned → Provisioning → Assigned
+// → Available → Inspecting). The OS rungs read OSReady, which the host
+// reconciler sets while the Host has a hand-off: True when the node is ready,
+// Unknown otherwise. Each pass sets Inspected before the phase is stamped.
 func ForHost(conds []metav1.Condition, f HostFacts) (metalv1alpha1.HostPhase, string) {
 	blocked := blockedOn(conds)
 
@@ -108,19 +102,14 @@ func ForHost(conds []metav1.Condition, f HostFacts) (metalv1alpha1.HostPhase, st
 	}
 
 	// The OS ladder describes the claim's install, so a free host has none.
-	// The host reconciler drops Booted and OSReady with the hand-off, but a
-	// read from before that pass still has them.
+	// The host reconciler drops OSReady with the hand-off, but a read from
+	// before that pass still has it.
 	if f.Claimed {
-		for _, t := range []string{metalv1alpha1.ConditionBooted, metalv1alpha1.ConditionOSReady} {
-			if c := meta.FindStatusCondition(conds, t); c != nil && c.Status == metav1.ConditionFalse {
-				return metalv1alpha1.HostFailed, blocked
-			}
-		}
 		osReady := meta.FindStatusCondition(conds, metalv1alpha1.ConditionOSReady)
 		switch {
 		case osReady != nil && osReady.Status == metav1.ConditionTrue:
 			return metalv1alpha1.HostProvisioned, blocked
-		case osReady != nil || meta.FindStatusCondition(conds, metalv1alpha1.ConditionBooted) != nil:
+		case osReady != nil:
 			return metalv1alpha1.HostProvisioning, blocked
 		}
 		return metalv1alpha1.HostAssigned, blocked
@@ -130,11 +119,7 @@ func ForHost(conds []metav1.Condition, f HostFacts) (metalv1alpha1.HostPhase, st
 		meta.IsStatusConditionTrue(conds, metalv1alpha1.ConditionVerified) {
 		return metalv1alpha1.HostAvailable, blocked
 	}
-	if meta.FindStatusCondition(conds, metalv1alpha1.ConditionInspected) != nil ||
-		meta.IsStatusConditionTrue(conds, metalv1alpha1.ConditionReachable) {
-		return metalv1alpha1.HostInspecting, blocked
-	}
-	return metalv1alpha1.HostEnrolling, blocked
+	return metalv1alpha1.HostInspecting, blocked
 }
 
 // ForClaim derives the HostClaim phase from its Bound condition. Reference

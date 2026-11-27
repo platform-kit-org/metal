@@ -357,14 +357,12 @@
       "type": "string",
       "required": false,
       "enum": [
-        "Enrolling",
         "Inspecting",
         "Available",
         "Assigned",
         "Provisioning",
         "Provisioned",
         "Releasing",
-        "Failed",
         "Maintenance"
       ],
       "description": "Phase summarizes the conditions below for people and for kubectl columns. It is a summary, not the contract: automation should read conditions."

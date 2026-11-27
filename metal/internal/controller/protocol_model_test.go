@@ -945,7 +945,7 @@ var protocolInvariants = []invariant{
 			switch {
 			case w.Host.Claimed && w.Claim.Deleting && ph != metalv1alpha1.HostReleasing:
 				return "a released host reads " + string(ph)
-			case w.Host.Claimed && (ph == metalv1alpha1.HostAvailable || ph == metalv1alpha1.HostEnrolling):
+			case w.Host.Claimed && ph == metalv1alpha1.HostAvailable:
 				return "a bound host reads " + string(ph)
 			case !w.Host.Claimed && !w.Host.OSReady && ph != metalv1alpha1.HostAvailable:
 				return "a free host reads " + string(ph)

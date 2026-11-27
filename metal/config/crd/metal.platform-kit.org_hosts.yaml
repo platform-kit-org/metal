@@ -198,14 +198,12 @@ spec:
                 phase:
                   description: 'Phase summarizes the conditions below for people and for kubectl columns. It is a summary, not the contract: automation should read conditions.'
                   enum:
-                    - Enrolling
                     - Inspecting
                     - Available
                     - Assigned
                     - Provisioning
                     - Provisioned
                     - Releasing
-                    - Failed
                     - Maintenance
                   type: string
                 systemFirmwareProposed:

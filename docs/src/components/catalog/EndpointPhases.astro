@@ -7,16 +7,16 @@ import Edge from '../diagram/Edge.astro';
 const row = 30;
 const w = 104;
 const h = 44;
-const xs = [10, 136, 262, 388, 514, 640];
-const names = ['Pending', 'Connecting', 'Inventorying', 'Verifying', 'Configuring', 'Ready'];
-const labels = ['first pass', 'Reachable', 'Inventoried', 'Verified', 'Configured'];
+const xs = [10, 136, 262, 388];
+const names = ['Inventorying', 'Verifying', 'Configuring', 'Ready'];
+const labels = ['Inventoried', 'Verified', 'Configured'];
 const mid = row + h / 2;
 ---
 
 <Figure
-  title="ManagementEndpoint phases. An endpoint moves from Pending to Ready. Unreachable and Mismatch are stops."
+  title="ManagementEndpoint phases. An endpoint moves from Inventorying to Ready. Unreachable and Mismatch are stops."
   caption="ManagementEndpoint phases. Each arrow has the condition that becomes True."
-  width={754}
+  width={528}
   height={206}
   wide
 >
@@ -29,10 +29,10 @@ const mid = row + h / 2;
   {labels.map((l, i) => (
     <text class="t-small t-label" x={xs[i] + w + 11} y={row - 8} text-anchor="middle">{l}</text>
   ))}
-  <Box x={136} y={136} w={w} h={h} label="Unreachable" variant="err" />
-  <Box x={388} y={136} w={w} h={h} label="Mismatch" variant="err" />
-  <Edge points={[[188, row + h], [188, 136]]} variant="muted" label="Reachable False" at={[196, 112]} anchor="start" />
-  <Edge points={[[440, row + h], [440, 136]]} variant="muted" label="Verified False" at={[448, 112]} anchor="start" />
-  <text class="t-small t-label" x={514} y={162} text-anchor="start">The operator continues to read the BMC.</text>
-  <text class="t-small t-label" x={514} y={178} text-anchor="start">A stop ends when the condition changes.</text>
+  <Box x={10} y={136} w={w} h={h} label="Unreachable" variant="err" />
+  <Box x={136} y={136} w={w} h={h} label="Mismatch" variant="err" />
+  <Edge points={[[62, row + h], [62, 136]]} variant="muted" label="not Reachable" at={[68, 112]} anchor="start" />
+  <Edge points={[[188, row + h], [188, 136]]} variant="muted" label="Verified False" at={[194, 112]} anchor="start" />
+  <text class="t-small t-label" x={262} y={162} text-anchor="start">The operator continues to read the BMC.</text>
+  <text class="t-small t-label" x={262} y={178} text-anchor="start">A stop ends when the condition changes.</text>
 </Figure>

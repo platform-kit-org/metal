@@ -35,7 +35,7 @@ The operator makes it from an Asset. You read it to see if the BMC answers and w
   <dt>Owned by</dt>
   <dd>The Asset. One endpoint can own one or more [Hosts](kind:Host).</dd>
   <dt>Phases</dt>
-  <dd>Pending, Connecting, Inventorying, Verifying, Configuring, Ready, Unreachable, Mismatch.</dd>
+  <dd>Inventorying, Verifying, Configuring, Ready, Unreachable, Mismatch.</dd>
   <dt>Source</dt>
   <dd>[managementendpoint_types.go](/repo/metal/api/v1alpha1/managementendpoint_types.go)</dd>
 </dl>
@@ -55,8 +55,8 @@ Use [](cli:status) to see all endpoints, or [](cli:check) to test one BMC withou
 
 <EndpointPhases />
 
-1. The Asset controller makes the endpoint. The phase is Pending.
-2. The operator opens a Redfish session. The phase is Connecting.
+1. The Asset controller makes the endpoint. The phase is empty.
+2. The operator opens a Redfish session. If it cannot, the phase is Unreachable.
 3. The operator reads the vendor, the model, the systems, the media slots and the firmware. The phase is Inventorying.
 4. The operator compares the MAC address and the serial number with the Asset. The phase is Verifying.
 5. If an EndpointProfile applies, the operator configures the BMC. The phase is Configuring.

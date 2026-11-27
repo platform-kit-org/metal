@@ -300,8 +300,7 @@ func buildReport(hosts []metalv1alpha1.Host, eps []metalv1alpha1.ManagementEndpo
 			}
 		}
 		row.Asset = strings.Join(assetsOf(paths), ",")
-		row.Message = explain(h.Status.Conditions, h.Status.BlockedOn,
-			metalv1alpha1.ConditionBooted, metalv1alpha1.ConditionOSReady)
+		row.Message = explain(h.Status.Conditions, h.Status.BlockedOn)
 
 		var claim *metalv1alpha1.HostClaim
 		if ref := h.Spec.ClaimRef; ref != nil {
@@ -329,7 +328,7 @@ func buildReport(hosts []metalv1alpha1.Host, eps []metalv1alpha1.ManagementEndpo
 				row.Node.Address = nodeAddress(n)
 			}
 		}
-		row.NeedsAttention = (row.BlockedOn != "" && !etcdTurn(row.BlockedOn)) || h.Status.Phase == metalv1alpha1.HostFailed
+		row.NeedsAttention = row.BlockedOn != "" && !etcdTurn(row.BlockedOn)
 		rep.Hosts = append(rep.Hosts, row)
 	}
 

@@ -1,7 +1,7 @@
 ---
 // Explainer: one machine from the rack to a ready Talos node.
 // Sources: metal/internal/controller/asset_controller.go (ledger lookup),
-// managementendpoint_controller.go (Connecting .. Ready), host_controller.go,
+// managementendpoint_controller.go (Inventorying .. Ready), host_controller.go,
 // hostclaim_controller.go and provisioning.go (bind, propose, provisionOp).
 import Explainer from '../Explainer.astro';
 import Box from '../diagram/Box.astro';
@@ -24,12 +24,12 @@ const steps = [
     caption: 'The Asset controller finds the BMC MAC address in the ledger. It makes a ManagementEndpoint with the address.',
     code: 'kubectl get managementendpoints',
     state: { asset: 'done', ledger: 'active', a2l: 'flow', l2me: 'flow', me: 'active' },
-    text: { 'me-ph': 'Connecting', 'host-ph': '-', 'claim-ph': '-', 'op-ph': '-', 'm-ph': 'off' },
+    text: { 'me-ph': '-', 'host-ph': '-', 'claim-ph': '-', 'op-ph': '-', 'm-ph': 'off' },
   },
   {
     title: 'Read the BMC',
     caption: 'The ManagementEndpoint controller logs in over Redfish. It reads the inventory and compares the serial number with the Asset.',
-    code: 'Connecting → Inventorying → Verifying → Ready',
+    code: 'Inventorying → Verifying → Ready',
     state: { asset: 'done', ledger: 'done', a2l: 'done', l2me: 'done', me: 'active', me2bmc: 'flow', bmc: 'active' },
     text: { 'me-ph': 'Verifying', 'host-ph': '-', 'claim-ph': '-', 'op-ph': '-', 'm-ph': 'off' },
   },

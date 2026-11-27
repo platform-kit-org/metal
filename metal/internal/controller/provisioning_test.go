@@ -17,14 +17,19 @@ import (
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
 )
 
-// claimReconcilerFor builds a claim reconciler over a fake API that also
-// holds slotlessEndpoint, the endpoint behind onPath.
+// claimStore is the fake API of a claim reconciler: objs, and
+// slotlessEndpoint, the endpoint behind onPath.
+func claimStore(t *testing.T, objs ...client.Object) *fake.ClientBuilder {
+	t.Helper()
+	return fake.NewClientBuilder().WithScheme(testScheme(t)).
+		WithStatusSubresource(&metalv1alpha1.HostOperation{}, &metalv1alpha1.HostClaim{}).
+		WithObjects(append(objs, slotlessEndpoint())...)
+}
+
+// claimReconcilerFor builds a claim reconciler over claimStore.
 func claimReconcilerFor(t *testing.T, objs ...client.Object) *HostClaimReconciler {
 	t.Helper()
-	cl := fake.NewClientBuilder().WithScheme(testScheme(t)).
-		WithStatusSubresource(&metalv1alpha1.HostOperation{}, &metalv1alpha1.HostClaim{}).
-		WithObjects(append(objs, slotlessEndpoint())...).Build()
-	return &HostClaimReconciler{Client: cl, OperationsNamespace: "pk-metal", Proposer: "operator"}
+	return &HostClaimReconciler{Client: claimStore(t, objs...).Build(), OperationsNamespace: "pk-metal", Proposer: "operator"}
 }
 
 // slotlessEndpoint is a reachable, inventoried endpoint whose machine has no

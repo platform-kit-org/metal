@@ -167,15 +167,6 @@ func newLifecycleLab(t *testing.T, cps, workers []string, extra ...client.Object
 	return lab
 }
 
-// claimOn is a claim that runs node on host-a, recorded as installed by us.
-func claimOn(node string) (*metalv1alpha1.HostClaim, *metalv1alpha1.Host) {
-	claim := testClaim(node)
-	claim.Status.HandOff = &metalv1alpha1.ClaimHandOff{Host: "host-a", Node: node, Operation: "pk-metal/boot", At: metav1.Now()}
-	host := boundHost(claim)
-	host.Spec.OS.NodeRef.Name = node
-	return claim, host
-}
-
 func opActionKeys(op *metalv1alpha1.HostOperation) []string {
 	return actionKeys(op.Spec.Actions)
 }

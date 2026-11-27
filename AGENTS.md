@@ -16,8 +16,8 @@ The Go module is in `metal/`. Run tasks from the repository root.
 | `mise run envtest` | A change to a controller, a CRD, RBAC or an admission policy. About 5 minutes; run one test with `go test -run`. |
 | `mise run lint` | Before each commit: golangci-lint (also gofmt and goimports), the typed checks, shellcheck, govulncheck. |
 | `mise run spec` | After a change to a TLA+ specification in `metal/spec`, or to a Go function that one names. Needs a Java runtime. |
-| `mise run generate`, then `mise run generate:check` | After a change to API types, kubebuilder markers, `pk-metal` commands or the glossary. |
-| `mise run docs:check` and `mise run docs:lint` | After a change to a page. |
+| `mise run generate`, then `mise run generate:check` | After a change to API types, kubebuilder markers or `pk-metal` commands. |
+| `mise run docs:check` and `mise run docs:lint` | After a change to a page or the glossary. |
 
 Never edit a generated file: `metal/config/crd/`, `metal/config/rbac/role.yaml`,
 `docs/src/data/generated/`, `zz_generated.deepcopy.go`. The hook in

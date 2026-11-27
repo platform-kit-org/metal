@@ -3,8 +3,7 @@
 // command with its flags, the RBAC roles and the markers they come from, the
 // named controllers, the
 // HostOperation actions, and the phase, condition, reason and annotation
-// constants of the API. It also checks the shape of the hand-written glossary.
-// The site renders its reference tables from these files,
+// constants of the API. The site renders its reference tables from these files,
 // so a table cannot disagree with the code. Runs as part of `mise run generate`.
 //
 // usage (from metal/): go run ./hack/docgen [-pk-metal bin/pk-metal] -out ../docs/src/data/generated
@@ -26,7 +25,6 @@ func main() {
 	flag.StringVar(&cfg.rbacDir, "rbac", "config/rbac", "directory of the RBAC manifests")
 	flag.StringVar(&cfg.generatedRole, "rbac-role", "pk-metal-manager", "name of the role controller-gen writes from the +kubebuilder:rbac markers")
 	flag.StringVar(&cfg.controllerDir, "controllers", "internal/controller", "controller package: its Named(...) controllers")
-	flag.StringVar(&cfg.glossary, "glossary", "../docs/src/data/glossary.yaml", "hand-written glossary to check (empty: skip the check)")
 	flag.StringVar(&cfg.pkMetal, "pk-metal", "", "pk-metal binary to read the help from (default: build ./cmd/pk-metal into a temporary directory)")
 	apiDirs := flag.String("api", "api/v1alpha1,api/os/v1alpha1", "comma-separated API packages: actions, phases and conditions")
 	scanDirs := flag.String("scan", "api,internal,cmd", "comma-separated trees searched for +kubebuilder:rbac markers and metal.platform-kit.org/os.platform-kit.org keys")
@@ -67,7 +65,6 @@ type config struct {
 	controllerDir string
 	generatedRole string
 	pkMetal       string
-	glossary      string
 	apiDirs       []string
 	scanDirs      []string
 }
@@ -75,11 +72,6 @@ type config struct {
 // run reads every input first and writes only when all of them parsed, so a
 // failure never leaves a half-written data directory behind.
 func run(cfg config, help helpFunc) error {
-	if cfg.glossary != "" {
-		if err := checkGlossary(cfg.glossary); err != nil {
-			return err
-		}
-	}
 	files := map[string]any{}
 
 	crds, err := readCRDs(cfg)

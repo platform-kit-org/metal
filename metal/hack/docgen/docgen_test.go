@@ -35,7 +35,6 @@ func TestGolden(t *testing.T) {
 		rbacDir:       "testdata/rbac",
 		controllerDir: "testdata/controller",
 		generatedRole: "pk-metal-manager",
-		glossary:      "testdata/glossary.yaml",
 		apiDirs:       []string{"testdata/api/v1alpha1"},
 		scanDirs:      []string{"testdata/api"},
 	}
@@ -132,45 +131,4 @@ func TestStripName(t *testing.T) {
 	assert.Equal(t, "a person stopped it.", stripName("ReasonAborted", "ReasonAborted on Executed=False: a person stopped it."))
 	assert.Equal(t, "OperationReasonBios is the reason.", stripName("OperationReasonBios", "OperationReasonBios is the reason."))
 	assert.Equal(t, "Something else.", stripName("ReasonX", "Something else."))
-}
-
-func TestCheckGlossary(t *testing.T) {
-	require.NoError(t, checkGlossary("testdata/glossary.yaml"))
-
-	bad := filepath.Join(t.TempDir(), "glossary.yaml")
-	require.NoError(t, os.WriteFile(bad, []byte(`domains:
-  hw: { name: Hardware, icon: chip }
-terms:
-  - id: bmc
-    term: BMC
-    kind: abbr
-    domain: hw
-    forms: [BMC]
-    see: concept:architecture
-    related: [nope]
-    def: A small computer.
-  - id: Bad_ID
-    term: Other
-    kind: noun
-    domain: nowhere
-    forms: [BMC]
-    see: https://example.org
-    scope: site
-    def: >-
-      One two three four five six seven eight nine ten eleven twelve thirteen
-      fourteen fifteen sixteen seventeen eighteen nineteen twenty twenty-one
-      twenty-two twenty-three twenty-four twenty-five twenty-six.
-`), 0o644))
-	err := checkGlossary(bad)
-	require.Error(t, err)
-	for _, want := range []string{
-		"needs its expansion", `related "nope"`, "lower case", `unknown domain "nowhere"`,
-		`form "BMC" is also a form of "bmc"`, "is not a category link", "has 26 words", `scope "site" is not page`,
-	} {
-		assert.Contains(t, err.Error(), want)
-	}
-
-	unknown := filepath.Join(t.TempDir(), "glossary.yaml")
-	require.NoError(t, os.WriteFile(unknown, []byte("domains: {}\nterms: []\ncolour: red\n"), 0o644))
-	require.Error(t, checkGlossary(unknown), "an unknown key is a typo, not an extension")
 }

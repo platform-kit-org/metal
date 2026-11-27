@@ -31,18 +31,7 @@ The operator writes the plan, a person approves its hash, and each node operatio
   <Edge points={[[610, 80], [610, 120]]} variant="muted" />
 </Figure>
 
-## Terms
-
-<dl>
-  <dt>Plan</dt>
-  <dd>Each node in order, the Host it runs on, what changes, whether it reboots, and the actions of its operation.</dd>
-  <dt>Plan hash</dt>
-  <dd>A hash of the cluster, the kind, the target, the drain settings and each plan step.</dd>
-  <dt>Pause after the first node</dt>
-  <dd>The rollout always stops after its first node. You cannot turn this off. `pk-metal rollout resume` continues.</dd>
-  <dt>Health gate</dt>
-  <dd>The checks before each node. etcd has a leader, and no member has an error or is a learner. Each control plane is a member, and each other Kubernetes node is Ready.</dd>
-</dl>
+A rollout has a `spec.kind`: `Config`, `TalosUpgrade`, `KubernetesUpgrade` or `Reboot`. [](kind:TalosRollout) gives the plan, the hash, the pause after the first node and the health gate.
 
 ## Rules
 
@@ -54,13 +43,7 @@ The operator writes the plan, a person approves its hash, and each node operatio
 6. While the operator holds the secrets bundle (`SecretsBundleHeld=True`), the operator proposes and plans no `Config` and no `KubernetesUpgrade` rollout. A config rendered then has the old CA. See [](howto:rotate-cluster-credentials).
 7. A `KubernetesUpgrade` moves one minor at a time. The plan refuses a skipped minor, also when someone changed the spec without [](cli:upgrade).
 
-## Sequence
-
-| Group | How many at a time |
-| --- | --- |
-| Control planes | One. The etcd leader goes last. |
-| kube-proxy (Kubernetes upgrade only) | After the control planes |
-| Workers | `spec.maxUnavailableWorkers`, default 1 |
+## Workers
 
 `spec.maxUnavailableWorkers` counts the steps of the rollout only. An operation outside the rollout, for example a BIOS change or a wipe, can take one more worker down at the same time. The next step of the rollout then waits until each Node is `Ready` again. Approve such an operation when no rollout runs on its cluster.
 

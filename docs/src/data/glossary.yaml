@@ -1260,7 +1260,7 @@ terms:
     kind: noun
     domain: safety
     forms: [plan hash, planHash]
-    see: concept:approval
+    see: concept:convergence
     related: [approval, proposal, convergence]
     def: >-
       A hash of the wanted state that a proposal serves. An approval covers only

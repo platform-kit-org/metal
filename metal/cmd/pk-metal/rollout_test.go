@@ -42,8 +42,10 @@ func planned() *osv1alpha1.TalosRollout {
 				step("worker-1", "pk0003", osv1alpha1.RoleWorker),
 			},
 			PlanHash: planHash,
-			Conditions: []metav1.Condition{{Type: osv1alpha1.ConditionPlanned, Status: metav1.ConditionTrue,
-				Reason: osv1alpha1.ReasonPlanReady, Message: "3 nodes"}},
+			Conditions: []metav1.Condition{
+				{Type: osv1alpha1.ConditionPlanned, Status: metav1.ConditionTrue, Reason: osv1alpha1.ReasonPlanReady, Message: "3 nodes"},
+				{Type: osv1alpha1.ConditionApproved, Status: metav1.ConditionFalse, Reason: osv1alpha1.ReasonAwaitingApproval},
+			},
 		},
 	}
 }
@@ -58,13 +60,21 @@ func TestRenderRollout(t *testing.T) {
 	assert.Less(t, strings.Index(out, "cp-2"), strings.Index(out, "worker-1"), "the order is the plan's order")
 }
 
+// rollout list says what status and the metric say: an abort that waits for
+// a running step reads as the controller's reason, Aborted.
 func TestListRollouts(t *testing.T) {
-	cl := fakeClient(planned())
+	aborting := planned()
+	aborting.Name, aborting.UID, aborting.Spec.Abort = "lab-talosupgrade-0f0f0f0f", "u0", true
+	aborting.Spec.Approval = osv1alpha1.RolloutApproval{ApprovedBy: "alice", PlanHash: planHash}
+	aborting.Status.Conditions = append(aborting.Status.Conditions[:1], metav1.Condition{Type: osv1alpha1.ConditionProgressing,
+		Status: metav1.ConditionTrue, Reason: osv1alpha1.ReasonRolloutAborted, Message: "waiting for 1 running step(s)"})
+	cl := fakeClient(planned(), aborting)
 	var out bytes.Buffer
 	require.NoError(t, listRollouts(context.Background(), cl, &out, time.Date(2030, 1, 1, 13, 0, 0, 0, time.UTC)))
-	assert.Contains(t, out.String(), "lab-talosupgrade-1a2b3c4d")
-	assert.Contains(t, out.String(), "0/3")
-	assert.Contains(t, out.String(), "AwaitingApproval")
+	assert.Regexp(t, `(?m)^ROLLOUT\s+CLUSTER\s+KIND\s+TARGET\s+NODES\s+STATE\s+APPROVED\s+AGE$`, out.String())
+	assert.Regexp(t, `(?m)^lab-talosupgrade-0f0f0f0f\s+lab\s+TalosUpgrade\s+Talos v1.14.7\s+0/3\s+Aborted\s+alice\s+1h\n`+
+		`lab-talosupgrade-1a2b3c4d\s+lab\s+TalosUpgrade\s+Talos v1.14.7\s+0/3\s+AwaitingApproval\s+-\s+1h$`, out.String(),
+		"by name, as status sorts")
 }
 
 func TestApproveRollout(t *testing.T) {

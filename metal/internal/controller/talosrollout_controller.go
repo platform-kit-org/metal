@@ -193,14 +193,8 @@ func (r *TalosRolloutReconciler) reportProgress(ro *osv1alpha1.TalosRollout) {
 	if ro.Spec.Approval.ApprovedBy == "" || len(ro.Status.Steps) == 0 {
 		return
 	}
-	done := 0
-	for _, st := range ro.Status.Steps {
-		if st.State == osv1alpha1.RolloutNodeSucceeded {
-			done++
-		}
-	}
 	r.reported.Store(ro.Name, ro.Spec.ClusterRef.Name)
-	metrics.SetRolloutProgress(ro.Name, ro.Spec.ClusterRef.Name, done, len(ro.Status.Steps))
+	metrics.SetRolloutProgress(ro.Name, ro.Spec.ClusterRef.Name, ro.Status.StepsSucceeded(), len(ro.Status.Steps))
 }
 
 // forgetProgress drops a deleted rollout's series. Its cluster is what the

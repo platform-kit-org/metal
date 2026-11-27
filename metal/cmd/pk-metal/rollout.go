@@ -19,6 +19,7 @@ import (
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
+	"github.com/dennisklein/platform-kit/metal/internal/metrics"
 )
 
 func init() {
@@ -28,7 +29,8 @@ change, a Talos upgrade, a Kubernetes upgrade or a rolling reboot. The
 operator proposes rollouts on its own when the cluster spec and the machines
 disagree; it never starts one. A person approves the plan.
 
-  list                    every rollout, newest last, with its state
+  list                    every rollout, by name, with its state as status
+                          shows it
   show <rollout>          the plan: each node in order, what changes on it,
                           whether it reboots, and how far the rollout got
   approve [--yes] <r>     show the plan, ask, and approve exactly that plan
@@ -138,33 +140,8 @@ func getRollout(ctx context.Context, cl client.Client, name string) (*osv1alpha1
 	return ro, nil
 }
 
-// rolloutState is one word for where a rollout stands, from its conditions.
-func rolloutState(ro *osv1alpha1.TalosRollout) string {
-	conds := ro.Status.Conditions
-	if c := meta.FindStatusCondition(conds, osv1alpha1.ConditionComplete); c != nil && c.Status != "Unknown" {
-		return c.Reason
-	}
-	if ro.Spec.Abort {
-		return "Aborting"
-	}
-	if c := meta.FindStatusCondition(conds, osv1alpha1.ConditionPaused); c != nil && c.Status == "True" {
-		return c.Reason
-	}
-	if ro.Spec.Approval.ApprovedBy != "" {
-		if c := meta.FindStatusCondition(conds, osv1alpha1.ConditionProgressing); c != nil {
-			return c.Reason
-		}
-		return "Approved"
-	}
-	if c := meta.FindStatusCondition(conds, osv1alpha1.ConditionPlanned); c != nil && c.Status != "True" {
-		return c.Reason
-	}
-	if ro.Status.PlanHash == "" {
-		return "Planning"
-	}
-	return osv1alpha1.ReasonAwaitingApproval
-}
-
+// listRollouts prints each rollout, by name, as the ROLLOUT table of status
+// does, with its target and age.
 func listRollouts(ctx context.Context, cl client.Client, w io.Writer, now time.Time) error {
 	list := &osv1alpha1.TalosRolloutList{}
 	if err := cl.List(ctx, list); err != nil {
@@ -174,28 +151,18 @@ func listRollouts(ctx context.Context, cl client.Client, w io.Writer, now time.T
 		fmt.Fprintln(w, "no rollouts")
 		return nil
 	}
-	slices.SortFunc(list.Items, func(a, b osv1alpha1.TalosRollout) int {
-		if c := a.CreationTimestamp.Compare(b.CreationTimestamp.Time); c != 0 {
-			return c
-		}
-		return strings.Compare(a.Name, b.Name)
-	})
+	slices.SortFunc(list.Items, func(a, b osv1alpha1.TalosRollout) int { return strings.Compare(a.Name, b.Name) })
 	tw := tabwriter.NewWriter(w, 2, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ROLLOUT\tCLUSTER\tKIND\tTARGET\tNODES\tSTATE\tAPPROVED BY\tAGE")
+	fmt.Fprintln(tw, "ROLLOUT\tCLUSTER\tKIND\tTARGET\tNODES\tSTATE\tAPPROVED\tAGE")
 	for i := range list.Items {
 		ro := &list.Items[i]
-		done := 0
-		for _, st := range ro.Status.Steps {
-			if st.State == osv1alpha1.RolloutNodeSucceeded {
-				done++
-			}
-		}
+		r := rolloutRow(ro)
 		age := "-"
 		if !ro.CreationTimestamp.IsZero() {
 			age = shortDuration(now.Sub(ro.CreationTimestamp.Time))
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d/%d\t%s\t%s\t%s\n", ro.Name, ro.Spec.ClusterRef.Name, ro.Spec.Kind,
-			orDash(rolloutTarget(ro)), done, len(ro.Status.Plan), rolloutState(ro), orDash(ro.Spec.Approval.ApprovedBy), age)
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d/%d\t%s\t%s\t%s\n", r.Name, r.Cluster, r.Kind,
+			orDash(rolloutTarget(ro)), r.NodesDone, r.NodesTotal, r.State, orDash(r.ApprovedBy), age)
 	}
 	_ = tw.Flush()
 	return nil
@@ -230,7 +197,7 @@ func renderRollout(ro *osv1alpha1.TalosRollout) string {
 	if ro.Spec.Approval.ApprovedBy != "" {
 		fmt.Fprintf(&b, "  approved by %s for plan %s\n", ro.Spec.Approval.ApprovedBy, shortDigest(ro.Spec.Approval.PlanHash))
 	}
-	fmt.Fprintf(&b, "  state %s\n", rolloutState(ro))
+	fmt.Fprintf(&b, "  state %s\n", metrics.RolloutStateOf(ro).Reason)
 	for _, t := range []string{osv1alpha1.ConditionPlanned, osv1alpha1.ConditionProgressing,
 		osv1alpha1.ConditionPaused, osv1alpha1.ConditionComplete} {
 		if c := meta.FindStatusCondition(ro.Status.Conditions, t); c != nil && c.Message != "" {

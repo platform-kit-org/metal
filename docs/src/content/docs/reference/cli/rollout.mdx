@@ -34,7 +34,7 @@ The operator proposes a rollout. It does not start one. A person approves the pl
 
 | Subcommand | Effect |
 | --- | --- |
-| `list` | Shows each rollout with its cluster, kind, target, progress and state. The newest is last. |
+| `list` | Shows each rollout by name, with its cluster, kind, target, progress and state. The state is the same as in [](cli:status). |
 | `show` | Shows the plan: each node in order, the change, if the node reboots, and the progress. |
 | `approve` | Shows the plan, asks, and approves this plan. |
 | `resume` | Continues after a pause. |
@@ -91,8 +91,8 @@ replay
 mark={['Approve plan']}
 text={`
     $ pk-metal rollout list
-    ROLLOUT                    CLUSTER  KIND          TARGET         NODES  STATE             APPROVED BY  AGE
-    lab-talosupgrade-1a2b3c4d  lab      TalosUpgrade  Talos v1.14.7  0/5    AwaitingApproval  -            2m
+    ROLLOUT                    CLUSTER  KIND          TARGET         NODES  STATE             APPROVED  AGE
+    lab-talosupgrade-1a2b3c4d  lab      TalosUpgrade  Talos v1.14.7  0/5    AwaitingApproval  -         2m
     $ pk-metal rollout approve lab-talosupgrade-1a2b3c4d
     rollout lab-talosupgrade-1a2b3c4d: TalosUpgrade on cluster lab to Talos v1.14.7
       proposed by system:serviceaccount:pk-metal:pk-metal

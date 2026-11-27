@@ -32,21 +32,21 @@ var rolloutNeedsPerson = []string{
 	osv1alpha1.ReasonCanaryPause, osv1alpha1.ReasonRolloutFailed, osv1alpha1.ReasonRolloutAborted,
 }
 
-// addRollouts fills the ROLLOUT rows. The state is read the same way as the
-// metric pk_metal_rollout_condition, so the table and the alerts agree.
+// rolloutRow is one rollout as status, top and rollout list show it. The
+// state is read the same way as the metric pk_metal_rollout_condition, so the
+// tables and the alerts agree.
+func rolloutRow(ro *osv1alpha1.TalosRollout) rolloutStatus {
+	st := metrics.RolloutStateOf(ro)
+	return rolloutStatus{Name: ro.Name, Cluster: ro.Spec.ClusterRef.Name, Kind: string(ro.Spec.Kind),
+		NodesDone: ro.Status.StepsSucceeded(), NodesTotal: len(ro.Status.Plan), State: st.Reason,
+		ApprovedBy: ro.Spec.Approval.ApprovedBy, Message: st.Message,
+		NeedsAttention: !st.Succeeded && slices.Contains(rolloutNeedsPerson, st.Reason)}
+}
+
+// addRollouts fills the ROLLOUT rows.
 func addRollouts(rep *statusReport, rollouts []osv1alpha1.TalosRollout) {
 	for i := range rollouts {
-		ro := &rollouts[i]
-		st := metrics.RolloutStateOf(ro)
-		row := rolloutStatus{Name: ro.Name, Cluster: ro.Spec.ClusterRef.Name, Kind: string(ro.Spec.Kind),
-			NodesTotal: len(ro.Status.Plan), State: st.Reason, ApprovedBy: ro.Spec.Approval.ApprovedBy, Message: st.Message}
-		for _, s := range ro.Status.Steps {
-			if s.State == osv1alpha1.RolloutNodeSucceeded {
-				row.NodesDone++
-			}
-		}
-		row.NeedsAttention = !st.Succeeded && slices.Contains(rolloutNeedsPerson, st.Reason)
-		rep.Rollouts = append(rep.Rollouts, row)
+		rep.Rollouts = append(rep.Rollouts, rolloutRow(&rollouts[i]))
 	}
 	slices.SortFunc(rep.Rollouts, func(a, b rolloutStatus) int { return strings.Compare(a.Name, b.Name) })
 }

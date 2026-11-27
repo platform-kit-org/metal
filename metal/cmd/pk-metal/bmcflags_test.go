@@ -4,13 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/pem"
-	"flag"
 	"io"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -20,8 +20,7 @@ import (
 
 func parseBMCFlags(t *testing.T, args ...string) bmcFlags {
 	t.Helper()
-	fs := flag.NewFlagSet("test", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
+	fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
 	bf := connectFlags(fs)
 	require.NoError(t, fs.Parse(args))
 	return bf

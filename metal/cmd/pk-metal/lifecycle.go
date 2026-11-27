@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/GSI-HPC/go-clikit/cobratree"
+	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -22,9 +24,13 @@ import (
 // request onto the object it concerns, the operator proposes the operation,
 // and a person approves it with pk-metal approve, as for every other change.
 
-func init() {
-	verbHelp["wipe"] = `
-A machine released while its node did not answer could not be reset: its
+func wipeCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:         "wipe [--talos-version v] <host>",
+		Short:       "ask for a wipe of a released machine that may still hold a node's install (the operator proposes it)",
+		GroupID:     groupChanges,
+		Annotations: needsCluster(),
+		Long: `A machine released while its node did not answer could not be reset: its
 disk may still hold the node, with its cluster's credentials. The operator
 marks such a Host (DiskWiped=False) and installs nothing else on it until it
 is wiped. wipe asks for that: the operator proposes an operation that boots a
@@ -32,69 +38,26 @@ Talos image which erases the system disk, and stops there. Approve it with
 pk-metal approve.
 
 The image's Talos version defaults to the version of the cluster the node
-on the disk belonged to.`
-	verbHelp["reinstall"] = `
-reinstall wipes and installs the same node on the same machine again: for a
-corrupted install, or after a disk was replaced (edit the TalosNode's
-installDiskSelector first). The operation drains the node, takes a control
-plane out of etcd, resets the system disk, boots the installer and waits for
-the node to check in again. Approve it with pk-metal approve.
-
-A control plane of a three-member cluster is down to two members while it
-reinstalls, an even count the operator refuses without --ack-etcd-risk.`
-	verbHelp["replace"] = `
-replace moves a node to another machine, for hardware that failed: the
-claim is pointed at the new machine, the old one is released first (its node
-leaves the cluster and its etcd member is removed; a machine that does not
-answer is powered off and marked for a wipe), and then the node is
-installed on the new machine. The node keeps its name, so its etcd member
-must go before it joins again: a control plane of a three-member cluster is
-at two members in between, which needs --ack-etcd-risk.
-
-A TalosNode that names its install disk by serial or its network link by
-MAC address fits one machine only: edit those to the new machine's values
-before replace, or the install finds no disk and the node no link.
-
-For hardware that still works, add the new node first and remove the old
-one after (see https://metal.platform-kit.org/workflows/add-and-remove-nodes/):
-etcd then never runs short.`
-	verbHelp["scale"] = `
-scale prints the plan that takes a cluster to the given number of control
-planes and workers: which TalosNodes get a machine, which free hosts they
-claim, which claims are deleted, and in which order the operator works
-through them. Nothing changes without --apply.
-
-Growing needs TalosNodes written ahead (their network, disk and role are
-yours to say) and free hosts (Available, unclaimed, wiped). Each new node
-gets a HostClaim named after it. Control planes join one at a time.
-
-Shrinking deletes the claims of the highest-named nodes: their nodes leave
-the cluster, the machines are reset and go back to the pool. The TalosNodes
-stay, without a machine, ready for the next scale-up. Control planes leave
-one at a time, the etcd leader last. A plan that passes through an even
-number of control planes needs --ack-etcd-risk.
-
-Claims written here are not in git; if you keep them in git, write the
-plan's claims there instead.`
-}
-
-func wipeCmd(args []string) {
-	fs := newFlags("wipe")
+on the disk belonged to.`,
+	}
+	fs := cmd.Flags()
 	version := fs.String("talos-version", "", "Talos version of the wipe image (default: the version of the node's cluster)")
-	addGlobalFlags(fs)
-	parseFlags(fs, args)
-	if fs.NArg() != 1 {
-		badUsage(fs, "give exactly one host")
+	cmd.RunE = func(_ *cobra.Command, args []string) error {
+		if len(args) != 1 {
+			return cobratree.Usagef("give exactly one host")
+		}
+		cl, err := newClient()
+		if err != nil {
+			die(err)
+		}
+		ctx, stop := signalContext()
+		defer stop()
+		if err := wipe(ctx, cl, args[0], *version, os.Stdout); err != nil {
+			die(err)
+		}
+		return nil
 	}
-	cl, err := newClient()
-	if err != nil {
-		die(err)
-	}
-	ctx, stop := signalContext()
-	defer stop()
-	if err := wipe(ctx, cl, fs.Arg(0), *version, os.Stdout); err != nil {
-		die(err)
-	}
+	return cmd
 }
 
 // wipe marks a not-wiped host for a wipe.
@@ -130,24 +93,40 @@ func wipe(ctx context.Context, cl client.Client, name, version string, w io.Writ
 	return nil
 }
 
-func reinstallCmd(args []string) {
-	fs := newFlags("reinstall")
-	ns := fs.String("n", claimNamespace, "namespace of the claim")
+func reinstallCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:         "reinstall [-n namespace] [--ack-etcd-risk reason] <claim> | <node>",
+		Short:       "ask for the node a claim runs to be wiped and installed again on the same machine (the operator proposes it)",
+		GroupID:     groupChanges,
+		Annotations: needsCluster(),
+		Long: `reinstall wipes and installs the same node on the same machine again: for a
+corrupted install, or after a disk was replaced (edit the TalosNode's
+installDiskSelector first). The operation drains the node, takes a control
+plane out of etcd, resets the system disk, boots the installer and waits for
+the node to check in again. Approve it with pk-metal approve.
+
+A control plane of a three-member cluster is down to two members while it
+reinstalls, an even count the operator refuses without --ack-etcd-risk.`,
+	}
+	fs := cmd.Flags()
+	ns := fs.StringP("namespace", "n", claimNamespace, "namespace of the claim")
 	ack := fs.String("ack-etcd-risk", "", "reason to accept an even or short etcd membership while a control plane reinstalls; stored on the claim as \"<your username>: <reason>\"")
-	addGlobalFlags(fs)
-	parseFlags(fs, args)
-	if fs.NArg() != 1 {
-		badUsage(fs, "give exactly one claim or node")
+	cmd.RunE = func(_ *cobra.Command, args []string) error {
+		if len(args) != 1 {
+			return cobratree.Usagef("give exactly one claim or node")
+		}
+		cl, err := newClient()
+		if err != nil {
+			die(err)
+		}
+		ctx, stop := signalContext()
+		defer stop()
+		if err := reinstall(ctx, cl, *ns, args[0], *ack, os.Stdout); err != nil {
+			die(err)
+		}
+		return nil
 	}
-	cl, err := newClient()
-	if err != nil {
-		die(err)
-	}
-	ctx, stop := signalContext()
-	defer stop()
-	if err := reinstall(ctx, cl, *ns, fs.Arg(0), *ack, os.Stdout); err != nil {
-		die(err)
-	}
+	return cmd
 }
 
 // findClaim reads a claim by namespace/name or name, or else the claim whose
@@ -204,25 +183,48 @@ func reinstall(ctx context.Context, cl client.Client, namespace, ref, ack string
 	return nil
 }
 
-func replaceCmd(args []string) {
-	fs := newFlags("replace")
-	ns := fs.String("n", claimNamespace, "namespace of the claim")
+func replaceCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:         "replace [-n namespace] --host <host> [--ack-etcd-risk reason] <claim> | <node>",
+		Short:       "move a node to another machine, for failed hardware: the old machine is released first (the operator proposes it)",
+		GroupID:     groupChanges,
+		Annotations: needsCluster(),
+		Long: `replace moves a node to another machine, for hardware that failed: the
+claim is pointed at the new machine, the old one is released first (its node
+leaves the cluster and its etcd member is removed; a machine that does not
+answer is powered off and marked for a wipe), and then the node is
+installed on the new machine. The node keeps its name, so its etcd member
+must go before it joins again: a control plane of a three-member cluster is
+at two members in between, which needs --ack-etcd-risk.
+
+A TalosNode that names its install disk by serial or its network link by
+MAC address fits one machine only: edit those to the new machine's values
+before replace, or the install finds no disk and the node no link.
+
+For hardware that still works, add the new node first and remove the old
+one after (see https://metal.platform-kit.org/workflows/add-and-remove-nodes/):
+etcd then never runs short.`,
+	}
+	fs := cmd.Flags()
+	ns := fs.StringP("namespace", "n", claimNamespace, "namespace of the claim")
 	hostName := fs.String("host", "", "the machine (Host) to move the node to; it must be Available")
 	ack := fs.String("ack-etcd-risk", "", "reason to accept an even or short etcd membership while a control plane moves; stored on the claim as \"<your username>: <reason>\"")
-	addGlobalFlags(fs)
-	parseFlags(fs, args)
-	if fs.NArg() != 1 || *hostName == "" {
-		badUsage(fs, "give one claim or node, and --host")
+	cmd.RunE = func(_ *cobra.Command, args []string) error {
+		if len(args) != 1 || *hostName == "" {
+			return cobratree.Usagef("give one claim or node, and --host")
+		}
+		cl, err := newClient()
+		if err != nil {
+			die(err)
+		}
+		ctx, stop := signalContext()
+		defer stop()
+		if err := replace(ctx, cl, *ns, args[0], *hostName, *ack, os.Stdout); err != nil {
+			die(err)
+		}
+		return nil
 	}
-	cl, err := newClient()
-	if err != nil {
-		die(err)
-	}
-	ctx, stop := signalContext()
-	defer stop()
-	if err := replace(ctx, cl, *ns, fs.Arg(0), *hostName, *ack, os.Stdout); err != nil {
-		die(err)
-	}
+	return cmd
 }
 
 // hostAsset is the Asset and the system id a claim selects to bind host. A
@@ -310,36 +312,61 @@ func patchAnnotations(ctx context.Context, cl client.Client, obj client.Object, 
 	return cl.Patch(ctx, obj, client.RawPatch(types.MergePatchType, raw))
 }
 
-func scaleCmd(args []string) {
-	fs := newFlags("scale")
-	ns := fs.String("n", claimNamespace, "namespace for the claims of new nodes")
+func scaleCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:         "scale [-n namespace] --control-planes N --workers M [--apply] [--ack-etcd-risk reason] <cluster>",
+		Short:       "show which machines a cluster gains or gives back to reach a size, and in which order; --apply makes the claims say so",
+		GroupID:     groupChanges,
+		Annotations: needsCluster(),
+		Long: `scale prints the plan that takes a cluster to the given number of control
+planes and workers: which TalosNodes get a machine, which free hosts they
+claim, which claims are deleted, and in which order the operator works
+through them. Nothing changes without --apply.
+
+Growing needs TalosNodes written ahead (their network, disk and role are
+yours to say) and free hosts (Available, unclaimed, wiped). Each new node
+gets a HostClaim named after it. Control planes join one at a time.
+
+Shrinking deletes the claims of the highest-named nodes: their nodes leave
+the cluster, the machines are reset and go back to the pool. The TalosNodes
+stay, without a machine, ready for the next scale-up. Control planes leave
+one at a time, the etcd leader last. A plan that passes through an even
+number of control planes needs --ack-etcd-risk.
+
+Claims written here are not in git; if you keep them in git, write the
+plan's claims there instead.`,
+	}
+	fs := cmd.Flags()
+	ns := fs.StringP("namespace", "n", claimNamespace, "namespace for the claims of new nodes")
 	cps := fs.Int("control-planes", -1, "control planes wanted (required)")
 	workers := fs.Int("workers", -1, "workers wanted (required)")
 	apply := fs.Bool("apply", false, "create and delete the claims of the plan")
 	ack := fs.String("ack-etcd-risk", "", "reason to accept passing through an even number of control planes; stored on the claim as \"<your username>: <reason>\"")
-	addGlobalFlags(fs)
-	parseFlags(fs, args)
-	if fs.NArg() != 1 || *cps < 0 || *workers < 0 {
-		badUsage(fs, "give one cluster, --control-planes and --workers")
+	cmd.RunE = func(_ *cobra.Command, args []string) error {
+		if len(args) != 1 || *cps < 0 || *workers < 0 {
+			return cobratree.Usagef("give one cluster, --control-planes and --workers")
+		}
+		cl, err := newClient()
+		if err != nil {
+			die(err)
+		}
+		ctx, stop := signalContext()
+		defer stop()
+		plan, err := planScale(ctx, cl, args[0], *cps, *workers, *ns)
+		if err != nil {
+			die(err)
+		}
+		plan.print(os.Stdout)
+		if !*apply {
+			fmt.Println("\nNothing changed. To do it: add --apply")
+			return nil
+		}
+		if err := plan.apply(ctx, cl, *ack, os.Stdout); err != nil {
+			die(err)
+		}
+		return nil
 	}
-	cl, err := newClient()
-	if err != nil {
-		die(err)
-	}
-	ctx, stop := signalContext()
-	defer stop()
-	plan, err := planScale(ctx, cl, fs.Arg(0), *cps, *workers, *ns)
-	if err != nil {
-		die(err)
-	}
-	plan.print(os.Stdout)
-	if !*apply {
-		fmt.Println("\nNothing changed. To do it: add --apply")
-		return
-	}
-	if err := plan.apply(ctx, cl, *ack, os.Stdout); err != nil {
-		die(err)
-	}
+	return cmd
 }
 
 // scalePlan is what scale does: claims to create and claims to delete, in

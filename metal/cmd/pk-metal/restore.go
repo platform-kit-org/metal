@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/GSI-HPC/go-clikit/cobratree"
+	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -27,66 +29,51 @@ import (
 	"github.com/dennisklein/platform-kit/metal/internal/talos/render"
 )
 
-func init() {
-	verbHelp["restore"] = `
-restore looks at a cluster's etcd on every control plane and says what is
-wrong and what would fix it. It changes nothing on a machine itself: with
---propose it creates the operations of the plan, and each waits for another
-person's approval like any other.
-
-subcommands:
-  plan <cluster> [--snapshot name] [--node name] [--propose]
-      One member lost (its etcd does not run or reports errors while the
-      others keep their majority): remove that member, wipe the node's etcd
-      data (EPHEMERAL) and let it join again.
-      Majority or everything lost (no control plane lists etcd members):
-      wipe the etcd data of the members that still run a stuck etcd, then
-      restore one control plane from a snapshot (etcdRecover); the others
-      join it. The newest verified snapshot is used unless --snapshot names
-      one.
-  upload <operation> --identity <file> [--from-file <file.age>]
-      For an approved etcdRecover operation: decrypt the snapshot on this
-      machine with your age identity, check it against the snapshot record,
-      and stream it to the node over the Talos API with your talosconfig.
-      The operator then starts etcd from it.
-
-The talosconfig is read from the cluster's published Secret
-(<cluster>-talosconfig in pk-metal) unless --talosconfig names a file.
-
-examples:
-  pk-metal restore plan lab
-  pk-metal restore plan lab --snapshot lab-daily-20261124-060000 --propose
-  pk-metal approve pk-metal/lab-etcd-recover-node-1          (a person; see selfApproval)
-  pk-metal restore upload pk-metal/lab-etcd-recover-node-1 --identity ~/.config/age/keys.txt
-
-https://metal.platform-kit.org/operate/day-2/restore-etcd/ walks through each case.`
-}
-
 // restoreReason is the spec.reason of the operations restore proposes.
 const restoreReason = "EtcdRestore"
 
 // labelRestoreCluster marks the operations restore proposes for a cluster.
 const labelRestoreCluster = "os.platform-kit.org/etcd-restore"
 
-func restoreCmd(args []string) {
-	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
-		fs := newFlags("restore")
-		parseFlags(fs, args)
-		badUsage(fs, "name a subcommand: plan or upload")
+func restoreCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:         "restore",
+		Short:       "say what is wrong with a cluster's etcd and propose the operations that restore it; upload an approved snapshot",
+		GroupID:     groupChanges,
+		Annotations: needsCluster(),
+		Long: `restore looks at a cluster's etcd on every control plane and says what is
+wrong and what would fix it. It changes nothing on a machine itself: with
+--propose it creates the operations of the plan, and each waits for another
+person's approval like any other.
+
+The talosconfig is read from the cluster's published Secret
+(<cluster>-talosconfig in pk-metal) unless --talosconfig names a file.
+
+https://metal.platform-kit.org/operate/day-2/restore-etcd/ walks through each case.`,
+		Example: `  pk-metal restore plan lab
+  pk-metal restore plan lab --snapshot lab-daily-20261124-060000 --propose
+  pk-metal approve pk-metal/lab-etcd-recover-node-1          (a person; see selfApproval)
+  pk-metal restore upload pk-metal/lab-etcd-recover-node-1 --identity ~/.config/age/keys.txt`,
 	}
-	sub, rest := args[0], args[1:]
-	fs := newFlags("restore " + sub)
-	addGlobalFlags(fs)
-	talosconfigFile := fs.String("talosconfig", "", "talosconfig file (default: the cluster's published Secret)")
+	talosconfigFile := cmd.PersistentFlags().String("talosconfig", "", "talosconfig file (default: the cluster's published Secret)")
 	ctx := context.Background()
-	switch sub {
-	case "plan":
-		snapshot := fs.String("snapshot", "", "EtcdSnapshot to restore (default: the cluster's newest verified one)")
-		node := fs.String("node", "", "control plane to restore on (default: the first by name that answers)")
-		propose := fs.Bool("propose", false, "create the plan's operations (each waits for approval)")
-		pos := parseAnywhere(fs, rest)
+
+	plan := &cobra.Command{Use: "plan <cluster> [--snapshot name] [--node name] [--propose]",
+		Short: "say what is wrong with the cluster's etcd and what would fix it; --propose creates the operations",
+		Long: `One member lost (its etcd does not run or reports errors while the
+others keep their majority): remove that member, wipe the node's etcd
+data (EPHEMERAL) and let it join again.
+Majority or everything lost (no control plane lists etcd members):
+wipe the etcd data of the members that still run a stuck etcd, then
+restore one control plane from a snapshot (etcdRecover); the others
+join it. The newest verified snapshot is used unless --snapshot names
+one.`}
+	snapshot := plan.Flags().String("snapshot", "", "EtcdSnapshot to restore (default: the cluster's newest verified one)")
+	node := plan.Flags().String("node", "", "control plane to restore on (default: the first by name that answers)")
+	propose := plan.Flags().Bool("propose", false, "create the plan's operations (each waits for approval)")
+	plan.RunE = func(_ *cobra.Command, pos []string) error {
 		if len(pos) != 1 {
-			badUsage(fs, "give exactly one TalosCluster")
+			return cobratree.Usagef("give exactly one TalosCluster")
 		}
 		cl := mustClient()
 		tc, err := talosconfigFor(ctx, cl, argAt(pos, 0), *talosconfigFile)
@@ -113,17 +100,25 @@ func restoreCmd(args []string) {
 			fmt.Printf("\nnothing was created; to propose these operations: pk-metal restore plan %s --propose%s\n",
 				argAt(pos, 0), p.flags())
 		}
-	case "upload":
-		ns := fs.String("n", operatorNamespace, "namespace of the operation")
-		identity := fs.String("identity", "", "age identity file (required)")
-		fromFile := fs.String("from-file", "", "the encrypted snapshot as a file (needed for a pvc sink)")
-		pos := parseAnywhere(fs, rest)
+		return nil
+	}
+
+	upload := &cobra.Command{Use: "upload <operation> --identity <file> [--from-file <file.age>]",
+		Short: "stream the snapshot of an approved etcdRecover operation to its node",
+		Long: `For an approved etcdRecover operation: decrypt the snapshot on this
+machine with your age identity, check it against the snapshot record,
+and stream it to the node over the Talos API with your talosconfig.
+The operator then starts etcd from it.`}
+	ns := upload.Flags().StringP("namespace", "n", operatorNamespace, "namespace of the operation")
+	identity := upload.Flags().String("identity", "", "age identity file (required)")
+	fromFile := upload.Flags().String("from-file", "", "the encrypted snapshot as a file (needed for a pvc sink)")
+	upload.RunE = func(cmd *cobra.Command, pos []string) error {
 		if len(pos) != 1 || *identity == "" {
-			badUsage(fs, "give one operation and --identity")
+			return cobratree.Usagef("give one operation and --identity")
 		}
-		namespace, name, err := splitRef(argAt(pos, 0), *ns, flagGiven(fs, "n"))
+		namespace, name, err := splitRef(argAt(pos, 0), *ns, cmd.Flags().Changed("namespace"))
 		if err != nil {
-			badUsage(fs, err.Error())
+			return cobratree.Usage(err)
 		}
 		cl := mustClient()
 		user, err := whoAmI(ctx, cl)
@@ -136,9 +131,11 @@ func restoreCmd(args []string) {
 		}, os.Stdout); err != nil {
 			die(err)
 		}
-	default:
-		badUsage(fs, fmt.Sprintf("unknown subcommand %q: plan or upload", sub))
+		return nil
 	}
+
+	cmd.AddCommand(plan, upload)
+	return cmd
 }
 
 // talosconfigFor reads a file, or the talosconfig the operator published

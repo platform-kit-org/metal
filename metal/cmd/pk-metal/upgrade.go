@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/GSI-HPC/go-clikit/cobratree"
+	"github.com/spf13/cobra"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -18,9 +20,15 @@ import (
 	"github.com/dennisklein/platform-kit/metal/internal/talos/render"
 )
 
-func init() {
-	verbHelp["upgrade"] = `
-upgrade changes the version a TalosCluster asks for, then waits for the
+var versionPattern = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+$`)
+
+func upgradeCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:         "upgrade [--wait 2m] talos|kubernetes <cluster> <version>",
+		Short:       "set the Talos or Kubernetes version a cluster asks for and show the rollout the operator proposes; nothing runs before it is approved",
+		GroupID:     groupChanges,
+		Annotations: needsCluster(),
+		Long: `upgrade changes the version a TalosCluster asks for, then waits for the
 rollout the operator proposes for it and prints its plan. Nothing on a machine
 changes until a person approves that plan with pk-metal rollout approve.
 
@@ -34,35 +42,31 @@ changes until a person approves that plan with pk-metal rollout approve.
 Talos says which Kubernetes versions each Talos release supports and from
 which releases it can be upgraded; upgrade refuses a step Talos does not
 support, before it changes anything. Kubernetes moves one minor at a time:
-from v1.35 the next step is v1.36, not v1.37.
-
-examples:
-  pk-metal upgrade talos lab v1.14.7
-  pk-metal upgrade kubernetes lab v1.36.3`
-}
-
-var versionPattern = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+$`)
-
-func upgradeCmd(args []string) {
-	fs := newFlags("upgrade")
+from v1.35 the next step is v1.36, not v1.37.`,
+		Example: `  pk-metal upgrade talos lab v1.14.7
+  pk-metal upgrade kubernetes lab v1.36.3`,
+	}
+	fs := cmd.Flags()
 	wait := fs.Duration("wait", 2*time.Minute, "how long to wait for the proposed rollout (0: do not wait)")
-	addGlobalFlags(fs)
-	parseFlags(fs, args)
-	if fs.NArg() != 3 {
-		badUsage(fs, "give what to upgrade (talos or kubernetes), the cluster and the version")
+	cmd.RunE = func(_ *cobra.Command, args []string) error {
+		if len(args) != 3 {
+			return cobratree.Usagef("give what to upgrade (talos or kubernetes), the cluster and the version")
+		}
+		what, cluster, version := args[0], args[1], args[2]
+		if what != "talos" && what != "kubernetes" {
+			return cobratree.Usagef("upgrade talos or kubernetes, not %s", what)
+		}
+		cl, err := newClient()
+		if err != nil {
+			die(err)
+		}
+		ctx := context.Background()
+		if err := upgrade(ctx, cl, what, cluster, version, *wait, time.Second*2, os.Stdout); err != nil {
+			die(err)
+		}
+		return nil
 	}
-	what, cluster, version := fs.Arg(0), fs.Arg(1), fs.Arg(2)
-	if what != "talos" && what != "kubernetes" {
-		badUsage(fs, "upgrade talos or kubernetes, not "+what)
-	}
-	cl, err := newClient()
-	if err != nil {
-		die(err)
-	}
-	ctx := context.Background()
-	if err := upgrade(ctx, cl, what, cluster, version, *wait, time.Second*2, os.Stdout); err != nil {
-		die(err)
-	}
+	return cmd
 }
 
 // upgradeCheck refuses a version step Talos does not support, before the

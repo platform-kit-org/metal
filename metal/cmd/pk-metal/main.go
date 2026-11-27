@@ -1,5 +1,5 @@
 // pk-metal is the operator's terminal twin: the day-0 executor and the typed
-// command line for the BMC and the cluster. The verbs are listed in cli.go's command table.
+// command line for the BMC and the cluster. cli.go builds the command tree.
 package main
 
 import (
@@ -8,7 +8,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -21,6 +20,10 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/GSI-HPC/go-clikit/cobratree"
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/dennisklein/platform-kit/metal/internal/asset"
 	"github.com/dennisklein/platform-kit/metal/internal/bmc"
@@ -42,7 +45,7 @@ type bmcFlags struct {
 	caFile   *string
 }
 
-func connectFlags(fs *flag.FlagSet) bmcFlags {
+func connectFlags(fs *pflag.FlagSet) bmcFlags {
 	return bmcFlags{
 		user:     fs.String("user", "admin", "BMC username (password via PK_METAL_BMC_PASSWORD)"),
 		insecure: fs.Bool("insecure", false, "skip TLS verification of the BMC (prefer --bmc-ca)"),
@@ -97,71 +100,86 @@ func mustConnect(ctx context.Context, endpoint string, f bmcFlags, readOnly bool
 	return c
 }
 
-func inventoryCmd(args []string) {
-	fs := newFlags("inventory")
+func inventoryCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:     "inventory [flags] <bmc-url>",
+		Short:   "read the hardware inventory from a BMC and print it as YAML (reads only)",
+		GroupID: groupReads,
+	}
+	fs := cmd.Flags()
 	node := fs.String("node", "", "node name for the fact file (default: derived from the endpoint host)")
 	address := fs.String("address", "", "address label for the fact file (default: endpoint host)")
 	system := fs.String("system", "", "system id to describe (default: the BMC's only system)")
 	bf := connectFlags(fs)
-	parseFlags(fs, args)
-	if fs.NArg() != 1 {
-		badUsage(fs, "give exactly one BMC URL, for example https://10.0.0.5")
-	}
-	endpoint := fs.Arg(0)
-	host := endpointHost(endpoint)
-	if *address == "" {
-		*address = host
-	}
-	if *node == "" {
-		*node = host
-	}
+	cmd.RunE = func(_ *cobra.Command, args []string) error {
+		if len(args) != 1 {
+			return cobratree.Usagef("give exactly one BMC URL, for example https://10.0.0.5")
+		}
+		endpoint := args[0]
+		host := endpointHost(endpoint)
+		if *address == "" {
+			*address = host
+		}
+		if *node == "" {
+			*node = host
+		}
 
-	ctx, stop := signalContext()
-	defer stop()
-	c := mustConnect(ctx, endpoint, bf, true) // inventory is read-only by construction
-	defer c.Close()
-	facts, err := inventory.Gather(ctx, c)
-	if err != nil {
-		die(err)
+		ctx, stop := signalContext()
+		defer stop()
+		c := mustConnect(ctx, endpoint, bf, true) // inventory is read-only by construction
+		defer c.Close()
+		facts, err := inventory.Gather(ctx, c)
+		if err != nil {
+			die(err)
+		}
+		if facts, err = facts.Pick(*system); err != nil {
+			die(err)
+		}
+		inventory.Write(os.Stdout, *node, *address, time.Now(), facts)
+		return nil
 	}
-	if facts, err = facts.Pick(*system); err != nil {
-		die(err)
-	}
-	inventory.Write(os.Stdout, *node, *address, time.Now(), facts)
+	return cmd
 }
 
-func checkCmd(args []string) {
-	fs := newFlags("check")
-	bf := connectFlags(fs)
-	parseFlags(fs, args)
-	if fs.NArg() != 1 {
-		badUsage(fs, "give exactly one BMC URL, for example https://10.0.0.5")
+func checkCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:     "check [flags] <bmc-url>",
+		Short:   "test that a BMC answers and list its virtual media and systems (reads only)",
+		GroupID: groupReads,
 	}
-	ctx, stop := signalContext()
-	defer stop()
-	c := mustConnect(ctx, fs.Arg(0), bf, true) // check is read-only by construction
-	defer c.Close()
+	bf := connectFlags(cmd.Flags())
+	cmd.RunE = func(_ *cobra.Command, args []string) error {
+		if len(args) != 1 {
+			return cobratree.Usagef("give exactly one BMC URL, for example https://10.0.0.5")
+		}
+		ctx, stop := signalContext()
+		defer stop()
+		c := mustConnect(ctx, args[0], bf, true) // check is read-only by construction
+		defer c.Close()
 
-	m, err := c.Manager(ctx)
-	if err != nil {
-		dief("check failed: %v", err)
+		m, err := c.Manager(ctx)
+		if err != nil {
+			dief("check failed: %v", err)
+		}
+		fmt.Printf("manager:  %s fw %s\n", orDash(m.Vendor), orDash(m.FirmwareVersion))
+		caps, err := c.Capabilities(ctx)
+		if err != nil {
+			dief("check failed: %v", err)
+		}
+		for _, id := range slices.Sorted(maps.Keys(caps.MediaDialect)) {
+			fmt.Printf("media:    %-14s dialect=%s\n", id, caps.MediaDialect[id])
+		}
+		systems, err := c.Systems(ctx)
+		if err != nil {
+			dief("check failed: %v", err)
+		}
+		for _, s := range systems {
+			fmt.Printf("system:   %s serial=%s power=%s\n", s.ID, orDash(s.SerialNumber), s.PowerState)
+		}
+		fmt.Println("check:    OK (read-only)")
+		return nil
 	}
-	fmt.Printf("manager:  %s fw %s\n", orDash(m.Vendor), orDash(m.FirmwareVersion))
-	caps, err := c.Capabilities(ctx)
-	if err != nil {
-		dief("check failed: %v", err)
-	}
-	for _, id := range slices.Sorted(maps.Keys(caps.MediaDialect)) {
-		fmt.Printf("media:    %-14s dialect=%s\n", id, caps.MediaDialect[id])
-	}
-	systems, err := c.Systems(ctx)
-	if err != nil {
-		dief("check failed: %v", err)
-	}
-	for _, s := range systems {
-		fmt.Printf("system:   %s serial=%s power=%s\n", s.ID, orDash(s.SerialNumber), s.PowerState)
-	}
-	fmt.Println("check:    OK (read-only)")
+	return cmd
 }
 
 func endpointHost(endpoint string) string {
@@ -179,58 +197,49 @@ func orDash(s string) string {
 	return s
 }
 
-func simCmd(args []string) {
-	if len(args) > 0 && args[0] == "fleet" {
-		simFleetCmd(args[1:])
-		return
+func simCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:     "sim",
+		Short:   "run simulated BMCs for tests: serve one, or a fleet with a virtual machine behind each",
+		GroupID: groupReads,
 	}
-	if len(args) < 1 || args[0] != "serve" {
-		w, code := os.Stderr, 1
-		if len(args) > 0 && (args[0] == "-h" || args[0] == "-help" || args[0] == "--help") {
-			w, code = os.Stdout, 0
-		}
-		fmt.Fprintln(w, `pk-metal sim: run simulated BMCs (Redfish) for tests and demos
-
-usage: pk-metal sim serve [--fixture <name|path>] [--listen addr] [--tls] [--verbose]
-       pk-metal sim fleet --config <file> [--verbose] [--state-listen addr]
-
-run: pk-metal sim serve -h, or pk-metal sim fleet -h, for the flags`)
-		os.Exit(code)
-	}
-	fs := newFlags("sim serve")
+	serve := &cobra.Command{Use: "serve [flags]", Short: "serve one simulated BMC (Redfish) for tests and demos", Args: cobra.NoArgs}
+	fs := serve.Flags()
 	fixture := fs.String("fixture", "generic",
 		"embedded fixture name ("+strings.Join(sim.Fixtures(), ", ")+") or a path to a fixture YAML")
 	listen := fs.String("listen", "127.0.0.1:8000", "listen address")
 	serveTLS := fs.Bool("tls", false, "serve HTTPS with an ephemeral self-signed certificate (what spec.address requires)")
 	verbose := fs.Bool("verbose", false, "log every request (default: only state-changing ones)")
-	parseFlags(fs, args[1:])
-
-	f, err := sim.LoadFixture(*fixture)
-	if err != nil {
-		die(err)
-	}
-	// Bind BEFORE logging, so the "serving" line means the listener is really up.
-	ln, err := net.Listen("tcp", *listen)
-	if err != nil {
-		die(err)
-	}
-	scheme := "http"
-	if *serveTLS {
-		cert, err := asset.EphemeralCert()
+	serve.RunE = func(*cobra.Command, []string) error {
+		f, err := sim.LoadFixture(*fixture)
 		if err != nil {
 			die(err)
 		}
-		ln = tls.NewListener(ln, &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12})
-		scheme = "https"
+		// Bind BEFORE logging, so the "serving" line means the listener is really up.
+		ln, err := net.Listen("tcp", *listen)
+		if err != nil {
+			die(err)
+		}
+		scheme := "http"
+		if *serveTLS {
+			cert, err := asset.EphemeralCert()
+			if err != nil {
+				die(err)
+			}
+			ln = tls.NewListener(ln, &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12})
+			scheme = "https"
+		}
+		account := "no accounts, open"
+		if len(f.Accounts) > 0 {
+			// A fixture value, not a secret: the factory account is how anybody
+			// gets in at all.
+			account = "account " + f.Accounts[0].Username + " / " + f.Accounts[0].Password
+		}
+		log.Printf("sim: serving %s (%s) on %s://%s/redfish/v1 (%s)", f.Name, f.Vendor, scheme, ln.Addr(), account)
+		return http.Serve(ln, logRequests(sim.NewServer(sim.NewState(f)), "sim", *verbose))
 	}
-	account := "no accounts, open"
-	if len(f.Accounts) > 0 {
-		// A fixture value, not a secret: the factory account is how anybody
-		// gets in at all.
-		account = "account " + f.Accounts[0].Username + " / " + f.Accounts[0].Password
-	}
-	log.Printf("sim: serving %s (%s) on %s://%s/redfish/v1 (%s)", f.Name, f.Vendor, scheme, ln.Addr(), account)
-	die(http.Serve(ln, logRequests(sim.NewServer(sim.NewState(f)), "sim", *verbose)))
+	cmd.AddCommand(serve, simFleetCmd())
+	return cmd
 }
 
 // logRequests is the sim's console: state-changing requests — power, media, boot,

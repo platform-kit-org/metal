@@ -7,6 +7,8 @@ import (
 	"os"
 	"time"
 
+	"github.com/GSI-HPC/go-clikit/cobratree"
+	"github.com/spf13/cobra"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
@@ -16,9 +18,13 @@ import (
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
 )
 
-func init() {
-	verbHelp["reboot"] = `
-reboot proposes a clean reboot of one Talos node: it cordons the node, drains
+func rebootCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:         "reboot [--mode default|powercycle] [--drain-timeout d] [--grace-period s] [--delete-emptydir-data] <node>",
+		Short:       "propose a clean reboot of a Talos node: cordon, drain, reboot, wait until ready, uncordon (waits for approval)",
+		GroupID:     groupChanges,
+		Annotations: needsCluster(),
+		Long: `reboot proposes a clean reboot of one Talos node: it cordons the node, drains
 it (pods are evicted so that every PodDisruptionBudget holds; DaemonSet and
 static pods stay), reboots it through Talos, waits until it runs ready again
 in Talos and in Kubernetes, and uncordons it. For a control plane it also
@@ -33,54 +39,52 @@ no other control plane of its cluster is being taken down; until then the
 approved operation waits (pk-metal status shows ClusterDisruption).
 
 A drain that a disruption budget holds up waits up to --drain-timeout, then
-fails and leaves the node cordoned. To stop a reboot: pk-metal abort --reason.
-
-examples:
-  pk-metal reboot w-1
+fails and leaves the node cordoned. To stop a reboot: pk-metal abort --reason.`,
+		Example: `  pk-metal reboot w-1
   pk-metal reboot --drain-timeout 30m --grace-period 60 cp-2
-  pk-metal reboot --mode powercycle --delete-emptydir-data w-1`
-}
-
-func rebootCmd(args []string) {
-	fs := newFlags("reboot")
+  pk-metal reboot --mode powercycle --delete-emptydir-data w-1`,
+	}
+	fs := cmd.Flags()
 	mode := fs.String("mode", "default", "how the reboot ends: default (kexec or warm reboot) or powercycle (cold start, for firmware)")
 	drainTimeout := fs.Duration("drain-timeout", 15*time.Minute, "how long the drain may wait for pods to leave (30s..24h)")
 	grace := fs.Int("grace-period", -1, "seconds each evicted pod gets to stop; -1 keeps each pod's own")
 	emptyDir := fs.Bool("delete-emptydir-data", false, "also evict pods with emptyDir volumes, whose data is lost")
-	addGlobalFlags(fs)
-	parseFlags(fs, args)
-	if fs.NArg() != 1 {
-		badUsage(fs, "give exactly one node (the TalosNode name, which is the Kubernetes node name)")
-	}
-	opts := rebootOptions{Node: fs.Arg(0), DrainTimeout: *drainTimeout, DeleteEmptyDirData: *emptyDir}
-	switch *mode {
-	case "default":
-	case "powercycle":
-		opts.PowerCycle = true
-	default:
-		badUsage(fs, "--mode is default or powercycle")
-	}
-	if *grace >= 0 {
-		opts.GracePeriod = ptr.To(int32(*grace)) //nolint:gosec // bounded by the schema, checked below
-		if *grace > 3600 {
-			badUsage(fs, "--grace-period is at most 3600 seconds")
+	cmd.RunE = func(_ *cobra.Command, args []string) error {
+		if len(args) != 1 {
+			return cobratree.Usagef("give exactly one node (the TalosNode name, which is the Kubernetes node name)")
 		}
+		opts := rebootOptions{Node: args[0], DrainTimeout: *drainTimeout, DeleteEmptyDirData: *emptyDir}
+		switch *mode {
+		case "default":
+		case "powercycle":
+			opts.PowerCycle = true
+		default:
+			return cobratree.InvalidValue("mode", *mode, "default or powercycle")
+		}
+		if *grace >= 0 {
+			opts.GracePeriod = ptr.To(int32(*grace)) //nolint:gosec // bounded by the schema, checked below
+			if *grace > 3600 {
+				return cobratree.Usagef("--grace-period is at most 3600 seconds")
+			}
+		}
+		if *drainTimeout < 30*time.Second || *drainTimeout > 24*time.Hour {
+			return cobratree.Usagef("--drain-timeout is between 30s and 24h")
+		}
+		cl, err := newClient()
+		if err != nil {
+			die(err)
+		}
+		ctx, stop := signalContext()
+		defer stop()
+		if opts.User, err = whoAmI(ctx, cl); err != nil {
+			die(err)
+		}
+		if _, err := proposeReboot(ctx, cl, opts, os.Stdout); err != nil {
+			die(err)
+		}
+		return nil
 	}
-	if *drainTimeout < 30*time.Second || *drainTimeout > 24*time.Hour {
-		badUsage(fs, "--drain-timeout is between 30s and 24h")
-	}
-	cl, err := newClient()
-	if err != nil {
-		die(err)
-	}
-	ctx, stop := signalContext()
-	defer stop()
-	if opts.User, err = whoAmI(ctx, cl); err != nil {
-		die(err)
-	}
-	if _, err := proposeReboot(ctx, cl, opts, os.Stdout); err != nil {
-		die(err)
-	}
+	return cmd
 }
 
 // rebootOptions is one reboot proposal.

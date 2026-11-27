@@ -2,18 +2,29 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"log"
 	"net"
 	"os"
 
+	"github.com/GSI-HPC/go-clikit/cobratree"
+	"github.com/spf13/cobra"
+
 	"github.com/dennisklein/platform-kit/metal/internal/relay"
 )
 
-func init() {
-	verbHelp["relay"] = `
-relay runs on a host that can reach the BMCs. BMCs download boot media from
+// relayCmd runs the L4 reverse tunnel on a box with BMC reach: an org Linux box
+// at day-0 (before the operator runs), loopback under test. The
+// tunnel port stays on loopback by default and every connection to it is
+// authenticated with the shared secret: its DIAL verb dials onward into the
+// BMC network, to the targets --allow names only, and its REGISTER verb takes
+// over the BMCs' media fetches.
+func relayCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:     "relay [--front addr] [--tunnel addr] [--advertise host:port] [--secret-file file] [--allow rules]",
+		Short:   "run on a host that can reach the BMCs: BMCs download boot media from it, and it forwards that traffic to pk-metal boot",
+		GroupID: groupReads,
+		Long: `relay runs on a host that can reach the BMCs. BMCs download boot media from
 its front address, and it hands that traffic to pk-metal boot through its
 tunnel address; boot's Redfish calls to the BMCs go out the same way.
 
@@ -29,47 +40,44 @@ tunnel on loopback (the default) and reach it over ssh -L.
 
 boot's onward dials go only to the targets --allow names: by default any
 address on port 443, where Redfish answers. Name the BMC network to narrow
-it, e.g. --allow 10.0.0.0/24:443; the relay refuses every other target.
+it, e.g. --allow 10.0.0.0/24:443; the relay refuses every other target.`,
+		Example: `  pk-metal relay --front 10.0.0.2:8443 --allow 10.0.0.0/24:443 --secret-file ~/.config/pk-metal/relay.secret`,
+	}
+	fs := cmd.Flags()
+	front := fs.String("front", "127.0.0.1:8443", "BMC-facing listen address (media fetches arrive here)")
+	tunnel := fs.String("tunnel", "127.0.0.1:9443", "operator-facing listen address (keep on loopback, reach over ssh -L)")
+	advertise := fs.String("advertise", "", "front address as BMCs reach it (default: the bound address)")
+	secretFile := fs.String("secret-file", "", "file with the shared secret; written with a new one when missing (or set $"+relay.SecretEnv+")")
+	allowFlag := fs.String("allow", relay.DefaultAllow, "targets boot may dial through the relay, as <CIDR, IP or *>:<port or *>, comma-separated")
+	cmd.RunE = func(_ *cobra.Command, args []string) error {
+		if len(args) != 0 {
+			return cobratree.Usagef("relay takes no arguments, only flags")
+		}
+		allow, err := relay.ParseAllow(*allowFlag)
+		if err != nil {
+			return cobratree.Usage(err)
+		}
+		secret, err := relaySecret(*secretFile, true)
+		if err != nil {
+			die(err)
+		}
 
-example:
-  pk-metal relay --front 10.0.0.2:8443 --allow 10.0.0.0/24:443 --secret-file ~/.config/pk-metal/relay.secret`
-}
-
-// relayCmd runs the L4 reverse tunnel on a box with BMC reach: an org Linux box
-// at day-0 (before the operator runs), loopback under test. The
-// tunnel port stays on loopback by default and every connection to it is
-// authenticated with the shared secret: its DIAL verb dials onward into the
-// BMC network, to the targets --allow names only, and its REGISTER verb takes
-// over the BMCs' media fetches.
-func relayCmd(args []string) {
-	fs, front, tunnel, advertise, secretFile, allowFlag := relayFlags()
-	parseFlags(fs, args)
-	if fs.NArg() != 0 {
-		badUsage(fs, "relay takes no arguments, only flags")
+		frontLn, err := net.Listen("tcp", *front)
+		if err != nil {
+			die(err)
+		}
+		tunnelLn, err := net.Listen("tcp", *tunnel)
+		if err != nil {
+			die(err)
+		}
+		shown := *advertise
+		if shown == "" {
+			shown = frontLn.Addr().String()
+		}
+		log.Printf("relay: front %s (advertised %s), tunnel %s, onward dials to %s", frontLn.Addr(), shown, tunnelLn.Addr(), *allowFlag)
+		return relay.Serve(context.Background(), tunnelLn, frontLn, *advertise, secret, relay.WithAllow(allow))
 	}
-	allow, err := relay.ParseAllow(*allowFlag)
-	if err != nil {
-		badUsage(fs, err.Error())
-	}
-	secret, err := relaySecret(*secretFile, true)
-	if err != nil {
-		die(err)
-	}
-
-	frontLn, err := net.Listen("tcp", *front)
-	if err != nil {
-		die(err)
-	}
-	tunnelLn, err := net.Listen("tcp", *tunnel)
-	if err != nil {
-		die(err)
-	}
-	shown := *advertise
-	if shown == "" {
-		shown = frontLn.Addr().String()
-	}
-	log.Printf("relay: front %s (advertised %s), tunnel %s, onward dials to %s", frontLn.Addr(), shown, tunnelLn.Addr(), *allowFlag)
-	die(relay.Serve(context.Background(), tunnelLn, frontLn, *advertise, secret, relay.WithAllow(allow)))
+	return cmd
 }
 
 // relaySecret reads the relay's shared secret: from $PK_METAL_RELAY_SECRET
@@ -95,16 +103,4 @@ func relaySecret(file string, create bool) ([]byte, error) {
 		log.Printf("relay: wrote a new secret to %s; give the same secret to pk-metal boot", file)
 	}
 	return secret, nil
-}
-
-// relayFlags declares the relay's flags; split out so a test can check the
-// defaults without starting listeners.
-func relayFlags() (fs *flag.FlagSet, front, tunnel, advertise, secretFile, allow *string) {
-	fs = newFlags("relay")
-	front = fs.String("front", "127.0.0.1:8443", "BMC-facing listen address (media fetches arrive here)")
-	tunnel = fs.String("tunnel", "127.0.0.1:9443", "operator-facing listen address (keep on loopback, reach over ssh -L)")
-	advertise = fs.String("advertise", "", "front address as BMCs reach it (default: the bound address)")
-	secretFile = fs.String("secret-file", "", "file with the shared secret; written with a new one when missing (or set $"+relay.SecretEnv+")")
-	allow = fs.String("allow", relay.DefaultAllow, "targets boot may dial through the relay, as <CIDR, IP or *>:<port or *>, comma-separated")
-	return fs, front, tunnel, advertise, secretFile, allow
 }

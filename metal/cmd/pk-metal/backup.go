@@ -4,7 +4,6 @@ import (
 	"cmp"
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -14,6 +13,8 @@ import (
 	"time"
 
 	"filippo.io/age"
+	"github.com/GSI-HPC/go-clikit/cobratree"
+	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -23,49 +24,32 @@ import (
 	"github.com/dennisklein/platform-kit/metal/internal/etcdbackup"
 )
 
-func init() {
-	verbHelp["backup"] = `
-etcd snapshots are taken by the operator, on the schedule an EtcdBackupPolicy
+func backupCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:         "backup",
+		Short:       "take an etcd snapshot now, list the snapshots, download one, or decrypt one on this machine",
+		GroupID:     groupChanges,
+		Annotations: needsCluster(),
+		Long: `etcd snapshots are taken by the operator, on the schedule an EtcdBackupPolicy
 sets, and kept encrypted to the age public keys the policy names. The operator
 holds no private key: it can store a snapshot but not read one. Decrypting
 needs one of the matching age identities, on your own machine.
 
-subcommands:
-  now <cluster>              take a snapshot now (it waits until stored; --wait=false returns at once)
-  list [<cluster>]           list the snapshots, newest first; RECIPIENTS shows the
-                             last 8 characters of each age public key a snapshot is
-                             encrypted to (compare with: age-keygen -y <identity file>)
-  get <snapshot> -o <file>   download the encrypted snapshot (s3 sinks; pvc sinks: see the message)
-  decrypt (<snapshot> | --in <file.age>) --identity <file> [-o <file.db>]
-                             decrypt on this machine and check it is an intact etcd snapshot;
-                             with -o, also write the plaintext (it holds every Secret of the cluster)
-
-examples:
-  pk-metal backup now lab
+Restoring is pk-metal restore; https://metal.platform-kit.org/operate/day-2/restore-etcd/ walks through it.`,
+		Example: `  pk-metal backup now lab
   pk-metal backup list lab
-  pk-metal backup get lab-daily-20261124-060000 -o lab.db.age
-  pk-metal backup decrypt lab-daily-20261124-060000 --identity ~/.config/age/keys.txt
-
-Restoring is pk-metal restore; https://metal.platform-kit.org/operate/day-2/restore-etcd/ walks through it.`
-}
-
-func backupCmd(args []string) {
-	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
-		fs := newFlags("backup")
-		parseFlags(fs, args)
-		badUsage(fs, "name a subcommand: now, list, get or decrypt")
+  pk-metal backup get lab-daily-20261124-060000 --to-file lab.db.age
+  pk-metal backup decrypt lab-daily-20261124-060000 --identity ~/.config/age/keys.txt`,
 	}
-	sub, rest := args[0], args[1:]
-	fs := newFlags("backup " + sub)
-	addGlobalFlags(fs)
 	ctx := context.Background()
-	switch sub {
-	case "now":
-		wait := fs.Bool("wait", true, "wait until the snapshot is stored and verified")
-		timeout := fs.Duration("timeout", 35*time.Minute, "how long --wait waits")
-		pos := parseAnywhere(fs, rest)
+
+	now := &cobra.Command{Use: "now <cluster>",
+		Short: "take a snapshot now (it waits until stored; --wait=false returns at once)"}
+	wait := now.Flags().Bool("wait", true, "wait until the snapshot is stored and verified")
+	timeout := now.Flags().Duration("timeout", 35*time.Minute, "how long --wait waits")
+	now.RunE = func(_ *cobra.Command, pos []string) error {
 		if len(pos) != 1 {
-			badUsage(fs, "give exactly one TalosCluster or EtcdBackupPolicy")
+			return cobratree.Usagef("give exactly one TalosCluster or EtcdBackupPolicy")
 		}
 		cl := mustClient()
 		name, err := backupNow(ctx, cl, argAt(pos, 0), time.Now(), os.Stdout)
@@ -79,30 +63,44 @@ func backupCmd(args []string) {
 				die(err)
 			}
 		}
-	case "list":
-		pos := parseAnywhere(fs, rest)
-		if len(pos) > 1 {
-			badUsage(fs, "give at most one TalosCluster")
+		return nil
+	}
+
+	list := &cobra.Command{Use: "list [<cluster>]",
+		Short: "list the snapshots, newest first; RECIPIENTS shows the last 8 characters of each age public key " +
+			"a snapshot is encrypted to (compare with: age-keygen -y <identity file>)",
+		RunE: func(_ *cobra.Command, pos []string) error {
+			if len(pos) > 1 {
+				return cobratree.Usagef("give at most one TalosCluster")
+			}
+			if err := listSnapshots(ctx, mustClient(), argAt(pos, 0), time.Now(), os.Stdout); err != nil {
+				die(err)
+			}
+			return nil
+		}}
+
+	get := &cobra.Command{Use: "get <snapshot> --to-file <file>",
+		Short: "download the encrypted snapshot (s3 sinks; pvc sinks: see the message)"}
+	getOut := get.Flags().String("to-file", "", "file to write the encrypted snapshot to (required; it must not exist)")
+	get.RunE = func(_ *cobra.Command, pos []string) error {
+		if len(pos) != 1 || *getOut == "" {
+			return cobratree.Usagef("give one snapshot and --to-file <file>")
 		}
-		if err := listSnapshots(ctx, mustClient(), argAt(pos, 0), time.Now(), os.Stdout); err != nil {
+		if err := getCiphertext(ctx, mustClient(), argAt(pos, 0), *getOut, os.Stdout); err != nil {
 			die(err)
 		}
-	case "get":
-		out := fs.String("o", "", "file to write the encrypted snapshot to (required; it must not exist)")
-		pos := parseAnywhere(fs, rest)
-		if len(pos) != 1 || *out == "" {
-			badUsage(fs, "give one snapshot and -o <file>")
-		}
-		if err := getCiphertext(ctx, mustClient(), argAt(pos, 0), *out, os.Stdout); err != nil {
-			die(err)
-		}
-	case "decrypt":
-		in := fs.String("in", "", "decrypt this file instead of downloading the snapshot")
-		identity := fs.String("identity", "", "age identity file (required): the secret key, as age-keygen writes it")
-		out := fs.String("o", "", "also write the plaintext snapshot here (mode 0600; it must not exist)")
-		pos := parseAnywhere(fs, rest)
+		return nil
+	}
+
+	decrypt := &cobra.Command{Use: "decrypt (<snapshot> | --in <file.age>) --identity <file> [--plaintext-file <file.db>]",
+		Short: "decrypt on this machine and check it is an intact etcd snapshot; with --plaintext-file, " +
+			"also write the plaintext (it holds every Secret of the cluster)"}
+	in := decrypt.Flags().String("in", "", "decrypt this file instead of downloading the snapshot")
+	identity := decrypt.Flags().String("identity", "", "age identity file (required): the secret key, as age-keygen writes it")
+	out := decrypt.Flags().String("plaintext-file", "", "also write the plaintext snapshot here (mode 0600; it must not exist)")
+	decrypt.RunE = func(_ *cobra.Command, pos []string) error {
 		if *identity == "" || (len(pos) == 1) == (*in != "") || len(pos) > 1 {
-			badUsage(fs, "give --identity and either one snapshot or --in <file>")
+			return cobratree.Usagef("give --identity and either one snapshot or --in <file>")
 		}
 		var cl client.Client
 		if len(pos) == 1 {
@@ -111,9 +109,11 @@ func backupCmd(args []string) {
 		if err := decryptSnapshot(ctx, cl, argAt(pos, 0), *in, *identity, *out, os.Stdout); err != nil {
 			die(err)
 		}
-	default:
-		badUsage(fs, fmt.Sprintf("unknown subcommand %q: now, list, get or decrypt", sub))
+		return nil
 	}
+
+	cmd.AddCommand(now, list, get, decrypt)
+	return cmd
 }
 
 func mustClient() client.Client {
@@ -465,14 +465,6 @@ func decryptSnapshot(ctx context.Context, cl client.Client, name, in, identity, 
 		fmt.Fprintf(w, "wrote the plaintext to %s; it holds every Secret of the cluster: delete it when done\n", out)
 	}
 	return nil
-}
-
-// parseAnywhere parses a subcommand's flags wherever they stand, before or
-// after its arguments (pk-metal restore plan lab --propose), and returns the
-// arguments. Everything after "--" is an argument.
-func parseAnywhere(fs *flag.FlagSet, args []string) []string {
-	parseFlags(fs, args)
-	return fs.Args()
 }
 
 // argAt is the i-th argument, or "" when there are fewer.

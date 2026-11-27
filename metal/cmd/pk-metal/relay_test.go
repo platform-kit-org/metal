@@ -17,8 +17,7 @@ import (
 // tunnel must only be reachable from outside the box when someone binds it
 // there on purpose, so its default is a loopback address.
 func TestRelayTunnelDefaultsToLoopback(t *testing.T) {
-	fs, _, _, _, _, _ := relayFlags()
-	def := fs.Lookup("tunnel").DefValue
+	def := relayCmd().Flags().Lookup("tunnel").DefValue
 	host, _, err := net.SplitHostPort(def)
 	require.NoError(t, err)
 	ip := net.ParseIP(host)
@@ -29,8 +28,7 @@ func TestRelayTunnelDefaultsToLoopback(t *testing.T) {
 // TestRelayAllowDefault: the onward dials are limited by default, to
 // Redfish's port, so the relay is no general TCP pivot.
 func TestRelayAllowDefault(t *testing.T) {
-	fs, _, _, _, _, _ := relayFlags()
-	def := fs.Lookup("allow").DefValue
+	def := relayCmd().Flags().Lookup("allow").DefValue
 	assert.Equal(t, "*:443", def)
 	_, err := relay.ParseAllow(def)
 	require.NoError(t, err)

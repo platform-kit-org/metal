@@ -2,15 +2,14 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
-	"io"
 	"maps"
-	"os"
 	"slices"
 	"strings"
 	"time"
 
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -20,100 +19,22 @@ import (
 	"github.com/dennisklein/platform-kit/metal/internal/bmc/sim"
 )
 
-// Shell completion. The scripts that `pk-metal completion <shell>` prints
-// call the hidden verb
-//
-//	pk-metal __complete <word>... <current word>
-//
-// with the words of the command line after the program name; the last word
-// is the one under the cursor (empty after a space). It prints one
-// candidate per line, as "value" or "value<TAB>description", and then one
-// line ":<directive>" that tells the script what to do when it has no
-// candidates of its own: complete nothing, file names or directories.
-//
-// The flags come from the verbs themselves (captureFlags), so a new flag
-// completes without a change here; the names of objects come from the
-// cluster that --kubeconfig/--context on the same line select, with a short
-// timeout, so that TAB never hangs on an API server that does not answer.
-
-// completeVerb is the hidden verb the completion scripts call.
-const completeVerb = "__complete"
+// Shell completion. Cobra completes the commands and the flag names, and
+// prints the scripts (pk-metal completion bash|zsh|fish|powershell); the
+// scripts call its hidden command __complete on each TAB. This file says
+// what the arguments and the flag values of each command are (argKinds,
+// flagKinds) and where their candidates come from: the names of objects in
+// the cluster that --kubeconfig and --context on the same command line
+// select, kubeconfig contexts, files and fixed words. Each lookup in the
+// cluster has a short timeout, so that TAB never hangs on an API server that
+// does not answer.
 
 // completeTimeout bounds every cluster lookup of one TAB.
 const completeTimeout = 2 * time.Second
 
-type directive int
-
-const (
-	compNone  directive = 0 // the candidates printed, nothing else
-	compFiles directive = 1 // file names
-	compDirs  directive = 2 // directory names
-)
-
 type candidate struct {
 	Value string
 	Desc  string
-}
-
-// --- capture of a verb's flags ---------------------------------------------
-
-// flagCapture, when set, is called by parseFlags with the verb's complete
-// flag set, before it parses anything. captureFlags sets it to stop the verb
-// there.
-var flagCapture func(fs *flag.FlagSet)
-
-type capturedFlags struct{ fs *flag.FlagSet }
-
-// captureFlags runs a verb only up to its parseFlags call and returns the
-// flag set it built. Every verb builds its flags and then calls parseFlags
-// before it reads a file or the cluster, so nothing else runs. It returns nil
-// when the verb returns without parsing flags.
-func captureFlags(run func([]string), args []string) (fs *flag.FlagSet) {
-	defer func() {
-		flagCapture = nil
-		if r := recover(); r != nil {
-			c, ok := r.(capturedFlags)
-			if !ok {
-				panic(r)
-			}
-			fs = c.fs
-		}
-	}()
-	flagCapture = func(f *flag.FlagSet) { panic(capturedFlags{f}) }
-	run(args)
-	return nil
-}
-
-func isBoolFlag(f *flag.Flag) bool {
-	b, ok := f.Value.(interface{ IsBoolFlag() bool })
-	return ok && b.IsBoolFlag()
-}
-
-// flagName is how help writes a flag: -n for one letter, --name otherwise.
-func flagName(name string) string {
-	if len(name) == 1 {
-		return "-" + name
-	}
-	return "--" + name
-}
-
-// verbSubcommands are the subcommands of a verb, read from its synopsis
-// ("list | show <rollout> | ..."): the first word of each alternative, when
-// every alternative starts with a plain word.
-func verbSubcommands(c *command) []string {
-	alts := strings.Split(c.synopsis, " | ")
-	if len(alts) < 2 {
-		return nil
-	}
-	var subs []string
-	for _, alt := range alts {
-		word, _, _ := strings.Cut(strings.TrimSpace(alt), " ")
-		if word == "" || strings.ContainsAny(word, "-[<|") {
-			return nil
-		}
-		subs = append(subs, word)
-	}
-	return subs
 }
 
 // --- what each argument and flag value is ------------------------------------
@@ -126,7 +47,6 @@ const (
 	kindNone            kind = iota // free text: no candidates
 	kindFile                        // a file name
 	kindDir                         // a directory name
-	kindVerb                        // a pk-metal command
 	kindNamespace                   // a Namespace
 	kindContext                     // a context of the --kubeconfig file
 	kindToContext                   // a context of the --to kubeconfig file
@@ -155,15 +75,16 @@ type kindSpec struct {
 
 func static(words ...string) kindSpec { return kindSpec{kind: kindStatic, words: words} }
 
-// argKinds is what each positional argument of a verb is ("verb" or "verb
-// sub"). The last entry repeats for the verbs that take several arguments
-// (variadic). A verb that is not listed takes no argument that completes.
-var argKinds = map[string]struct {
+// argSpec is what the positional arguments of a command are. The last
+// entry repeats for a command that takes several arguments (variadic).
+type argSpec struct {
 	kinds    []kindSpec
 	variadic bool
-}{
-	"help":            {kinds: []kindSpec{{kind: kindVerb}}},
-	"completion":      {kinds: []kindSpec{static("bash", "zsh", "fish")}},
+}
+
+// argKinds is what each positional argument of a command is ("verb" or "verb
+// sub"). A command that is not listed takes no argument that completes.
+var argKinds = map[string]argSpec{
 	"approve":         {kinds: []kindSpec{{kind: kindOpPending}}, variadic: true},
 	"retry":           {kinds: []kindSpec{{kind: kindOpFailed}}},
 	"abort":           {kinds: []kindSpec{{kind: kindOpActive}}},
@@ -198,10 +119,10 @@ var argKinds = map[string]struct {
 var flagKinds = map[string]kindSpec{
 	"kubeconfig":          {kind: kindFile},
 	"context":             {kind: kindContext},
-	"n":                   {kind: kindNamespace},
-	"status:o":            static("table", "json"),
-	"backup get:o":        {kind: kindFile},
-	"backup decrypt:o":    {kind: kindFile},
+	"namespace":           {kind: kindNamespace},
+	"output":              static("table", "json"),
+	"to-file":             {kind: kindFile},
+	"plaintext-file":      {kind: kindFile},
 	"mode":                static("default", "powercycle"),
 	"media-store":         static("copy", "ephemeral"),
 	"host":                {kind: kindHostAvailable},
@@ -248,191 +169,65 @@ func flagKind(path, name string) (kindSpec, bool) {
 
 // line is a command line read up to the word under the cursor.
 type line struct {
-	verb    *command
-	path    string            // "verb" or "verb sub"
-	fs      *flag.FlagSet     // the flags of path; nil when unknown
-	flags   map[string]string // flag values given on the line
-	pos     []string          // positional arguments after path
-	current string            // the word under the cursor
-	// valueOf is the flag whose value the current word is ("" if none).
-	valueOf string
+	cmd     *cobra.Command // the command; its flags hold the values given on the line
+	pos     []string       // the arguments before the word under the cursor
+	current string         // the word under the cursor
 }
 
-// complete returns the candidates for the last word of words. connect is
-// called at most once, and only when a candidate comes from the cluster.
-func complete(words []string, connect func() (client.Client, error)) ([]candidate, directive) {
-	if len(words) == 0 {
-		words = []string{""}
-	}
-	current, before := words[len(words)-1], words[:len(words)-1]
-
-	// Global flags in front of the verb.
-	gfs := flag.NewFlagSet("pk-metal", flag.ContinueOnError)
-	addGlobalFlags(gfs)
-	l := line{flags: map[string]string{}, current: current}
-	i := 0
-	for ; i < len(before); i++ {
-		w := before[i]
-		if !strings.HasPrefix(w, "-") || w == "-" {
-			break
-		}
-		if name, _, _ := strings.Cut(strings.TrimLeft(w, "-"), "="); gfs.Lookup(name) == nil {
-			return nil, compNone // not a global flag: the line fails anyway
-		}
-		if n := readFlag(gfs, before, &i, l.flags); n != "" {
-			l.valueOf = n
-		}
-	}
-	applyGlobal(l.flags)
-	if l.valueOf != "" {
-		return valueCandidates(l, gfs.Lookup(l.valueOf), connect)
-	}
-	if i == len(before) {
-		if strings.HasPrefix(current, "-") {
-			return flagCandidates(gfs, current), compNone
-		}
-		return verbCandidates(current), compNone
-	}
-	l.verb = lookup(before[i])
-	if l.verb == nil {
-		if before[i] == "help" {
-			l.path = "help"
-			l.pos = before[i+1:]
-			return argCandidates(l, connect)
-		}
-		return nil, compNone
-	}
-	rest := before[i+1:]
-	l.path = l.verb.name
-
-	// A verb with subcommands: the first word after it names one.
-	if subs := verbSubcommands(l.verb); subs != nil {
-		if len(rest) == 0 {
-			if strings.HasPrefix(current, "-") {
-				return nil, compNone
+// completion makes TAB complete the arguments and the flag values of every
+// command under root, as argKinds and flagKinds say. connect is called only
+// when a candidate comes from the cluster.
+func completion(root *cobra.Command, connect func() (client.Client, error)) {
+	none := cobra.ShellCompDirectiveNoFileComp
+	root.CompletionOptions.DefaultShellCompDirective = &none
+	if c, _, err := root.Find([]string{"completion"}); err == nil {
+		c.Short = "print the shell completion script: TAB then completes commands, flags, and the names of objects in the cluster"
+		c.Long = completionHelp
+		for _, sh := range c.Commands() {
+			if h, ok := shellHelp[sh.Name()]; ok {
+				sh.Short, sh.Long = h[0], h[1]
 			}
-			return filter(words2cands(subs), current), compNone
 		}
-		if !slices.Contains(subs, rest[0]) {
-			return nil, compNone
-		}
-		l.path += " " + rest[0]
-		l.fs = captureFlags(l.verb.run, rest[:1])
-		rest = rest[1:]
-	} else {
-		l.fs = captureFlags(l.verb.run, nil)
 	}
-	if l.fs == nil {
-		return nil, compNone
-	}
-
-	for j := 0; j < len(rest); j++ {
-		w := rest[j]
-		if w == "--" {
-			l.pos = append(l.pos, rest[j+1:]...)
-			break
-		}
-		if strings.HasPrefix(w, "-") && w != "-" {
-			l.valueOf = readFlag(l.fs, rest, &j, l.flags)
-			continue
-		}
-		l.pos = append(l.pos, w)
-	}
-	applyGlobal(l.flags)
-	if l.valueOf != "" {
-		return valueCandidates(l, l.fs.Lookup(l.valueOf), connect)
-	}
-	if strings.HasPrefix(current, "-") && !slices.Contains(rest, "--") {
-		if name, val, ok := strings.Cut(strings.TrimLeft(current, "-"), "="); ok {
-			f := l.fs.Lookup(name)
-			if f == nil || isBoolFlag(f) {
-				return nil, compNone
+	var walk func(c *cobra.Command)
+	walk = func(c *cobra.Command) {
+		path := strings.TrimPrefix(strings.TrimPrefix(c.CommandPath(), root.Name()), " ")
+		if spec, ok := argKinds[path]; ok {
+			c.ValidArgsFunction = func(cmd *cobra.Command, args []string, current string) ([]cobra.Completion, cobra.ShellCompDirective) {
+				return completions(argCandidates(spec, line{cmd, args, current}, connect))
 			}
-			lv := l
-			lv.current = val
-			cands, dir := valueCandidates(lv, f, connect)
-			prefix := current[:len(current)-len(val)]
-			for k := range cands {
-				cands[k].Value = prefix + cands[k].Value
-			}
-			if len(cands) == 0 && dir != compNone {
-				// The shells complete files only as whole words.
-				return nil, compNone
-			}
-			return cands, compNone
 		}
-		return flagCandidates(l.fs, current), compNone
+		c.LocalFlags().VisitAll(func(f *pflag.Flag) {
+			if k, ok := flagKind(path, f.Name); ok {
+				_ = c.RegisterFlagCompletionFunc(f.Name, func(cmd *cobra.Command, args []string, current string) ([]cobra.Completion, cobra.ShellCompDirective) {
+					return completions(kindCandidates(k, line{cmd, args, current}, connect))
+				})
+			}
+		})
+		for _, sub := range c.Commands() {
+			walk(sub)
+		}
 	}
-	return argCandidates(l, connect)
+	walk(root)
 }
 
-// readFlag reads the flag at words[*i], records its value and moves *i past
-// a value in the next word. It returns the flag's name when the value is the
-// word under the cursor (the flag is the last word before it).
-func readFlag(fs *flag.FlagSet, words []string, i *int, vals map[string]string) string {
-	name, val, hasVal := strings.Cut(strings.TrimLeft(words[*i], "-"), "=")
-	f := fs.Lookup(name)
-	if f == nil || isBoolFlag(f) || hasVal {
-		if hasVal {
-			vals[name] = val
-		}
-		return ""
+// completions writes candidates as cobra wants them: "value" or
+// "value<TAB>description".
+func completions(cands []candidate, dir cobra.ShellCompDirective) ([]cobra.Completion, cobra.ShellCompDirective) {
+	out := make([]cobra.Completion, 0, len(cands))
+	for _, c := range cands {
+		out = append(out, cobra.CompletionWithDesc(c.Value, c.Desc))
 	}
-	if *i+1 >= len(words) {
-		return name
-	}
-	*i++
-	vals[name] = words[*i]
-	return ""
-}
-
-// applyGlobal makes --kubeconfig and --context from the line select the
-// cluster that the lookups ask.
-func applyGlobal(vals map[string]string) {
-	if v, ok := vals["kubeconfig"]; ok {
-		global.kubeconfig = v
-	}
-	if v, ok := vals["context"]; ok {
-		global.context = v
-	}
+	return out, dir
 }
 
 // --- candidates ----------------------------------------------------------------
 
-func verbCandidates(prefix string) []candidate {
-	cands := []candidate{{Value: "help", Desc: "flags and details of one command"}}
-	for _, c := range commands {
-		cands = append(cands, candidate{Value: c.name, Desc: c.summary})
-	}
-	return filter(cands, prefix)
-}
-
-func flagCandidates(fs *flag.FlagSet, prefix string) []candidate {
-	var cands []candidate
-	fs.VisitAll(func(f *flag.Flag) {
-		cands = append(cands, candidate{Value: flagName(f.Name), Desc: f.Usage})
-	})
-	// -n and --n are the same flag to the parser; offer what help writes,
-	// but accept what the person started to type.
-	if strings.HasPrefix(prefix, "--") {
-		for i := range cands {
-			if !strings.HasPrefix(cands[i].Value, "--") {
-				cands[i].Value = "-" + cands[i].Value
-			}
-		}
-	}
-	return filter(cands, prefix)
-}
-
-func argCandidates(l line, connect func() (client.Client, error)) ([]candidate, directive) {
-	spec, ok := argKinds[l.path]
-	if !ok {
-		return nil, compNone
-	}
+func argCandidates(spec argSpec, l line, connect func() (client.Client, error)) ([]candidate, cobra.ShellCompDirective) {
 	idx := len(l.pos)
 	if idx >= len(spec.kinds) {
 		if !spec.variadic {
-			return nil, compNone
+			return nil, cobra.ShellCompDirectiveNoFileComp
 		}
 		idx = len(spec.kinds) - 1
 	}
@@ -444,47 +239,39 @@ func argCandidates(l line, connect func() (client.Client, error)) ([]candidate, 
 	return cands, dir
 }
 
-func valueCandidates(l line, f *flag.Flag, connect func() (client.Client, error)) ([]candidate, directive) {
-	if f == nil {
-		return nil, compNone
-	}
-	k, _ := flagKind(l.path, f.Name)
-	return kindCandidates(k, l, connect)
-}
-
-func kindCandidates(k kindSpec, l line, connect func() (client.Client, error)) ([]candidate, directive) {
+func kindCandidates(k kindSpec, l line, connect func() (client.Client, error)) ([]candidate, cobra.ShellCompDirective) {
+	none := cobra.ShellCompDirectiveNoFileComp
 	switch k.kind {
 	case kindNone:
-		return nil, compNone
+		return nil, none
 	case kindFile:
-		return nil, compFiles
+		return nil, cobra.ShellCompDirectiveDefault
 	case kindDir:
-		return nil, compDirs
-	case kindVerb:
-		return verbCandidates(l.current), compNone
+		return nil, cobra.ShellCompDirectiveFilterDirs
 	case kindStatic:
-		return filter(words2cands(k.words), l.current), compNone
+		return filter(words2cands(k.words), l.current), none
 	case kindFixture:
 		if strings.ContainsAny(l.current, "./") {
-			return nil, compFiles
+			return nil, cobra.ShellCompDirectiveDefault
 		}
-		return filter(words2cands(sim.Fixtures()), l.current), compNone
+		return filter(words2cands(sim.Fixtures()), l.current), none
 	case kindContext:
-		return filter(contexts(global.kubeconfig), l.current), compNone
+		return filter(contexts(global.kubeconfig), l.current), none
 	case kindToContext:
-		if l.flags["to"] == "" {
-			return nil, compNone
+		to, _ := l.cmd.Flags().GetString("to")
+		if to == "" {
+			return nil, none
 		}
-		return filter(contexts(l.flags["to"]), l.current), compNone
+		return filter(contexts(to), l.current), none
 	}
 	cl, err := connect()
 	if err != nil {
-		return nil, compNone
+		return nil, none
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), completeTimeout)
 	defer cancel()
 	cands, _ := clusterCandidates(ctx, cl, k.kind, l)
-	return filter(cands, l.current), compNone
+	return filter(cands, l.current), none
 }
 
 // clusterCandidates lists the objects of a kind. A failed list gives no
@@ -597,8 +384,8 @@ func clusterCandidates(ctx context.Context, cl client.Client, k kind, l line) ([
 func namespaced(ctx context.Context, cl client.Client, list client.ObjectList, l line, def string) (all bool, err error) {
 	all = strings.Contains(l.current, "/")
 	ns := def
-	if v, ok := l.flags["n"]; ok {
-		ns = v
+	if f := l.cmd.Flags().Lookup("namespace"); f != nil && f.Changed {
+		ns = f.Value.String()
 	}
 	if all {
 		return true, cl.List(ctx, list)
@@ -717,27 +504,6 @@ func dedupe(cands []candidate) []candidate {
 	})
 }
 
-// --- the hidden verb and the scripts -----------------------------------------
-
-// completeMain is `pk-metal __complete <words>`. It never fails: a lookup
-// that does not work gives no candidates.
-func completeMain(args []string) {
-	cands, dir := complete(args, completionClient)
-	writeCandidates(os.Stdout, cands, dir)
-}
-
-func writeCandidates(w io.Writer, cands []candidate, dir directive) {
-	for _, c := range cands {
-		desc := strings.Join(strings.Fields(c.Desc), " ")
-		if desc == "" {
-			fmt.Fprintln(w, c.Value)
-		} else {
-			fmt.Fprintf(w, "%s\t%s\n", c.Value, desc)
-		}
-	}
-	fmt.Fprintf(w, ":%d\n", dir)
-}
-
 // completionClient connects like every other verb, with a timeout on each
 // request so that an API server that does not answer does not hold TAB.
 func completionClient() (client.Client, error) {
@@ -749,9 +515,10 @@ func completionClient() (client.Client, error) {
 	return client.New(cfg, client.Options{Scheme: newScheme()})
 }
 
-func init() {
-	verbHelp["completion"] = `
-The script completes the commands, their subcommands and flags, and the
+// completionHelp is the help of the completion command, before cobra's
+// list of the shells. Each shell's own help (shellHelp) says how to load its
+// script.
+const completionHelp = `The script completes the commands, their subcommands and flags, and the
 names of the objects that the arguments and flags take: operations, claims,
 nodes, hosts, clusters, snapshots, rollouts, BMC addresses, namespaces and
 kubeconfig contexts. The names come from the cluster that --kubeconfig and
@@ -762,133 +529,30 @@ Operations are shown by state: approve completes the operations that wait
 for approval, retry the failed and aborted ones, abort the unfinished ones.
 Type a "/" to complete namespace/name from every namespace.
 
-bash (needs the bash-completion package):
+The script comes from this version of pk-metal. After an upgrade, write
+the script again to the file where you keep it, or open a new shell where
+your shell loads it at start.`
+
+// shellHelp is the summary and the help of each shell's completion command.
+var shellHelp = map[string][2]string{
+	"bash": {"print the completion script for bash (needs the bash-completion package)",
+		`Load the script in each new shell:
   echo 'source <(pk-metal completion bash)' >> ~/.bashrc
 
-zsh:
-  echo 'source <(pk-metal completion zsh)' >> ~/.zshrc   (after compinit)
+Open a new shell after the change.`},
+	"zsh": {"print the completion script for zsh",
+		`Load the script in each new shell (after compinit in ~/.zshrc):
+  echo 'source <(pk-metal completion zsh)' >> ~/.zshrc
 
-fish:
+Open a new shell after the change.`},
+	"fish": {"print the completion script for fish",
+		`Write the script to the completions directory of fish:
   pk-metal completion fish > ~/.config/fish/completions/pk-metal.fish
 
-Open a new shell after the change.`
+Write it again after an upgrade of pk-metal. Open a new shell after the change.`},
+	"powershell": {"print the completion script for PowerShell",
+		`Load the script in each new shell: add this line to your profile ($PROFILE):
+  pk-metal completion powershell | Out-String | Invoke-Expression
+
+Open a new shell after the change.`},
 }
-
-func completionCmd(args []string) {
-	fs := newFlags("completion")
-	parseFlags(fs, args)
-	if fs.NArg() != 1 {
-		badUsage(fs, "give one shell: bash, zsh or fish")
-	}
-	script, ok := completionScripts[fs.Arg(0)]
-	if !ok {
-		badUsage(fs, fmt.Sprintf("unknown shell %q: bash, zsh or fish", fs.Arg(0)))
-	}
-	fmt.Print(script)
-}
-
-var completionScripts = map[string]string{
-	"bash": bashCompletion,
-	"zsh":  zshCompletion,
-	"fish": fishCompletion,
-}
-
-// The scripts pass the words before the cursor and the current word to
-// `pk-metal __complete`; the program that runs is the one on the command
-// line, so a binary that is not on PATH (./bin/pk-metal) completes too.
-
-const bashCompletion = `# bash completion for pk-metal. Load it with:
-#   source <(pk-metal completion bash)
-_pk_metal() {
-    local cur words cword
-    if declare -F _get_comp_words_by_ref >/dev/null 2>&1; then
-        _get_comp_words_by_ref -n =: cur words cword
-    else
-        cur=${COMP_WORDS[COMP_CWORD]}
-        words=("${COMP_WORDS[@]}")
-        cword=$COMP_CWORD
-    fi
-    local out
-    out=$("${words[0]}" ` + completeVerb + ` "${words[@]:1:cword-1}" "$cur" 2>/dev/null) || return
-    local -a lines
-    mapfile -t lines <<<"$out"
-    local n=${#lines[@]}
-    (( n > 0 )) || return
-    local directive=${lines[n-1]#:}
-    unset 'lines[n-1]'
-    COMPREPLY=()
-    case $directive in
-    1) compopt -o filenames 2>/dev/null; mapfile -t COMPREPLY < <(compgen -f -- "$cur") ;;
-    2) compopt -o filenames 2>/dev/null; mapfile -t COMPREPLY < <(compgen -d -- "$cur") ;;
-    *)
-        local l
-        for l in "${lines[@]}"; do
-            [[ -n $l ]] && COMPREPLY+=("${l%%$'\t'*}")
-        done
-        ;;
-    esac
-    # bash completes the part after "=" or ":" (COMP_WORDBREAKS) only.
-    if [[ $cur == *=* && $COMP_WORDBREAKS == *=* ]]; then
-        local p=${cur%%=*}=
-        COMPREPLY=("${COMPREPLY[@]#"$p"}")
-    fi
-    if declare -F __ltrim_colon_completions >/dev/null 2>&1; then
-        __ltrim_colon_completions "$cur"
-    fi
-}
-complete -o nosort -F _pk_metal pk-metal 2>/dev/null || complete -F _pk_metal pk-metal
-`
-
-const zshCompletion = `#compdef pk-metal
-# zsh completion for pk-metal. Load it with (after compinit):
-#   source <(pk-metal completion zsh)
-_pk_metal() {
-    local out directive l
-    local -a lines cands
-    out=$(${words[1]} ` + completeVerb + ` "${(@)words[2,CURRENT]}" 2>/dev/null) || return 1
-    lines=("${(@f)out}")
-    (( ${#lines} > 0 )) || return 1
-    directive=${lines[-1]#:}
-    lines=("${(@)lines[1,-2]}")
-    case $directive in
-    1) _files; return ;;
-    2) _files -/; return ;;
-    esac
-    for l in "${lines[@]}"; do
-        [[ -n $l ]] || continue
-        if [[ $l == *$'\t'* ]]; then
-            cands+=("${${l%%$'\t'*}//:/\\:}:${l#*$'\t'}")
-        else
-            cands+=("${l//:/\\:}")
-        fi
-    done
-    (( ${#cands} > 0 )) || return 1
-    _describe -V -t values pk-metal cands
-}
-if [[ $funcstack[1] == _pk_metal ]]; then
-    _pk_metal "$@"
-else
-    compdef _pk_metal pk-metal
-fi
-`
-
-const fishCompletion = `# fish completion for pk-metal. Install it with:
-#   pk-metal completion fish > ~/.config/fish/completions/pk-metal.fish
-function __pk_metal_complete
-    set -l tokens (commandline -opc)
-    set -l current (commandline -ct)
-    set -l out ($tokens[1] ` + completeVerb + ` $tokens[2..-1] $current 2>/dev/null)
-    test (count $out) -gt 0; or return
-    set -l directive (string replace -r '^:' '' -- $out[-1])
-    set -e out[-1]
-    switch $directive
-        case 1
-            __fish_complete_path $current
-        case 2
-            __fish_complete_directories $current
-        case '*'
-            printf '%s\n' $out
-    end
-end
-complete -c pk-metal -f -a '(__pk_metal_complete)'
-`

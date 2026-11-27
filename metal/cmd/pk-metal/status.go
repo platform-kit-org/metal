@@ -10,6 +10,8 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"github.com/GSI-HPC/go-clikit/cobratree"
+	"github.com/spf13/cobra"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -26,9 +28,15 @@ const (
 	exitAttention = 2 // something is blocked or failed and needs a person
 )
 
-func init() {
-	verbHelp["status"] = `
-Tables:
+// statusCmd shows the rack from the cluster's point of view. It reads the
+// cluster only; it never talks to a BMC.
+func statusCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:         "status [-o table|json]",
+		Short:       "show machines, BMCs, claims and operations, with the reason when something is stuck (reads only)",
+		GroupID:     groupReads,
+		Annotations: needsCluster(),
+		Long: `Tables:
   HOST       one row per machine: its asset, vendor, phase, the claim that
              holds it, the Talos node it runs (name and address), how many of
              its BMC paths answer, and what blocks it
@@ -80,36 +88,32 @@ exit status:
      operations that wait for approval, a bootstrapped cluster whose etcd or
      Kubernetes API is unhealthy or whose backup is stale, a node of a
      running cluster that is not Ready, and a rollout that waits for
-     approval, cannot plan, pauses after its first node, or failed
-
-examples:
-  pk-metal status
+     approval, cannot plan, pauses after its first node, or failed`,
+		Example: `  pk-metal status
   watch -n 10 pk-metal status
-  pk-metal status -o json | jq '.hosts[] | select(.needsAttention)'`
-}
-
-// statusCmd shows the rack from the cluster's point of view. It reads the
-// cluster only; it never talks to a BMC.
-func statusCmd(args []string) {
-	fs := newFlags("status")
-	format := fs.String("o", "table", "output format: table or json")
-	addGlobalFlags(fs)
-	parseFlags(fs, args)
-	if fs.NArg() != 0 {
-		badUsage(fs, "status takes no arguments")
+  pk-metal status -o json | jq '.hosts[] | select(.needsAttention)'`,
 	}
-	if *format != "table" && *format != "json" {
-		badUsage(fs, fmt.Sprintf("unknown output format %q; use table or json", *format))
+	fs := cmd.Flags()
+	format := fs.StringP("output", "o", "table", "output format: table or json")
+	cmd.RunE = func(_ *cobra.Command, args []string) error {
+		if len(args) != 0 {
+			return cobratree.Usagef("status takes no arguments")
+		}
+		if *format != "table" && *format != "json" {
+			return cobratree.InvalidValue("output", *format, "table or json")
+		}
+		cl, err := newClient()
+		if err != nil {
+			die(err)
+		}
+		code, err := runStatus(context.Background(), cl, *format, os.Stdout)
+		if err != nil {
+			die(err)
+		}
+		os.Exit(code)
+		return nil
 	}
-	cl, err := newClient()
-	if err != nil {
-		die(err)
-	}
-	code, err := runStatus(context.Background(), cl, *format, os.Stdout)
-	if err != nil {
-		die(err)
-	}
-	os.Exit(code)
+	return cmd
 }
 
 // runStatus reads the cluster, prints the report and returns the exit code.

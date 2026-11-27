@@ -24,9 +24,7 @@ Each controller reads objects, compares them with the world, and writes only its
   <dt>Process</dt>
   <dd>One binary, `manager`, in the Deployment `pk-metal-manager` in the namespace `pk-metal`.</dd>
   <dt>Wiring</dt>
-  <dd>`SetupAll` in [setup.go](/repo/metal/internal/controller/setup.go) wires 14 lanes, in a fixed order. A lane is one or more controllers.</dd>
-  <dt>Named controllers</dt>
-  <dd>18. Some lanes have a helper controller, for example `host-wipe` in the HostClaim lane.</dd>
+  <dd>`SetupAll` in [setup.go](/repo/metal/internal/controller/setup.go) wires the lanes in a fixed order. A lane is one or more named controllers. Some lanes have a helper controller, for example `host-wipe` in the HostClaim lane.</dd>
   <dt>Leader election</dt>
   <dd>Optional, with `--leader-elect`. All controllers run in the leader only.</dd>
   <dt>Writers to a BMC</dt>
@@ -53,6 +51,7 @@ The table shows the lanes in the order that `SetupAll` wires them.
 | 12 | [EtcdBackup](ctrl:etcdbackup) | `etcdbackuppolicy`, `etcdsnapshot` | [](kind:EtcdBackupPolicy), [](kind:EtcdSnapshot) |
 | 13 | [TalosRollout](ctrl:talosrollout) | `talosrollout`, `rolloutproposer` | [](kind:TalosRollout), [](kind:TalosCluster) |
 | 14 | [MaintenanceWindow](ctrl:maintenancewindow) | `maintenancewindow` | [](kind:MaintenanceWindow) |
+| 15 | Settings | `settings` | The ConfigMap `hostoperation-approval`. The lane also does the [check of the gate](ref:admission-policies#the-check-of-the-gate). |
 
 ## Who watches what
 
@@ -76,7 +75,7 @@ Read the matrix in two directions:
   <dt>Conditions are the facts</dt>
   <dd>A controller writes conditions. Only `internal/phase` writes `status.phase` and `status.blockedOn`, from the conditions. See [](concept:phases-and-conditions).</dd>
   <dt>One field, one owner</dt>
-  <dd>The Host and the ManagementEndpoint each have two status writers. Each writer applies only its own fields with server-side apply, under its own field manager.</dd>
+  <dd>The Host has two status writers, and the ManagementEndpoint has three. Each writer applies only its own fields with server-side apply, under its own field manager.</dd>
   <dt>Propose, never approve</dt>
   <dd>A controller that wants to change a machine creates a [](kind:HostOperation). The manager RBAC has no `patch` on operations, so no controller can approve one. See [](concept:approval).</dd>
   <dt>Hold, do not destroy</dt>

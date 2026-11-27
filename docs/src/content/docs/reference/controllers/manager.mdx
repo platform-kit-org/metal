@@ -18,7 +18,7 @@ import Edge from '../../../../components/diagram/Edge.astro';
 import Zone from '../../../../components/diagram/Zone.astro';
 import Callout from '../../../../components/Callout.astro';
 
-The manager is the operator process. It loads the [ledger](concept:ledger), wires the 14 lanes of [controllers](ctrl:index), and serves boot media to the BMCs.
+The manager is the operator process. It loads the [ledger](concept:ledger), wires the lanes of [controllers](ctrl:index), and serves boot media to the BMCs.
 It runs the same way against a kind cluster on day 0 and in the management cluster.
 
 ## At a glance
@@ -47,7 +47,7 @@ It runs the same way against a kind cluster on day 0 and in the management clust
   height={250}
 >
   <Zone x={170} y={10} w={380} h={230} label="manager pod" />
-  <Box x={190} y={40} w={340} h={44} label="Controllers" sub="14 lanes, 18 controllers" cat="ctrl" href="/reference/controllers/" />
+  <Box x={190} y={40} w={340} h={44} label="Controllers" sub="in lanes, in a fixed order" cat="ctrl" href="/reference/controllers/" />
   <Box x={190} y={104} w={160} h={44} label="Metrics, probes" sub="/metrics, /healthz" />
   <Box x={370} y={104} w={160} h={44} label="Media service" sub="--media-listen :8443" />
   <Box x={190} y={168} w={340} h={44} label="Ledger" sub="--ledger, read once at start" variant="soft" />

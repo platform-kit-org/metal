@@ -188,7 +188,7 @@ Labels and annotations of a profile need no admin.
 | --- | --- | --- | --- |
 | 1 | Only an admin sets `spec.credentials.ttl` to more than 24 hours. | CREATE, UPDATE, when the value changes | only an admin may set spec.credentials.ttl above 24h |
 
-Each person who can patch a cluster can make the time shorter, or remove it. The on-call and approver roles can patch clusters.
+Each person who can patch a cluster can make the time shorter, or remove it. The roles `pk-metal-oncall` and `pk-metal-admin` can patch clusters.
 
 ## `guard-lift`
 

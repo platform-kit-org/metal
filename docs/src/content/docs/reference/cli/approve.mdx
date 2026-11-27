@@ -29,7 +29,7 @@ The operator does not act on a machine before a person approves the plan.
 
 <dl>
   <dt>No argument</dt>
-  <dd>The command lists the operations that wait for approval.</dd>
+  <dd>The command lists the operations that wait for approval and approves none. It lists all namespaces, or only the namespace of `-n`. The table goes to stdout and the notes go to stderr. If you give [`--yes`](cli:approve#--yes) without a name, the command gives code 1.</dd>
   <dt>`<operation>`</dt>
   <dd>The name of the operation, as [](cli:status) prints it: `pk-metal/<name>`, or the name only with `-n`.</dd>
   <dt>`<operation> ...`</dt>

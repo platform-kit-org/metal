@@ -24,11 +24,7 @@ Make approved operations start only in agreed time slots. A window does not appr
 
 ## Rules
 
-- An approved operation on a covered machine waits until a window that covers it is open.
-- A step that runs is never stopped when the window closes. Make windows long enough.
-- A machine that no window covers is not held.
-- New installs (reason `Provisioning`) are not held.
-- A window that the operator cannot read is never open. It holds work back.
+[Rules](kind:MaintenanceWindow#rules) on the kind page says what a window holds. A step that runs is never stopped when the window closes, so make windows long enough.
 
 ## Steps
 

@@ -11,7 +11,9 @@ import (
 	"strconv"
 	"sync"
 	"testing"
+	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -29,6 +31,12 @@ import (
 	"github.com/dennisklein/platform-kit/metal/internal/ledger"
 	pkscheme "github.com/dennisklein/platform-kit/metal/internal/scheme"
 	"github.com/dennisklein/platform-kit/metal/internal/talos/render"
+)
+
+const (
+	pollInterval = 200 * time.Millisecond
+	waitFor      = 20 * time.Second
+	tick         = 100 * time.Millisecond
 )
 
 // suite is one running kube-apiserver and etcd with the operator's CRDs, and
@@ -132,6 +140,28 @@ func seedBMCSecrets(t *testing.T, ctx context.Context, cl client.Client, certs .
 	} {
 		require.NoError(t, cl.Create(ctx, sec))
 	}
+}
+
+// waitUntil reads the object at key until ok accepts it, and returns it. It
+// fails the test with the last object it read.
+func waitUntil[T any, P interface {
+	*T
+	client.Object
+}](t *testing.T, ctx context.Context, cl client.Client, key client.ObjectKey, ok func(T) bool) T {
+	t.Helper()
+	var last T
+	if !assert.Eventually(t, func() bool {
+		var obj T
+		if cl.Get(ctx, key, P(&obj)) != nil {
+			return false
+		}
+		last = obj
+		return ok(obj)
+	}, waitFor, tick) {
+		P(&last).SetManagedFields(nil)
+		t.Fatalf("%T %s: condition never met, last %+v", last, key, last)
+	}
+	return last
 }
 
 // bundleSecret is a Secret that holds the render package's test secrets

@@ -122,20 +122,8 @@ func TestConvergence(t *testing.T) {
 		require.NoError(t, cl.Create(ctx, a))
 	}
 
-	host := func(name string) metalv1alpha1.Host {
-		h := metalv1alpha1.Host{}
-		_ = cl.Get(ctx, client.ObjectKey{Name: name}, &h)
-		return h
-	}
 	waitHost := func(name string, ok func(metalv1alpha1.Host) bool) metalv1alpha1.Host {
-		var last metalv1alpha1.Host
-		if !assert.Eventually(t, func() bool {
-			last = host(name)
-			return ok(last)
-		}, waitFor, tick) {
-			t.Fatalf("host %s: condition never met, last %+v / %+v", name, last.Labels, last.Status)
-		}
-		return last
+		return waitUntil(t, ctx, cl, client.ObjectKey{Name: name}, ok)
 	}
 	settingsOf := func(name string) metalv1alpha1.BiosSettings {
 		bs := metalv1alpha1.BiosSettings{}
@@ -146,14 +134,7 @@ func TestConvergence(t *testing.T) {
 		return meta.FindStatusCondition(bs.Status.Conditions, metalv1alpha1.ConditionConverged)
 	}
 	waitSettings := func(name string, ok func(metalv1alpha1.BiosSettings) bool) metalv1alpha1.BiosSettings {
-		var last metalv1alpha1.BiosSettings
-		if !assert.Eventually(t, func() bool {
-			last = settingsOf(name)
-			return ok(last)
-		}, waitFor, tick) {
-			t.Fatalf("biossettings %s: condition never met, last %+v", name, last.Status)
-		}
-		return last
+		return waitUntil(t, ctx, cl, client.ObjectKey{Name: name}, ok)
 	}
 	settingsReason := func(reason string) func(metalv1alpha1.BiosSettings) bool {
 		return func(bs metalv1alpha1.BiosSettings) bool {

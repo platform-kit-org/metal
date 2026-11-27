@@ -214,14 +214,7 @@ func TestProvisioning(t *testing.T) {
 		return h, cl.Get(ctx, client.ObjectKey{Name: name}, &h)
 	}
 	waitHost := func(name string, ok func(metalv1alpha1.Host) bool) metalv1alpha1.Host {
-		var last metalv1alpha1.Host
-		if !assert.Eventually(t, func() bool {
-			last, _ = getHost(name)
-			return ok(last)
-		}, waitFor, tick) {
-			t.Fatalf("host %s: condition never met, last %+v", name, last.Status)
-		}
-		return last
+		return waitUntil(t, ctx, cl, client.ObjectKey{Name: name}, ok)
 	}
 	claimOf := func(name string) (metalv1alpha1.HostClaim, error) {
 		c := metalv1alpha1.HostClaim{}
@@ -231,14 +224,7 @@ func TestProvisioning(t *testing.T) {
 		return meta.FindStatusCondition(c.Status.Conditions, metalv1alpha1.ConditionProvisioned)
 	}
 	waitClaim := func(name string, ok func(metalv1alpha1.HostClaim) bool) metalv1alpha1.HostClaim {
-		var last metalv1alpha1.HostClaim
-		if !assert.Eventually(t, func() bool {
-			last, _ = claimOf(name)
-			return ok(last)
-		}, waitFor, tick) {
-			t.Fatalf("claim %s: condition never met, last %+v", name, last.Status)
-		}
-		return last
+		return waitUntil(t, ctx, cl, client.ObjectKey{Namespace: "default", Name: name}, ok)
 	}
 	provisionedReason := func(reason string) func(metalv1alpha1.HostClaim) bool {
 		return func(c metalv1alpha1.HostClaim) bool {
@@ -259,15 +245,7 @@ func TestProvisioning(t *testing.T) {
 		return out
 	}
 	waitOp := func(key types.NamespacedName, ok func(metalv1alpha1.HostOperation) bool) metalv1alpha1.HostOperation {
-		var last metalv1alpha1.HostOperation
-		if !assert.Eventually(t, func() bool {
-			last = metalv1alpha1.HostOperation{}
-			_ = cl.Get(ctx, key, &last)
-			return ok(last)
-		}, waitFor, tick) {
-			t.Fatalf("operation %s: condition never met, last %+v", key, last.Status)
-		}
-		return last
+		return waitUntil(t, ctx, cl, key, ok)
 	}
 	executing := func(step string) func(metalv1alpha1.HostOperation) bool {
 		return func(op metalv1alpha1.HostOperation) bool {

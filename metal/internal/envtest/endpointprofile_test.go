@@ -106,14 +106,7 @@ func TestEndpointConvergence(t *testing.T) {
 		return ep
 	}
 	waitEndpoint := func(name string, ok func(metalv1alpha1.ManagementEndpoint) bool) metalv1alpha1.ManagementEndpoint {
-		var last metalv1alpha1.ManagementEndpoint
-		if !assert.Eventually(t, func() bool {
-			last = endpoint(name)
-			return ok(last)
-		}, waitFor, tick) {
-			t.Fatalf("endpoint %s: condition never met, last %+v / %+v", name, last.Labels, last.Status)
-		}
-		return last
+		return waitUntil(t, ctx, cl, client.ObjectKey{Name: name}, ok)
 	}
 	configured := func(ep metalv1alpha1.ManagementEndpoint) *metav1.Condition {
 		return meta.FindStatusCondition(ep.Status.Conditions, metalv1alpha1.ConditionConfigured)

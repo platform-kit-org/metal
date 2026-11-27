@@ -137,6 +137,11 @@ jobs:
       - name: golangci-lint
         if: always()
         run: mise run lint:go
+      # A vulnerability published after a merge fails the next run, also
+      # of a pull request that did not cause it: update the module then.
+      - name: Known vulnerabilities
+        if: always()
+        run: mise run lint:vuln
       # promtool checks the alerting rules and runs their unit tests.
       - name: Alerting rules
         if: always()

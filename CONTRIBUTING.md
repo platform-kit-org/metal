@@ -53,11 +53,11 @@ A change to code comes with a test. BMC behavior goes in the simulator
 ## Lint
 
 ```sh
-mise run lint          # golangci-lint, the phase check and shellcheck
+mise run lint          # golangci-lint, the phase check, shellcheck, govulncheck
 ```
 
-CI runs the three parts as separate steps: `lint:go`, `lint:phase` and
-`lint:shell`. `lint:go` also fails on a file that `gofmt` or
+CI runs the four parts as separate steps: `lint:go`, `lint:phase`,
+`lint:shell` and `lint:vuln`. `lint:go` also fails on a file that `gofmt` or
 `goimports` would change; `golangci-lint fmt` in `metal/` writes the change.
 
 ## Generated files

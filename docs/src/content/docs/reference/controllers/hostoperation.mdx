@@ -15,7 +15,6 @@ sources:
 
 import ExecutorExplainer from '../../../../components/controllers/ExecutorExplainer.astro';
 import RbacRows from '../../../../components/controllers/RbacRows.astro';
-import Callout from '../../../../components/Callout.astro';
 
 The HostOperation controller is the executor. It runs the steps of an approved [](kind:HostOperation) against the BMC, the Talos API and the Kubernetes API of the node.
 It is the only controller that changes a machine after a person approved it.
@@ -122,20 +121,6 @@ Step through the figure, or use the arrow keys.
 | `Executed` | True | `StepsSucceeded` |
 
 An Unknown reason other than `Executing` is the `blockedOn` of the operation. The phase stays Proposed while it holds.
-
-## Failure modes
-
-| You see | Cause | Do this |
-| --- | --- | --- |
-| Phase Failed, `StepFailed` | A step failed or its wait ran out. | Use [](rb:operation-failed). |
-| Waits with `OutsideMaintenanceWindow` | A window covers the Host and is closed. | Wait, or set `metal.platform-kit.org/ignore-window`. See [](ctrl:maintenancewindow). |
-| Waits with `ClusterDisruption` | Etcd would not stay healthy. | Use [](rb:etcd-unhealthy). |
-| Waits with `OperationQueued` | Another operation holds the Host. | Approve or delete that one first. See [](howto:approve-hold-retry). |
-| Waits with `NoReachablePath` before the first step | The executor could not read the BMC for the baseline. It tries again every 5 seconds. | Use [](rb:bmc-unreachable). |
-
-<Callout type="note">
-The guards are described on the [](ctrl:protection) page. The window rules are on the [](ctrl:maintenancewindow) page.
-</Callout>
 
 ## Permissions
 

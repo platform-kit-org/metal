@@ -89,15 +89,6 @@ It finds the address of the BMC in the [ledger](concept:ledger) and writes the f
 | `Materialized` | False | `LedgerEntryInvalid` | The ledger line for the MAC did not parse. |
 | `Materialized` | False | `MaterializeConflict` | An endpoint with this name belongs to another Asset. |
 
-## Failure modes
-
-| You see | Cause | Do this |
-| --- | --- | --- |
-| `Materialized=False`, `NoLedgerEntry` | The MAC is not in the ledger, or has a typo. | Add the line to the ledger, then restart the manager. See [](howto:enroll-hosts). |
-| `Materialized=False`, `LedgerEntryInvalid` | The ledger line has a syntax error. | Correct the line. The manager log names it. |
-| `Materialized=False`, `MaterializeConflict` | Two Assets have the same name. | Rename one Asset. |
-| No Host after a long time | The endpoint does not reach the BMC. | Use [](rb:bmc-unreachable). |
-
 ## Permissions
 
 <RbacRows sources={['asset_controller.go']} />

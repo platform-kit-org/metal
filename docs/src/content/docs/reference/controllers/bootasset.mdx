@@ -109,14 +109,6 @@ See [](ctrl:manager) for the flags.
 | `Ready` | True | `ImageDownloaded`, `ArtifactBuilt` |
 | `Ready` | False | `SchematicUnavailable`, `NodeNotFound`, `ConfigNotRendered`, `BuilderUnavailable`, `Building`, `BuildFailed` |
 
-## Failure modes
-
-| You see | Cause | Do this |
-| --- | --- | --- |
-| `Ready=False`, `BuilderUnavailable` | No media store, no store claim, or no imager digest for the version. | Set the flags on the [](ctrl:manager). |
-| `Ready=False`, `BuildFailed` | The imager Job failed twice, or the download of a `factory` image failed. | Read the Job log, then delete the Job. For a download, read the message: the manager tries again after 1 minute. |
-| `Ready=False`, `SchematicUnavailable` | The image factory does not answer. | See [](howto:air-gapped-site). |
-
 ## Permissions
 
 <RbacRows sources={['bootasset_controller.go']} />

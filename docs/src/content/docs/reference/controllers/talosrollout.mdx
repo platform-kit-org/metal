@@ -145,14 +145,6 @@ Do not abort a rollout to stop a node in the middle of its step. An abort starts
 | `Paused` | `PausedByPerson`, `CanaryPause`, `NotPaused` |
 | `Complete` | `RolloutSucceeded`, `NothingToDo`, `RolloutFailed`, `RolloutAborted`, `PlanChanged` |
 
-## Failure modes
-
-| You see | Cause | Do this |
-| --- | --- | --- |
-| `Progressing`, `WaitingForHealth` | Etcd or a Node is not healthy. | Use [](rb:node-not-ready) or [](rb:etcd-unhealthy). |
-| `Complete=False`, `RolloutFailed` | A node step failed. | Use [](rb:operation-failed). |
-| `Complete=False`, `PlanChanged` | The plan moved after approval. | Delete the rollout. The proposer makes a new one. |
-
 ## Permissions
 
 <RbacRows sources={['talosrollout_controller.go', 'talosrollout_proposer.go']} />

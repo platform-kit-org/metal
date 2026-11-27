@@ -102,14 +102,6 @@ It never changes a machine itself. It proposes a [](kind:HostOperation), and a p
 | `SystemFirmwareConverged` | `InSync` | `ProfileConflict`, `NoMatchingComponent`, `AwaitingFirmware`, `InstalledNodeMissing`, `NoUpdateTransport`, `SelfDisruption`, `AwaitingOperation`, `OperationFailed`, `NoReachablePath` |
 | `BiosConverged` | `InSync` | `ProfileConflict`, `SchemaViolation`, `AwaitingFirmware`, `InstalledNodeMissing`, `DiskNotWiped`, `SelfDisruption`, `AwaitingOperation`, `NoReachablePath` |
 
-## Failure modes
-
-| You see | Cause | Do this |
-| --- | --- | --- |
-| `BiosConverged=False`, `SchemaViolation` | A profile sets an attribute that the BIOS does not have. | Correct the profile. See [](howto:apply-bios-settings). |
-| `FirmwareConverged=False`, `AwaitingOperation` | The flash waits for approval. | See [](howto:flash-firmware). |
-| `…Converged=False`, `OperationFailed` | The proposal failed. | Use [](rb:operation-failed). |
-
 ## Permissions
 
 <RbacRows sources={['convergence_controller.go']} />

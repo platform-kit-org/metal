@@ -106,14 +106,6 @@ It proposes nothing. The claim that holds the machine proposes the removal. See 
 | Node status (`Rendered`, `MachineReachable`, `Ready`, `ConfigInSync`, `VersionCurrent`, address, digest, drift) | When it changed | `manager` (status update) |
 | Finalizer `os.platform-kit.org/member`, `RemovalBlocked` | Add on create, remove at the end | `manager` (update) |
 
-## Failure modes
-
-| You see | Cause | Do this |
-| --- | --- | --- |
-| `Rendered=False`, `SecretsUnavailable` | The secrets bundle is missing. | Create the bundle Secret of the cluster. |
-| `Ready=Unknown`, `AwaitingContact` | The machine does not answer. | Use [](rb:node-not-ready). |
-| `RemovalBlocked=True`, `EtcdMemberRemains` | Etcd still lists the node. | See [](howto:remove-a-node). |
-
 ## Permissions
 
 <RbacRows sources={['talosnode_controller.go', 'talosnode_day2.go', 'talosnode_finalizer.go']} />

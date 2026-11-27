@@ -297,7 +297,7 @@ func (r *EtcdBackupPolicyReconciler) reconcile(ctx context.Context, p *osv1alpha
 		return cmp.Or(snapshotTime(&b).Compare(snapshotTime(&a)), strings.Compare(b.Name, a.Name))
 	})
 	st := &p.Status
-	st.LastSuccessfulSnapshot, st.ConsecutiveFailures, st.VerifiedSnapshots = nil, 0, 0
+	st.LastSuccessfulSnapshot, st.ConsecutiveFailures = nil, 0
 	inProgress := false
 	lastFailure := ""
 	for i := range kept {
@@ -306,7 +306,6 @@ func (r *EtcdBackupPolicyReconciler) reconcile(ctx context.Context, p *osv1alpha
 		case etcdbackup.InProgress:
 			inProgress = true
 		case etcdbackup.Verified:
-			st.VerifiedSnapshots++
 			if st.LastSuccessfulSnapshot == nil {
 				st.LastSuccessfulSnapshot = &osv1alpha1.SnapshotReference{Name: s.Name, TakenAt: metav1.NewTime(snapshotTime(s))}
 			}
@@ -525,7 +524,6 @@ func (r *EtcdSnapshotReconciler) take(ctx context.Context, s *osv1alpha1.EtcdSna
 	key := prefix + s.Name + ".db.age"
 	st.TakenAt = &metav1.Time{Time: r.now()}
 	st.TakenFrom, st.MemberID = src.node, strconv.FormatUint(src.status.MemberID, 16)
-	st.RaftIndex = int64(min(src.status.RaftIndex, uint64(1<<63-1)))
 	st.Key, st.Location = key, sink.URL(key)
 	st.Recipients = slices.Clone(p.Spec.Encryption.AgeRecipients)
 	set(osv1alpha1.ConditionComplete, metav1.ConditionUnknown, osv1alpha1.ReasonTaking,
@@ -547,8 +545,6 @@ func (r *EtcdSnapshotReconciler) take(ctx context.Context, s *osv1alpha1.EtcdSna
 	}
 	st.Size, st.SHA256 = stored.Plain.Size, "sha256:"+stored.Plain.SHA256
 	st.EncryptedSize, st.EncryptedSHA256 = stored.CipherSize, "sha256:"+stored.CipherSHA256
-	st.PageSize = int32(stored.Plain.PageSize)
-	st.DatabaseTxID = int64(min(stored.Plain.TxID, uint64(1<<63-1)))
 	set(osv1alpha1.ConditionComplete, metav1.ConditionTrue, osv1alpha1.ReasonStored,
 		fmt.Sprintf("%d bytes from %s, encrypted to %d recipient(s), stored at %s",
 			st.Size, src.node, len(st.Recipients), st.Location))

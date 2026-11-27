@@ -189,10 +189,6 @@ type EtcdBackupPolicyStatus struct {
 	// verified one.
 	// +optional
 	ConsecutiveFailures int32 `json:"consecutiveFailures,omitempty"`
-
-	// VerifiedSnapshots counts the verified snapshots kept.
-	// +optional
-	VerifiedSnapshots int32 `json:"verifiedSnapshots,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -261,11 +257,6 @@ type EtcdSnapshotStatus struct {
 	// +optional
 	MemberID string `json:"memberID,omitempty"`
 
-	// RaftIndex is the member's raft index just before the snapshot: the
-	// snapshot holds at least everything up to it.
-	// +optional
-	RaftIndex int64 `json:"raftIndex,omitempty"`
-
 	// Location is where the ciphertext is (s3://bucket/key,
 	// pvc://claim/key), and Key its key in the sink.
 	// +optional
@@ -286,14 +277,6 @@ type EtcdSnapshotStatus struct {
 	EncryptedSize int64 `json:"encryptedSize,omitempty"`
 	// +optional
 	EncryptedSHA256 string `json:"encryptedSHA256,omitempty"`
-
-	// DatabaseTxID is the bbolt transaction id of the database's newest
-	// meta page, and PageSize its page size: read off the snapshot as it
-	// passed, as evidence that it is a bbolt database.
-	// +optional
-	DatabaseTxID int64 `json:"databaseTxID,omitempty"`
-	// +optional
-	PageSize int32 `json:"pageSize,omitempty"`
 
 	// Recipients are the age public keys it was encrypted to.
 	// +optional

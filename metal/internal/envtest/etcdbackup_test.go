@@ -175,7 +175,7 @@ func TestEtcdBackupLane(t *testing.T) {
 		assert.Equal(t, "bk/"+first+".db.age", s.Status.Key)
 		assert.Equal(t, "pvc://pk-metal-etcd-backups/bk/"+first+".db.age", s.Status.Location)
 		assert.Equal(t, []string{recipient}, s.Status.Recipients)
-		assert.EqualValues(t, 42, s.Status.DatabaseTxID)
+		assert.Contains(t, meta.FindStatusCondition(s.Status.Conditions, osv1alpha1.ConditionVerified).Message, "(transaction 42)")
 
 		// What the volume holds decrypts, with the person's identity, to
 		// exactly what etcd streamed; it is not the plaintext.

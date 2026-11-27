@@ -236,10 +236,6 @@ spec:
                     - name
                     - takenAt
                   type: object
-                verifiedSnapshots:
-                  description: VerifiedSnapshots counts the verified snapshots kept.
-                  format: int32
-                  type: integer
               type: object
           required:
             - spec

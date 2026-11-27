@@ -226,9 +226,6 @@ spec:
                     - fingerprint
                     - planHash
                   type: object
-                managerType:
-                  description: ManagerType is the discovered Redfish Manager type, kept opaque (BMC | EnclosureManager | RackManager | …).
-                  type: string
                 model:
                   type: string
                 phase:

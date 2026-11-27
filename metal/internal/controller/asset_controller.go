@@ -69,20 +69,19 @@ func (r *AssetReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		return ctrl.Result{}, nil
 	}
 	orig := asset.DeepCopy()
-	res, err := r.materialize(ctx, asset)
-	if err != nil {
-		return res, err
+	if err := r.materialize(ctx, asset); err != nil {
+		return ctrl.Result{}, err
 	}
 	if err := updateStatusIfChanged(ctx, r.Client, asset, &orig.Status, &asset.Status); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
-	return res, nil
+	return ctrl.Result{}, nil
 }
 
 // materialize creates or updates the endpoint and records the outcome in the
 // Asset's Materialized condition. A hold is also an event, for whoever watches
 // events; the condition is what stays.
-func (r *AssetReconciler) materialize(ctx context.Context, asset *metalv1alpha1.Asset) (ctrl.Result, error) {
+func (r *AssetReconciler) materialize(ctx context.Context, asset *metalv1alpha1.Asset) error {
 	set := func(s metav1.ConditionStatus, reason, msg string) {
 		setCondition(&asset.Status.Conditions, asset.Generation, metalv1alpha1.ConditionMaterialized, s, reason, msg)
 	}
@@ -98,7 +97,7 @@ func (r *AssetReconciler) materialize(ctx context.Context, asset *metalv1alpha1.
 	if asset.Spec.BMCMac == "" {
 		hold(metalv1alpha1.ReasonNoBMCMac,
 			"the asset names no bmcMac, so the operator cannot find its BMC; set spec.bmcMac to the MAC of the BMC's network port")
-		return ctrl.Result{}, nil
+		return nil
 	}
 	addr, ok := r.Ledger.Lookup(asset.Spec.BMCMac)
 	if !ok {
@@ -106,12 +105,12 @@ func (r *AssetReconciler) materialize(ctx context.Context, asset *metalv1alpha1.
 			hold(metalv1alpha1.ReasonLedgerEntryInvalid, fmt.Sprintf(
 				"the line for bmcMac %s in %s was skipped: %s.%s",
 				asset.Spec.BMCMac, r.ledgerSource(), why, r.reloadHint()))
-			return ctrl.Result{}, nil
+			return nil
 		}
 		hold(metalv1alpha1.ReasonNoLedgerEntry, fmt.Sprintf(
 			"bmcMac %s is not in %s, so the operator does not know the BMC's address. Add a line %q: https://<BMC address>, or fix the MAC on this asset if it has a typo.%s",
 			asset.Spec.BMCMac, r.ledgerSource(), asset.Spec.BMCMac, r.reloadHint()))
-		return ctrl.Result{}, nil
+		return nil
 	}
 
 	ep := &metalv1alpha1.ManagementEndpoint{ObjectMeta: metav1.ObjectMeta{Name: asset.Name}}
@@ -131,16 +130,16 @@ func (r *AssetReconciler) materialize(ctx context.Context, asset *metalv1alpha1.
 		if errors.As(err, &owned) || apierrors.IsAlreadyExists(err) {
 			hold(metalv1alpha1.ReasonMaterializeConflict, fmt.Sprintf(
 				"endpoint %s belongs to another asset: %v", asset.Name, err))
-			return ctrl.Result{}, nil
+			return nil
 		}
-		return ctrl.Result{}, fmt.Errorf("materialize endpoint %s: %w", asset.Name, err)
+		return fmt.Errorf("materialize endpoint %s: %w", asset.Name, err)
 	}
 	if op != controllerutil.OperationResultNone {
 		logf.FromContext(ctx).Info("materialized endpoint", "endpoint", ep.Name, "op", op, "address", addr)
 	}
 	set(metav1.ConditionTrue, metalv1alpha1.ReasonEndpointMaterialized,
 		fmt.Sprintf("endpoint %s at %s", ep.Name, addr))
-	return ctrl.Result{}, nil
+	return nil
 }
 
 func (r *AssetReconciler) ledgerSource() string {

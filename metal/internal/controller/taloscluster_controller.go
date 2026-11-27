@@ -149,7 +149,7 @@ func (r *TalosClusterReconciler) reconcile(ctx context.Context, cluster *osv1alp
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	assigned, err := assignedNodes(ctx, r.Client)
+	assigned, err := hostsByNode(ctx, r.Client)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -260,11 +260,11 @@ func (r *TalosClusterReconciler) reconcile(ctx context.Context, cluster *osv1alp
 // not part of the cluster, and counting it would hold Available at False
 // until it was gone. Those are counted as unassigned instead, so they stay
 // visible.
-func countMembers(st *osv1alpha1.TalosClusterStatus, nodes []osv1alpha1.TalosNode, assigned map[string]bool) {
+func countMembers(st *osv1alpha1.TalosClusterStatus, nodes []osv1alpha1.TalosNode, assigned map[string]string) {
 	st.ControlPlanes, st.ReadyControlPlanes, st.Workers, st.ReadyWorkers, st.UnassignedNodes = 0, 0, 0, 0, 0
 	for i := range nodes {
 		n := &nodes[i]
-		if !assigned[n.Name] || !n.DeletionTimestamp.IsZero() {
+		if assigned[n.Name] == "" || !n.DeletionTimestamp.IsZero() {
 			st.UnassignedNodes++
 			continue
 		}
@@ -281,21 +281,6 @@ func countMembers(st *osv1alpha1.TalosClusterStatus, nodes []osv1alpha1.TalosNod
 			st.ReadyWorkers++
 		}
 	}
-}
-
-// assignedNodes is the set of TalosNode names some Host's spec.os names.
-func assignedNodes(ctx context.Context, c client.Reader) (map[string]bool, error) {
-	hosts := &metalv1alpha1.HostList{}
-	if err := c.List(ctx, hosts); err != nil {
-		return nil, err
-	}
-	out := map[string]bool{}
-	for i := range hosts.Items {
-		if os := hosts.Items[i].Spec.OS; os != nil {
-			out[os.NodeRef.Name] = true
-		}
-	}
-	return out, nil
 }
 
 // publish keeps the admin kubeconfig and talosconfig Secrets current and

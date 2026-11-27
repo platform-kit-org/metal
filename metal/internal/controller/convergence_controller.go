@@ -593,10 +593,7 @@ func selectsByClaim(selectors []metav1.LabelSelector, claim *metalv1alpha1.HostC
 func (r *ConvergenceReconciler) observeBios(ctx context.Context, host *metalv1alpha1.Host) (bmc.BiosState, []bmc.BiosAttribute, error) {
 	cctx, cancel := context.WithTimeout(ctx, connectTimeout)
 	defer cancel()
-	cl, _, holdMsg, err := hostPathClient(cctx, r.Client, r.CredentialsNamespace, host, true)
-	if err != nil {
-		return bmc.BiosState{}, nil, err
-	}
+	cl, _, holdMsg := hostPathClient(cctx, r.Client, r.CredentialsNamespace, host, true)
 	if holdMsg != "" {
 		return bmc.BiosState{}, nil, errors.New(holdMsg)
 	}

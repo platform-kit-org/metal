@@ -303,73 +303,12 @@ func (r *HostClaimReconciler) provision(ctx context.Context, claim *metalv1alpha
 		return hold(metalv1alpha1.ReasonOperationFailed, failedBootMessage(claim, failed))
 	}
 
-	shape, err := r.endpointShape(ctx, host)
+	plan, config, installer, reason, msg, err := r.installPlan(ctx, claim, host, node, cluster, prior, moved)
 	if err != nil {
 		return err
 	}
-	if len(shape.insertable) == 0 {
-		return hold(metalv1alpha1.ReasonNoBootableMedia, fmt.Sprintf("host %s advertises no insertable media slot", hostName))
-	}
-	bootSlot, configSlot := shape.mediaSlots()
-	// One slot cannot carry the installer and the config side by side. A
-	// machine that already runs Talos from its disk (it answers, blank, in
-	// maintenance mode) needs the config medium alone; a blank one gets an
-	// installer with its config built in. Either way the config reaches the
-	// machine through the BMC, never over the machine's own network.
-	// A machine that replaces an install is reset first: it has no Talos on
-	// disk to take a config medium alone.
-	kind, why, msg := decideShape(hostName, shape,
-		prior == "" && !moved && meta.IsStatusConditionTrue(node.Status.Conditions, osv1alpha1.ConditionMachineReachable),
-		cluster.Spec.TalosVersion)
-	if why != "" {
-		return hold(why, msg)
-	}
-
-	plan := provisionPlan{ConfigDigest: node.Status.ConfigDigest}
-	var config, installer *osv1alpha1.BootAsset
-	switch kind {
-	case shapeEmbedded:
-		if installer, err = r.ensureEmbeddedAsset(ctx, node, cluster); err != nil {
-			return err
-		}
-		if msg := embeddedAssetPending(installer, node, cluster); msg != "" {
-			return hold(metalv1alpha1.ReasonAwaitingBootAsset, msg)
-		}
-		target, err := boot.PickTarget(shape.targets)
-		if err != nil {
-			return hold(metalv1alpha1.ReasonNoBootableMedia, err.Error())
-		}
-		plan.ArtifactDigest, plan.Embedded = installer.Status.Digest, true
-		plan.Slots, plan.Target, plan.Mode = []string{shape.bootSlots[0]}, target, overrideMode(shape.mode)
-	default:
-		if config, err = r.ensureConfigAsset(ctx, node); err != nil {
-			return err
-		}
-		if msg := configAssetPending(ctx, r.Client, config, node); msg != "" {
-			return hold(metalv1alpha1.ReasonAwaitingBootAsset, msg)
-		}
-		plan.ArtifactDigest = config.Status.Digest
-		if kind == shapeConfigOnly {
-			plan.Slots = shape.insertable[:1]
-			break
-		}
-		if installer, err = r.ensureInstallerAsset(ctx, node, cluster); err != nil {
-			return err
-		}
-		if msg := installerPending(installer); msg != "" {
-			return hold(metalv1alpha1.ReasonAwaitingBootAsset, msg)
-		}
-		target, err := boot.PickTarget(shape.targets)
-		if err != nil {
-			return hold(metalv1alpha1.ReasonNoBootableMedia, err.Error())
-		}
-		plan.Installer, plan.InstallerDigest = installer.Status.URL, installer.Status.Digest
-		plan.Slots, plan.Target = []string{bootSlot, configSlot}, target
-		plan.Mode = overrideMode(shape.mode)
-	}
-
-	if prior != "" {
-		plan.Replaces = prior + "@" + claim.Status.HandOff.At.UTC().Format(time.RFC3339)
+	if reason != "" {
+		return hold(reason, msg)
 	}
 	name := fmt.Sprintf("provision-%s-%s", hostName, hash8(planHash(plan)))
 	if err := r.withdraw(ctx, ops, name); err != nil {
@@ -453,6 +392,83 @@ func (r *HostClaimReconciler) provision(ctx context.Context, claim *metalv1alpha
 		return hold(metalv1alpha1.ReasonAwaitingOperation, "boot operation "+ref+": "+ex.Message)
 	}
 	return hold(metalv1alpha1.ReasonAwaitingOperation, "boot operation "+ref+" in flight")
+}
+
+// installPlan picks how the install reaches the machine, makes the media it
+// mounts and builds the plan from them. reason is empty when the plan is
+// ready; otherwise reason and msg say what the install waits for.
+func (r *HostClaimReconciler) installPlan(ctx context.Context, claim *metalv1alpha1.HostClaim, host *metalv1alpha1.Host,
+	node *osv1alpha1.TalosNode, cluster *osv1alpha1.TalosCluster, prior string, moved bool) (
+	plan provisionPlan, config, installer *osv1alpha1.BootAsset, reason, msg string, err error) {
+	hostName := host.Name
+	shape, err := r.endpointShape(ctx, host)
+	if err != nil {
+		return plan, nil, nil, "", "", err
+	}
+	if len(shape.insertable) == 0 {
+		return plan, nil, nil, metalv1alpha1.ReasonNoBootableMedia, fmt.Sprintf("host %s advertises no insertable media slot", hostName), nil
+	}
+	bootSlot, configSlot := shape.mediaSlots()
+	// One slot cannot carry the installer and the config side by side. A
+	// machine that already runs Talos from its disk (it answers, blank, in
+	// maintenance mode) needs the config medium alone; a blank one gets an
+	// installer with its config built in. Either way the config reaches the
+	// machine through the BMC, never over the machine's own network.
+	// A machine that replaces an install is reset first: it has no Talos on
+	// disk to take a config medium alone.
+	kind, why, msg := decideShape(hostName, shape,
+		prior == "" && !moved && meta.IsStatusConditionTrue(node.Status.Conditions, osv1alpha1.ConditionMachineReachable),
+		cluster.Spec.TalosVersion)
+	if why != "" {
+		return plan, nil, nil, why, msg, nil
+	}
+
+	plan = provisionPlan{ConfigDigest: node.Status.ConfigDigest}
+	switch kind {
+	case shapeEmbedded:
+		if installer, err = r.ensureEmbeddedAsset(ctx, node, cluster); err != nil {
+			return plan, nil, nil, "", "", err
+		}
+		if msg := embeddedAssetPending(installer, node, cluster); msg != "" {
+			return plan, nil, nil, metalv1alpha1.ReasonAwaitingBootAsset, msg, nil
+		}
+		target, err := boot.PickTarget(shape.targets)
+		if err != nil {
+			return plan, nil, nil, metalv1alpha1.ReasonNoBootableMedia, err.Error(), nil
+		}
+		plan.ArtifactDigest, plan.Embedded = installer.Status.Digest, true
+		plan.Slots, plan.Target, plan.Mode = []string{shape.bootSlots[0]}, target, overrideMode(shape.mode)
+	default:
+		if config, err = r.ensureConfigAsset(ctx, node); err != nil {
+			return plan, nil, nil, "", "", err
+		}
+		if msg := configAssetPending(ctx, r.Client, config, node); msg != "" {
+			return plan, nil, nil, metalv1alpha1.ReasonAwaitingBootAsset, msg, nil
+		}
+		plan.ArtifactDigest = config.Status.Digest
+		if kind == shapeConfigOnly {
+			plan.Slots = shape.insertable[:1]
+			break
+		}
+		if installer, err = r.ensureInstallerAsset(ctx, node, cluster); err != nil {
+			return plan, nil, nil, "", "", err
+		}
+		if msg := installerPending(installer); msg != "" {
+			return plan, nil, nil, metalv1alpha1.ReasonAwaitingBootAsset, msg, nil
+		}
+		target, err := boot.PickTarget(shape.targets)
+		if err != nil {
+			return plan, nil, nil, metalv1alpha1.ReasonNoBootableMedia, err.Error(), nil
+		}
+		plan.Installer, plan.InstallerDigest = installer.Status.URL, installer.Status.Digest
+		plan.Slots, plan.Target = []string{bootSlot, configSlot}, target
+		plan.Mode = overrideMode(shape.mode)
+	}
+
+	if prior != "" {
+		plan.Replaces = prior + "@" + claim.Status.HandOff.At.UTC().Format(time.RFC3339)
+	}
+	return plan, config, installer, "", "", nil
 }
 
 // failedBoot is the failed boot of node's current render onto the host,
@@ -1262,14 +1278,6 @@ func (r *HostClaimReconciler) recordPowerOff(ctx context.Context, host *metalv1a
 // opExists: an operation of that name is among ops.
 func opExists(ops []metalv1alpha1.HostOperation, name string) bool {
 	return slices.ContainsFunc(ops, func(op metalv1alpha1.HostOperation) bool { return op.Name == name })
-}
-
-// handedOff: the claim's hand-off record says a boot of the claim installed
-// the host — true even when that boot operation was deleted since. A machine
-// found already running the node was never touched, and is not counted.
-func handedOff(claim *metalv1alpha1.HostClaim, hostName string) bool {
-	h := claim.Status.HandOff
-	return h != nil && h.Host == hostName && h.Operation != ""
 }
 
 // releaseOp takes the machine's node out of its cluster, shuts the machine

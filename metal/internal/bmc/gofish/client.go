@@ -152,11 +152,7 @@ func Connect(ctx context.Context, cfg Config) (bmc.Client, error) {
 	// turn off certificate checks process-wide and race between sessions.
 	t := http.DefaultTransport.(*http.Transport).Clone()
 	t.ForceAttemptHTTP2 = true
-	tlsConfig, err := clientTLS(cfg)
-	if err != nil {
-		return nil, err
-	}
-	t.TLSClientConfig = tlsConfig
+	t.TLSClientConfig = clientTLS(cfg)
 	timeout := cmp.Or(cfg.RequestTimeout, DefaultRequestTimeout)
 	// The header timeout starts after the request body is sent, so it also
 	// holds for an upload.
@@ -216,10 +212,10 @@ func Connect(ctx context.Context, cfg Config) (bmc.Client, error) {
 // clientTLS is the TLS policy of a session: the pinned CAs, else the pinned
 // keys, else no check at all where the caller asked for that, else the
 // system's CAs (nil).
-func clientTLS(cfg Config) (*tls.Config, error) {
+func clientTLS(cfg Config) *tls.Config {
 	switch {
 	case cfg.RootCAs != nil:
-		return &tls.Config{RootCAs: cfg.RootCAs, MinVersion: tls.VersionTLS12}, nil
+		return &tls.Config{RootCAs: cfg.RootCAs, MinVersion: tls.VersionTLS12}
 	case len(cfg.PinnedKeys) > 0:
 		pins := slices.Clone(cfg.PinnedKeys)
 		return &tls.Config{
@@ -237,12 +233,12 @@ func clientTLS(cfg Config) (*tls.Config, error) {
 				}
 				return nil
 			},
-		}, nil
+		}
 	case cfg.Insecure:
 		// Lab BMCs with self-signed certs, asked for by the caller.
-		return &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS12}, nil //nolint:gosec
+		return &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS12} //nolint:gosec
 	}
-	return nil, nil
+	return nil
 }
 
 // PublicKeyPin is how a pin names a certificate's key: "sha256:" and the hex

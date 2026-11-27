@@ -448,15 +448,6 @@
       "description": "PublicKey of the pushed leaf certificate, in the form of TLSPin.PublicKey. Connections accept it next to the pinned key, so the BMC is reachable when it serves the pushed certificate."
     },
     {
-      "path": "status.managerType",
-      "name": "managerType",
-      "parent": "status",
-      "depth": 1,
-      "type": "string",
-      "required": false,
-      "description": "ManagerType is the discovered Redfish Manager type, kept opaque (BMC | EnclosureManager | RackManager | …)."
-    },
-    {
       "path": "status.model",
       "name": "model",
       "parent": "status",

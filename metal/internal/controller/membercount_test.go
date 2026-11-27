@@ -33,7 +33,7 @@ func TestMemberCountLeavesOutNodesWithoutAMachine(t *testing.T) {
 		memberNode("w-2", osv1alpha1.RoleWorker, false, false),
 	}
 	st := &osv1alpha1.TalosClusterStatus{}
-	countMembers(st, nodes, map[string]bool{"cp-1": true, "cp-3": true, "w-1": true, "w-2": true})
+	countMembers(st, nodes, map[string]string{"cp-1": "box-1", "cp-3": "box-3", "w-1": "box-4", "w-2": "box-5"})
 
 	assert.EqualValues(t, 1, st.ControlPlanes)
 	assert.EqualValues(t, 1, st.ReadyControlPlanes)

@@ -100,7 +100,7 @@ A script or a GitOps tool must read conditions, not the phase. This table gives 
 
 - A wait does not approve. A claim with `spec.os` stays at `Provisioned=False` until a person approves the install. See [A claim that waits for approval](kind:HostClaim#a-claim-that-waits-for-approval).
 - `Complete=False` on a rollout is an end too: the rollout failed, or someone aborted it. A wait for True then ends with a timeout.
-- Only the Asset has `status.observedGeneration`. For the other kinds, the status can be older than your last change for a short time. Each condition has its own `observedGeneration`.
+- No kind has `status.observedGeneration`. Each condition has `observedGeneration`. Compare it with `metadata.generation`.
 - No kind has a `Ready` condition that summarizes the others.
 
 ## When you delete an object
@@ -111,7 +111,7 @@ A script or a GitOps tool must read conditions, not the phase. This table gives 
 | [](kind:TalosNode) | The finalizer `os.platform-kit.org/member` holds the object while a claim, an operation or an etcd member uses the node. |
 | [](kind:TalosCluster) | The object goes at once, and with it the Secrets that it owns: the kubeconfig, the talosconfig and the record of the applied secrets bundle. The machines continue to run. |
 | [](kind:Asset) | Kubernetes deletes the ManagementEndpoint. While a claim holds the machine, the finalizer `metal.platform-kit.org/claim-protection` keeps the endpoint and the Host. |
-| Profiles, [](kind:MaintenanceWindow), [](kind:EtcdBackupPolicy) | The operator stops the work for the object. It does not undo a change on a machine, and it keeps the snapshots. |
+| Profiles, [](kind:MaintenanceWindow), [](kind:EtcdBackupPolicy) | The operator stops the work for the object. It does not undo a change on a machine, and it keeps the snapshots. A deleted MaintenanceWindow does not hold operations any more: an approved operation can start at once. |
 
 [](concept:gitops) says what this means for a tool that prunes.
 

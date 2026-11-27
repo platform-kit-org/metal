@@ -38,7 +38,6 @@ import (
 	"github.com/dennisklein/platform-kit/metal/internal/bmc/sim"
 	"github.com/dennisklein/platform-kit/metal/internal/controller"
 	"github.com/dennisklein/platform-kit/metal/internal/pivot"
-	"github.com/dennisklein/platform-kit/metal/internal/talos/render"
 )
 
 // testLog passes the move's step lines to the test log.
@@ -68,10 +67,8 @@ func TestPivot(t *testing.T) {
 	fix, err := sim.LoadFixture("supermicro-x12")
 	require.NoError(t, err)
 	bmcSrv, bmcState := simServer(t, "supermicro-x12")
-	factory := fakeFactory(t)
+	imageFactory, _ := stubFactory(t)
 	led := writeLedger(t, fmt.Sprintf("%q: %s\n", fix.Manager.MAC, bmcSrv.URL))
-	imageFactory := render.NewFactory(strings.TrimPrefix(factory.URL, "https://"))
-	imageFactory.HTTPClient = factory.Client()
 
 	// --- the bootstrap cluster, as the installer leaves it ----------------
 

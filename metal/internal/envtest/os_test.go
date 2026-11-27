@@ -15,7 +15,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -51,9 +50,12 @@ import (
 
 const labTalos = "v1.14.6"
 
+// installerImage is what stubFactory serves under any .iso path.
+var installerImage = []byte("stand-in installer image")
+
 // stubFactory stands in for the image factory: it answers a schematic POST the
 // way the real one does (201 with the id the posted content hashes to),
-// serves a stand-in image under any .iso path, and records what it was asked
+// serves installerImage under any .iso path, and records what it was asked
 // to register. Registration is a network call on the
 // render path, so the suite runs its own factory instead of the public one, and
 // gets to watch what the reconcilers tell it.
@@ -61,16 +63,16 @@ func stubFactory(t *testing.T) (*render.Factory, func() []string) {
 	t.Helper()
 	var mu sync.Mutex
 	var ids []string
-	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, ".iso") {
-			// The install image, which the operator downloads.
-			_, _ = w.Write([]byte("install image " + r.URL.Path))
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, ".iso") {
+			http.NotFound(w, r)
 			return
 		}
-		if r.Method != http.MethodPost || r.URL.Path != "/schematics" {
-			http.Error(w, "not the schematic endpoint", http.StatusNotFound)
-			return
-		}
+		// The install image, which the operator downloads.
+		http.ServeContent(w, r, "installer.iso", time.Time{}, bytes.NewReader(installerImage))
+	})
+	mux.HandleFunc("POST /schematics", func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -92,7 +94,8 @@ func stubFactory(t *testing.T) (*render.Factory, func() []string) {
 		normalized, _ := sch.Marshal()
 		w.WriteHeader(http.StatusCreated)
 		_ = json.NewEncoder(w).Encode(map[string]string{"id": id, "schematic": string(normalized)})
-	}))
+	})
+	srv := httptest.NewTLSServer(mux)
 	t.Cleanup(srv.Close)
 	factory := &render.Factory{
 		RegistryURL: strings.TrimPrefix(srv.URL, "https://"),
@@ -390,9 +393,7 @@ func TestOSLane(t *testing.T) {
 		assert.Regexp(t,
 			`^https://`+regexp.QuoteMeta(factory.RegistryURL)+`/image/[0-9a-f]{64}/v1\.14\.6/metal-amd64\.iso$`,
 			ba.Status.URL, "the URL must name the factory the operator was given, not the public one")
-		u, err := url.Parse(ba.Status.URL)
-		require.NoError(t, err)
-		assert.Equal(t, digest.FromString("install image "+u.Path).String(), ba.Status.Digest,
+		assert.Equal(t, digest.FromBytes(installerImage).String(), ba.Status.Digest,
 			"the operator downloaded the image and records its digest")
 		assert.True(t, store.Has(ba.Name, ba.Status.BuildKey), "the image rests in the media store")
 

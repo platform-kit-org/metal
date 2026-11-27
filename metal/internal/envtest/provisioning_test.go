@@ -14,14 +14,12 @@ package envtest_test
 import (
 	"bytes"
 	"crypto/tls"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"net"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
@@ -30,7 +28,6 @@ import (
 	"time"
 
 	"github.com/opencontainers/go-digest"
-	"github.com/siderolabs/image-factory/pkg/schematic"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
@@ -50,38 +47,7 @@ import (
 	"github.com/dennisklein/platform-kit/metal/internal/bmc/sim"
 	"github.com/dennisklein/platform-kit/metal/internal/controller"
 	talosfake "github.com/dennisklein/platform-kit/metal/internal/talos/fake"
-	"github.com/dennisklein/platform-kit/metal/internal/talos/render"
 )
-
-// fakeFactory answers schematic registrations with the locally computed id
-// and serves a stand-in install ISO under any .iso path.
-func fakeFactory(t *testing.T) *httptest.Server {
-	t.Helper()
-	installer := []byte("stand-in installer image")
-	mux := http.NewServeMux()
-	mux.HandleFunc("POST /schematics", func(w http.ResponseWriter, r *http.Request) {
-		body, _ := io.ReadAll(r.Body)
-		s, err := schematic.Unmarshal(body)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		id, _ := s.ID()
-		normalized, _ := s.Marshal()
-		w.WriteHeader(http.StatusCreated)
-		_ = json.NewEncoder(w).Encode(map[string]string{"id": id, "schematic": string(normalized)})
-	})
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if !strings.HasSuffix(r.URL.Path, ".iso") {
-			http.NotFound(w, r)
-			return
-		}
-		http.ServeContent(w, r, "installer.iso", time.Time{}, strings.NewReader(string(installer)))
-	})
-	srv := httptest.NewTLSServer(mux)
-	t.Cleanup(srv.Close)
-	return srv
-}
 
 // freeAddr reserves a loopback port for a listener started later.
 func freeAddr(t *testing.T) string {
@@ -103,7 +69,7 @@ func TestProvisioning(t *testing.T) {
 	singleFix, err := sim.LoadFixture("huawei-2288h-v5")
 	require.NoError(t, err)
 	single, singleState := simServer(t, "huawei-2288h-v5")
-	factory := fakeFactory(t)
+	imageFactory, _ := stubFactory(t)
 
 	led := writeLedger(t, fmt.Sprintf("%q: %s\n%q: %s\n",
 		dualFix.Manager.MAC, dual.URL, singleFix.Manager.MAC, single.URL))
@@ -139,8 +105,6 @@ func TestProvisioning(t *testing.T) {
 	media, err := asset.NewService(mediaAddr, "https://"+mediaAddr, cert)
 	require.NoError(t, err)
 
-	imageFactory := render.NewFactory(strings.TrimPrefix(factory.URL, "https://"))
-	imageFactory.HTTPClient = factory.Client()
 	store, err := asset.NewStore(t.TempDir())
 	require.NoError(t, err)
 
@@ -568,7 +532,7 @@ func TestProvisioning(t *testing.T) {
 		mounted := mediaOf(dualState)
 		assert.True(t, strings.HasPrefix(mounted["VirtualMedia1"], media.BaseURL+"/grants/"),
 			"the installer from the media service, not from the factory: %v", mounted)
-		assert.Equal(t, []byte("stand-in installer image"), dualState.BootImage("VirtualMedia1"),
+		assert.Equal(t, installerImage, dualState.BootImage("VirtualMedia1"),
 			"the machine booted the installer the operator downloaded from the factory")
 		configURL := mounted["VirtualMedia2"]
 		require.True(t, strings.HasPrefix(configURL, media.BaseURL+"/grants/"), "config under a grant: %v", mounted)

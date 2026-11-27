@@ -178,6 +178,60 @@ func TestRestorePlanRecoversALostCluster(t *testing.T) {
 	require.ErrorContains(t, err, "no verified etcd snapshot")
 }
 
+// The operations of a restore have fixed names and stay after they finish.
+// A second restore must not keep an operation of the first one.
+func TestRestoreProposeRefusesAnOldOperation(t *testing.T) {
+	now := time.Date(2026, 11, 24, 12, 0, 0, 0, time.UTC)
+	w := newDRWorld(true)
+	w.cps["cp-2"].SetEtcdRunning(true)
+	w.cps["cp-2"].SetFailure("EtcdMembers", fmt.Errorf("etcdserver: no leader"))
+	objs := append(w.objs, verifiedSnapshot("dr-daily-new", now.Add(-time.Hour), []byte("new")),
+		verifiedSnapshot("dr-daily-old", now.Add(-25*time.Hour), []byte("old")))
+	propose := func(cl client.Client, snapshot string) (string, error) {
+		p, err := planRestore(t.Context(), cl, w.fleet.Dialer(), []byte("tc"),
+			restoreInput{Cluster: "dr", Snapshot: snapshot, User: "alice", Now: now})
+		require.NoError(t, err)
+		var out bytes.Buffer
+		err = p.propose(t.Context(), cl, &out)
+		return out.String(), err
+	}
+	recoverOp := func(cl client.Client) *metalv1alpha1.HostOperation {
+		op := &metalv1alpha1.HostOperation{}
+		require.NoError(t, cl.Get(t.Context(), client.ObjectKey{Namespace: operatorNamespace, Name: "dr-etcd-recover-cp-1"}, op))
+		return op
+	}
+
+	t.Run("the same open plan is kept", func(t *testing.T) {
+		cl := fakeClient(objs...)
+		_, err := propose(cl, "dr-daily-old")
+		require.NoError(t, err)
+		out, err := propose(cl, "dr-daily-old")
+		require.NoError(t, err)
+		assert.Contains(t, out, "exists already: pk-metal/dr-etcd-recover-cp-1")
+	})
+	t.Run("an open operation for another snapshot is refused", func(t *testing.T) {
+		cl := fakeClient(objs...)
+		_, err := propose(cl, "dr-daily-old")
+		require.NoError(t, err)
+		_, err = propose(cl, "dr-daily-new")
+		require.ErrorContains(t, err, "snapshot dr-daily-old")
+		require.ErrorContains(t, err, "kubectl -n pk-metal delete hostoperation dr-etcd-recover-cp-1")
+		assert.Equal(t, "dr-daily-old", recoverOp(cl).Spec.Actions[0].EtcdRecover.SnapshotRef.Name)
+	})
+	t.Run("a finished operation is refused", func(t *testing.T) {
+		cl := fakeClient(objs...)
+		_, err := propose(cl, "dr-daily-old")
+		require.NoError(t, err)
+		op := recoverOp(cl)
+		op.Status.Conditions = []metav1.Condition{{Type: metalv1alpha1.ConditionExecuted, Status: metav1.ConditionTrue,
+			Reason: "Succeeded", LastTransitionTime: metav1.NewTime(now)}}
+		require.NoError(t, cl.Update(t.Context(), op))
+		_, err = propose(cl, "dr-daily-old")
+		require.ErrorContains(t, err, "Succeeded")
+		require.ErrorContains(t, err, "kubectl -n pk-metal delete hostoperation dr-etcd-recover-cp-1")
+	})
+}
+
 // encryptedFile writes plain, encrypted to id, to a file.
 func encryptedFile(t *testing.T, id *age.X25519Identity, plain []byte) string {
 	t.Helper()

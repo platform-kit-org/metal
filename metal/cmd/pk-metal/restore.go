@@ -13,6 +13,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -486,10 +487,8 @@ func (p *restorePlan) op(host, suffix string, actions []metalv1alpha1.HostOperat
 func (p *restorePlan) flags() string {
 	var f []string
 	for _, op := range p.Ops {
-		for _, a := range op.Spec.Actions {
-			if a.EtcdRecover != nil {
-				f = append(f, "--snapshot "+a.EtcdRecover.SnapshotRef.Name, "--node "+a.EtcdRecover.NodeRef.Name)
-			}
+		if a := etcdRecoverOf(op); a != nil {
+			f = append(f, "--snapshot "+a.SnapshotRef.Name, "--node "+a.NodeRef.Name)
 		}
 	}
 	if len(f) == 0 {
@@ -537,14 +536,30 @@ func (p *restorePlan) render() string {
 	return b.String()
 }
 
-// propose creates the operations; an existing one of the same name is
-// left as it is and named.
+// propose creates the operations. An existing one of the same name is kept
+// only if it is open and has the same plan: the names are fixed, and an
+// operation of an earlier restore stays after it finished.
 func (p *restorePlan) propose(ctx context.Context, cl client.Client, w io.Writer) error {
 	for _, op := range p.Ops {
 		err := cl.Create(ctx, op)
 		switch {
 		case apierrors.IsAlreadyExists(err):
-			fmt.Fprintf(w, "exists already: %s/%s (delete it to propose it again)\n", op.Namespace, op.Name)
+			have := &metalv1alpha1.HostOperation{}
+			if err := cl.Get(ctx, client.ObjectKeyFromObject(op), have); err != nil {
+				return fmt.Errorf("read %s/%s: %w", op.Namespace, op.Name, err)
+			}
+			why := outcome(have)
+			if why == "" && (!equality.Semantic.DeepEqual(have.Spec.HostRef, op.Spec.HostRef) ||
+				!equality.Semantic.DeepEqual(have.Spec.Actions, op.Spec.Actions)) {
+				why = "another plan"
+			}
+			if why != "" {
+				if a := etcdRecoverOf(have); a != nil {
+					why += ", snapshot " + a.SnapshotRef.Name
+				}
+				return fmt.Errorf("%s/%s is from an earlier restore (%s); %s", op.Namespace, op.Name, why, deleteAndProposeAgain(have))
+			}
+			fmt.Fprintf(w, "exists already: %s/%s\n", op.Namespace, op.Name)
 		case err != nil:
 			return fmt.Errorf("propose %s/%s: %w", op.Namespace, op.Name, err)
 		default:
@@ -555,6 +570,33 @@ func (p *restorePlan) propose(ctx context.Context, cl client.Client, w io.Writer
 		fmt.Fprintln(w, "each waits for approval by a person: pk-metal approve")
 	}
 	return nil
+}
+
+// outcome is the reason of an operation that has finished, "" while it is
+// open.
+func outcome(op *metalv1alpha1.HostOperation) string {
+	if !op.Finished() {
+		return ""
+	}
+	c := meta.FindStatusCondition(op.Status.Conditions, metalv1alpha1.ConditionExecuted)
+	return cmp.Or(c.Reason, string(c.Status))
+}
+
+// etcdRecoverOf is the etcdRecover step of an operation, nil if it has none.
+func etcdRecoverOf(op *metalv1alpha1.HostOperation) *metalv1alpha1.EtcdRecoverAction {
+	for _, a := range op.Spec.Actions {
+		if a.EtcdRecover != nil {
+			return a.EtcdRecover
+		}
+	}
+	return nil
+}
+
+// deleteAndProposeAgain is the way past an operation of an earlier restore,
+// which has the name that the next restore needs.
+func deleteAndProposeAgain(op *metalv1alpha1.HostOperation) string {
+	return fmt.Sprintf("delete it, then propose again: kubectl -n %s delete hostoperation %s && pk-metal restore plan %s --propose",
+		op.Namespace, op.Name, op.Labels[labelRestoreCluster])
 }
 
 // describeEtcdRecover is the approve line of an etcdRecover step.
@@ -583,12 +625,7 @@ func uploadSnapshot(ctx context.Context, cl client.Client, dial talos.Dialer, in
 	if err := getNamed(ctx, cl, "operation", op, &metalv1alpha1.HostOperationList{}, in.Namespace, in.Name); err != nil {
 		return err
 	}
-	var a *metalv1alpha1.EtcdRecoverAction
-	for _, act := range op.Spec.Actions {
-		if act.EtcdRecover != nil {
-			a = act.EtcdRecover
-		}
-	}
+	a := etcdRecoverOf(op)
 	if a == nil {
 		return fmt.Errorf("operation %s/%s has no etcdRecover step", op.Namespace, op.Name)
 	}
@@ -596,8 +633,8 @@ func uploadSnapshot(ctx context.Context, cl client.Client, dial talos.Dialer, in
 		return fmt.Errorf("operation %s/%s is not approved yet; nothing is uploaded before it is: pk-metal approve %s/%s",
 			op.Namespace, op.Name, op.Namespace, op.Name)
 	}
-	if c := meta.FindStatusCondition(op.Status.Conditions, metalv1alpha1.ConditionExecuted); c != nil && c.Status != metav1.ConditionUnknown {
-		return fmt.Errorf("operation %s/%s has finished (%s); propose a new one", op.Namespace, op.Name, c.Reason)
+	if why := outcome(op); why != "" {
+		return fmt.Errorf("operation %s/%s has finished (%s); %s", op.Namespace, op.Name, why, deleteAndProposeAgain(op))
 	}
 	if metalv1alpha1.SnapshotUploaded(op.Annotations[metalv1alpha1.AnnotationEtcdSnapshotUploaded], a.SHA256) {
 		fmt.Fprintln(w, "the snapshot was uploaded already; the operator is starting etcd from it")

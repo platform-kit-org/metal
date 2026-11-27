@@ -2138,9 +2138,12 @@ EOF
   backup_volume_copy "$namespace" "$deployment" "$key" "$dir/snapshot.db.age"
   "$cli" backup decrypt --in "$dir/snapshot.db.age" --identity "$dir/identity.txt" >&2
   impersonating_kubeconfig "$lab_dir/kubeconfig" "$dir/restorer.kubeconfig" lab-restorer
+  # The restore operations have fixed names and stay after they finish. The
+  # plan refuses to propose over those of an earlier round, so delete them.
+  kubectl -n "$namespace" delete hostoperations --selector "os.platform-kit.org/etcd-restore=$cluster_name" >&2
   # A control plane comes back from the reset some time after; until every
-  # one answers, the plan may propose nothing. Proposing again is harmless:
-  # an operation that exists is left as it is.
+  # one answers, the plan may propose nothing. Proposing again keeps the
+  # operation that an earlier pass proposed.
   while true; do
     KUBECONFIG=$dir/restorer.kubeconfig "$cli" restore plan --snapshot "$snap" --propose "$cluster_name" >&2 || true
     op=$(kubectl -n "$namespace" get hostoperations --selector "os.platform-kit.org/etcd-restore=$cluster_name" --output json \

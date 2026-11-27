@@ -47,14 +47,9 @@ A flat YAML map, one line for each BMC:
 
 1. The operator writes MAC keys in lower case with colons. You can write them in each case, with `:` or `-`.
 2. The operator skips and reports a line that it cannot use. It does not stop the other machines.
-3. The manager reads the ledger when it starts. A changed ConfigMap from kustomize restarts the manager.
+3. The manager reads the ledger only when it starts. See [](ctrl:manager#the-ledger).
 
-| Reason on the Asset | Meaning |
-| --- | --- |
-| `NoBMCMac` | The Asset has no `spec.bmcMac`. |
-| `NoLedgerEntry` | The MAC address is not in the ledger. |
-| `LedgerEntryInvalid` | The line for the MAC was skipped. The message says why. |
-| `MaterializeConflict` | An endpoint with this name belongs to another Asset. |
+[Asset conditions](kind:Asset#conditions) list the reasons and the fix.
 
 ## In the reference
 

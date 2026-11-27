@@ -24,7 +24,7 @@ machines:
       bmcMAC: "02:77:00:00:01:01"
       nicMACs: ["52:54:00:77:00:11"]
     backend: qemu # none | qemu | docker
-    qemu: { tap: pktap1, memoryMiB: 4096, cpus: 2, diskGiB: 20, diskSerial: pklab-disk-1 }
+    qemu: { tap: pktap1, memoryMiB: 4096, cpus: 2, diskGiB: 20, diskSerial: pklab-disk-1, arch: amd64, accel: kvm }
 
   # Two workers. Sized so that the three machines and the kind node fit a
   # 16 GiB workstation or CI runner.
@@ -38,7 +38,7 @@ machines:
       bmcMAC: "02:77:00:00:01:02"
       nicMACs: ["52:54:00:77:00:12"]
     backend: qemu
-    qemu: { tap: pktap2, memoryMiB: 2048, cpus: 2, diskGiB: 20, diskSerial: pklab-disk-2 }
+    qemu: { tap: pktap2, memoryMiB: 2048, cpus: 2, diskGiB: 20, diskSerial: pklab-disk-2, arch: amd64, accel: kvm }
 
   # node-3 speaks the Supermicro X12 dialect (OEM board serial, three
   # virtual media slots, a UsbCd boot target), so a vendor other than the
@@ -55,4 +55,4 @@ machines:
       bmcMAC: "02:77:00:00:01:03"
       nicMACs: ["52:54:00:77:00:13"]
     backend: qemu
-    qemu: { tap: pktap3, memoryMiB: 2048, cpus: 2, diskGiB: 20, diskSerial: pklab-disk-3 }
+    qemu: { tap: pktap3, memoryMiB: 2048, cpus: 2, diskGiB: 20, diskSerial: pklab-disk-3, arch: amd64, accel: kvm }

@@ -30,8 +30,8 @@ type Options struct {
 	RequestHistory int
 	// HangTimeout is the qemu backend's firmware-hang guard: how long a VM
 	// may show only screen control sequences on its console after a
-	// power-on before it is power-cycled, once. Zero is
-	// qemu.DefaultHangTimeout; negative turns the guard off.
+	// power-on before it is power-cycled, once. Zero is the driver's
+	// default for the VM's accelerator; negative turns the guard off.
 	HangTimeout time.Duration
 }
 
@@ -206,7 +206,8 @@ func newBackend(ctx context.Context, cfg *Config, m Machine, fo Options) (sim.Ma
 		}
 		if q := m.Qemu; q != nil {
 			o.Tap, o.MemoryMiB, o.CPUs, o.DiskGiB = q.Tap, q.MemoryMiB, q.CPUs, q.DiskGiB
-			o.DiskSerial, o.Accel, o.HostIP, o.ForwardPorts = q.DiskSerial, q.Accel, q.HostIP, q.ForwardPorts
+			o.DiskSerial, o.Arch, o.Accel = q.DiskSerial, q.Arch, q.Accel
+			o.HostIP, o.ForwardPorts = q.HostIP, q.ForwardPorts
 		}
 		vm := qemu.New(o)
 		if err := vm.Ensure(ctx); err != nil {

@@ -220,7 +220,7 @@ The fleet does what an administrator does with real hardware: it power cycles th
 
 | Property | Value |
 | --- | --- |
-| Condition | No new readable text on the console for 90 seconds after a power-on, before the kernel banner `Linux version` |
+| Condition | No new readable text on the console for 90 seconds (3 minutes under TCG) after a power-on, before the kernel banner `Linux version` |
 | Action | A power cycle, up to three times for each power-on |
 | Log | `FIRMWARE HANG` or `LOADER HANG` in `.lab/fleet.log` |
 | Counter | `backend.hangCycles` in the state endpoint, and `hang-cycled` in [](lab:top) |

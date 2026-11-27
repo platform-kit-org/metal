@@ -89,6 +89,14 @@ machines:
 stateDir: /tmp/x
 machines:
   - { name: a, listen: "127.0.0.1:1", backend: qemu, qemu: { tap: tap0 } }`, "identity.nicMACs"},
+		"an architecture the driver does not run": {`
+stateDir: /tmp/x
+machines:
+  - { name: a, listen: "127.0.0.1:1", backend: qemu, qemu: { arch: riscv64 } }`, `qemu.arch "riscv64" is not one of [amd64 arm64]`},
+		"an accelerator that is none": {`
+stateDir: /tmp/x
+machines:
+  - { name: a, listen: "127.0.0.1:1", backend: qemu, qemu: { accel: hvf } }`, `qemu.accel "hvf" is not one of kvm, tcg`},
 		"qemu settings without the backend": {`
 machines:
   - { name: a, listen: "127.0.0.1:1", qemu: { cpus: 2 } }`, "qemu settings on a none backend"},

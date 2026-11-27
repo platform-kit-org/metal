@@ -150,6 +150,19 @@ jobs:
         if: always()
         run: mise run metrics:rules
 
+  # The TLA+ specifications in metal/spec, model-checked with TLC. The hosted
+  # runner has a Java runtime; the script fetches the TLA+ tools jar at a
+  # pinned version and checksum. No Go cache: the job runs no Go.
+  spec:
+    name: TLA+ model check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@924e7c586e33d7d4bae9c14e26c5d22e2beb6e78 # v5.3.0
+      - name: TLC
+        run: mise run spec
+
   generate:
     name: generated files are current
     runs-on: ubuntu-latest

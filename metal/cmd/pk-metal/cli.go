@@ -143,10 +143,15 @@ var global struct {
 	context    string
 }
 
+// The texts of the global flags, for their flags and for the top-level help.
+const (
+	kubeconfigUsage = "kubeconfig file (default: $KUBECONFIG, then ~/.kube/config, then the in-cluster account)"
+	contextUsage    = "kubeconfig context to use (default: the current context)"
+)
+
 func addGlobalFlags(fs *flag.FlagSet) {
-	fs.StringVar(&global.kubeconfig, "kubeconfig", global.kubeconfig,
-		"kubeconfig file (default: $KUBECONFIG, then ~/.kube/config, then the in-cluster account)")
-	fs.StringVar(&global.context, "context", global.context, "kubeconfig context to use (default: the current context)")
+	fs.StringVar(&global.kubeconfig, "kubeconfig", global.kubeconfig, kubeconfigUsage)
+	fs.StringVar(&global.context, "context", global.context, contextUsage)
 }
 
 // parseGlobal reads the global flags in front of the verb and returns the rest.
@@ -177,8 +182,12 @@ func newFlags(name string) *flag.FlagSet {
 				fmt.Fprintf(w, "\n%s\n", strings.TrimSpace(extra))
 			}
 		}
-		fmt.Fprintln(w, "\nflags:")
-		fs.PrintDefaults()
+		n := 0
+		fs.VisitAll(func(*flag.Flag) { n++ })
+		if n > 0 {
+			fmt.Fprintln(w, "\nflags:")
+			fs.PrintDefaults()
+		}
 	}
 	return fs
 }
@@ -317,17 +326,17 @@ usage: pk-metal [--kubeconfig file] [--context name] <command> [flags] [argument
 			}
 		}
 	}
-	fmt.Fprint(w, `
+	fmt.Fprintf(w, `
 help:
   pk-metal help <command>     flags and details of one command (or: pk-metal <command> -h)
 
 global flags (for the commands that talk to the cluster):
-  --kubeconfig file           kubeconfig file (default: $KUBECONFIG, then ~/.kube/config)
-  --context name              kubeconfig context (default: the current context)
+  --kubeconfig file           %s
+  --context name              %s
 
 exit status:
   0  success
   1  error; the message is on stderr, as "pk-metal: <message>"
   2  pk-metal status only: something is blocked or failed and needs a person
-`)
+`, kubeconfigUsage, contextUsage)
 }

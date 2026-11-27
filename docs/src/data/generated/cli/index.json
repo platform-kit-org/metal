@@ -139,14 +139,14 @@
       "name": "kubeconfig",
       "type": "file",
       "default": "",
-      "usage": "kubeconfig file (default: $KUBECONFIG, then ~/.kube/config)",
+      "usage": "kubeconfig file (default: $KUBECONFIG, then ~/.kube/config, then the in-cluster account)",
       "global": true
     },
     {
       "name": "context",
       "type": "name",
       "default": "",
-      "usage": "kubeconfig context (default: the current context)",
+      "usage": "kubeconfig context to use (default: the current context)",
       "global": true
     }
   ],

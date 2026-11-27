@@ -12,7 +12,6 @@ sources:
 import CliExit from '../../../../components/cli/CliExit.astro';
 import CliIndex from '../../../../components/cli/CliIndex.astro';
 import CliMap from '../../../../components/cli/CliMap.astro';
-import Terminal from '../../../../components/cli/Terminal.astro';
 
 `pk-metal` is the command line program of the operator. It has 26 commands.
 Each command has one page with its flags, its steps and the objects that it reads and writes.
@@ -56,24 +55,7 @@ A badge shows the effect of each command.
 
 ## Read the help
 
-Each command prints its own help. The help of the program lists all commands.
-
-<Terminal
-title="help"
-text={`
-    $ pk-metal help approve
-    pk-metal approve: show what a proposed operation will do to a machine, then let it run; without a name, list the operations that wait for approval
-
-    usage: pk-metal approve [-n namespace] [--yes] [<operation> | <namespace>/<operation>]
-    ...
-    flags:
-      -n string
-        	namespace of the operation (default "pk-metal")
-      -yes
-        	approve without asking (for scripts); the plan is still printed
-`}
-/>
-
+Each command prints its own help: `pk-metal help <command>`. The help of the program lists all commands.
 A flag can have one dash or two dashes: `-yes` and `--yes` are the same flag.
 
 ## Exit status

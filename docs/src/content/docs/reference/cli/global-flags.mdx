@@ -40,7 +40,8 @@ They follow the rules of `kubectl`.
 
 ## Where to put them
 
-Put the global flags before the command or after it. The two forms are equal.
+Put the global flags before the command or after it.
+A command that does not talk to the cluster ignores the flags before it, and refuses them after it.
 The flags of a command can also come after its arguments. After `--`, each word is an argument.
 
 <Terminal
@@ -54,16 +55,7 @@ text={`
 
 ## Commands that accept them
 
-All commands that talk to the Kubernetes API accept the global flags:
-
-- [](cli:status) and [](cli:top)
-- [](cli:approve), [](cli:retry), [](cli:abort), [](cli:hold), [](cli:unhold) and [](cli:rollout)
-- [](cli:reboot), [](cli:upgrade), [](cli:scale), [](cli:reinstall), [](cli:replace) and [](cli:wipe)
-- [](cli:backup) and [](cli:restore)
-- [](cli:pivot)
-
-These commands do not talk to the Kubernetes API, and they refuse the global flags after the command:
-[](cli:check), [](cli:inventory), [](cli:render), [](cli:boot), [](cli:bootstrap), [](cli:relay), [](cli:sim) and [](cli:version).
+A command that talks to the Kubernetes API accepts the global flags. Its page shows the badge "needs the cluster".
 
 <Callout type="note">
 Give [](cli:pivot) the source cluster with the global flags. Give it the target cluster with `--to` and `--to-context`.

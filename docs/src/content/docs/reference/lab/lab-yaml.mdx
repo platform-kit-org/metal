@@ -143,16 +143,8 @@ A Talos release that replaces `cluster.talosVersion`, for example `v1.14.5`.
 | `PK_LAB_RELEASE_TIMEOUT` | `900` | Seconds for [](lab:release). |
 | `PK_LAB_DAY2_TIMEOUT` | `1200` | Seconds for each reboot in [](lab:day2). |
 | `PK_LAB_ROLLOUT_TIMEOUT` | `2400` | Seconds for a rollout in [](lab:day2) and [](lab:upgrade). |
-| `PK_LAB_BRIDGE` | `pkbr0` | The bridge name. Read by `lab/net.sh`. |
-| `PK_LAB_ADDRESS` | `10.77.0.1/24` | The address of the workstation on the bridge. Read by `lab/net.sh`. |
-| `PK_LAB_TAP_USER` | The user that starts the lab | The owner of the taps. Read by `lab/net.sh`. |
 | `PK_METAL_QEMU` | Found on the `PATH` | The QEMU binary. |
 | `PK_METAL_OVMF_CODE`, `PK_METAL_OVMF_VARS` | Found in the system | The UEFI firmware pair for the machines: OVMF for `amd64`, AAVMF for `arm64`. |
-
-<Callout type="caution">
-Do not change `PK_LAB_ADDRESS` only. The renderer and `lab/kind.yaml` use the fixed address `10.77.0.1`.
-With a different address, the BMCs and the media port do not answer.
-</Callout>
 
 ## Change the Talos patches
 

@@ -1,3 +1,6 @@
+// A source check: the race detector adds nothing to it.
+//go:build !race
+
 package lint_test
 
 import (

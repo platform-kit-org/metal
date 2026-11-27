@@ -87,20 +87,13 @@ If a step does not give its checkpoint, see [](lab:page/troubleshooting).
 
 ### 2. Reboot a worker
 
-The lab forbids self-approval (`selfApproval: Forbidden`): the person who proposes a change cannot approve it. The lab has one admin, so you make a second user.
+The lab forbids self-approval (`selfApproval: Forbidden`): the person who proposes a change cannot approve it. The lab has one admin.
+Thus [](lab:up) wrote `.lab/admin.kubeconfig` for a second user, `lab-admin`. The file uses impersonation, which is a shortcut of the lab.
 
-1. Write a kubeconfig for the user `lab-proposer`.
-
-   ```sh
-   yq '.users[].user.as = "lab-proposer"
-     | .users[].user."as-groups" = ["system:masters", "system:authenticated"]' \
-     .lab/kubeconfig > .lab/proposer.kubeconfig
-   ```
-
-2. Propose the reboot as that user.
+1. Propose the reboot as `lab-admin`.
 
    ```sh
-   metal/bin/pk-metal --kubeconfig .lab/proposer.kubeconfig reboot node-2
+   metal/bin/pk-metal --kubeconfig .lab/admin.kubeconfig reboot node-2
    ```
 
    ```console
@@ -109,13 +102,13 @@ The lab forbids self-approval (`selfApproval: Forbidden`): the person who propos
    To withdraw it: pk-metal abort --reason "<reason>" pk-metal/reboot-node-2-x7k2p
    ```
 
-3. Read the plan and approve it as the admin. Use the name from your output.
+2. Read the plan and approve it as the admin. Use the name from your output.
 
    ```sh
    metal/bin/pk-metal approve pk-metal/reboot-node-2-x7k2p
    ```
 
-4. Watch the operation until its phase is `Succeeded`.
+3. Watch the operation until its phase is `Succeeded`.
 
    ```sh
    kubectl -n pk-metal get hostoperations --watch
@@ -136,18 +129,18 @@ The operation is `Succeeded`. `kubectl --kubeconfig .lab/workload.kubeconfig get
 
 A change of a [](kind:TalosNode) makes the operator propose a rollout. The annotation `metal.platform-kit.org/requested-by` names the person who asked for the change.
 The API server sets it to the username of each change of the spec. See [`requested-by-stamp`](ref:admission-policies#requested-by-stamp).
-The operator copies these names into the rollout, and a person in the list cannot approve it. Thus you change the nodes as `lab-proposer`, and you approve the rollout as the admin.
+The operator copies these names into the rollout, and a person in the list cannot approve it. Thus you change the nodes as `lab-admin`, and you approve the rollout as the admin.
 
-1. Add a label to each TalosNode as `lab-proposer`.
+1. Add a label to each TalosNode as `lab-admin`.
 
    ```sh
    for node in node-1 node-2 node-3; do
-     kubectl --kubeconfig .lab/proposer.kubeconfig patch talosnode "$node" --type merge \
+     kubectl --kubeconfig .lab/admin.kubeconfig patch talosnode "$node" --type merge \
        --patch '{"spec": {"labels": {"lab.platform-kit.org/day2": "tutorial"}}}'
    done
    ```
 
-   The annotation of each node now names `lab-proposer`.
+   The annotation of each node now names `lab-admin`.
 
 2. Wait until the operator proposes a rollout. This can take some minutes.
 
@@ -189,10 +182,10 @@ kubectl --kubeconfig .lab/workload.kubeconfig get nodes -L lab.platform-kit.org/
 
 ### 4. Upgrade Talos
 
-1. Set the release that the cluster asks for, as `lab-proposer`. The target is the release in `lab/lab.yaml`.
+1. Set the release that the cluster asks for, as `lab-admin`. The target is the release in `lab/lab.yaml`.
 
    ```sh
-   metal/bin/pk-metal --kubeconfig .lab/proposer.kubeconfig upgrade --wait 5m talos lab v1.14.6
+   metal/bin/pk-metal --kubeconfig .lab/admin.kubeconfig upgrade --wait 5m talos lab v1.14.6
    ```
 
    ```console

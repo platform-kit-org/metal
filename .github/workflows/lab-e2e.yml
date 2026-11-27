@@ -95,6 +95,15 @@ on:
 permissions:
   contents: read
 
+env:
+  # A hosted runner promises 14 GB of free disk. The lab's sparse disks, the
+  # installer image and the container images stay well below that.
+  PK_LAB_MIN_FREE_GIB: "10"
+  # KVM or nothing: a runner without it fails doctor, instead of a round
+  # under tcg that runs out of time.
+  PK_LAB_ACCEL: kvm
+  PK_LAB_WAIT_TIMEOUT: "2400"
+
 concurrency:
   group: lab-e2e-${{ github.ref }}
   cancel-in-progress: true
@@ -110,48 +119,12 @@ jobs:
     # The nightly run has both.
     timeout-minutes: ${{ (github.event_name == 'schedule' || (inputs.day2 && inputs.observe)) && 145 || inputs.day2 && 135 || inputs.observe && 85 || 75 }}
     env:
-      # A hosted runner promises 14 GB of free disk. The lab's sparse disks, the
-      # installer image and the container images stay well below that.
-      PK_LAB_MIN_FREE_GIB: "10"
-      # KVM or nothing: a runner without it fails doctor, instead of a round
-      # under tcg that runs out of time.
-      PK_LAB_ACCEL: kvm
-      PK_LAB_WAIT_TIMEOUT: "2400"
       # A graceful Talos shutdown takes well under a minute; the manager forces
       # the machine off after five. Ten minutes covers both.
       PK_LAB_RELEASE_TIMEOUT: "600"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      # The runner has /dev/kvm, but only root may open it. This is the udev
-      # rule GitHub documents for hardware-accelerated virtual machines on
-      # hosted Linux runners.
-      - name: Enable KVM for the runner user
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
-            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-
-      - name: Install QEMU and the UEFI firmware
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends qemu-system-x86 qemu-utils ovmf
-
-      - uses: jdx/mise-action@924e7c586e33d7d4bae9c14e26c5d22e2beb6e78 # v5.3.0
-
-      - name: Locate the Go caches
-        id: go
-        run: |
-          echo "modcache=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
-          echo "buildcache=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ${{ steps.go.outputs.modcache }}
-            ${{ steps.go.outputs.buildcache }}
-          key: go-lab-${{ runner.os }}-${{ hashFiles('metal/go.sum') }}
-          restore-keys: go-lab-${{ runner.os }}-
+      - uses: ./.github/actions/lab-runner
 
       # The spec is changed in a copy: the default lab stays as committed.
       - name: Give node-2 a one-slot Huawei iBMC
@@ -186,7 +159,7 @@ jobs:
       # through a Config rollout: the operator sees the drift in its dry run,
       # proposes, and the run approves and resumes it as a person would.
       - name: "Day 2: reboot a worker and a control plane, then a config change without a reboot"
-        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.day2)
+        if: github.event_name == 'schedule' || inputs.day2
         run: |
           mise run lab:day2
           mise run lab:status
@@ -194,7 +167,7 @@ jobs:
 
       # About three minutes: the window it creates opens two minutes later.
       - name: Check the day-2 views (status tables, metrics, maintenance window)
-        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.observe)
+        if: github.event_name == 'schedule' || inputs.observe
         run: mise run lab:observe
 
       # Deleting the claim of a running node proposes a shutdown that waits
@@ -205,66 +178,24 @@ jobs:
           mise run lab:release default/node-3
           mise run lab:status
 
-      # The diagnostics directory holds object dumps without Secret contents,
-      # the operator's and the fleet's logs and the machines' consoles. The
-      # secrets bundle, the kubeconfigs and the disks are not in it.
-      - name: Collect diagnostics
-        if: failure() || cancelled()
-        run: mise run lab:collect
-
-      - name: Upload diagnostics
-        if: failure() || cancelled()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      - if: failure() || cancelled()
+        uses: ./.github/actions/lab-diagnostics
         with:
           name: lab-diagnostics
-          path: .lab/diagnostics
-          if-no-files-found: warn
-          retention-days: 7
 
   pivot:
     name: move the operator onto the cluster it built
-    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.pivot)
+    if: github.event_name == 'schedule' || inputs.pivot
     # A hosted runner has 16 GiB. Two machines of 4 GiB and the kind node fit;
     # kind goes away after the move.
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
-      PK_LAB_MIN_FREE_GIB: "10"
-      # KVM or nothing: a runner without it fails doctor, instead of a round
-      # under tcg that runs out of time.
-      PK_LAB_ACCEL: kvm
-      PK_LAB_WAIT_TIMEOUT: "2400"
       PK_LAB_NODES: "1cp+0w"
       PK_LAB_WORKLOAD: "1cp+0w"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Enable KVM for the runner user
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
-            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-
-      - name: Install QEMU and the UEFI firmware
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends qemu-system-x86 qemu-utils ovmf
-
-      - uses: jdx/mise-action@924e7c586e33d7d4bae9c14e26c5d22e2beb6e78 # v5.3.0
-
-      - name: Locate the Go caches
-        id: go
-        run: |
-          echo "modcache=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
-          echo "buildcache=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ${{ steps.go.outputs.modcache }}
-            ${{ steps.go.outputs.buildcache }}
-          key: go-lab-${{ runner.os }}-${{ hashFiles('metal/go.sum') }}
-          restore-keys: go-lab-${{ runner.os }}-
+      - uses: ./.github/actions/lab-runner
 
       - name: Check the prerequisites
         run: mise run lab:doctor
@@ -283,60 +214,21 @@ jobs:
           mise run lab:status
           kubectl --kubeconfig .lab/second.kubeconfig get nodes --output wide
 
-      - name: Collect diagnostics
-        if: failure() || cancelled()
-        run: mise run lab:collect
-
-      - name: Upload diagnostics
-        if: failure() || cancelled()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      - if: failure() || cancelled()
+        uses: ./.github/actions/lab-diagnostics
         with:
           name: lab-pivot-diagnostics
-          path: .lab/diagnostics
-          if-no-files-found: warn
-          retention-days: 7
 
   backup-restore:
     name: back up etcd, lose it, restore it
-    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.backup_restore)
+    if: github.event_name == 'schedule' || inputs.backup_restore
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
-      PK_LAB_MIN_FREE_GIB: "10"
-      # KVM or nothing: a runner without it fails doctor, instead of a round
-      # under tcg that runs out of time.
-      PK_LAB_ACCEL: kvm
-      PK_LAB_WAIT_TIMEOUT: "2400"
       PK_LAB_NODES: "1cp+0w"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Enable KVM for the runner user
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
-            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-
-      - name: Install QEMU and the UEFI firmware
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends qemu-system-x86 qemu-utils ovmf
-
-      - uses: jdx/mise-action@924e7c586e33d7d4bae9c14e26c5d22e2beb6e78 # v5.3.0
-
-      - name: Locate the Go caches
-        id: go
-        run: |
-          echo "modcache=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
-          echo "buildcache=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ${{ steps.go.outputs.modcache }}
-            ${{ steps.go.outputs.buildcache }}
-          key: go-lab-${{ runner.os }}-${{ hashFiles('metal/go.sum') }}
-          restore-keys: go-lab-${{ runner.os }}-
+      - uses: ./.github/actions/lab-runner
 
       - name: Check the prerequisites
         run: mise run lab:doctor
@@ -355,62 +247,23 @@ jobs:
           mise run lab:backup-restore
           mise run lab:status
 
-      - name: Collect diagnostics
-        if: failure() || cancelled()
-        run: mise run lab:collect
-
-      - name: Upload diagnostics
-        if: failure() || cancelled()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      - if: failure() || cancelled()
+        uses: ./.github/actions/lab-diagnostics
         with:
           name: lab-backup-restore-diagnostics
-          path: .lab/diagnostics
-          if-no-files-found: warn
-          retention-days: 7
 
   scale:
     name: add, remove and replace nodes
-    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.scale)
+    if: github.event_name == 'schedule' || inputs.scale
     runs-on: ubuntu-latest
     # Install, then five rounds of joins and removals of about ten minutes
     # each.
     timeout-minutes: 150
     env:
-      PK_LAB_MIN_FREE_GIB: "10"
-      # KVM or nothing: a runner without it fails doctor, instead of a round
-      # under tcg that runs out of time.
-      PK_LAB_ACCEL: kvm
-      PK_LAB_WAIT_TIMEOUT: "2400"
       PK_LAB_NODES: "3cp+2w"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Enable KVM for the runner user
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
-            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-
-      - name: Install QEMU and the UEFI firmware
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends qemu-system-x86 qemu-utils ovmf
-
-      - uses: jdx/mise-action@924e7c586e33d7d4bae9c14e26c5d22e2beb6e78 # v5.3.0
-
-      - name: Locate the Go caches
-        id: go
-        run: |
-          echo "modcache=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
-          echo "buildcache=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ${{ steps.go.outputs.modcache }}
-            ${{ steps.go.outputs.buildcache }}
-          key: go-lab-${{ runner.os }}-${{ hashFiles('metal/go.sum') }}
-          restore-keys: go-lab-${{ runner.os }}-
+      - uses: ./.github/actions/lab-runner
 
       # A hosted runner has 16 GiB, of which a little under 15 are available
       # once the caches are restored. Three control planes at the default
@@ -439,31 +292,18 @@ jobs:
           mise run lab:scale
           mise run lab:status
 
-      - name: Collect diagnostics
-        if: failure() || cancelled()
-        run: mise run lab:collect
-
-      - name: Upload diagnostics
-        if: failure() || cancelled()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      - if: failure() || cancelled()
+        uses: ./.github/actions/lab-diagnostics
         with:
           name: lab-scale-diagnostics
-          path: .lab/diagnostics
-          if-no-files-found: warn
-          retention-days: 7
 
   upgrade:
     name: "day 2: upgrade Talos through a rollout"
-    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.upgrade)
+    if: github.event_name == 'schedule' || inputs.upgrade
     runs-on: ubuntu-latest
     # Install, then a drain, an upgrade and a reboot per machine.
     timeout-minutes: 120
     env:
-      PK_LAB_MIN_FREE_GIB: "10"
-      # KVM or nothing: a runner without it fails doctor, instead of a round
-      # under tcg that runs out of time.
-      PK_LAB_ACCEL: kvm
-      PK_LAB_WAIT_TIMEOUT: "2400"
       PK_LAB_ROLLOUT_TIMEOUT: "3000"
       # The lab comes up one patch release behind the spec; lab:upgrade
       # upgrades it to the spec's release.
@@ -471,33 +311,7 @@ jobs:
       PK_LAB_NODES: "1cp+1w"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Enable KVM for the runner user
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
-            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-
-      - name: Install QEMU and the UEFI firmware
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends qemu-system-x86 qemu-utils ovmf
-
-      - uses: jdx/mise-action@924e7c586e33d7d4bae9c14e26c5d22e2beb6e78 # v5.3.0
-
-      - name: Locate the Go caches
-        id: go
-        run: |
-          echo "modcache=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
-          echo "buildcache=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ${{ steps.go.outputs.modcache }}
-            ${{ steps.go.outputs.buildcache }}
-          key: go-lab-${{ runner.os }}-${{ hashFiles('metal/go.sum') }}
-          restore-keys: go-lab-${{ runner.os }}-
+      - uses: ./.github/actions/lab-runner
 
       - name: Check the prerequisites
         run: mise run lab:doctor
@@ -513,15 +327,7 @@ jobs:
           mise run lab:upgrade
           mise run lab:status
 
-      - name: Collect diagnostics
-        if: failure() || cancelled()
-        run: mise run lab:collect
-
-      - name: Upload diagnostics
-        if: failure() || cancelled()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      - if: failure() || cancelled()
+        uses: ./.github/actions/lab-diagnostics
         with:
           name: lab-upgrade-diagnostics
-          path: .lab/diagnostics
-          if-no-files-found: warn
-          retention-days: 7

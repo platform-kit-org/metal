@@ -92,7 +92,6 @@ Without Docker, the forward rules go into the chain `FORWARD`.
 
 `lab/net.sh` also does these things:
 
-- It sets `net.ipv4.ip_forward=1` if it was off. `down` sets it back.
 - With `firewalld`, it puts `pkbr0` into the zone `trusted`. This is a runtime setting only.
 - With an `nftables` ruleset that drops traffic by policy, it prints the `nft` commands that accept the lab traffic.
 
@@ -170,14 +169,6 @@ patches:
 Replace the `ResolverConfig` and `TimeSyncConfig` entries that exist. Do not add a second entry of the same kind.
 Run [](lab:up) before you approve the installs.
 </Callout>
-
-## Environment variables of lab/net.sh
-
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `PK_LAB_BRIDGE` | `pkbr0` | The bridge name |
-| `PK_LAB_ADDRESS` | `10.77.0.1/24` | The address of the workstation on the bridge. The script supports only `/24` and `/16`. |
-| `PK_LAB_TAP_USER` | The user that starts the lab | The owner of the taps |
 
 ## Related pages
 

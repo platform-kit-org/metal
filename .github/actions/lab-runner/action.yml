@@ -1,0 +1,25 @@
+# A hosted runner made ready for the virtual lab: KVM for the runner user,
+# QEMU and OVMF, the tools of mise.toml and the Go caches.
+name: lab-runner
+description: Prepare a hosted runner for the virtual lab
+runs:
+  using: composite
+  steps:
+    # The runner has /dev/kvm, but only root may open it. This is the udev
+    # rule GitHub documents for hardware-accelerated virtual machines on
+    # hosted Linux runners.
+    - name: Enable KVM for the runner user
+      shell: bash
+      run: |
+        echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+          | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+        sudo udevadm control --reload-rules
+        sudo udevadm trigger --name-match=kvm
+    - name: Install QEMU and the UEFI firmware
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install --yes --no-install-recommends qemu-system-x86 qemu-utils ovmf
+    - uses: ./.github/actions/setup
+      with:
+        cache: go-lab

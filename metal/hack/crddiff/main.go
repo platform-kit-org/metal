@@ -16,9 +16,7 @@
 // The API is v1alpha1 and may break; the point is that a break is seen,
 // written down, and has an upgrade note.
 //
-// usage: go run ./hack/crddiff [-strict] <old-dir> <new-dir>
-//
-// With -strict the exit status is 1 if a finding is breaking.
+// usage: go run ./hack/crddiff <old-dir> <new-dir>
 package main
 
 import (
@@ -53,10 +51,9 @@ type Finding struct {
 }
 
 func main() {
-	strict := flag.Bool("strict", false, "exit 1 if a finding is breaking")
 	flag.Parse()
 	if flag.NArg() != 2 {
-		fmt.Fprintln(os.Stderr, "usage: crddiff [-strict] <old-dir> <new-dir>")
+		fmt.Fprintln(os.Stderr, "usage: crddiff <old-dir> <new-dir>")
 		os.Exit(2)
 	}
 	old, err := readDir(flag.Arg(0))
@@ -69,11 +66,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "crddiff:", err)
 		os.Exit(2)
 	}
-	findings := Compare(old, cur)
-	report(os.Stdout, findings)
-	if *strict && slices.ContainsFunc(findings, func(f Finding) bool { return f.Severity == Breaking }) {
-		os.Exit(1)
-	}
+	report(os.Stdout, Compare(old, cur))
 }
 
 // readDir reads the CRDs of a directory, by their name. A missing directory

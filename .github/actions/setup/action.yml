@@ -1,0 +1,29 @@
+# The tools at the versions that mise.toml pins. With the input cache, also the
+# Go module and build caches, under a key for each job: the race build is
+# several times larger than the plain one.
+name: setup
+description: Install the tools of mise.toml and restore the Go caches
+inputs:
+  cache:
+    description: The prefix of the Go cache key, for example go-race. Empty means no Go cache.
+    required: false
+    default: ""
+runs:
+  using: composite
+  steps:
+    - uses: jdx/mise-action@924e7c586e33d7d4bae9c14e26c5d22e2beb6e78 # v5.3.0
+    - name: Locate the Go caches
+      if: inputs.cache != ''
+      id: go
+      shell: bash
+      run: |
+        echo "modcache=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
+        echo "buildcache=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+    - if: inputs.cache != ''
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          ${{ steps.go.outputs.modcache }}
+          ${{ steps.go.outputs.buildcache }}
+        key: ${{ inputs.cache }}-${{ runner.os }}-${{ hashFiles('metal/go.sum') }}
+        restore-keys: ${{ inputs.cache }}-${{ runner.os }}-

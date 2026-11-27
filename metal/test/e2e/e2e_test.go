@@ -71,8 +71,8 @@ const (
 
 	waitFor = 3 * time.Minute
 	tick    = 500 * time.Millisecond
-	// bootWait bounds the container's blank boot to maintenance mode (the spike
-	// measured ~20s) plus the check-in noticing.
+	// bootWait bounds the container's blank boot to maintenance mode (about
+	// 20s) plus the check-in noticing.
 	bootWait = 2 * time.Minute
 )
 

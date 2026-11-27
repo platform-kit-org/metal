@@ -33,12 +33,12 @@ import (
 
 // rotatedAtAnnotation on the managed-credential Secret records when the
 // password was last generated — the rotation-cadence observable.
-const rotatedAtAnnotation = labelDomain + "rotated-at"
+const rotatedAtAnnotation = "metal.platform-kit.org/rotated-at"
 
 // retireAccountAnnotation on the managed-credential Secret names the managed
 // account that a new username replaced, until it is disabled on the
 // manager. It outlives a crash between the promotion and the disable.
-const retireAccountAnnotation = labelDomain + "retire-account"
+const retireAccountAnnotation = "metal.platform-kit.org/retire-account"
 
 // defaultMaxAge is the rotation cadence of a profile that names none (the
 // CRD default; a profile stored before the default existed gets it here).

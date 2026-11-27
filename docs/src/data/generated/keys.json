@@ -49,6 +49,30 @@
       ]
     },
     {
+      "key": "metal.platform-kit.org/asset",
+      "kind": "label",
+      "exported": false,
+      "description": "labelAsset joins a Host to the Asset a person named the machine by, so `kubectl get hosts -l metal.platform-kit.org/asset=node-1` finds it.",
+      "constants": [
+        {
+          "name": "labelAsset",
+          "source": "metal/internal/controller/labels.go"
+        }
+      ]
+    },
+    {
+      "key": "metal.platform-kit.org/certificate-request",
+      "kind": "annotation",
+      "exported": false,
+      "description": "crNameAnnotation on the Secret of a BMC identity in progress: the name of the CertificateRequest for the identity.",
+      "constants": [
+        {
+          "name": "crNameAnnotation",
+          "source": "metal/internal/controller/identity.go"
+        }
+      ]
+    },
+    {
       "key": "metal.platform-kit.org/claim-name",
       "kind": "label",
       "exported": true,
@@ -169,6 +193,30 @@
       ]
     },
     {
+      "key": "metal.platform-kit.org/managed-labels",
+      "kind": "annotation",
+      "exported": false,
+      "description": "managedLabelsAnnotation on a Host and a ManagementEndpoint lists the label keys that the operator manages there. The operator does not change a label that is not in the list.",
+      "constants": [
+        {
+          "name": "managedLabelsAnnotation",
+          "source": "metal/internal/controller/labels.go"
+        }
+      ]
+    },
+    {
+      "key": "metal.platform-kit.org/model",
+      "kind": "label",
+      "exported": false,
+      "description": "labelModel on a Host and a ManagementEndpoint: the model that the BMC reports.",
+      "constants": [
+        {
+          "name": "labelModel",
+          "source": "metal/internal/controller/labels.go"
+        }
+      ]
+    },
+    {
       "key": "metal.platform-kit.org/override-cluster-guard",
       "kind": "annotation",
       "exported": true,
@@ -213,6 +261,18 @@
         {
           "name": "AnnotationMovedTo",
           "source": "metal/internal/pivot/pivot.go"
+        }
+      ]
+    },
+    {
+      "key": "metal.platform-kit.org/plan-hash",
+      "kind": "annotation",
+      "exported": false,
+      "description": "planHashAnnotation on the Secret of a BMC identity in progress: the hash of the identity that its key and certificate request are for.",
+      "constants": [
+        {
+          "name": "planHashAnnotation",
+          "source": "metal/internal/controller/identity.go"
         }
       ]
     },
@@ -301,6 +361,18 @@
       ]
     },
     {
+      "key": "metal.platform-kit.org/retire-account",
+      "kind": "annotation",
+      "exported": false,
+      "description": "retireAccountAnnotation on the managed-credential Secret names the managed account that a new username replaced, until it is disabled on the manager. It outlives a crash between the promotion and the disable.",
+      "constants": [
+        {
+          "name": "retireAccountAnnotation",
+          "source": "metal/internal/controller/endpointprofile_controller.go"
+        }
+      ]
+    },
+    {
       "key": "metal.platform-kit.org/retry",
       "kind": "annotation",
       "exported": true,
@@ -309,6 +381,42 @@
         {
           "name": "AnnotationRetry",
           "source": "metal/api/v1alpha1/hostoperation_types.go"
+        }
+      ]
+    },
+    {
+      "key": "metal.platform-kit.org/rotated-at",
+      "kind": "annotation",
+      "exported": false,
+      "description": "rotatedAtAnnotation on the managed-credential Secret records when the password was last generated — the rotation-cadence observable.",
+      "constants": [
+        {
+          "name": "rotatedAtAnnotation",
+          "source": "metal/internal/controller/endpointprofile_controller.go"
+        }
+      ]
+    },
+    {
+      "key": "metal.platform-kit.org/vendor",
+      "kind": "label",
+      "exported": false,
+      "description": "labelVendor on a Host and a ManagementEndpoint: the vendor that the BMC reports, for example Huawei.",
+      "constants": [
+        {
+          "name": "labelVendor",
+          "source": "metal/internal/controller/labels.go"
+        }
+      ]
+    },
+    {
+      "key": "metal.platform-kit.org/vlan",
+      "kind": "label",
+      "exported": false,
+      "description": "labelVLAN on a ManagementEndpoint: the VLAN of its Asset. Absent when the Asset has no VLAN.",
+      "constants": [
+        {
+          "name": "labelVLAN",
+          "source": "metal/internal/controller/labels.go"
         }
       ]
     },

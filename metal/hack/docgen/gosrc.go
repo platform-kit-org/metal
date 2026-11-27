@@ -524,15 +524,17 @@ func scanKeys(cfg config) (keysDoc, error) {
 	return doc, nil
 }
 
+// keyKind reads the kind from the constant's name. Annotation comes before
+// label: managedLabelsAnnotation is an annotation.
 func keyKind(name string) string {
 	n := strings.ToLower(name)
 	switch {
 	case strings.Contains(n, "finalizer"), strings.Contains(n, "protection"):
 		return "finalizer"
-	case strings.Contains(n, "label"):
-		return "label"
 	case strings.Contains(n, "annotation"):
 		return "annotation"
+	case strings.Contains(n, "label"):
+		return "label"
 	}
 	return "key"
 }

@@ -20,14 +20,22 @@ import (
 // reconciler); which keys it manages is bookkept in one annotation so
 // human-applied labels survive every pass.
 const (
-	labelDomain = "metal.platform-kit.org/"
-	labelVendor = labelDomain + "vendor"
-	labelModel  = labelDomain + "model"
-	labelVLAN   = labelDomain + "vlan"
+	// labelVendor on a Host and a ManagementEndpoint: the vendor that the
+	// BMC reports, for example Huawei.
+	labelVendor = "metal.platform-kit.org/vendor"
+	// labelModel on a Host and a ManagementEndpoint: the model that the BMC
+	// reports.
+	labelModel = "metal.platform-kit.org/model"
+	// labelVLAN on a ManagementEndpoint: the VLAN of its Asset. Absent when
+	// the Asset has no VLAN.
+	labelVLAN = "metal.platform-kit.org/vlan"
 	// labelAsset joins a Host to the Asset a person named the machine by, so
 	// `kubectl get hosts -l metal.platform-kit.org/asset=node-1` finds it.
-	labelAsset              = labelDomain + "asset"
-	managedLabelsAnnotation = labelDomain + "managed-labels"
+	labelAsset = "metal.platform-kit.org/asset"
+	// managedLabelsAnnotation on a Host and a ManagementEndpoint lists the
+	// label keys that the operator manages there. The operator does not
+	// change a label that is not in the list.
+	managedLabelsAnnotation = "metal.platform-kit.org/managed-labels"
 )
 
 // stampLabels reconciles the managed subset of the host's labels and reports

@@ -31,7 +31,7 @@ If the claim names a [](kind:TalosNode), it proposes one boot operation. When yo
   <dt>Talks to</dt>
   <dd>The Talos API of control planes, to read the etcd members before a node joins or leaves. It never talks to a BMC.</dd>
   <dt>Requeue</dt>
-  <dd>None. Events on Hosts, operations, endpoints, Assets, Talos nodes and boot assets start the next pass.</dd>
+  <dd>Every 15 seconds while `Provisioned` is False with `EtcdJoinWaiting` or `RemovalWaiting`. Otherwise none: events on Hosts, operations, endpoints, Assets, Talos nodes and boot assets start the next pass.</dd>
   <dt>Flags</dt>
   <dd>`--checkin-timeout` (default 30 minutes) and `--release-shutdown-timeout` (default 5 minutes).</dd>
 </dl>
@@ -87,6 +87,7 @@ The controller proposes the boot only when each item below is true. If an item i
 | The BMC has a media slot that can boot. | `NoBootableMedia`, `SingleMediumUnsupported` |
 | The boot assets are `Ready`. | `AwaitingBootAsset` |
 | The operator does not run on this machine. | `SelfDisruption` |
+| etcd keeps a healthy majority when a control plane joins or leaves. | `EtcdJoinWaiting`, `RemovalWaiting`, `EtcdRiskRefused` |
 
 The boot plan has a hash. The hash names the operation, so the same plan never makes two operations. A new render, image or endpoint shape is a new plan.
 The boot has one of three shapes:
@@ -155,7 +156,8 @@ Do not remove the finalizer `metal.platform-kit.org/release` by hand. The contro
 | `Bound=False`, `AmbiguousSystem` | The endpoint fronts more than one system. | Set `spec.systemRef`. See [](rb:claim-ambiguous). |
 | `Bound=False`, `HostAlreadyClaimed` | Another claim holds the Host. | Delete the other claim, or choose another Asset. |
 | `Provisioned=False`, `OperationFailed` | The boot operation failed. | Use [](rb:operation-failed). |
-| `Provisioned=False`, `AwaitingOperation` | The boot waits for approval. | Use [](cli:approve). |
+| `Provisioned=False`, `AwaitingApproval` | The boot waits for approval. | Use [](cli:approve). |
+| `Provisioned=False`, `AwaitingOperation` | A boot operation runs, or an operation of an earlier plan runs. | Wait. See [](cli:status). |
 
 ## Permissions
 

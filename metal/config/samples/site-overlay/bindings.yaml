@@ -1,17 +1,18 @@
 # Who may do what at this site. Replace the example group names with groups
 # from your identity provider or from the O= field of your client certificates.
+# Replace pk-metal:admins here and adminGroup in approval.yaml together.
 #
 # A binding gives rights to a group. It does not make a person a member: the
 # API server learns the groups of a person from the login.
 #
-# The admin group. The admission policies ask for it by name (ConfigMap
-# hostoperation-approval, key adminGroup, default pk-metal:admins): only its
-# members can make a claim that installs an OS, set automatic approval, or
-# move a claim to a different machine. Membership passes the policies; these
-# bindings give the members the RBAC rights for the objects. The roles
-# pk-metal-admin come with the base: every pk-metal kind and the Secrets of
-# pk-metal, but no impersonation. Do not bind cluster-admin instead: a member
-# who can impersonate can approve in the name of another person.
+# The admin group. The admission policies ask for it by name (adminGroup in
+# approval.yaml): only its members can make a claim that installs an OS, set
+# automatic approval, or move a claim to a different machine. Membership
+# passes the policies; these bindings give the members the RBAC rights for
+# the objects. The roles pk-metal-admin come with the base: every pk-metal
+# kind and the Secrets of pk-metal, but no impersonation. Do not bind
+# cluster-admin instead: a member who can impersonate can approve in the
+# name of another person.
 #
 # An install from an older sample has the ClusterRoleBinding pk-metal-admins
 # to cluster-admin. A binding cannot change its role, so these have new names:

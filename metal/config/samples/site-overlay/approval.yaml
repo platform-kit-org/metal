@@ -1,6 +1,12 @@
-# Whether a person may approve an operation or a rollout that they proposed
-# themselves. The admission policies read it from this ConfigMap, together
-# with the operator's identity and the admin group (config/policy).
+# The site settings. The admission policies read them from this ConfigMap,
+# together with the operator's identity (config/policy).
+#
+# adminGroup is the admin group. Keep it equal to the group of the
+# pk-metal-admin bindings in bindings.yaml. Set it before the first apply: a
+# later change needs a member of the old group (settings-guard).
+#
+# selfApproval says whether a person may approve an operation or a rollout
+# that they proposed themselves.
 #
 #   Allowed    one person can propose and approve. The record still names
 #              them twice, and the operator still approves nothing. For a
@@ -10,8 +16,8 @@
 #
 # Any other value counts as Forbidden.
 #
-# How long the operator keeps a finished operation or rollout that it may
-# delete (the operator reads this key, admission does not):
+# retention is how long the operator keeps a finished operation or rollout
+# that it may delete (the operator reads this key, admission does not):
 #
 #   30d        a number of days, or a duration such as 720h. The default.
 #   Forever    nothing finished is deleted; a person deletes old records.
@@ -23,5 +29,6 @@ metadata:
   name: hostoperation-approval
   namespace: pk-metal
 data:
+  adminGroup: pk-metal:admins
   selfApproval: Allowed
   retention: 30d

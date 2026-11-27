@@ -146,23 +146,10 @@ spec:
     namespace: pk-metal
     parameterNotFoundAction: Deny
 ---
-# The policy's parameters: who the operator runs as (the manager's service account),
-# the group whose members may create pre-cleared operations by hand, and whether a
-# person may approve an operation or a rollout that they proposed themselves.
-#
-# selfApproval is Allowed or Forbidden; a missing key means Allowed. Allowed suits
-# a team too small for two-person review: the record still names the proposer and
-# the approver, and the operator still approves nothing. Forbidden makes every
-# change need two people, so one stolen or careless account cannot change a
-# machine alone. Any other value counts as Forbidden.
-#
-# retention is not an admission setting: the operator reads it. It says how long
-# the operator keeps a finished HostOperation or TalosRollout that it may delete
-# (an operation it proposed with a TTL, a rollout that succeeded): Forever, a
-# number of days (30d) or a duration (720h). A missing key means 30d. A value it
-# cannot read keeps every record. The operator writes an audit line before every
-# delete. This ConfigMap holds it because it holds the site's other settings and
-# exists in every install.
+# The site settings, the parameters of the policies: who the operator runs as
+# (the manager's service account), the admin group, selfApproval and retention
+# (the operator reads it, admission does not). samples/site-overlay/approval.yaml
+# says what each value does.
 apiVersion: v1
 kind: ConfigMap
 metadata:

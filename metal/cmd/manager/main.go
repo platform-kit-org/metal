@@ -28,9 +28,7 @@ import (
 	"go.uber.org/zap/zapcore"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/rest"
 	"k8s.io/client-go/util/cert"
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -95,11 +93,17 @@ func main() {
 	}
 
 	log := setLoggers(os.Stderr).WithName("manager")
+	if err := run(c, log); err != nil {
+		log.Error(err, "manager stopped")
+		os.Exit(1)
+	}
+}
 
+// run starts the manager and returns when it stops.
+func run(c *config, log logr.Logger) error {
 	led, err := ledger.Load(c.ledgerPath)
 	if err != nil {
-		log.Error(err, "load ledger")
-		os.Exit(1)
+		return fmt.Errorf("load the ledger: %w", err)
 	}
 	log.Info("ledger loaded", "path", c.ledgerPath, "entries", led.Len(), "version", version)
 	// A bad line is skipped, not fatal: the other machines keep being managed,
@@ -121,8 +125,7 @@ func main() {
 	if c.registryCA != "" {
 		pool, err := cert.NewPool(c.registryCA)
 		if err != nil {
-			log.Error(err, "load registry CA")
-			os.Exit(1)
+			return fmt.Errorf("load the registry CA: %w", err)
 		}
 		// Clone the default transport so a site proxy and the dial and TLS
 		// handshake timeouts still apply; only the trust roots change.
@@ -133,32 +136,33 @@ func main() {
 
 	scheme, err := pkscheme.New()
 	if err != nil {
-		log.Error(err, "build scheme")
-		os.Exit(1)
+		return fmt.Errorf("build the scheme: %w", err)
 	}
 
 	restCfg := ctrl.GetConfigOrDie()
+	// An uncached client for the reads before the manager starts.
+	direct, err := client.New(restCfg, client.Options{Scheme: scheme})
+	if err != nil {
+		return fmt.Errorf("create a client: %w", err)
+	}
 	// Operations the operator proposes carry its own name; admission checks it,
 	// and the policy's params must name the same identity.
-	proposer, err := whoAmI(restCfg, scheme)
+	proposer, err := whoAmI(direct)
 	if err != nil {
-		log.Error(err, "who am I")
-		os.Exit(1)
+		return fmt.Errorf("ask the API server who the manager is: %w", err)
 	}
 	log.Info("operator identity", "username", proposer)
 
 	var media *asset.Service
 	var mediaCertReloader *asset.Reloading
 	if c.mediaURL != "" {
-		certs, err := mediaCertificates(restCfg, scheme, c.credsNS, c.mediaCert,
+		certs, err := mediaCertificates(direct, c.credsNS, c.mediaCert,
 			func(format string, args ...any) { log.Info(fmt.Sprintf(format, args...), "secret", c.mediaCert) })
 		if err != nil {
-			log.Error(err, "media certificate")
-			os.Exit(1)
+			return fmt.Errorf("load the media certificate: %w", err)
 		}
 		if media, err = asset.NewService(c.mediaListen, c.mediaURL, tls.Certificate{}); err != nil {
-			log.Error(err, "media service")
-			os.Exit(1)
+			return fmt.Errorf("start the media service: %w", err)
 		}
 		media.Certs = certs
 		mediaCertReloader, _ = certs.(*asset.Reloading)
@@ -168,13 +172,11 @@ func main() {
 	helper := c.imagerHelper
 	if c.mediaStore != "" {
 		if store, err = asset.NewStore(c.mediaStore); err != nil {
-			log.Error(err, "media store")
-			os.Exit(1)
+			return fmt.Errorf("open the media store: %w", err)
 		}
 		if helper == "" && c.storeClaim != "" {
-			if helper, err = ownImage(restCfg, scheme); err != nil {
-				log.Error(err, "find the manager's own image for the imager Jobs; set --imager-helper-image")
-				os.Exit(1)
+			if helper, err = ownImage(direct); err != nil {
+				return fmt.Errorf("find the manager's own image for the imager Jobs (or set --imager-helper-image): %w", err)
 			}
 		}
 		log.Info("media store", "dir", c.mediaStore, "claim", c.storeClaim, "imager", c.imagerRepo,
@@ -187,8 +189,7 @@ func main() {
 		// volume (the imager Jobs write into it).
 		dir := filepath.Join(os.TempDir(), "pk-metal-media")
 		if store, err = asset.NewStore(dir); err != nil {
-			log.Error(err, "media store in the temporary directory; set --media-store")
-			os.Exit(1)
+			return fmt.Errorf("open the media store in the temporary directory (or set --media-store): %w", err)
 		}
 		log.Info("media store", "dir", dir, "ephemeral", true)
 	}
@@ -206,15 +207,13 @@ func main() {
 		LeaderElectionReleaseOnCancel: true,
 	})
 	if err != nil {
-		log.Error(err, "new manager")
-		os.Exit(1)
+		return fmt.Errorf("create the manager: %w", err)
 	}
 
 	// The domain gauges read the manager's cache at scrape time and are served
 	// on the same /metrics endpoint as controller-runtime's own.
 	if err := metrics.Register(ctrlmetrics.Registry, mgr.GetCache(), c.credsNS); err != nil {
-		log.Error(err, "register metrics")
-		os.Exit(1)
+		return fmt.Errorf("register the metrics: %w", err)
 	}
 
 	// Each TalosCluster names its own secrets bundle (spec.secretsRef); a
@@ -254,33 +253,26 @@ func main() {
 		},
 		Workload: k8supgrade.Dial,
 	}, controller.AllLanes...); err != nil {
-		log.Error(err, "setup reconcilers")
-		os.Exit(1)
+		return fmt.Errorf("set up the reconcilers: %w", err)
 	}
 
 	if mediaCertReloader != nil {
 		if err := mgr.Add(mediaCertReloader); err != nil {
-			log.Error(err, "media certificate reloader")
-			os.Exit(1)
+			return fmt.Errorf("add the media certificate reloader: %w", err)
 		}
 	}
 
 	if c.probeAddr != "0" {
 		if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
-			log.Error(err, "add healthz")
-			os.Exit(1)
+			return fmt.Errorf("add healthz: %w", err)
 		}
 		if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
-			log.Error(err, "add readyz")
-			os.Exit(1)
+			return fmt.Errorf("add readyz: %w", err)
 		}
 	}
 
 	log.Info("starting", "credentialsNamespace", c.credsNS, "pollInterval", c.poll, "nodeName", c.nodeName)
-	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
-		log.Error(err, "manager exited")
-		os.Exit(1)
-	}
+	return mgr.Start(ctrl.SetupSignalHandler())
 }
 
 // setLoggers sends controller-runtime, client-go (klog) and the standard log
@@ -299,14 +291,10 @@ func setLoggers(w io.Writer) logr.Logger {
 // ownImage reads the manager's own Pod (POD_NAMESPACE and POD_NAME, from the
 // downward API) and returns the image of its manager container. The imager
 // Jobs run beside the manager, so that image is already on their node.
-func ownImage(cfg *rest.Config, scheme *runtime.Scheme) (string, error) {
+func ownImage(cl client.Reader) (string, error) {
 	ns, name := os.Getenv("POD_NAMESPACE"), os.Getenv("POD_NAME")
 	if ns == "" || name == "" {
 		return "", errors.New("POD_NAMESPACE and POD_NAME are not set (the Deployment sets them)")
-	}
-	cl, err := client.New(cfg, client.Options{Scheme: scheme})
-	if err != nil {
-		return "", err
 	}
 	pod := &corev1.Pod{}
 	if err := cl.Get(context.Background(), types.NamespacedName{Namespace: ns, Name: name}, pod); err != nil {
@@ -321,11 +309,7 @@ func ownImage(cfg *rest.Config, scheme *runtime.Scheme) (string, error) {
 }
 
 // whoAmI asks the apiserver which username this process acts as.
-func whoAmI(cfg *rest.Config, scheme *runtime.Scheme) (string, error) {
-	cl, err := client.New(cfg, client.Options{Scheme: scheme})
-	if err != nil {
-		return "", err
-	}
+func whoAmI(cl client.Client) (string, error) {
 	ssr := &authenticationv1.SelfSubjectReview{}
 	if err := cl.Create(context.Background(), ssr); err != nil {
 		return "", err
@@ -343,13 +327,9 @@ const mediaCertReload = time.Minute
 // replaced before it expires. A named Secret is never swapped for a
 // self-signed certificate: while it cannot be read or does not parse, the last
 // good certificate stays in service.
-func mediaCertificates(cfg *rest.Config, scheme *runtime.Scheme, namespace, name string, logf func(string, ...any)) (asset.CertSource, error) {
+func mediaCertificates(cl client.Reader, namespace, name string, logf func(string, ...any)) (asset.CertSource, error) {
 	if name == "" {
 		return asset.NewSelfSigned()
-	}
-	cl, err := client.New(cfg, client.Options{Scheme: scheme})
-	if err != nil {
-		return nil, err
 	}
 	r, err := asset.NewReloading(context.Background(), secretKeyPair(cl, types.NamespacedName{Namespace: namespace, Name: name}), mediaCertReload)
 	if err != nil {

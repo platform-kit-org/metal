@@ -362,6 +362,8 @@ func (r *HostClaimReconciler) leavingControlPlanes(ctx context.Context, cluster 
 // of its control planes), or a boot of another of its control planes. It
 // reads the API server, not the cache: two claims reconciled back to back
 // must not both see none.
+//
+//pk:uncached
 func (r *HostClaimReconciler) etcdChangeInFlight(ctx context.Context, cluster, skip string) (string, error) {
 	ops := &metalv1alpha1.HostOperationList{}
 	if err := r.reader().List(ctx, ops, client.InNamespace(r.OperationsNamespace)); err != nil {

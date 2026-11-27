@@ -306,6 +306,8 @@ func (c managedCred) set() bool { return c.user != "" && c.pass != "" }
 //
 // A rotation the manager refuses therefore leaves every lane dialling with the
 // password that still works, whether or not the factory login does.
+//
+//pk:uncached
 func (r *EndpointConvergenceReconciler) credentials(ctx context.Context, ep *metalv1alpha1.ManagementEndpoint, pol *metalv1alpha1.CredentialsPolicy) (metav1.ConditionStatus, string, string, error) {
 	sec := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
 		Name: managedCredsName(ep.Name), Namespace: r.CredentialsNamespace,

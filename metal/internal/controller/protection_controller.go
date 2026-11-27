@@ -96,6 +96,8 @@ func (r *ProtectionReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 // the endpoint goes, and the release can no longer power the machine off
 // through it. A cache that has not yet seen another host behind the endpoint
 // bound to a claim would let it go.
+//
+//pk:uncached
 func (r *ProtectionReconciler) liveHosts(ctx context.Context) ([]metalv1alpha1.Host, error) {
 	reader := client.Reader(r.Client)
 	if r.APIReader != nil {
@@ -126,6 +128,8 @@ func claimedHostBehind(hosts []metalv1alpha1.Host, endpoint string) *metalv1alph
 // ensureFinalizer converges the protection finalizer on want with an
 // optimistic-lock patch: finalizers are a list, and a blind merge patch would
 // drop one someone else added in between.
+//
+//pk:cached-ok the patch carries the object's resourceVersion; Reconcile reads the hosts uncached before an endpoint's finalizer comes off
 func (r *ProtectionReconciler) ensureFinalizer(ctx context.Context, obj client.Object, want bool) error {
 	if controllerutil.ContainsFinalizer(obj, claimProtection) == want {
 		return nil

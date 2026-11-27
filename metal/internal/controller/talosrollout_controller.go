@@ -631,6 +631,8 @@ func (r *TalosRolloutReconciler) workload(ctx context.Context, cluster *osv1alph
 //
 // The rollouts are read from the API server: a cache that has not yet seen
 // another rollout's approval or its first step would let both start.
+//
+//pk:uncached
 func (r *TalosRolloutReconciler) otherHolder(ctx context.Context, ro *osv1alpha1.TalosRollout) (string, error) {
 	rollouts := &osv1alpha1.TalosRolloutList{}
 	if err := r.reader().List(ctx, rollouts, client.MatchingFields{rolloutClusterField: ro.Spec.ClusterRef.Name}); err != nil {

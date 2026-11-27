@@ -76,6 +76,8 @@ type EndpointConvergenceReconciler struct {
 	APIReader client.Reader
 	// Dial opens the sessions to the endpoint; nil dials over gofish.
 	Dial Dialer
+	// Probe reads the certificate the BMC presents; nil reads it over TLS.
+	Probe TLSProbe
 	// Audit writes a line for each change the lanes make to a BMC: a
 	// password set, an account disabled, an identity pushed, a restart.
 	Audit *audit.Logger

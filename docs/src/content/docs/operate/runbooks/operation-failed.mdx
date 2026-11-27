@@ -64,13 +64,13 @@ The operation stopped at the failed step. Steps before it stay done. The operato
 
 1. Correct the cause.
 
-2. Retry the operation. If the operator made it, the operator proposes the same plan again.
+2. Retry the operation. The command prints what comes next.
 
    ```sh
    pk-metal retry pk-metal/provision-simhw2288v5000397-0f3c9a1e
    ```
 
-3. Approve the new proposal.
+3. If it names `pk-metal approve`, approve the new proposal.
 
    ```sh
    pk-metal approve
@@ -80,11 +80,6 @@ The operation stopped at the failed step. Steps before it stay done. The operato
 
 <Callout type="note">
 The retry deletes the failed operation. Its lines in the operator audit log stay. To keep the full record, save it first: `kubectl -n pk-metal get hostoperation <name> -o yaml`. See [](ref:audit-trail).
-</Callout>
-
-<Callout type="note">
-`pk-metal retry` only deletes an operation that a person made, for example with [](cli:reboot). Make it again yourself.
-An operation of a rollout ends the rollout. Follow [](rb:rollout-paused).
 </Callout>
 
 <Callout type="note">

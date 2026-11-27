@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -96,4 +97,38 @@ func TestRetentionPausesOnARefusedDelete(t *testing.T) {
 	}
 	err = cl.Get(ctx, types.NamespacedName{Name: "f1"}, &osv1alpha1.EtcdSnapshot{})
 	assert.True(t, apierrors.IsNotFound(err), "a failed snapshot without a stored object is pruned: %v", err)
+}
+
+// One failed snapshot is one miss. While the next scheduled snapshot runs,
+// the policy stays BackedUp: the snapshot is not missed until it ends.
+func TestARunningSnapshotIsNotMissed(t *testing.T) {
+	now := time.Date(2026, 11, 27, 12, 0, 0, 0, time.UTC)
+	id, err := age.GenerateX25519Identity()
+	require.NoError(t, err)
+	policy := &osv1alpha1.EtcdBackupPolicy{
+		ObjectMeta: metav1.ObjectMeta{Name: "p"},
+		Spec: osv1alpha1.EtcdBackupPolicySpec{
+			ClusterRef: osv1alpha1.Reference{Name: "c"},
+			Interval:   metav1.Duration{Duration: time.Hour},
+			Sink:       osv1alpha1.EtcdBackupSink{PVC: &osv1alpha1.PVCSink{}},
+			Encryption: osv1alpha1.EtcdBackupEncryption{AgeRecipients: []string{id.Recipient().String()}},
+		},
+		Status: osv1alpha1.EtcdBackupPolicyStatus{LastScheduleTime: &metav1.Time{Time: now.Add(-10 * time.Minute)}},
+	}
+	running := backupSnapshot("s3", now.Add(-10*time.Minute), true, "c/s3.db.age")
+	running.Status.Conditions = nil
+	cl := fake.NewClientBuilder().WithScheme(testScheme(t)).
+		WithStatusSubresource(&osv1alpha1.EtcdBackupPolicy{}).
+		WithObjects(policy, &osv1alpha1.TalosCluster{ObjectMeta: metav1.ObjectMeta{Name: "c"}},
+			backupSnapshot("s1", now.Add(-130*time.Minute), true, "c/s1.db.age"),
+			backupSnapshot("s2", now.Add(-70*time.Minute), false, "c/s2.db.age"),
+			running).Build()
+	r := &EtcdBackupPolicyReconciler{&EtcdBackups{Client: cl, Dir: t.TempDir(), Now: func() time.Time { return now }}}
+
+	_, err = r.Reconcile(t.Context(), ctrl.Request{NamespacedName: types.NamespacedName{Name: "p"}})
+	require.NoError(t, err)
+	require.NoError(t, cl.Get(t.Context(), types.NamespacedName{Name: "p"}, policy))
+	c := meta.FindStatusCondition(policy.Status.Conditions, osv1alpha1.ConditionBackedUp)
+	require.NotNil(t, c)
+	assert.Equal(t, metav1.ConditionTrue, c.Status, c.Message)
 }

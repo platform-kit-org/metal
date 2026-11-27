@@ -98,7 +98,7 @@ Name at least two age recipients, for example two persons, or one person and a k
 | `Ready` | `SinkReady` | The cluster exists, and the sink and the recipients work. |
 | `Ready` | `SinkRefused`, `SinkUnavailable`, `RecipientsInvalid`, `ClusterNotFound` | The policy cannot take snapshots. |
 | `BackedUp` | `SnapshotRecent` | A verified snapshot is newer than two intervals. |
-| `BackedUp` | `NoSnapshot`, `BackupTooOld` | No verified snapshot, or the newest is older than two intervals. |
+| `BackedUp` | `NoSnapshot`, `BackupTooOld` | No verified snapshot, or the newest is older than two intervals. While a snapshot runs, the limit is 40 minutes longer. |
 
 Watch `status.consecutiveFailures`. Send an alert when it is above zero for longer than one interval.
 

@@ -42,7 +42,7 @@ Only a person with a private key can decrypt it, on that person's own machine.
   <dt>Verified</dt>
   <dd>The operator read the ciphertext back and its hash agrees. The plaintext was a valid bbolt database. Only a Verified snapshot can be restored.</dd>
   <dt>BackedUp</dt>
-  <dd>The policy condition. True while a Verified snapshot is newer than two intervals.</dd>
+  <dd>The policy condition. True while a Verified snapshot is newer than two intervals. A snapshot that runs is not a missed snapshot.</dd>
 </dl>
 
 ## Rules

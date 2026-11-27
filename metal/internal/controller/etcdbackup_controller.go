@@ -342,6 +342,10 @@ func (r *EtcdBackupPolicyReconciler) reconcile(ctx context.Context, p *osv1alpha
 		}
 	}
 	window := 2 * interval
+	if inProgress {
+		// The due snapshot runs: it is not missed until it ends.
+		window += memberWait + snapshotTimeout
+	}
 	var flip time.Duration // until BackedUp turns False on its own
 	switch last := st.LastSuccessfulSnapshot; {
 	case last == nil:

@@ -10,7 +10,6 @@ import (
 	"os"
 	"slices"
 	"strings"
-	"text/tabwriter"
 	"time"
 
 	"filippo.io/age"
@@ -238,15 +237,14 @@ func listSnapshots(ctx context.Context, cl client.Client, cluster string, now ti
 		fmt.Fprintln(w, "no etcd snapshots")
 		return nil
 	}
-	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(tw, "NAME\tCLUSTER\tTAKEN\tFROM\tSIZE\tSTATE\tRECIPIENTS\tLOCATION")
+	var rows [][]string
 	for i := range items {
 		s := &items[i]
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", s.Name, orDash(s.Status.ClusterName),
+		rows = append(rows, []string{s.Name, orDash(s.Status.ClusterName),
 			sinceTaken(now, snapTime(s)), orDash(s.Status.TakenFrom), humanBytes(s.Status.Size),
-			snapState(s), orDash(recipientTails(s.Status.Recipients)), orDash(s.Status.Location))
+			snapState(s), orDash(recipientTails(s.Status.Recipients)), orDash(s.Status.Location)})
 	}
-	return tw.Flush()
+	return writeTable(w, "NAME\tCLUSTER\tTAKEN\tFROM\tSIZE\tSTATE\tRECIPIENTS\tLOCATION", rows)
 }
 
 // recipientTailLen is how much of an age public key the list shows: enough

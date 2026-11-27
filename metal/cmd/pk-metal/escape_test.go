@@ -162,3 +162,34 @@ func TestTopEscapesTheText(t *testing.T) {
 	}
 	assert.Equal(t, 3, strings.Count(out, termtext.Escape(hostile)), "the subtitle, the console line and the status")
 }
+
+// Each cell of a table is escaped: a vendor, a reason, a user name or a
+// location can hold the text of a BMC or a cluster.
+func TestTablesEscapeEachCell(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2030, 1, 1, 13, 0, 0, 0, time.UTC)
+	t.Run("status", func(t *testing.T) {
+		assertEscaped(t, renderReport(statusReport{Hosts: []hostStatus{{Name: "h1", Vendor: hostile}}}))
+	})
+	t.Run("approve", func(t *testing.T) {
+		op, objs := bootPlan()
+		op.Spec.Reason = hostile
+		var out bytes.Buffer
+		require.NoError(t, listPending(ctx, fakeClient(objs...), &out, now))
+		assertEscaped(t, out.String())
+	})
+	t.Run("rollout", func(t *testing.T) {
+		ro := planned()
+		ro.Spec.Approval.ApprovedBy = hostile
+		var out bytes.Buffer
+		require.NoError(t, listRollouts(ctx, fakeClient(ro), &out, now))
+		assertEscaped(t, out.String())
+	})
+	t.Run("backup", func(t *testing.T) {
+		snap := verifiedSnapshot("dr-1", now, []byte("x"))
+		snap.Status.Location = hostile
+		var out bytes.Buffer
+		require.NoError(t, listSnapshots(ctx, fakeClient(snap), "dr", now, &out))
+		assertEscaped(t, out.String())
+	})
+}

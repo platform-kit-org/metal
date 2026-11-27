@@ -11,8 +11,8 @@ import (
 	"maps"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
-	"text/tabwriter"
 	"time"
 
 	"github.com/GSI-HPC/go-clikit/termtext"
@@ -404,17 +404,18 @@ func listPending(ctx context.Context, cl client.Client, w io.Writer, now time.Ti
 	slices.SortFunc(pending, func(a, b metalv1alpha1.HostOperation) int {
 		return strings.Compare(a.Namespace+"/"+a.Name, b.Namespace+"/"+b.Name)
 	})
-	tw := tabwriter.NewWriter(w, 2, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "OPERATION\tHOST\tWHY\tSTEPS\tPROPOSED BY\tAGE")
+	var rows [][]string
 	for _, op := range pending {
 		age := "-"
 		if !op.CreationTimestamp.IsZero() {
 			age = shortDuration(now.Sub(op.CreationTimestamp.Time))
 		}
-		fmt.Fprintf(tw, "%s/%s\t%s\t%s\t%d\t%s\t%s\n", op.Namespace, op.Name, op.Spec.HostRef.Name,
-			orDash(op.Spec.Reason), len(op.Spec.Actions), orDash(op.Spec.ProposedBy), age)
+		rows = append(rows, []string{op.Namespace + "/" + op.Name, op.Spec.HostRef.Name,
+			orDash(op.Spec.Reason), strconv.Itoa(len(op.Spec.Actions)), orDash(op.Spec.ProposedBy), age})
 	}
-	_ = tw.Flush()
+	if err := writeTable(w, "OPERATION\tHOST\tWHY\tSTEPS\tPROPOSED BY\tAGE", rows); err != nil {
+		return err
+	}
 	first := pending[0].Namespace + "/" + pending[0].Name
 	fmt.Fprintf(w, "\nNothing was approved. Name the operations to see their plans and approve them, for example:\n"+
 		"  pk-metal approve %s\n", first)

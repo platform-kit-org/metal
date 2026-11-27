@@ -8,8 +8,8 @@ import (
 	"os"
 	"slices"
 	"strings"
-	"text/tabwriter"
 
+	"github.com/GSI-HPC/go-clikit/cliout"
 	"github.com/GSI-HPC/go-clikit/termtext"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -397,12 +397,7 @@ func renderReport(rep statusReport) string {
 		if sb.Len() > 0 {
 			sb.WriteString("\n")
 		}
-		w := tabwriter.NewWriter(&sb, 2, 0, 2, ' ', 0)
-		fmt.Fprintln(w, header)
-		for _, r := range rows {
-			fmt.Fprintln(w, strings.Join(r, "\t"))
-		}
-		_ = w.Flush()
+		_ = writeTable(&sb, header, rows)
 		for _, n := range notes {
 			fmt.Fprintf(&sb, "  %s\n", termtext.Escape(n))
 		}
@@ -480,6 +475,17 @@ func renderReport(rep statusReport) string {
 	renderClusters(rep, section)
 	renderRollouts(rep, section)
 	return sb.String()
+}
+
+// writeTable writes rows under a header of column names separated by tabs.
+// cliout aligns the columns by the width that a terminal gives the text, and
+// escapes each cell: a cell can hold the text of a BMC or a cluster.
+func writeTable(w io.Writer, header string, rows [][]string) error {
+	t := cliout.Table{Rows: rows}
+	for _, name := range strings.Split(header, "\t") {
+		t.Columns = append(t.Columns, cliout.Column{Name: name})
+	}
+	return t.Write(w, false)
 }
 
 // note is the "why" line under a table: the controller's sentence, or the bare

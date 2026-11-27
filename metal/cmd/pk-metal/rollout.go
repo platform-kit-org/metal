@@ -9,7 +9,6 @@ import (
 	"os"
 	"slices"
 	"strings"
-	"text/tabwriter"
 	"time"
 
 	"github.com/GSI-HPC/go-clikit/termtext"
@@ -181,8 +180,7 @@ func listRollouts(ctx context.Context, cl client.Client, w io.Writer, now time.T
 		}
 		return strings.Compare(a.Name, b.Name)
 	})
-	tw := tabwriter.NewWriter(w, 2, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ROLLOUT\tCLUSTER\tKIND\tTARGET\tNODES\tSTATE\tAPPROVED BY\tAGE")
+	var rows [][]string
 	for i := range list.Items {
 		ro := &list.Items[i]
 		done := 0
@@ -195,11 +193,10 @@ func listRollouts(ctx context.Context, cl client.Client, w io.Writer, now time.T
 		if !ro.CreationTimestamp.IsZero() {
 			age = shortDuration(now.Sub(ro.CreationTimestamp.Time))
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d/%d\t%s\t%s\t%s\n", ro.Name, ro.Spec.ClusterRef.Name, ro.Spec.Kind,
-			orDash(rolloutTarget(ro)), done, len(ro.Status.Plan), rolloutState(ro), orDash(ro.Spec.Approval.ApprovedBy), age)
+		rows = append(rows, []string{ro.Name, ro.Spec.ClusterRef.Name, string(ro.Spec.Kind), orDash(rolloutTarget(ro)),
+			fmt.Sprintf("%d/%d", done, len(ro.Status.Plan)), rolloutState(ro), orDash(ro.Spec.Approval.ApprovedBy), age})
 	}
-	_ = tw.Flush()
-	return nil
+	return writeTable(w, "ROLLOUT\tCLUSTER\tKIND\tTARGET\tNODES\tSTATE\tAPPROVED BY\tAGE", rows)
 }
 
 func rolloutTarget(ro *osv1alpha1.TalosRollout) string {

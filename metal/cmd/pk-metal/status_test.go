@@ -142,7 +142,7 @@ func TestRenderStatus(t *testing.T) {
 	rep := buildReport(hosts, eps, claims, ops, nodes)
 	out := renderReport(rep)
 
-	// Column content, not tabwriter's widths, is the contract: assert row shapes.
+	// Column content, not the column widths, is the contract: assert row shapes.
 	assert.Regexp(t, `(?m)^HOST\s+ASSET\s+VENDOR\s+PHASE\s+CLAIM\s+NODE\s+PATHS\s+BLOCKED$`, out)
 	assert.Regexp(t, `(?m)^simhw2288v5000391\s+rack1-u12\s+Huawei\s+Provisioning\s+default/fleet-a\s+node-2 \(10\.0\.0\.12\)\s+1/2\s+OperationFailed$`, out,
 		"a host whose claim is stuck shows the claim's reason")

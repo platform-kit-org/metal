@@ -231,16 +231,3 @@ func (r *RolloutProposer) SetupWithManager(mgr ctrl.Manager) error {
 		Named("rolloutproposer").
 		Complete(r)
 }
-
-// rolloutLane wires the rollout controller and its proposer together.
-type rolloutLane struct {
-	run     *TalosRolloutReconciler
-	propose *RolloutProposer
-}
-
-func (l rolloutLane) SetupWithManager(mgr ctrl.Manager) error {
-	if err := l.run.SetupWithManager(mgr); err != nil {
-		return err
-	}
-	return l.propose.SetupWithManager(mgr)
-}

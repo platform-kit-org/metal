@@ -651,14 +651,6 @@ func (r *EtcdSnapshotReconciler) pickMember(ctx context.Context, talosconfig []b
 	return nil, strings.Join(problems, ", ")
 }
 
-// SetupWithManager wires both backup reconcilers: they are one lane.
-func (b *EtcdBackups) SetupWithManager(mgr ctrl.Manager) error {
-	if err := (&EtcdBackupPolicyReconciler{b}).SetupWithManager(mgr); err != nil {
-		return err
-	}
-	return (&EtcdSnapshotReconciler{b}).SetupWithManager(mgr)
-}
-
 func (r *EtcdSnapshotReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&osv1alpha1.EtcdSnapshot{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).

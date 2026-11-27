@@ -47,15 +47,13 @@ const (
 	laneCount
 )
 
-// AllLanes is every lane: what the manager runs.
-var AllLanes = []Lane{
-	LaneAsset, LaneEndpoint, LaneHost, LaneHostClaim, LaneProtection, LaneHostOperation,
-	LaneConvergence, LaneEndpointConvergence, LaneTalosNode, LaneTalosCluster, LaneBootAsset,
-	LaneEtcdBackup,
-	LaneTalosRollout,
-	LaneMaintenanceWindow,
-	LaneSettings,
-}
+// AllLanes is every lane, in lane order: what the manager runs.
+var AllLanes = func() (all []Lane) {
+	for l := range laneCount {
+		all = append(all, l)
+	}
+	return all
+}()
 
 // Options is what the reconcilers are configured with. The manager fills it
 // from its flags. A test fills what its lanes need; a field left at its zero
@@ -284,21 +282,19 @@ func (o Options) reconciler(mgr ctrl.Manager, l Lane) (string, reconciler) {
 			CheckInterval: o.CheckInterval, ReadyInterval: o.ReadyInterval,
 		}
 	case LaneEtcdBackup:
-		return "etcd backup", &EtcdBackups{
+		b := &EtcdBackups{
 			Client: c, Namespace: o.CredentialsNamespace, Dial: o.TalosDial,
 			Dir: o.EtcdBackupDir, VolumeName: o.EtcdBackupVolume, Self: self,
 			RetryInterval: o.CheckInterval,
 		}
+		return "etcd backup", reconcilers{&EtcdBackupPolicyReconciler{b}, &EtcdSnapshotReconciler{b}}
 	case LaneTalosRollout:
-		return "talosrollout", rolloutLane{
-			run: &TalosRolloutReconciler{
-				Client: c, Namespace: o.CredentialsNamespace,
-				OperationsNamespace: o.OperationsNamespace, Proposer: o.Proposer,
-				Factory: o.Factory, ResolveImage: o.ResolveImage, Dial: o.TalosDial,
-				Workload: o.Workload, GateInterval: o.GateInterval, Audit: o.Audit,
-			},
-			propose: &RolloutProposer{Client: c, Proposer: o.Proposer, Namespace: o.CredentialsNamespace},
-		}
+		return "talosrollout", reconcilers{&TalosRolloutReconciler{
+			Client: c, Namespace: o.CredentialsNamespace,
+			OperationsNamespace: o.OperationsNamespace, Proposer: o.Proposer,
+			Factory: o.Factory, ResolveImage: o.ResolveImage, Dial: o.TalosDial,
+			Workload: o.Workload, GateInterval: o.GateInterval, Audit: o.Audit,
+		}, &RolloutProposer{Client: c, Proposer: o.Proposer, Namespace: o.CredentialsNamespace}}
 	case LaneMaintenanceWindow:
 		return "maintenancewindow", &MaintenanceWindowReconciler{Client: c}
 	case LaneSettings:

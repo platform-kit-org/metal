@@ -84,16 +84,9 @@ The unattended task [](lab:scale) does all steps without your hands, and it exam
    export TALOSCONFIG=$PWD/.lab/talosconfig
    ```
 
-4. Write a kubeconfig for a member of the admin group. The admin of kind is not a member.
-
-   ```sh
-   yq '.users[].user.as = "lab-admin"
-     | .users[].user."as-groups" = ["system:masters", "pk-metal:admins", "system:authenticated"]' \
-     .lab/kubeconfig > .lab/admin.kubeconfig
-   ```
-
-   Only a member of the admin group can make a claim that installs a node. The same is true when a claim moves to a different machine. See [](ref:admission-policies).
-   The file uses impersonation, which is a shortcut of the lab. On a real site, your login gives you the group.
+[](lab:up) wrote `.lab/admin.kubeconfig` for a second user, `lab-admin`, who is a member of the admin group. The admin of kind is not a member.
+Only a member of the admin group can make a claim that installs a node. The same is true when a claim moves to a different machine. See [](ref:admission-policies).
+The file uses impersonation, which is a shortcut of the lab. On a real site, your login gives you the group.
 
 <Checkpoint>
 `lab:wait` ends with `converged after`. This command shows three etcd members:

@@ -574,6 +574,8 @@ cluster_up() {
   from an earlier run is removed with: mise run lab:down"
   fi
   chmod 600 "$lab_dir/kubeconfig"
+  # The second person of the day-2 rounds and the tutorials.
+  impersonating_kubeconfig "$lab_dir/kubeconfig" "$lab_dir/admin.kubeconfig" lab-admin
 }
 
 # A YAML string, quoted: the proxy settings are the person's text.
@@ -832,20 +834,36 @@ fleet_down() {
   rm -f "$lab_dir/fleet.pid" "$lab_dir/fleet.running.yaml"
 }
 
-# Applies manifests as a member of the platform admins. The claim policy lets
-# only that group give a claim an OS (spec.os) or waive its approval, and kind's
-# own admin is not in it, so this impersonates a member: the group
-# metal/config/lab binds. A binding does not make anybody a member: a real site
-# puts its people into the group through client certificates (O=) or its
-# identity provider.
+# A member of the platform admins, for kubectl. The claim policy lets only that
+# group give a claim an OS (spec.os) or waive its approval, and kind's own admin
+# is not in it, so the lab impersonates a member: the group metal/config/lab
+# binds. A binding does not make anybody a member: a real site puts its people
+# into the group through client certificates (O=) or its identity provider.
+ADMIN_AS=(--as=lab-admin --as-group=pk-metal:admins --as-group=system:authenticated)
+
+# Writes a kubeconfig that acts as another person: the lab's admin
+# impersonates the user. Proposing and approving must be two people (the lab
+# forbids an approval by whoever proposed or requested a change:
+# selfApproval: Forbidden, metal/config/lab/approval.yaml), and the lab has one
+# admin. system:masters gives the user the permissions; pk-metal:admins is the
+# group the claim policy asks for.
+impersonating_kubeconfig() {
+  local from=$1 to=$2 user=$3
+  (umask 077 && IMPERSONATE=$user yq '
+    .users[].user.as = strenv(IMPERSONATE)
+    | .users[].user["as-groups"] = ["system:masters", "pk-metal:admins", "system:authenticated"]' "$from" >"$to.tmp") \
+    || die "could not write $to from $from. Check that yq is on the PATH: mise run lab:doctor"
+  mv "$to.tmp" "$to"
+}
+
+# Applies manifests as a member of the platform admins.
 admin_apply() {
   local path args=()
   for path in "$@"; do
     [[ -e $path ]] || die "$path does not exist. Name manifest files or directories, e.g.: mise run lab:apply .lab/generated/manifests/30-claims.yaml"
     args+=(-f "$path")
   done
-  kubectl apply --server-side --as=lab-admin --as-group=pk-metal:admins \
-    --as-group=system:authenticated "${args[@]}" >&2
+  kubectl apply --server-side "${ADMIN_AS[@]}" "${args[@]}" >&2
 }
 
 manifests_apply() {
@@ -1169,11 +1187,9 @@ release() {
   step "releasing $claim (Host $host), waiting up to ${timeout}s for the Host to be Available"
   # The release is lab-admin's request (the requested-by policy wants its
   # name on the claim first), so that the kind admin may approve its result.
-  kubectl -n "$namespace" annotate hostclaim "$name" --overwrite \
-    --as=lab-admin --as-group=pk-metal:admins --as-group=system:authenticated \
+  kubectl -n "$namespace" annotate hostclaim "$name" --overwrite "${ADMIN_AS[@]}" \
     metal.platform-kit.org/requested-by=lab-admin >&2
-  kubectl -n "$namespace" delete hostclaim "$name" --wait=false \
-    --as=lab-admin --as-group=pk-metal:admins --as-group=system:authenticated >&2
+  kubectl -n "$namespace" delete hostclaim "$name" --wait=false "${ADMIN_AS[@]}" >&2
   while true; do
     approve_pending "$root" "$lab_dir" >/dev/null || true
     phase=$(host_phase "$host") || phase=""
@@ -1200,20 +1216,6 @@ guard_lift() {
     || die "kubectl auth whoami did not answer, so the lab cannot name who lifts the guard. Check the cluster: kubectl --kubeconfig $KUBECONFIG cluster-info"
   [[ -n $user ]] || die "the cluster reports no username for $KUBECONFIG, so the lab cannot name who lifts the guard. Check it: kubectl --kubeconfig $KUBECONFIG auth whoami"
   printf '%s: %s' "$user" "$why"
-}
-
-# Writes a kubeconfig for a second person. pk-metal reboot records its caller
-# as the proposer, and the lab forbids an approval by the proposer
-# (selfApproval: Forbidden, metal/config/lab/approval.yaml), so the lab proposes as lab-proposer (the lab's admin impersonates it) and
-# approves as itself. system:masters gives the impersonated user the
-# permissions; it is not a member of the admin group, which a reboot does not
-# need.
-proposer_kubeconfig() {
-  local lab_dir=$1 file=$2
-  (umask 077 && yq '.users[].user.as = "lab-proposer"
-    | .users[].user."as-groups" = ["system:masters", "system:authenticated"]' "$lab_dir/kubeconfig" >"$file.tmp") \
-    || die "could not write $file from $lab_dir/kubeconfig. Check that yq is on the PATH: mise run lab:doctor"
-  mv "$file.tmp" "$file"
 }
 
 # Prints the name of a TalosNode of the role whose Host is Provisioned, or
@@ -1307,10 +1309,8 @@ day2_reboot_node() {
 # first; every lab has a control plane.
 day2_reboot() {
   local root=$1 lab_dir=$2 gen=$3 timeout=$4
-  local cluster_name proposer worker cp override=""
+  local cluster_name proposer=$lab_dir/admin.kubeconfig worker cp override=""
   cluster_name=$(lab_value "$gen" TALOS_CLUSTER)
-  proposer=$lab_dir/proposer.kubeconfig
-  proposer_kubeconfig "$lab_dir" "$proposer"
   worker=$(running_node worker)
   if [[ -n $worker ]]; then
     day2_reboot_node "$root" "$lab_dir" "$proposer" "$worker" "" "$timeout"
@@ -1447,8 +1447,7 @@ day2_scale() {
   # Creating a claim that names a node, and moving a claim to another
   # machine, are an admin's decisions (the claim policy): scale and replace
   # run as a member of the admin group, as a site's admin would.
-  admin=$lab_dir/scale-admin.kubeconfig
-  impersonating_kubeconfig "$lab_dir/kubeconfig" "$admin" lab-admin
+  admin=$lab_dir/admin.kubeconfig
   size="$(lab_value "$gen" CONTROL_PLANES)cp+$(lab_value "$gen" WORKERS)w"
   [[ $size == 3cp+2w ]] \
     || die "the scale round needs the lab at three control planes and two workers.
@@ -1656,10 +1655,9 @@ day2_upgrade() {
     mise run lab:down && mise run lab:reset && PK_LAB_TALOS=v1.14.5 mise run lab:up && mise run lab:wait"
   step "day 2: upgrade cluster $cluster_name from Talos $current to $target"
   # pk-metal upgrade names its caller as the requester of the rollout, and
-  # the lab forbids an approval by the requester: lab-proposer asks, the kind
+  # the lab forbids an approval by the requester: lab-admin asks, the kind
   # admin approves.
-  proposer_kubeconfig "$lab_dir" "$lab_dir/upgrade-proposer.kubeconfig"
-  KUBECONFIG=$lab_dir/upgrade-proposer.kubeconfig "$root/metal/bin/pk-metal" upgrade --wait 5m talos "$cluster_name" "$target" >&2
+  KUBECONFIG=$lab_dir/admin.kubeconfig "$root/metal/bin/pk-metal" upgrade --wait 5m talos "$cluster_name" "$target" >&2
   name=$(rollout_wait_proposed "$cluster_name" TalosUpgrade 300)
   rollout_through "$root" "$lab_dir" "$name" "$timeout"
   stale=$(kubectl get talosnodes --output json | jq -r --arg v "$target" '
@@ -1685,12 +1683,11 @@ day2_config_change() {
   before=$(boot_ids "$lab_dir/workload.kubeconfig")
   step "day 2: label every node lab.platform-kit.org/day2=$stamp (a change that needs no reboot)"
   while read -r node; do
-    # lab-proposer asks for the change (the requested-by policy wants its
+    # lab-admin asks for the change (the requested-by policy wants its
     # name in the same request), so that the kind admin may approve the
     # rollout it causes.
-    kubectl patch talosnode "$node" --type merge \
-      --as=lab-proposer --as-group=system:masters --as-group=system:authenticated \
-      --patch "{\"metadata\":{\"annotations\":{\"metal.platform-kit.org/requested-by\":\"lab-proposer\"}},\"spec\":{\"labels\":{\"lab.platform-kit.org/day2\":\"$stamp\"}}}" >&2
+    kubectl --kubeconfig "$lab_dir/admin.kubeconfig" patch talosnode "$node" --type merge \
+      --patch "{\"metadata\":{\"annotations\":{\"metal.platform-kit.org/requested-by\":\"lab-admin\"}},\"spec\":{\"labels\":{\"lab.platform-kit.org/day2\":\"$stamp\"}}}" >&2
   done < <(kubectl get talosnodes --output json | jq -r --arg c "$cluster_name" '
     .items[] | select(.spec.clusterRef.name == $c) | .metadata.name')
   name=$(rollout_wait_proposed "$cluster_name" Config 600)
@@ -1951,6 +1948,7 @@ pivot() {
     kind delete cluster --name "$cluster" >&2
     cp "$lab_dir/workload.kubeconfig" "$lab_dir/kubeconfig"
     chmod 600 "$lab_dir/kubeconfig"
+    impersonating_kubeconfig "$lab_dir/kubeconfig" "$lab_dir/admin.kubeconfig" lab-admin
     echo "$first" >"$lab_dir/$PIVOT_MARK"
     echo "  the lab's kubeconfig names TalosCluster $first now" >&2
   fi
@@ -2013,16 +2011,6 @@ age_identity() {
       || die "could not make an age identity with go run filippo.io/age/cmd/age-keygen. Check that Go works: cd metal && go env"
   fi
   sed -n 's/^# public key: //p' "$file"
-}
-
-# A kubeconfig that acts as another person: the lab's admin impersonating
-# user. Proposing and approving must be two people (the approval policy
-# refuses an approval by whoever proposed), and the lab has one admin.
-impersonating_kubeconfig() {
-  local from=$1 to=$2 user=$3
-  (umask 077 && IMPERSONATE=$user yq '
-    .users[].user.as = strenv(IMPERSONATE)
-    | .users[].user["as-groups"] = ["system:masters", "pk-metal:admins", "system:authenticated"]' "$from" >"$to")
 }
 
 # Sets a marker ConfigMap in the workload cluster: one written before the
@@ -2116,8 +2104,7 @@ day2_backup_restore() {
   step "EtcdBackupPolicy $policy, a snapshot, and markers around it"
   # Only a member of the admin group creates a backup policy
   # (metal/config/policy/etcdbackuppolicy-guard.yaml): act as one.
-  kubectl apply --server-side --as=lab-admin --as-group=pk-metal:admins \
-    --as-group=system:authenticated -f - >&2 <<EOF
+  kubectl apply --server-side "${ADMIN_AS[@]}" -f - >&2 <<EOF
 apiVersion: os.platform-kit.org/v1alpha1
 kind: EtcdBackupPolicy
 metadata:
@@ -2259,7 +2246,7 @@ down() {
   registry_down
   rm -f "$lab_dir/kubeconfig" "$lab_dir/workload.kubeconfig" "$lab_dir/talosconfig" \
     "$lab_dir/second.kubeconfig" "$lab_dir/second.talosconfig" \
-    "$lab_dir/scale-admin.kubeconfig"
+    "$lab_dir/admin.kubeconfig"
   "$root/lab/net.sh" down
   # The pivot mark stays: after a pivot the disks still hold the moved
   # operator, and only reset, which wipes them, lets the next up start.

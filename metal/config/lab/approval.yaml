@@ -1,6 +1,6 @@
 # The lab forbids approving your own proposal (selfApproval, the base's default
 # is Allowed), so that every lab run passes through the stricter rule: the
-# lab proposes as lab-proposer and approves as the kind cluster's admin, and
+# lab proposes as lab-admin and approves as the kind cluster's admin, and
 # the operator's own proposals are approved by that admin too.
 apiVersion: v1
 kind: ConfigMap

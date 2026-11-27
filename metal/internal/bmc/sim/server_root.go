@@ -293,9 +293,5 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteSession(w http.ResponseWriter, r *http.Request) {
-	if err := s.st.deleteSession(r.PathValue("id")); err != nil {
-		s.fail(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	s.noContent(w, s.st.deleteSession(r.PathValue("id")))
 }

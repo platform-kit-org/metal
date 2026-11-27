@@ -176,11 +176,7 @@ func (s *Server) insertMedia(w http.ResponseWriter, r *http.Request) {
 			creds.Password = *body.Password
 		}
 	}
-	if err := s.st.InsertMedia(r.Context(), slot, body.Image, creds); err != nil {
-		s.fail(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	s.noContent(w, s.st.InsertMedia(r.Context(), slot, body.Image, creds))
 }
 
 func (s *Server) ejectMedia(w http.ResponseWriter, r *http.Request) {
@@ -189,11 +185,7 @@ func (s *Server) ejectMedia(w http.ResponseWriter, r *http.Request) {
 		s.noResource(w, r)
 		return
 	}
-	if err := s.st.EjectMedia(r.Context(), slot); err != nil {
-		s.fail(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	s.noContent(w, s.st.EjectMedia(r.Context(), slot))
 }
 
 // vmmControl is the iBMC's OEM action: {VmmControlType: Connect|Disconnect,

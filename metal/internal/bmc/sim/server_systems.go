@@ -143,11 +143,7 @@ func (s *Server) patchSystem(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, refuse("the request changes no property this resource can update (Boot)"))
 		return
 	}
-	if err := s.st.patchBoot(r.PathValue("id"), body.Boot.Enabled, body.Boot.Target, body.Boot.Mode); err != nil {
-		s.fail(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	s.noContent(w, s.st.patchBoot(r.PathValue("id"), body.Boot.Enabled, body.Boot.Target, body.Boot.Mode))
 }
 
 func (s *Server) reset(w http.ResponseWriter, r *http.Request) {
@@ -161,11 +157,7 @@ func (s *Server) reset(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, missing("ComputerSystem.Reset", "ResetType"))
 		return
 	}
-	if err := s.st.SetPower(r.Context(), r.PathValue("id"), bmc.PowerAction(body.ResetType)); err != nil {
-		s.fail(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	s.noContent(w, s.st.SetPower(r.Context(), r.PathValue("id"), bmc.PowerAction(body.ResetType)))
 }
 
 func (s *Server) systemNICs(w http.ResponseWriter, r *http.Request) {
@@ -329,9 +321,5 @@ func (s *Server) patchBiosSettings(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, refuse("the request changes no property this resource can update (Attributes)"))
 		return
 	}
-	if err := s.st.stageBios(r.Context(), r.PathValue("id"), body.Attributes, body.ApplyTime.ApplyTime); err != nil {
-		s.fail(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	s.noContent(w, s.st.stageBios(r.Context(), r.PathValue("id"), body.Attributes, body.ApplyTime.ApplyTime))
 }

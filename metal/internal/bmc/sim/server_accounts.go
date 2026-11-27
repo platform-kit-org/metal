@@ -84,11 +84,7 @@ func (s *Server) patchAccount(w http.ResponseWriter, r *http.Request) {
 	if !s.decode(w, r, &body) {
 		return
 	}
-	if err := s.st.patchAccount(r.PathValue("id"), body); err != nil {
-		s.fail(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	s.noContent(w, s.st.patchAccount(r.PathValue("id"), body))
 }
 
 func (s *Server) createAccount(w http.ResponseWriter, r *http.Request) {

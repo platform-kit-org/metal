@@ -312,3 +312,12 @@ func (s *Server) accepted(w http.ResponseWriter, t task) {
 	}
 	writeJSON(w, http.StatusAccepted, taskDoc(t, s.f.Protocol.TaskFailureCompleted))
 }
+
+// noContent answers 204, or the error.
+func (s *Server) noContent(w http.ResponseWriter, err error) {
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}

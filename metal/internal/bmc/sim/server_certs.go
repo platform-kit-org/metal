@@ -160,11 +160,7 @@ func (s *Server) replaceCertificate(w http.ResponseWriter, r *http.Request) {
 	case body.CertificateType != "PEM" && body.CertificateType != "PEMchain":
 		s.fail(w, notInList("ActionParameterValueNotInList", "CertificateType", body.CertificateType))
 	default:
-		if err := s.st.ImportServerCertificate(r.Context(), []byte(body.CertificateString)); err != nil {
-			s.fail(w, err)
-			return
-		}
-		w.WriteHeader(http.StatusNoContent)
+		s.noContent(w, s.st.ImportServerCertificate(r.Context(), []byte(body.CertificateString)))
 	}
 }
 

@@ -27,20 +27,7 @@ const vmmControlAction = "#VirtualMedia.VmmControl"
 //
 // The answer is kept for the session.
 func (c *client) mediaCollection() (string, error) {
-	c.memo.Lock()
-	coll := c.memo.mediaColl
-	c.memo.Unlock()
-	if coll != nil {
-		return *coll, nil
-	}
-	uri, err := c.findMediaCollection()
-	if err != nil {
-		return "", err
-	}
-	c.memo.Lock()
-	c.memo.mediaColl = &uri
-	c.memo.Unlock()
-	return uri, nil
+	return once(&c.memo.Mutex, &c.memo.mediaColl, c.findMediaCollection)
 }
 
 func (c *client) findMediaCollection() (string, error) {

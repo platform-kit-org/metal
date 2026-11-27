@@ -92,12 +92,30 @@ type client struct {
 	memo struct {
 		sync.Mutex
 		root       *rootLinks
-		managerURI string
-		managerDoc []byte // the manager as first read: links only are taken from it
-		chassisURI string
+		manager    *managerFound
+		chassisURI *string
 		update     *updateService
 		mediaColl  *string
 	}
+}
+
+// once returns the value in slot, or finds it and keeps it there for the
+// session. A failure is not kept: the next call looks again.
+func once[T any](mu *sync.Mutex, slot **T, find func() (T, error)) (T, error) {
+	mu.Lock()
+	kept := *slot
+	mu.Unlock()
+	if kept != nil {
+		return *kept, nil
+	}
+	v, err := find()
+	if err != nil {
+		return v, err
+	}
+	mu.Lock()
+	*slot = &v
+	mu.Unlock()
+	return v, nil
 }
 
 // rootLinks are the service root's links this package follows.
@@ -110,20 +128,12 @@ type rootLinks struct {
 
 // root reads the service root's links, once per session.
 func (c *client) root() (rootLinks, error) {
-	c.memo.Lock()
-	r := c.memo.root
-	c.memo.Unlock()
-	if r != nil {
-		return *r, nil
-	}
-	r = &rootLinks{}
-	if _, err := c.getJSON(c.svc.ODataID, r); err != nil {
-		return rootLinks{}, fmt.Errorf("bmc: service root: %w", err)
-	}
-	c.memo.Lock()
-	c.memo.root = r
-	c.memo.Unlock()
-	return *r, nil
+	return once(&c.memo.Mutex, &c.memo.root, func() (r rootLinks, err error) {
+		if _, err := c.getJSON(c.svc.ODataID, &r); err != nil {
+			return r, fmt.Errorf("bmc: service root: %w", err)
+		}
+		return r, nil
+	})
 }
 
 var errReadOnly = fmt.Errorf("bmc: mutating call refused (read-only client)")
@@ -756,40 +766,36 @@ func (c *client) firstReadable(what, coll string, prefer []string, read func(uri
 	return "", fmt.Errorf("bmc: endpoint exposes no %s", what)
 }
 
-// managerURI finds the manager once per session: the first member of the
+// managerFound is where the manager lives, and the manager resource as
+// first read: only its links are taken from it.
+type managerFound struct {
+	uri string
+	doc []byte
+}
+
+// findManager finds the manager once per session: the first member of the
 // Managers collection that reads.
-func (c *client) managerURI() (string, error) {
-	c.memo.Lock()
-	uri := c.memo.managerURI
-	c.memo.Unlock()
-	if uri != "" {
-		return uri, nil
-	}
-	root, err := c.root()
-	if err != nil {
-		return "", err
-	}
-	var body []byte
-	uri, err = c.firstReadable("managers", root.Managers.ODataID, nil, func(uri string) (err error) {
-		body, _, err = c.getRaw(uri)
-		return err
+func (c *client) findManager() (managerFound, error) {
+	return once(&c.memo.Mutex, &c.memo.manager, func() (m managerFound, err error) {
+		root, err := c.root()
+		if err != nil {
+			return m, err
+		}
+		m.uri, err = c.firstReadable("managers", root.Managers.ODataID, nil, func(uri string) (err error) {
+			m.doc, _, err = c.getRaw(uri)
+			return err
+		})
+		return m, err
 	})
-	if err != nil {
-		return "", err
-	}
-	c.memo.Lock()
-	c.memo.managerURI, c.memo.managerDoc = uri, body
-	c.memo.Unlock()
-	return uri, nil
 }
 
 // manager reads the manager, fresh.
 func (c *client) manager() (*schemas.Manager, error) {
-	uri, err := c.managerURI()
+	found, err := c.findManager()
 	if err != nil {
 		return nil, err
 	}
-	m, err := schemas.GetManager(c.api, uri)
+	m, err := schemas.GetManager(c.api, found.uri)
 	if err != nil {
 		return nil, fmt.Errorf("bmc: manager: %w", err)
 	}
@@ -801,13 +807,11 @@ func (c *client) manager() (*schemas.Manager, error) {
 // network protocol, the OEM services), which do not change while a session
 // lasts; a property that does is read with manager.
 func (c *client) managerDoc(v any) error {
-	if _, err := c.managerURI(); err != nil {
+	found, err := c.findManager()
+	if err != nil {
 		return err
 	}
-	c.memo.Lock()
-	body := c.memo.managerDoc
-	c.memo.Unlock()
-	if err := json.Unmarshal(body, v); err != nil {
+	if err := json.Unmarshal(found.doc, v); err != nil {
 		return fmt.Errorf("bmc: manager: %w", err)
 	}
 	return nil
@@ -870,27 +874,16 @@ func (c *client) managerHostname(m *schemas.Manager) string {
 // comes first. The members of the Chassis collection, in the order the
 // service lists them, follow.
 func (c *client) chassisURI() (string, error) {
-	c.memo.Lock()
-	uri := c.memo.chassisURI
-	c.memo.Unlock()
-	if uri != "" {
-		return uri, nil
-	}
-	root, err := c.root()
-	if err != nil {
-		return "", err
-	}
-	uri, err = c.firstReadable("chassis", root.Chassis.ODataID, c.systemChassisLinks(root), func(uri string) error {
-		_, err := c.getJSON(uri, nil)
-		return err
+	return once(&c.memo.Mutex, &c.memo.chassisURI, func() (string, error) {
+		root, err := c.root()
+		if err != nil {
+			return "", err
+		}
+		return c.firstReadable("chassis", root.Chassis.ODataID, c.systemChassisLinks(root), func(uri string) error {
+			_, err := c.getJSON(uri, nil)
+			return err
+		})
 	})
-	if err != nil {
-		return "", err
-	}
-	c.memo.Lock()
-	c.memo.chassisURI = uri
-	c.memo.Unlock()
-	return uri, nil
 }
 
 // systemChassisLinks lists the chassis the first system names in

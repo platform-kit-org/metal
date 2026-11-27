@@ -42,13 +42,12 @@ const (
 // errUnauthenticated: the peer's line carried no valid MAC.
 var errUnauthenticated = errors.New("unauthenticated")
 
-// newNonce draws a connection's challenge.
-func newNonce() (string, error) {
-	var b [16]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(b[:]), nil
+// randomHex draws n random bytes, as hex: a nonce, a stream id, a secret.
+// crypto/rand.Read does not fail.
+func randomHex(n int) string {
+	b := make([]byte, n)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
 }
 
 // lineMAC is the MAC a peer sends for verb and arg on the connection whose
@@ -129,11 +128,7 @@ func LoadSecret(path string, create bool) (secret []byte, created bool, err erro
 	if !errors.Is(err, os.ErrNotExist) || !create {
 		return nil, false, err
 	}
-	var b [32]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return nil, false, err
-	}
-	s := []byte(hex.EncodeToString(b[:]))
+	s := []byte(randomHex(32))
 	// O_EXCL: two relays started at once on the same path must not each
 	// write a secret and keep a different one.
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)

@@ -29,8 +29,6 @@ package relay
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"net"
@@ -121,11 +119,7 @@ func acceptLoop(ln net.Listener, handle func(net.Conn)) error {
 
 func (r *relay) handleTunnel(c net.Conn) {
 	_ = c.SetDeadline(time.Now().Add(r.handshakeTimeout))
-	nonce, err := newNonce()
-	if err != nil {
-		_ = c.Close()
-		return
-	}
+	nonce := randomHex(16)
 	if _, err := io.WriteString(c, greeting+" "+nonce+"\n"); err != nil {
 		_ = c.Close()
 		return
@@ -165,25 +159,20 @@ func (r *relay) register(c net.Conn) {
 	}
 	r.control = c
 	r.mu.Unlock()
-	if _, err := fmt.Fprintf(c, "OK front=%s\n", r.advertise); err != nil {
+	defer func() {
 		r.mu.Lock()
 		if r.control == c {
 			r.control = nil
 		}
 		r.mu.Unlock()
 		_ = c.Close()
+	}()
+	if _, err := fmt.Fprintf(c, "OK front=%s\n", r.advertise); err != nil {
 		return
 	}
-
 	// The operator sends nothing further on the control connection; this read
 	// exists purely to notice it vanishing.
 	_, _ = io.Copy(io.Discard, c)
-	r.mu.Lock()
-	if r.control == c {
-		r.control = nil
-	}
-	r.mu.Unlock()
-	_ = c.Close()
 }
 
 // accept delivers an operator dial-back to the front handler waiting under the
@@ -236,11 +225,7 @@ func (r *relay) handleFront(c net.Conn) {
 		return
 	}
 
-	id, err := newID()
-	if err != nil {
-		_ = c.Close()
-		return
-	}
+	id := randomHex(8)
 	ch := make(chan net.Conn, 1)
 	r.mu.Lock()
 	r.pending[id] = ch
@@ -275,14 +260,6 @@ func (r *relay) forget(id string) bool {
 	}
 	delete(r.pending, id)
 	return true
-}
-
-func newID() (string, error) {
-	var b [8]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(b[:]), nil
 }
 
 // splice joins two streams — the relay's entire data plane. Each direction

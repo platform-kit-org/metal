@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -153,5 +154,28 @@ func TestAdminRoleGrantsTheWorkNotTheIdentities(t *testing.T) {
 		{"change the admission policies", authorizationv1.ResourceAttributes{Verb: "delete", Group: "admissionregistration.k8s.io", Resource: "validatingadmissionpolicies"}, false},
 	} {
 		assert.Equal(t, tc.want, may(tc.attrs), tc.what)
+	}
+}
+
+// The scrapers that config/prometheus and config/lab bind may get /metrics:
+// the manager asks the API server this for each caller.
+func TestMetricsReadersMayGetMetrics(t *testing.T) {
+	st := startEnv(t)
+	ctx := t.Context()
+	_, bindings := rbacFiles(t, filepath.Join("..", "..", "config", "prometheus", "metrics_reader.yaml"),
+		filepath.Join("..", "..", "config", "lab", "metrics_reader.yaml"))
+	require.Len(t, bindings, 2)
+	for _, b := range bindings {
+		require.Len(t, b.Subjects, 1)
+		may := func() bool {
+			sar := &authorizationv1.SubjectAccessReview{Spec: authorizationv1.SubjectAccessReviewSpec{
+				User:                  "system:serviceaccount:" + b.Subjects[0].Namespace + ":" + b.Subjects[0].Name,
+				NonResourceAttributes: &authorizationv1.NonResourceAttributes{Path: "/metrics", Verb: "get"}}}
+			require.NoError(t, st.cl.Create(ctx, sar))
+			return sar.Status.Allowed
+		}
+		require.False(t, may(), "%s: not before the binding", b.Name)
+		require.NoError(t, st.cl.Create(ctx, &rbacv1.ClusterRoleBinding{ObjectMeta: b.ObjectMeta, RoleRef: b.RoleRef, Subjects: b.Subjects}))
+		assert.Eventually(t, may, 10*time.Second, 100*time.Millisecond, "%s grants get on /metrics", b.Name)
 	}
 }

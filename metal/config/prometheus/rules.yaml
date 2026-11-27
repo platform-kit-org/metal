@@ -1,16 +1,12 @@
 # Alert rules for the pk-metal operator's domain metrics (internal/metrics).
 #
-# A PrometheusRule for the Prometheus Operator. It is not part of
-# config/default: a cluster without the Prometheus Operator has no such kind,
-# and applying it there would fail the whole install. Apply this directory on
-# its own where the kind exists; it also brings the ServiceMonitor, without
-# which these rules read nothing:
-#
-#   kubectl apply -k metal/config/prometheus
+# A PrometheusRule for the Prometheus Operator. kustomization.yaml says how to
+# apply it.
 #
 # The thresholds are starting points. Every alert links its runbook
 # (annotations.runbook_url); the docs site (operate/day-2/monitor) lists them.
-# rules_test.yaml holds promtool unit tests: mise run metrics:rules.
+# The promtool unit tests are in internal/metrics/testdata/rules_test.yaml:
+# mise run metrics:rules.
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:

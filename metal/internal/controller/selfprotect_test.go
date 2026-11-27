@@ -1,6 +1,8 @@
 package controller
 
 import (
+	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -15,6 +17,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
@@ -249,6 +252,47 @@ func TestSelfGuardCheckReadsTheCluster(t *testing.T) {
 	msg, err = unknown.Check(t.Context(), &host)
 	require.NoError(t, err)
 	assert.Empty(t, msg, "a node no TalosNode describes: allowed")
+}
+
+// For a host that is neither the operator's node nor a control plane of its
+// cluster, Check reads the live Host, the TalosNodes and the Kubernetes node,
+// and nothing more: no claim, cluster, secrets bundle, Host list or
+// operation list on each step of each worker.
+func TestSelfGuardReadsLittleForOtherHosts(t *testing.T) {
+	objs := guardedObjects()
+	worker := selfNode("worker-1", osv1alpha1.RoleWorker, 4)
+	other := selfNode("cp-x", osv1alpha1.RoleControlPlane, 5)
+	other.Spec.ClusterRef.Name = "tenant"
+	objs = append(objs, &worker, &other)
+	var lists, gets []string
+	cl := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(objs...).WithInterceptorFuncs(interceptor.Funcs{
+		List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+			lists = append(lists, fmt.Sprintf("%T", list))
+			return c.List(ctx, list, opts...)
+		},
+		Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+			gets = append(gets, fmt.Sprintf("%T", obj))
+			return c.Get(ctx, key, obj, opts...)
+		},
+	}).Build()
+	g := &SelfGuard{Reader: cl, NodeName: "talos-1"}
+
+	for _, node := range []string{"worker-1", "cp-x"} {
+		lists, gets = nil, nil
+		host := runsNodeHost("host-"+node, node)
+		msg, err := g.Check(t.Context(), &host)
+		require.NoError(t, err)
+		assert.Empty(t, msg)
+		assert.Equal(t, []string{"*v1alpha1.TalosNodeList"}, lists, node)
+		assert.Equal(t, []string{"*v1alpha1.Host", "*v1.Node"}, gets, node)
+	}
+
+	lists = nil
+	host := runsNodeHost("host-a", "cp-2")
+	msg, err := g.Check(t.Context(), &host)
+	require.NoError(t, err)
+	assert.Contains(t, msg, "a control plane of cluster mgmt", "a control plane of the own cluster gets the full check")
+	assert.Contains(t, lists, "*v1alpha1.HostOperationList")
 }
 
 func TestSelfGuardHoldsAPowerActionNotStarted(t *testing.T) {

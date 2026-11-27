@@ -234,6 +234,8 @@ func TestSplitRef(t *testing.T) {
 		{arg: "pk-metal/op", ns: "default", wantNS: "pk-metal", wantName: "op"},
 		{arg: "pk-metal/op", ns: "pk-metal", nsSet: true, wantNS: "pk-metal", wantName: "op"},
 		{arg: "pk-metal/op", ns: "default", nsSet: true, wantErr: "-n says default"},
+		{arg: "hostoperation.metal.platform-kit.org/op", ns: "pk-metal", wantNS: "pk-metal", wantName: "op"},
+		{arg: "hostoperation.metal.platform-kit.org/op", ns: "other", nsSet: true, wantNS: "other", wantName: "op"},
 		{arg: "/op", wantErr: "not a name"},
 		{arg: "ns/", wantErr: "not a name"},
 		{arg: "a/b/c", wantErr: "not a name"},

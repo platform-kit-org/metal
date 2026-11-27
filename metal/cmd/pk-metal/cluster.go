@@ -82,9 +82,9 @@ func restConfig() (*rest.Config, error) {
 	return cfg, err
 }
 
-// splitRef reads "name" or "namespace/name", the form pk-metal status prints.
-// nsFlag is the -n value, nsSet whether -n was given; a namespace in both
-// places must agree.
+// splitRef reads "name" or "namespace/name", the form pk-metal status prints,
+// or kubectl's "type.group/name". nsFlag is the -n value, nsSet whether -n was
+// given; a namespace in both places must agree.
 func splitRef(arg, nsFlag string, nsSet bool) (namespace, name string, err error) {
 	ns, n, found := strings.Cut(arg, "/")
 	switch {
@@ -95,6 +95,9 @@ func splitRef(arg, nsFlag string, nsSet bool) (namespace, name string, err error
 		return nsFlag, arg, nil
 	case ns == "" || n == "" || strings.Contains(n, "/"):
 		return "", "", fmt.Errorf("%q is not a name or namespace/name", arg)
+	case strings.Contains(ns, "."):
+		// kubectl's TYPE/NAME (kubectl get -o name): a namespace has no dot.
+		return nsFlag, n, nil
 	case nsSet && ns != nsFlag:
 		return "", "", fmt.Errorf("%q names namespace %s, but -n says %s; give only one", arg, ns, nsFlag)
 	}

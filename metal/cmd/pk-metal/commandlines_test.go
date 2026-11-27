@@ -21,7 +21,7 @@ const repo = "../../.."
 // commandLinesToday is the number of pk-metal command lines in each place
 // that TestCommandLinesMatchTheTree found when it was written. Fewer means
 // that it no longer finds some of them.
-var commandLinesToday = map[string]int{"pages": 265, "scripts": 30, "alerts": 5, "help": 77}
+var commandLinesToday = map[string]int{"pages": 267, "scripts": 30, "alerts": 5, "help": 77}
 
 // TestCommandLinesMatchTheTree checks each pk-metal command line that a
 // person or a script copies against the command tree: those of the pages

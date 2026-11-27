@@ -20,6 +20,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
+	"github.com/dennisklein/platform-kit/metal/internal/poll"
 )
 
 // Pause stops the source manager: its Deployment goes to zero replicas, and
@@ -47,20 +48,21 @@ func (m *Mover) Pause(ctx context.Context) error {
 	if err := scale(ctx, src, d, 0); err != nil {
 		return fmt.Errorf("scale the manager on %s to zero: %w", m.Source.Name, err)
 	}
+	// From here on the source runs no manager: each error says so.
 	if err := m.wait(ctx, "the manager pods on "+m.Source.Name+" to stop", func(ctx context.Context) (bool, error) {
 		n, err := managerPods(ctx, src, d)
 		return n == 0, err
 	}); err != nil {
-		return err
+		return m.stopped(err)
 	}
 	if err := m.wait(ctx, "the leader lease on "+m.Source.Name+" to be free", func(ctx context.Context) (bool, error) {
 		return leaseFree(ctx, src, o.Namespace, time.Now())
 	}); err != nil {
-		return err
+		return m.stopped(err)
 	}
 	ops := &metalv1alpha1.HostOperationList{}
 	if err := src.List(ctx, ops); err != nil {
-		return err
+		return m.stopped(err)
 	}
 	if problems := blockingOperations(ops.Items, true); len(problems) > 0 {
 		return fmt.Errorf("an operation started while the manager stopped:\n  - %s\n"+
@@ -216,23 +218,18 @@ func (m *Mover) Verify(ctx context.Context, rep *Report) (failures, pending []st
 func (m *Mover) Settle(ctx context.Context, rep *Report) error {
 	deadline := time.Now().Add(m.Options.Settle)
 	var pending []string
-	for {
+	if err := poll.Until(ctx, poll.Every(m.Options.Poll), func(ctx context.Context) (bool, error) {
 		failures, p, err := m.Verify(ctx, rep)
 		if err != nil {
-			return err
+			return false, err
 		}
 		if len(failures) > 0 {
-			return fmt.Errorf("the manager on %s does not settle as it should:\n  - %s", m.Target.Name, strings.Join(failures, "\n  - "))
+			return false, fmt.Errorf("the manager on %s does not settle as it should:\n  - %s", m.Target.Name, strings.Join(failures, "\n  - "))
 		}
 		pending = p
-		if time.Now().After(deadline) {
-			break
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(m.Options.Poll):
-		}
+		return time.Now().After(deadline), nil
+	}); err != nil {
+		return err
 	}
 	if len(pending) > 0 {
 		return fmt.Errorf("the manager on %s has not looked at everything within %s:\n  - %s\nRun the move again to keep watching",
@@ -248,50 +245,43 @@ func (m *Mover) resumeSourceCommand() string {
 }
 
 // Run is the whole move: preflight, pause, install, copy, start, verify.
-// Rerun after a failure, it continues where the last run stopped.
+// Rerun after a failure, it continues where the last run stopped. Rerun
+// after the start, it only verifies: the target manager runs, and its state
+// is its own now.
 func (m *Mover) Run(ctx context.Context) (*Report, error) {
 	plan, err := m.Preflight(ctx)
 	if err != nil {
 		return nil, err
 	}
-	for _, line := range plan.Reachable {
-		m.logf("must be reachable: %s", line)
-	}
-	if !plan.Resume {
-		if err := m.Pause(ctx); err != nil {
+	if plan.Resume {
+		rep, err := m.Moved(ctx)
+		if err != nil {
 			return nil, err
 		}
-		if err := m.Install(ctx); err != nil {
-			return nil, m.stopped(err)
-		}
+		return rep, m.watch(ctx, rep)
 	}
-	// A resumed move copies again: nothing changed on the paused source,
-	// and the copy is how the verification learns what it moved.
-	if plan.Resume {
-		plan.Prune = false
+	if err := m.Pause(ctx); err != nil {
+		return nil, err
 	}
-	rep, err := m.copyForRun(ctx, plan)
+	if err := m.Install(ctx); err != nil {
+		return nil, m.stopped(err)
+	}
+	rep, err := m.Copy(ctx, plan)
 	if err != nil {
 		return nil, m.stopped(err)
 	}
-	if !plan.Resume {
-		if err := m.Start(ctx); err != nil {
-			return nil, m.stopped(err)
-		}
+	if err := m.Start(ctx); err != nil {
+		return nil, m.stopped(err)
 	}
-	if err := m.WaitRunning(ctx); err != nil {
-		return rep, err
-	}
-	return rep, m.Settle(ctx, rep)
+	return rep, m.watch(ctx, rep)
 }
 
-// copyForRun copies, or on a resumed move only reads what was moved: the
-// target manager runs, and its state is its own now.
-func (m *Mover) copyForRun(ctx context.Context, plan *Plan) (*Report, error) {
-	if !plan.Resume {
-		return m.Copy(ctx, plan)
+// watch waits until the target manager runs, then watches it settle.
+func (m *Mover) watch(ctx context.Context, rep *Report) error {
+	if err := m.WaitRunning(ctx); err != nil {
+		return err
 	}
-	return m.Moved(ctx)
+	return m.Settle(ctx, rep)
 }
 
 // Moved rebuilds the report of a copy that already happened from the paused

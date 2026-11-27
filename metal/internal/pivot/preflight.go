@@ -13,7 +13,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
@@ -123,12 +122,7 @@ func (m *Mover) Preflight(ctx context.Context) (*Plan, error) {
 		return nil, err
 	}
 	problems = append(problems, blockingOperations(ops.Items, o.ForceWaiting)...)
-	deleting, err := deletingObjects(ctx, src, m.movedKinds())
-	if err != nil {
-		return nil, err
-	}
-	problems = append(problems, deleting...)
-	busy, err := inFlight(ctx, src, m.movedKinds())
+	busy, err := inFlight(ctx, m.Source, m.movedKinds())
 	if err != nil {
 		return nil, err
 	}
@@ -138,7 +132,7 @@ func (m *Mover) Preflight(ctx context.Context) (*Plan, error) {
 	}
 
 	plan := &Plan{}
-	held, err := holdsObjects(ctx, dst, m.movedKinds())
+	held, err := holdsObjects(ctx, m.Target, m.movedKinds())
 	if err != nil {
 		return nil, err
 	}
@@ -188,50 +182,20 @@ func managerPods(ctx context.Context, c client.Client, d *appsv1.Deployment) (in
 	return len(pods.Items), nil
 }
 
-// deletingObjects lists moved objects that are being deleted: their
-// finalizer's work (a release) is the source manager's, and it must finish
-// there.
-func deletingObjects(ctx context.Context, c client.Client, kinds []movedKind) ([]string, error) {
-	var out []string
-	for _, k := range kinds {
-		if k.core {
-			continue
-		}
-		list := &unstructured.UnstructuredList{}
-		list.SetGroupVersionKind(k.gvk.GroupVersion().WithKind(k.gvk.Kind + "List"))
-		if err := c.List(ctx, list); err != nil {
-			if meta.IsNoMatchError(err) {
-				continue
-			}
-			return nil, err
-		}
-		for _, u := range list.Items {
-			if u.GetDeletionTimestamp() != nil {
-				out = append(out, fmt.Sprintf("%s %s is being deleted: let the operator finish that first", k.gvk.Kind, objectRef(&u)))
-			}
-		}
-	}
-	return out, nil
-}
-
 // holdsObjects names a few of the operator's objects the cluster holds, or ""
 // for none. A cluster without the CRDs holds none.
-func holdsObjects(ctx context.Context, c client.Client, kinds []movedKind) (string, error) {
+func holdsObjects(ctx context.Context, c *Cluster, kinds []movedKind) (string, error) {
 	var names []string
 	for _, k := range kinds {
 		if k.core {
 			continue
 		}
-		list := &unstructured.UnstructuredList{}
-		list.SetGroupVersionKind(k.gvk.GroupVersion().WithKind(k.gvk.Kind + "List"))
-		if err := c.List(ctx, list, client.Limit(1)); err != nil {
-			if meta.IsNoMatchError(err) || apierrors.IsNotFound(err) {
-				continue
-			}
+		items, err := listServed(ctx, c, k.gvk, client.Limit(1))
+		if err != nil {
 			return "", err
 		}
-		if len(list.Items) > 0 {
-			names = append(names, k.gvk.Kind+" "+objectRef(&list.Items[0]))
+		if len(items) > 0 {
+			names = append(names, k.gvk.Kind+" "+objectRef(&items[0]))
 		}
 	}
 	return strings.Join(names, ", "), nil

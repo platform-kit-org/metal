@@ -2,6 +2,7 @@ package pivot
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
@@ -104,19 +106,26 @@ func TestMergeIntoKeepsTheTargetsApproval(t *testing.T) {
 		"metadata": map[string]any{"name": "op", "namespace": "lab"},
 		"spec":     map[string]any{"reason": "Release", "approval": map[string]any{}},
 	}}
-	assert.False(t, mergeInto(cur, want, true), "the same operation, its approval replayed")
+	op := approvalFields["HostOperation"]
+	assert.False(t, mergeInto(cur, want, op), "the same operation, its approval replayed")
 
 	want.SetLabels(map[string]string{"a": "b"})
-	assert.True(t, mergeInto(cur, want, true))
+	assert.True(t, mergeInto(cur, want, op))
 	assert.Equal(t, "b", cur.GetLabels()["a"])
 	by, _, _ := unstructured.NestedString(cur.Object, "spec", "approval", "approvedBy")
 	assert.Equal(t, "ada", by)
 	assert.Equal(t, "dst", string(cur.GetUID()), "the target's metadata stays the target's")
 
 	host := cur.DeepCopy()
-	assert.True(t, mergeInto(host, want, false), "for any other kind the source's spec wins")
+	assert.True(t, mergeInto(host, want, nil), "for any other kind the source's spec wins")
 	_, found, _ := unstructured.NestedString(host.Object, "spec", "approval", "approvedBy")
 	assert.False(t, found)
+
+	rollout := cur.DeepCopy()
+	require.NoError(t, unstructured.SetNestedField(rollout.Object, "sha256:ab", "spec", "approval", "planHash"))
+	want = rollout.DeepCopy()
+	unstructured.RemoveNestedField(want.Object, "spec", "approval")
+	assert.False(t, mergeInto(rollout, want, approvalFields["TalosRollout"]), "a rollout keeps the plan its approver saw")
 }
 
 func TestBlockingOperations(t *testing.T) {
@@ -353,6 +362,38 @@ func TestPauseAndStart(t *testing.T) {
 	assert.Equal(t, int32(2), *d.Spec.Replicas)
 }
 
+// A rerun after the start only verifies. The target manager runs then, so an
+// error must not tell the person to start the source manager again: two
+// managers would act on the same machines.
+func TestRunResumedKeepsTheSourcePaused(t *testing.T) {
+	m := fakeMover(t, operatorObjects(0, map[string]string{AnnotationMovedTo: "dst-id"}),
+		operatorObjects(1, map[string]string{AnnotationSource: "src-id"}))
+	refused := errors.New("hostoperations is forbidden")
+	m.Source.Client = interceptor.NewClient(m.Source.Client.(client.WithWatch), interceptor.Funcs{
+		List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+			if _, ok := list.(*metalv1alpha1.HostOperationList); ok {
+				return refused
+			}
+			return c.List(ctx, list, opts...)
+		},
+	})
+	_, err := m.Run(context.Background())
+	require.ErrorIs(t, err, refused)
+	assert.NotContains(t, err.Error(), m.resumeSourceCommand())
+}
+
+// A move reads one cluster and writes another: an error names the cluster
+// that refused, so that the person knows which kubeconfig lacks a right.
+func TestInstallNamesTheClusterThatRefuses(t *testing.T) {
+	m := fakeMover(t, operatorObjects(1, nil), nil)
+	m.Source.Client = interceptor.NewClient(m.Source.Client.(client.WithWatch), interceptor.Funcs{
+		List: func(context.Context, client.WithWatch, client.ObjectList, ...client.ListOption) error {
+			return errors.New("forbidden")
+		},
+	})
+	require.ErrorContains(t, m.Install(context.Background()), "list CustomResourceDefinition on kind: forbidden")
+}
+
 func TestPauseWaitsForTheLease(t *testing.T) {
 	ctx := context.Background()
 	held := &coordinationv1.Lease{
@@ -365,5 +406,14 @@ func TestPauseWaitsForTheLease(t *testing.T) {
 	m := fakeMover(t, append(operatorObjects(1, nil), held), nil)
 	m.Options.Poll = time.Millisecond
 	m.Options.Timeout = 20 * time.Millisecond
-	require.ErrorContains(t, m.Pause(ctx), "leader lease")
+	err := m.Pause(ctx)
+	require.ErrorContains(t, err, "gave up after 20ms waiting for the leader lease")
+	require.ErrorContains(t, err, m.resumeSourceCommand(), "the source runs no manager now, and the error says how to start it again")
+
+	// Ctrl-C cancels the move, which is no timeout.
+	canceled, cancel := context.WithCancel(ctx)
+	cancel()
+	err = m.Pause(canceled)
+	require.ErrorIs(t, err, context.Canceled)
+	require.NotContains(t, err.Error(), "gave up")
 }

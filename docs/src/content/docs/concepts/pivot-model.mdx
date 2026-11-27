@@ -48,7 +48,7 @@ The target builds missing installers again. The workload clusters do not move, b
   <dt>UIDs</dt>
   <dd>Each object gets a new UID. The move writes the new UID into `spec.claimRef.uid`, into the claim label of operations and into owner references.</dd>
   <dt>Identities</dt>
-  <dd>The move writes each operation as its proposer and replays each approval as the person who gave it, so the admission policy accepts them.</dd>
+  <dd>The move writes each operation and each rollout as its proposer. It replays each approval as the person who gave it, so the admission policies accept them.</dd>
   <dt>Status</dt>
   <dd>The move copies status under the name of the controller that owns each part. The hand-off record of a claim moves too, so no machine installs again.</dd>
   <dt>Markers</dt>

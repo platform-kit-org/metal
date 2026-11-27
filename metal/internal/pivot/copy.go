@@ -12,7 +12,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -86,7 +85,8 @@ var movedKinds = []movedKind{
 	{gvk: metalGV.WithKind("MaintenanceWindow")},
 }
 
-// movedKindOf finds the moved kind an owner reference names.
+// movedKindOf reports whether an owner reference names a kind the move
+// copies.
 func movedKindOf(apiVersion, kind string) bool {
 	gv, err := schema.ParseGroupVersion(apiVersion)
 	if err != nil {
@@ -268,37 +268,22 @@ func (m *Mover) readSource(ctx context.Context) ([]sourceObject, error) {
 	var out []sourceObject
 	for _, k := range m.movedKinds() {
 		var items []unstructured.Unstructured
-		namespaces := []string{""}
+		namespaces := []string{""} // all of them
 		if k.core {
 			namespaces = m.coreNamespaces()
 		}
-		missing := false
 		for _, ns := range namespaces {
-			list := &unstructured.UnstructuredList{}
-			list.SetGroupVersionKind(k.gvk.GroupVersion().WithKind(k.gvk.Kind + "List"))
-			var opts []client.ListOption
-			if k.core {
-				opts = append(opts, client.InNamespace(ns))
+			got, err := listServed(ctx, m.Source, k.gvk, client.InNamespace(ns))
+			if err != nil {
+				return nil, err
 			}
-			if err := m.Source.Client.List(ctx, list, opts...); err != nil {
-				if !k.core && meta.IsNoMatchError(err) {
-					missing = true // an operator version without this kind: none of it to move
-					break
-				}
-				return nil, fmt.Errorf("list %s on %s: %w", k.gvk.Kind, m.Source.Name, err)
-			}
-			items = append(items, list.Items...)
-		}
-		if missing {
-			continue
+			items = append(items, got...)
 		}
 		sort.Slice(items, func(i, j int) bool { return objectRef(&items[i]) < objectRef(&items[j]) })
 		for i := range items {
-			if k.skip != nil && k.skip(&items[i]) {
-				continue
+			if k.skip == nil || !k.skip(&items[i]) {
+				out = append(out, sourceObject{kind: k, obj: &items[i]})
 			}
-			items[i].SetGroupVersionKind(k.gvk)
-			out = append(out, sourceObject{kind: k, obj: &items[i]})
 		}
 	}
 	return out, nil
@@ -334,13 +319,6 @@ func (m *Mover) ensureNamespaces(ctx context.Context, objs []sourceObject) error
 	return nil
 }
 
-// writerFor is the client an object is created and updated with.
-// HostOperations are created as the user who proposed them: the approval
-// policy checks spec.proposedBy against the request's user. An object whose
-// change makes the operator propose work is written as the user its
-// requested-by annotation names (stamped first, see stampRequester), as an
-// admin: the requested-by policy wants the request's user there, and the
-// claim policy lets only an admin name a TalosNode.
 // kindNotYetKnown is the API server's answer to a write of a kind whose CRD
 // it established a moment ago. A mutating admission policy (the name
 // stamps) checks the object against the OpenAPI schema of its kind, and the
@@ -361,20 +339,31 @@ func (m *Mover) untilAdmitted(ctx context.Context, write func() error) error {
 		})
 }
 
+// approvalFields are the fields of spec.approval that only the approver
+// sets, for each kind with an approval gate
+// (config/policy/hostoperation-approval.yaml, talosrollout-approval.yaml).
+var approvalFields = map[string][]string{
+	"HostOperation": {"approvedBy"},
+	"TalosRollout":  {"approvedBy", "planHash"},
+}
+
+// writerFor is the client an object is created and updated with, as an
+// admin (adminGroups). An operation or a rollout is written as the user who
+// proposed it: the approval policies check spec.proposedBy against the
+// request's user. An object whose change makes the operator propose work is
+// written as the user its requested-by annotation names (stamped first, see
+// stampRequester): the requested-by policy wants the request's user there.
+// Any other object is written as the move: the guards of the site settings,
+// the profiles and the backup policies let only an admin write them, and the
+// claim policy lets only an admin name a TalosNode.
 func (m *Mover) writerFor(ctx context.Context, so sourceObject, want *unstructured.Unstructured) (client.Client, error) {
-	if so.kind.gvk.Kind == "HostOperation" {
-		proposer, _, _ := unstructured.NestedString(so.obj.Object, "spec", "proposedBy")
-		return m.Target.as(proposer, m.adminGroups(ctx)...)
+	user := impersonatedMover
+	if _, gated := approvalFields[so.kind.gvk.Kind]; gated {
+		user, _, _ = unstructured.NestedString(want.Object, "spec", "proposedBy")
+	} else if by := want.GetAnnotations()[metalv1alpha1.AnnotationRequestedBy]; by != "" && requestGated(want) {
+		user = by
 	}
-	if so.kind.gvk.Kind == "ConfigMap" && want.GetName() == settingsConfigMap {
-		// The settings-guard policy lets only the admin group change the
-		// site settings; the move brings them up to the source's.
-		return m.Target.as(impersonatedMover, m.adminGroups(ctx)...)
-	}
-	if user := want.GetAnnotations()[metalv1alpha1.AnnotationRequestedBy]; user != "" && requestGated(want) {
-		return m.Target.as(user, m.adminGroups(ctx)...)
-	}
-	return m.Target.Client, nil
+	return m.Target.as(user, m.adminGroups(ctx)...)
 }
 
 // requestGated: the requested-by policies (config/policy/requested-by.yaml,
@@ -434,23 +423,26 @@ func (m *Mover) ensure(ctx context.Context, so sourceObject, rw *rewriter) (int,
 	unstructured.RemoveNestedField(want.Object, "status")
 	stampRequester(want)
 	lifts := takeLifts(want)
-	isOp := so.kind.gvk.Kind == "HostOperation"
-	approvedBy, _, _ := unstructured.NestedString(want.Object, "spec", "approval", "approvedBy")
-	if isOp {
-		// Admission refuses an operation created approved; the approval is
-		// replayed below, by the approver.
-		unstructured.RemoveNestedField(want.Object, "spec", "approval", "approvedBy")
+	// Admission refuses an operation or a rollout created approved; the
+	// approval is replayed below, by the approver.
+	fields := approvalFields[so.kind.gvk.Kind]
+	approval := map[string]any{}
+	for _, f := range fields {
+		if v, _, _ := unstructured.NestedString(want.Object, "spec", "approval", f); v != "" {
+			approval[f] = v
+		}
+		unstructured.RemoveNestedField(want.Object, "spec", "approval", f)
 	}
 
-	w, err := m.writerFor(ctx, so, want)
-	if err != nil {
-		return 0, err
-	}
 	cur := &unstructured.Unstructured{}
 	cur.SetGroupVersionKind(so.kind.gvk)
-	err = m.Target.Client.Get(ctx, client.ObjectKeyFromObject(want), cur)
+	err := m.Target.Client.Get(ctx, client.ObjectKeyFromObject(want), cur)
 	switch {
 	case apierrors.IsNotFound(err):
+		w, err := m.writerFor(ctx, so, want)
+		if err != nil {
+			return 0, err
+		}
 		if err := m.untilAdmitted(ctx, func() error { return w.Create(ctx, want) }); err != nil {
 			return 0, err
 		}
@@ -463,10 +455,11 @@ func (m *Mover) ensure(ctx context.Context, so sourceObject, rw *rewriter) (int,
 		// write the source's UID over the target's.
 	default:
 		keepLifts(cur, want, lifts)
-		if isOp {
-			w = m.Target.Client // the proposer's approval rules apply to a create only
-		}
-		if changed := mergeInto(cur, want, isOp); changed {
+		if mergeInto(cur, want, fields) {
+			w, err := m.writerFor(ctx, so, want)
+			if err != nil {
+				return 0, err
+			}
 			if err := m.untilAdmitted(ctx, func() error { return w.Update(ctx, cur) }); err != nil {
 				return 0, err
 			}
@@ -476,34 +469,42 @@ func (m *Mover) ensure(ctx context.Context, so sourceObject, rw *rewriter) (int,
 	if err := m.replayLifts(ctx, so, cur, lifts); err != nil {
 		return 0, err
 	}
-
-	if isOp && approvedBy != "" {
-		got, _, _ := unstructured.NestedString(cur.Object, "spec", "approval", "approvedBy")
-		if got == "" {
-			// The approval policy checks that approvedBy names the request's
-			// user, so the approver approves again, by impersonation.
-			as, err := m.Target.as(approvedBy, m.adminGroups(ctx)...)
-			if err != nil {
-				return 0, err
-			}
-			patch, _ := json.Marshal(map[string]any{"spec": map[string]any{"approval": map[string]any{"approvedBy": approvedBy}}})
-			if err := as.Patch(ctx, cur, client.RawPatch(types.MergePatchType, patch)); err != nil {
-				return 0, fmt.Errorf("replay the approval by %s: %w", approvedBy, err)
-			}
-			proposedBy, _, _ := unstructured.NestedString(cur.Object, "spec", "proposedBy")
-			requestedBy, _, _ := unstructured.NestedStringSlice(cur.Object, "spec", "requestedBy")
-			m.Options.Audit.ApprovalReplayed(auditObject(cur), proposedBy, requestedBy, approvedBy, "")
-		} else if got != approvedBy {
-			return 0, fmt.Errorf("approved by %s on %s but by %s on %s; an approval cannot change", approvedBy, m.Source.Name, got, m.Target.Name)
-		}
+	if err := m.replayApproval(ctx, cur, approval); err != nil {
+		return 0, err
 	}
 	return n, nil
 }
 
+// replayApproval sets the source's approval on cur again, as the approver:
+// the approval policies check that approvedBy names the request's user.
+func (m *Mover) replayApproval(ctx context.Context, cur *unstructured.Unstructured, approval map[string]any) error {
+	approvedBy, _ := approval["approvedBy"].(string)
+	got, _, _ := unstructured.NestedString(cur.Object, "spec", "approval", "approvedBy")
+	if approvedBy == "" || got == approvedBy {
+		return nil
+	}
+	if got != "" {
+		return fmt.Errorf("approved by %s on %s but by %s on %s; an approval cannot change", approvedBy, m.Source.Name, got, m.Target.Name)
+	}
+	as, err := m.Target.as(approvedBy, m.adminGroups(ctx)...)
+	if err != nil {
+		return err
+	}
+	patch, _ := json.Marshal(map[string]any{"spec": map[string]any{"approval": approval}})
+	if err := as.Patch(ctx, cur, client.RawPatch(types.MergePatchType, patch)); err != nil {
+		return fmt.Errorf("replay the approval by %s: %w", approvedBy, err)
+	}
+	proposedBy, _, _ := unstructured.NestedString(cur.Object, "spec", "proposedBy")
+	requestedBy, _, _ := unstructured.NestedStringSlice(cur.Object, "spec", "requestedBy")
+	planHash, _ := approval["planHash"].(string)
+	m.Options.Audit.ApprovalReplayed(auditObject(cur), proposedBy, requestedBy, approvedBy, planHash)
+	return nil
+}
+
 // mergeInto brings cur's labels, annotations, finalizers, owner references
-// and content up to want's and reports whether anything changed. An
-// operation's approval is left to ensure.
-func mergeInto(cur, want *unstructured.Unstructured, isOp bool) bool {
+// and content up to want's and reports whether anything changed. The
+// approval fields keep cur's values: ensure replays the source's.
+func mergeInto(cur, want *unstructured.Unstructured, approval []string) bool {
 	changed := false
 	set := func(eq bool, apply func()) {
 		if !eq {
@@ -520,14 +521,14 @@ func mergeInto(cur, want *unstructured.Unstructured, isOp bool) bool {
 		if k == "metadata" || k == "status" || k == "apiVersion" || k == "kind" {
 			continue
 		}
-		if isOp && k == "spec" {
-			// Frozen after creation; the approval is replayed separately,
-			// so the target's stays as it is.
+		if k == "spec" && len(approval) > 0 {
 			spec := &unstructured.Unstructured{Object: map[string]any{"spec": runtime.DeepCopyJSONValue(v)}}
-			if by, found, _ := unstructured.NestedString(cur.Object, "spec", "approval", "approvedBy"); found {
-				_ = unstructured.SetNestedField(spec.Object, by, "spec", "approval", "approvedBy")
-			} else {
-				unstructured.RemoveNestedField(spec.Object, "spec", "approval", "approvedBy")
+			for _, f := range approval {
+				if got, found, _ := unstructured.NestedString(cur.Object, "spec", "approval", f); found {
+					_ = unstructured.SetNestedField(spec.Object, got, "spec", "approval", f)
+				} else {
+					unstructured.RemoveNestedField(spec.Object, "spec", "approval", f)
+				}
 			}
 			v = spec.Object["spec"]
 		}
@@ -611,16 +612,12 @@ func (m *Mover) prune(ctx context.Context, objs []sourceObject) ([]string, error
 		if k.core {
 			continue
 		}
-		list := &unstructured.UnstructuredList{}
-		list.SetGroupVersionKind(k.gvk.GroupVersion().WithKind(k.gvk.Kind + "List"))
-		if err := m.Target.Client.List(ctx, list); err != nil {
-			if meta.IsNoMatchError(err) {
-				continue // the target does not serve the kind: nothing of it to prune
-			}
+		items, err := listServed(ctx, m.Target, k.gvk)
+		if err != nil {
 			return nil, err
 		}
-		for j := range list.Items {
-			u := &list.Items[j]
+		for j := range items {
+			u := &items[j]
 			key := k.gvk.Kind + " " + objectRef(u)
 			if keep[key] {
 				continue

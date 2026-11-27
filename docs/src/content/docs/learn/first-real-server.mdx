@@ -59,16 +59,16 @@ The repository has no record of an install on real hardware. Read [](ref:status)
    mise run build && export PATH=$PWD/metal/bin:$PATH
    ```
 
-2. Put the BMC password in the environment.
+2. Put the BMC user name and password in the shell. The label of the server or the vendor manual gives the factory user name.
 
    ```sh
-   read -rs PK_METAL_BMC_PASSWORD && export PK_METAL_BMC_PASSWORD
+   read -r BMC_USER && read -rs PK_METAL_BMC_PASSWORD && export PK_METAL_BMC_PASSWORD
    ```
 
 3. Check the BMC.
 
    ```sh
-   pk-metal check --insecure https://192.0.2.21
+   pk-metal check --user "$BMC_USER" --insecure https://192.0.2.21
    ```
 
 4. Count the `media:` lines that do not show `dialect=none`. One such line means a BMC with one slot.
@@ -76,7 +76,7 @@ The repository has no record of an install on real hardware. Read [](ref:status)
 5. Read the inventory into a file.
 
    ```sh
-   pk-metal inventory --insecure --node cp-1 https://192.0.2.21 > cp-1-inventory.yaml
+   pk-metal inventory --user "$BMC_USER" --insecure --node cp-1 https://192.0.2.21 > cp-1-inventory.yaml
    ```
 
 6. Write down these values: the serial number, the BMC MAC, the node NIC MAC and the install disk serial.
@@ -150,7 +150,7 @@ This stage is a short form of [](howto:install-operator). That page explains eac
 
    ```sh
    kubectl -n pk-metal create secret generic bmc-factory \
-     --from-literal=username=admin --from-literal=password="$PK_METAL_BMC_PASSWORD"
+     --from-literal=username="$BMC_USER" --from-literal=password="$PK_METAL_BMC_PASSWORD"
    ```
 
 2. Write the [](kind:Asset). Use your values for the marked lines.

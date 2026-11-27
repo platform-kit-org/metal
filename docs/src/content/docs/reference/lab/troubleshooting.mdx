@@ -62,7 +62,7 @@ The checks are in [what the doctor checks](lab:page/prerequisites#what-the-docto
 
 <dl class="pk-glance">
   <dt>cgroup v1</dt>
-  <dd>Kubernetes 1.35 and later need cgroup v2. Boot the workstation with `systemd.unified_cgroup_hierarchy=1`. As an alternative, copy `lab/kind.yaml`, set `image: kindest/node:v1.34.0` in the copy, and set `PK_LAB_KIND_CONFIG` to the copy.</dd>
+  <dd>Kubernetes 1.35 and later need cgroup v2. Boot the workstation with `systemd.unified_cgroup_hierarchy=1`. As an alternative, copy `lab/kind.yaml`, set `image: kindest/node:v1.34.0` in the copy, and set `PK_LAB_KIND_CONFIG` to the copy. Kubernetes 1.34 has no MutatingAdmissionPolicy v1, so the API server does not write your username. In the tutorials, set `metal.platform-kit.org/requested-by` to your username in the same request as the change. Write `<username>: ` in front of the reason of a guard lift.</dd>
   <dt>`cannot assign requested address`</dt>
   <dd>`lab/kind.yaml` publishes the media port on `10.77.0.1`. This address exists only while the lab network is up. Run `mise run lab:up`, or run `lab/net.sh up` before `lab/lab.sh cluster`.</dd>
   <dt>The node container does not run</dt>

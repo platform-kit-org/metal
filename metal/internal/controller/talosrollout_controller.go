@@ -706,12 +706,12 @@ func (r *TalosRolloutReconciler) healthGate(ctx context.Context, ro *osv1alpha1.
 			busy[ro.Status.Plan[i].Node] = true
 		}
 	}
-	handed, err := handedOffNodes(ctx, r.Client)
+	hosts, err := hostsByNode(ctx, r.Client)
 	if err != nil {
 		return "", err
 	}
 
-	if why, err := r.etcdGate(ctx, cluster, nodes, handed); err != nil || why != "" {
+	if why, err := r.etcdGate(ctx, cluster, nodes, hosts); err != nil || why != "" {
 		return why, err
 	}
 
@@ -725,7 +725,7 @@ func (r *TalosRolloutReconciler) healthGate(ctx context.Context, ro *osv1alpha1.
 	}
 	var notReady []string
 	for _, n := range nodes {
-		if !handed[n.Name] || busy[n.Name] {
+		if hosts[n.Name] == "" || busy[n.Name] {
 			continue
 		}
 		if !ready[n.Name] {
@@ -741,7 +741,7 @@ func (r *TalosRolloutReconciler) healthGate(ctx context.Context, ro *osv1alpha1.
 // etcdGate asks the control planes about etcd: every control plane that a
 // Host runs must be a voting member, and each must report no error.
 func (r *TalosRolloutReconciler) etcdGate(ctx context.Context, cluster *osv1alpha1.TalosCluster,
-	nodes []osv1alpha1.TalosNode, handed map[string]bool) (string, error) {
+	nodes []osv1alpha1.TalosNode, hosts map[string]string) (string, error) {
 	if r.Dial == nil {
 		return "", nil
 	}
@@ -754,7 +754,7 @@ func (r *TalosRolloutReconciler) etcdGate(ctx context.Context, cluster *osv1alph
 	}
 	var cps []osv1alpha1.TalosNode
 	for _, n := range nodes {
-		if n.Spec.Role == osv1alpha1.RoleControlPlane && handed[n.Name] {
+		if n.Spec.Role == osv1alpha1.RoleControlPlane && hosts[n.Name] != "" {
 			cps = append(cps, n)
 		}
 	}
@@ -805,36 +805,6 @@ func (r *TalosRolloutReconciler) etcdGate(ctx context.Context, cluster *osv1alph
 		}
 	}
 	return "", nil
-}
-
-// handedOffNodes is the set of TalosNodes some Host runs.
-func handedOffNodes(ctx context.Context, c client.Reader) (map[string]bool, error) {
-	hosts := &metalv1alpha1.HostList{}
-	if err := c.List(ctx, hosts); err != nil {
-		return nil, err
-	}
-	out := map[string]bool{}
-	for i := range hosts.Items {
-		if os := hosts.Items[i].Spec.OS; os != nil {
-			out[os.NodeRef.Name] = true
-		}
-	}
-	return out, nil
-}
-
-// hostsByNode maps each handed-off TalosNode to its Host.
-func hostsByNode(ctx context.Context, c client.Reader) (map[string]string, error) {
-	hosts := &metalv1alpha1.HostList{}
-	if err := c.List(ctx, hosts); err != nil {
-		return nil, err
-	}
-	out := map[string]string{}
-	for i := range hosts.Items {
-		if os := hosts.Items[i].Spec.OS; os != nil {
-			out[os.NodeRef.Name] = hosts.Items[i].Name
-		}
-	}
-	return out, nil
 }
 
 // plan computes the rollout's plan from the world as it is now. blocked says
@@ -911,10 +881,7 @@ func (r *TalosRolloutReconciler) plan(ctx context.Context, ro *osv1alpha1.TalosR
 		if !ok {
 			continue // no machine runs it: nothing to change
 		}
-		step, why, err := r.planNode(ctx, ro, cluster, n, host, target)
-		if err != nil {
-			return nil, "", err
-		}
+		step, why := r.planNode(ctx, ro, cluster, n, host, target)
 		if why != "" {
 			blocked = append(blocked, n.Name+": "+why)
 			continue
@@ -964,54 +931,54 @@ func cmpBool(a, b bool) int {
 // planNode plans one node, or returns nil when it needs no change, or why it
 // cannot be planned yet.
 func (r *TalosRolloutReconciler) planNode(ctx context.Context, ro *osv1alpha1.TalosRollout, cluster *osv1alpha1.TalosCluster,
-	n *osv1alpha1.TalosNode, host string, target osv1alpha1.RolloutTarget) (*osv1alpha1.RolloutStep, string, error) {
+	n *osv1alpha1.TalosNode, host string, target osv1alpha1.RolloutTarget) (*osv1alpha1.RolloutStep, string) {
 	step := &osv1alpha1.RolloutStep{Kind: osv1alpha1.RolloutStepNode, Node: n.Name, Host: host, Role: n.Spec.Role}
 	switch ro.Spec.Kind {
 	case osv1alpha1.RolloutReboot:
 		step.From, step.To = n.Status.Version, n.Status.Version
 		step.RebootRequired = true
-		return step, "", nil
+		return step, ""
 	case osv1alpha1.RolloutTalosUpgrade:
 		running := n.Status.Version
 		if running == "" {
-			return nil, "its Talos version is not known (is it up?)", nil
+			return nil, "its Talos version is not known (is it up?)"
 		}
 		if running == target.TalosVersion {
-			return nil, "", nil
+			return nil, ""
 		}
 		if err := render.UpgradeableFrom(running, target.TalosVersion); err != nil {
-			return nil, err.Error(), nil
+			return nil, err.Error()
 		}
 		ref, err := r.Factory.InstallerImage(render.EffectiveSchematic(cluster, n), target.TalosVersion)
 		if err != nil {
-			return nil, err.Error(), nil
+			return nil, err.Error()
 		}
 		pinned, err := r.resolve(ctx, ref)
 		if err != nil {
-			return nil, "pin the installer image: " + err.Error(), nil
+			return nil, "pin the installer image: " + err.Error()
 		}
 		// A Talos upgrade boots the new image: the plan the approver reads
 		// says the node restarts, as it does.
 		step.From, step.To, step.Image = running, target.TalosVersion, pinned
 		step.RebootRequired = true
-		return step, "", nil
+		return step, ""
 	default: // Config, KubernetesUpgrade
 		if !meta.IsStatusConditionTrue(n.Status.Conditions, osv1alpha1.ConditionRendered) {
-			return nil, "its config does not render (see its Rendered condition)", nil
+			return nil, "its config does not render (see its Rendered condition)"
 		}
 		d := n.Status.Drift
 		if d == nil || d.ConfigDigest != n.Status.ConfigDigest || n.Status.ConfigSecretRef == nil {
-			return nil, "waiting for the dry run of its current render", nil
+			return nil, "waiting for the dry run of its current render"
 		}
 		if !d.Changed {
-			return nil, "", nil
+			return nil, ""
 		}
 		step.From = n.Status.AppliedConfigDigest
 		step.To = n.Status.ConfigDigest
 		step.ConfigSecret = n.Status.ConfigSecretRef.Name
 		step.ConfigDigest = n.Status.ConfigDigest
 		step.RebootRequired = d.RebootRequired
-		return step, "", nil
+		return step, ""
 	}
 }
 

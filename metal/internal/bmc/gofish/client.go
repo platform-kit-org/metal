@@ -82,6 +82,8 @@ type client struct {
 	readOnly bool
 	// auth is how the requests authenticate: AuthSession or AuthBasic.
 	auth string
+	// renew logs in again when the manager forgets the session.
+	renew *renewal
 
 	// Where the manager, the chassis and the services live does not change
 	// while a session lasts, so each is looked up once per session. The
@@ -152,16 +154,14 @@ func Connect(ctx context.Context, cfg Config) (bmc.Client, error) {
 	// turn off certificate checks process-wide and race between sessions.
 	t := http.DefaultTransport.(*http.Transport).Clone()
 	t.ForceAttemptHTTP2 = true
-	tlsConfig, err := clientTLS(cfg)
-	if err != nil {
-		return nil, err
-	}
-	t.TLSClientConfig = tlsConfig
+	t.TLSClientConfig = clientTLS(cfg)
 	timeout := cmp.Or(cfg.RequestTimeout, DefaultRequestTimeout)
 	// The header timeout starts after the request body is sent, so it also
 	// holds for an upload.
 	t.ResponseHeaderTimeout = timeout
-	hc := &http.Client{Transport: guard{next: t, timeout: timeout}}
+	g := guard{next: t, timeout: timeout, renew: &renewal{}}
+	g.renew.send = g.send
+	hc := &http.Client{Transport: g}
 	fail := func(err error) (bmc.Client, error) {
 		t.CloseIdleConnections()
 		return nil, fmt.Errorf("bmc: connect %s: %w", cfg.Endpoint, err)
@@ -192,6 +192,8 @@ func Connect(ctx context.Context, cfg Config) (bmc.Client, error) {
 				api = nil
 			} else {
 				auth = AuthSession
+				g.renew.arm(strings.TrimRight(cfg.Endpoint, "/")+root.Links.Sessions.ODataID,
+					cfg.Username, cfg.Password)
 			}
 		} else if LoginRefused(err) || statusOf(err) == 0 {
 			// Refused credentials, or no answer at all: Basic would fare
@@ -208,7 +210,7 @@ func Connect(ctx context.Context, cfg Config) (bmc.Client, error) {
 			return fail(err)
 		}
 	}
-	c := &client{api: api, svc: api.GetService(), readOnly: cfg.ReadOnly, auth: auth}
+	c := &client{api: api, svc: api.GetService(), readOnly: cfg.ReadOnly, auth: auth, renew: g.renew}
 	c.memo.root = &root.rootLinks
 	return c, nil
 }
@@ -216,10 +218,10 @@ func Connect(ctx context.Context, cfg Config) (bmc.Client, error) {
 // clientTLS is the TLS policy of a session: the pinned CAs, else the pinned
 // keys, else no check at all where the caller asked for that, else the
 // system's CAs (nil).
-func clientTLS(cfg Config) (*tls.Config, error) {
+func clientTLS(cfg Config) *tls.Config {
 	switch {
 	case cfg.RootCAs != nil:
-		return &tls.Config{RootCAs: cfg.RootCAs, MinVersion: tls.VersionTLS12}, nil
+		return &tls.Config{RootCAs: cfg.RootCAs, MinVersion: tls.VersionTLS12}
 	case len(cfg.PinnedKeys) > 0:
 		pins := slices.Clone(cfg.PinnedKeys)
 		return &tls.Config{
@@ -237,12 +239,12 @@ func clientTLS(cfg Config) (*tls.Config, error) {
 				}
 				return nil
 			},
-		}, nil
+		}
 	case cfg.Insecure:
 		// Lab BMCs with self-signed certs, asked for by the caller.
-		return &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS12}, nil //nolint:gosec
+		return &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS12} //nolint:gosec
 	}
-	return nil, nil
+	return nil
 }
 
 // PublicKeyPin is how a pin names a certificate's key: "sha256:" and the hex
@@ -324,7 +326,7 @@ func readServiceRoot(ctx context.Context, hc *http.Client, endpoint string) (ser
 // Close logs out and closes the connections the session kept open. Each
 // session has a transport of its own, so nothing else would close them.
 func (c *client) Close() error {
-	if c.auth == AuthSession {
+	if c.auth == AuthSession && !c.renew.logout() {
 		c.api.Logout()
 	}
 	c.api.HTTPClient.CloseIdleConnections()
@@ -382,13 +384,37 @@ func readBody(r io.Reader) ([]byte, error) {
 // can catch, so such an answer must never reach it.
 //
 // The guard also bounds each request, the body read included: gofish sets no
-// deadline of its own.
+// deadline of its own. And it renews a session that the manager forgot (see
+// renewal).
 type guard struct {
 	next    http.RoundTripper
 	timeout time.Duration
+	renew   *renewal
 }
 
 func (g guard) RoundTrip(req *http.Request) (*http.Response, error) {
+	if !g.renew.covers(req) {
+		return g.send(req)
+	}
+	token := g.renew.current(req.Header.Get("X-Auth-Token"))
+	resp, err := g.send(withToken(req, token, nil))
+	if err != nil || resp.StatusCode != http.StatusUnauthorized {
+		return resp, err
+	}
+	body, ok := replayBody(req)
+	if !ok {
+		return resp, nil
+	}
+	fresh, ok := g.renew.renew(req.Context(), token)
+	if !ok {
+		return resp, nil
+	}
+	_ = resp.Body.Close()
+	return g.send(withToken(req, fresh, body))
+}
+
+// send is one bounded request and its checked answer.
+func (g guard) send(req *http.Request) (*http.Response, error) {
 	timeout := g.timeout
 	if req.ContentLength > bulkBody {
 		timeout = max(timeout, UploadTimeout)
@@ -501,6 +527,20 @@ func statusOf(err error) int {
 	return 0
 }
 
+// Busy reports whether err is a manager, or a proxy in front of it, saying
+// it cannot serve the request now: 429 Too Many Requests, 502 Bad Gateway,
+// 503 Service Unavailable or 504 Gateway Timeout. Managers answer so while
+// their Redfish service restarts, while a job holds them, or when their
+// sessions are used up. The request did not run; asking again later is the
+// remedy, as for a connection that was refused.
+func Busy(err error) bool {
+	switch statusOf(err) {
+	case http.StatusTooManyRequests, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+		return true
+	}
+	return false
+}
+
 // LoginRefused reports whether err is a manager refusing the credentials of
 // a request (401). Every refused login counts towards the manager's lockout,
 // so a caller backs off a credential that got this answer.
@@ -552,13 +592,14 @@ func (c *client) pollTask(ctx context.Context, uri string) error {
 		}
 		switch task.TaskState {
 		case "Completed":
+			// The specification ends a failure as Exception. Some services
+			// end it as Completed, and say Critical in TaskStatus.
+			if strings.EqualFold(task.TaskStatus, "Critical") {
+				return false, fmt.Errorf("bmc: task %s: Completed with status Critical %s", uri, task.why())
+			}
 			return true, nil
 		case "Exception", "Killed", "Cancelled":
-			var why []string
-			for _, m := range task.Messages {
-				why = append(why, m.Message)
-			}
-			return false, fmt.Errorf("bmc: task %s: %s %s", uri, task.TaskState, strings.Join(why, "; "))
+			return false, fmt.Errorf("bmc: task %s: %s %s", uri, task.TaskState, task.why())
 		case "":
 			// A task monitor answers 202 while the operation runs and with the
 			// operation's own response once it is done — which is no Task.
@@ -570,8 +611,18 @@ func (c *client) pollTask(ctx context.Context, uri string) error {
 
 // taskAnswer is what pollTask reads from a task monitor.
 type taskAnswer struct {
-	TaskState string
-	Messages  []struct{ Message string }
+	TaskState  string
+	TaskStatus string
+	Messages   []struct{ Message string }
+}
+
+// why is the reason text of the task's messages.
+func (t taskAnswer) why() string {
+	var why []string
+	for _, m := range t.Messages {
+		why = append(why, m.Message)
+	}
+	return strings.Join(why, "; ")
 }
 
 // decodeTask reads a task monitor's answer. An empty body or a JSON object

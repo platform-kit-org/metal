@@ -600,7 +600,7 @@ write_proxy_patch() {
 # rolls the manager without anybody restarting it.
 write_deploy_dir() {
   local root=$1 lab_dir=$2 gen=$3 image=$4
-  local dir=$lab_dir/deploy base proxy_patch bundle_secret workload_secret
+  local dir=$lab_dir/deploy base stamp proxy_patch bundle_secret workload_secret
   bundle_secret=$(lab_value "$gen" BUNDLE_SECRET)
   workload_secret=$(lab_value_or "$gen" WORKLOAD_BUNDLE_SECRET "")
   mkdir -p "$dir"
@@ -630,6 +630,7 @@ write_deploy_dir() {
   cp "$gen/ledger.yaml" "$dir/ledger.yaml"
 
   base=$(realpath --relative-to="$dir" "$root/metal/config/lab")
+  stamp=$(realpath --relative-to="$dir" "$root/metal/config/name-stamp")
   proxy_patch=$(write_proxy_patch "$dir")
   # The operator builds the boot media for the machines' architecture.
   cat > "$dir/arch.yaml" <<EOF
@@ -685,6 +686,15 @@ EOF
   if [[ -n $proxy_patch ]]; then
     printf '  - path: %s\n' "$proxy_patch" >> "$dir/kustomization.yaml"
     echo "  the manager gets this shell's proxy settings ($dir/$proxy_patch)" >&2
+  fi
+  # The API server writes the username of the person who asks into
+  # requested-by and the guard lifts (metal/config/name-stamp). It needs
+  # MutatingAdmissionPolicy v1, Kubernetes 1.36: a kind node of an older
+  # release goes without, and a person then types their username.
+  if [[ $(kubectl get --raw /apis/admissionregistration.k8s.io/v1) == *'"mutatingadmissionpolicies"'* ]]; then
+    printf 'components:\n  - %s\n' "$stamp" >> "$dir/kustomization.yaml"
+  else
+    note "this Kubernetes has no MutatingAdmissionPolicy v1 (1.36 or later): in the tutorials, set metal.platform-kit.org/requested-by to your username, and write '<username>: ' in front of the reason of a guard lift"
   fi
 }
 

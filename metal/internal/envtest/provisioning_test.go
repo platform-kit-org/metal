@@ -377,8 +377,9 @@ func TestProvisioning(t *testing.T) {
 		return strings.Contains(err.Error(), "pre-approved")
 	}, waitFor, tick, "the ValidatingAdmissionPolicy never became enforcing")
 
+	// Dave last changed the cluster: each install in it carries his edit.
 	labCluster := &osv1alpha1.TalosCluster{
-		ObjectMeta: metav1.ObjectMeta{Name: "lab"},
+		ObjectMeta: metav1.ObjectMeta{Name: "lab", Annotations: map[string]string{metalv1alpha1.AnnotationRequestedBy: "dave"}},
 		Spec: osv1alpha1.TalosClusterSpec{TalosVersion: "v1.14.0", KubernetesVersion: "v1.36.2",
 			Endpoint:   "https://192.0.2.10:6443",
 			SecretsRef: osv1alpha1.SecretReference{Namespace: "default", Name: "lab-secrets"}},
@@ -523,6 +524,7 @@ func TestProvisioning(t *testing.T) {
 		assert.Equal(t, "Provisioning", op.Spec.Reason)
 		require.NotNil(t, op.Spec.Approval.Required)
 		assert.True(t, *op.Spec.Approval.Required, "approval is required by default")
+		assert.Equal(t, []string{"dave"}, op.Spec.RequestedBy, "the install applies the cluster's config")
 
 		var names []string
 		for _, a := range op.Spec.Actions {

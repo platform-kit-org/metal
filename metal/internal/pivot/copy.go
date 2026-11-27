@@ -7,6 +7,7 @@ import (
 	"maps"
 	"slices"
 	"sort"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -231,7 +232,7 @@ func (m *Mover) Copy(ctx context.Context, plan *Plan) (*Report, error) {
 		}
 	}
 	for _, so := range objs {
-		if err := m.copyStatus(ctx, so, rw); err != nil {
+		if err := m.copyStatus(ctx, so); err != nil {
 			return nil, fmt.Errorf("copy the status of %s %s: %w", so.kind.gvk.Kind, objectRef(so.obj), err)
 		}
 		rep.Copied[so.kind.gvk.Kind]++
@@ -340,6 +341,26 @@ func (m *Mover) ensureNamespaces(ctx context.Context, objs []sourceObject) error
 // requested-by annotation names (stamped first, see stampRequester), as an
 // admin: the requested-by policy wants the request's user there, and the
 // claim policy lets only an admin name a TalosNode.
+// kindNotYetKnown is the API server's answer to a write of a kind whose CRD
+// it established a moment ago. A mutating admission policy (the name
+// stamps) checks the object against the OpenAPI schema of its kind, and the
+// API server publishes that schema after the CRD is Established.
+const kindNotYetKnown = "There can be a delay between when CustomResourceDefinitions are created and when they are available"
+
+// untilAdmitted runs write, and again while the admission of the target does
+// not know the kind yet. The first write of each kind after Install can meet
+// this; any other error ends it.
+func (m *Mover) untilAdmitted(ctx context.Context, write func() error) error {
+	return m.wait(ctx, "the admission policies of "+m.Target.Name+" to know the operator's kinds",
+		func(context.Context) (bool, error) {
+			err := write()
+			if err != nil && strings.Contains(err.Error(), kindNotYetKnown) {
+				return false, nil
+			}
+			return true, err
+		})
+}
+
 func (m *Mover) writerFor(ctx context.Context, so sourceObject, want *unstructured.Unstructured) (client.Client, error) {
 	if so.kind.gvk.Kind == "HostOperation" {
 		proposer, _, _ := unstructured.NestedString(so.obj.Object, "spec", "proposedBy")
@@ -430,7 +451,7 @@ func (m *Mover) ensure(ctx context.Context, so sourceObject, rw *rewriter) (int,
 	err = m.Target.Client.Get(ctx, client.ObjectKeyFromObject(want), cur)
 	switch {
 	case apierrors.IsNotFound(err):
-		if err := w.Create(ctx, want); err != nil {
+		if err := m.untilAdmitted(ctx, func() error { return w.Create(ctx, want) }); err != nil {
 			return 0, err
 		}
 		cur = want
@@ -446,7 +467,7 @@ func (m *Mover) ensure(ctx context.Context, so sourceObject, rw *rewriter) (int,
 			w = m.Target.Client // the proposer's approval rules apply to a create only
 		}
 		if changed := mergeInto(cur, want, isOp); changed {
-			if err := w.Update(ctx, cur); err != nil {
+			if err := m.untilAdmitted(ctx, func() error { return w.Update(ctx, cur) }); err != nil {
 				return 0, err
 			}
 		}
@@ -518,7 +539,7 @@ func mergeInto(cur, want *unstructured.Unstructured, isOp bool) bool {
 // copyStatus writes the source's status onto the target object. The Host's
 // and the endpoint's status have several writers, each with its own field
 // manager; they are applied as those writers apply them.
-func (m *Mover) copyStatus(ctx context.Context, so sourceObject, rw *rewriter) error {
+func (m *Mover) copyStatus(ctx context.Context, so sourceObject) error {
 	status, found, _ := unstructured.NestedFieldNoCopy(so.obj.Object, "status")
 	if !found || status == nil {
 		return nil

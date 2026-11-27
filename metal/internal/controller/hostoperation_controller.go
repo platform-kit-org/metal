@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
 	"net/http"
 	"slices"
 	"strings"
@@ -26,7 +25,6 @@ import (
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
 	"github.com/dennisklein/platform-kit/metal/internal/asset"
 	"github.com/dennisklein/platform-kit/metal/internal/audit"
-	"github.com/dennisklein/platform-kit/metal/internal/baseline"
 	"github.com/dennisklein/platform-kit/metal/internal/bmc"
 	gofishclient "github.com/dennisklein/platform-kit/metal/internal/bmc/gofish"
 	"github.com/dennisklein/platform-kit/metal/internal/phase"
@@ -399,16 +397,15 @@ func (r *HostOperationReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		// The BMC baseline is taken only when a step uses the BMC: an
 		// operation made of Talos and Kubernetes steps runs while the BMC is
 		// down, and its steps record their own proof (the node's boot time).
-		var obs baseline.Observation
+		var obs bmc.System
 		if usesBMC(op) {
 			var hold string
-			var err error
-			if obs, hold, err = x.observe(bctx); err != nil {
-				return ctrl.Result{}, err
-			}
-			if hold != "" {
-				setCond(metalv1alpha1.ConditionExecuted, metav1.ConditionUnknown, metalv1alpha1.ReasonNoReachablePath, hold)
-				return ctrl.Result{}, client.IgnoreNotFound(flush())
+			if obs, hold = x.observe(bctx); hold != "" {
+				// Nothing else wakes the operation: the Host does not
+				// change when only this pass failed to reach its BMC.
+				setCond(metalv1alpha1.ConditionExecuted, metav1.ConditionUnknown, metalv1alpha1.ReasonNoReachablePath,
+					redact.String(hold)+"; retrying")
+				return ctrl.Result{RequeueAfter: r.waitInterval()}, client.IgnoreNotFound(flush())
 			}
 		}
 		if res, started, err := r.begin(ctx, op, host, obs, setCond, flush); !started {
@@ -554,7 +551,7 @@ func (r *HostOperationReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	// The closing observation: proof of the reset (baseline-and-advance), and what
 	// marks the Host's next reset-time advance as explained rather than Drifted.
 	if x.cl != nil {
-		if after, hold, err := x.observe(bctx); err == nil && hold == "" && !after.LastResetTime.IsZero() {
+		if after, hold := x.observe(bctx); hold == "" && !after.LastResetTime.IsZero() {
 			op.Status.ObservedResetTime = &metav1.MicroTime{Time: after.LastResetTime}
 		}
 	}
@@ -577,7 +574,7 @@ func (r *HostOperationReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 // down; two passes on two control planes deciding at the same time would
 // each count the other as up, and both would start.
 func (r *HostOperationReconciler) begin(ctx context.Context, op *metalv1alpha1.HostOperation, host *metalv1alpha1.Host,
-	obs baseline.Observation, setCond func(string, metav1.ConditionStatus, string, string), flush func() error) (res ctrl.Result, started bool, err error) {
+	obs bmc.System, setCond func(string, metav1.ConditionStatus, string, string), flush func() error) (res ctrl.Result, started bool, err error) {
 	if (r.Self != nil || r.Guard != nil) && disrupts(op) {
 		r.startMu.Lock()
 		defer r.startMu.Unlock()
@@ -773,14 +770,17 @@ type holdError struct{ reason, msg string }
 
 func (e *holdError) Error() string { return e.reason + ": " + e.msg }
 
-// transient: the error says this pass could not talk to the machine, not that
-// the machine refused — a hold, the pass deadline, or a network failure
-// (refused or reset connections, dial and read timeouts).
+// transient: the error says this pass could not talk to the machine or the
+// cluster, not that either refused — a hold, the pass deadline, a network
+// failure (refused or reset connections, dial and read timeouts), a Talos
+// API that is not up, or a server that answers it is busy and did not run
+// the request: a BMC's 429, 502, 503 or 504, and a Kubernetes API server's
+// 429, 503 or timeout (it restarts on a control plane that reboots).
 func transient(passCtx context.Context, err error) bool {
 	var hold *holdError
-	var nerr net.Error
-	return errors.As(err, &hold) || passCtx.Err() != nil ||
-		errors.Is(err, context.DeadlineExceeded) || errors.As(err, &nerr)
+	return errors.As(err, &hold) || passCtx.Err() != nil || unavailable(err) || gofishclient.Busy(err) ||
+		apierrors.IsServiceUnavailable(err) || apierrors.IsTooManyRequests(err) ||
+		apierrors.IsServerTimeout(err) || apierrors.IsTimeout(err)
 }
 
 // stepTransient is transient for a step. A flash is the exception for
@@ -1125,25 +1125,26 @@ func (x *exec) close() {
 // WRITE-capable client — one of the two places the read-only rail is
 // deliberately opened (the other is the convergence reconciler's read pass).
 func (r *HostOperationReconciler) dialHost(ctx context.Context, host *metalv1alpha1.Host) (bmc.Client, string, string, string, error) {
-	cl, reason, msg, err := hostPathClient(ctx, r.Client, r.CredentialsNamespace, host, false)
-	if err != nil || reason != "" {
-		return nil, "", reason, msg, err
+	cl, reason, msg := hostPathClient(ctx, r.Client, r.CredentialsNamespace, host, false)
+	if reason != "" {
+		return nil, "", reason, msg, nil
 	}
 	return cl, cl.(*pathClient).systemID, "", "", nil
 }
 
-// observe reads the current reset observables; a connection hold comes back
-// as a message, not an error, so the caller can surface it.
-func (x *exec) observe(ctx context.Context) (baseline.Observation, string, error) {
+// observe reads the system's current view, of which an operation's baseline
+// keeps the reset observables (power state, last reset time); a connection
+// failure comes back as the hold message, so the caller can surface it.
+func (x *exec) observe(ctx context.Context) (bmc.System, string) {
 	cl, sysID, err := x.client(ctx)
 	if err != nil {
-		return baseline.Observation{}, err.Error(), nil
+		return bmc.System{}, err.Error()
 	}
 	sys, err := systemOf(ctx, cl, sysID)
 	if err != nil {
-		return baseline.Observation{}, err.Error(), nil
+		return bmc.System{}, err.Error()
 	}
-	return baseline.FromSystem(sys), "", nil
+	return sys, ""
 }
 
 // systemOf reads one system's current view.
@@ -1164,7 +1165,8 @@ func systemOf(ctx context.Context, cl bmc.Client, systemID string) (bmc.System, 
 // shared by the executor (write-capable) and the convergence observer
 // (read-only). ctx is the caller's pass-bounded context: gofish pins it to
 // the client's whole lifetime, so no narrower dial timeout here.
-func hostPathClient(ctx context.Context, c client.Client, credentialsNamespace string, host *metalv1alpha1.Host, readOnly bool) (bmc.Client, string, string, error) {
+// A path that fails is skipped; reason and msg say why none is left.
+func hostPathClient(ctx context.Context, c client.Client, credentialsNamespace string, host *metalv1alpha1.Host, readOnly bool) (cl bmc.Client, reason, msg string) {
 	for _, path := range host.Status.ManagedBy {
 		if !path.Reachable {
 			continue
@@ -1175,16 +1177,15 @@ func hostPathClient(ctx context.Context, c client.Client, credentialsNamespace s
 		}
 		cfg, reason, err := endpointClientConfig(ctx, c, credentialsNamespace, ep, readOnly)
 		if err != nil {
-			return nil, reason, err.Error(), nil
+			return nil, reason, err.Error()
 		}
 		cl, err := gofishclient.Connect(ctx, cfg)
 		if err != nil {
 			continue
 		}
-		return &pathClient{Client: cl, systemID: path.SystemID}, "", "", nil
+		return &pathClient{Client: cl, systemID: path.SystemID}, "", ""
 	}
-	return nil, metalv1alpha1.ReasonNoReachablePath,
-		fmt.Sprintf("host %s has no reachable management path", host.Name), nil
+	return nil, metalv1alpha1.ReasonNoReachablePath, fmt.Sprintf("host %s has no reachable management path", host.Name)
 }
 
 // pathClient pins the chosen path's system id alongside the connection.

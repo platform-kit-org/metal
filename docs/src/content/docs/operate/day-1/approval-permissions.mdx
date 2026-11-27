@@ -11,6 +11,8 @@ sources:
   - /repo/metal/config/policy/talosrollout-approval.yaml
   - /repo/metal/config/policy/requested-by.yaml
   - /repo/metal/config/policy/requested-by-patches.yaml
+  - /repo/metal/config/name-stamp/requested-by-stamp.yaml
+  - /repo/metal/config/samples/site-overlay/kustomization.yaml
   - /repo/metal/config/policy/settings-guard.yaml
   - /repo/metal/config/samples/site-overlay/approval.yaml
   - /repo/metal/config/samples/site-overlay/bindings.yaml
@@ -133,23 +135,26 @@ The key `selfApproval` in the ConfigMap `hostoperation-approval` tells if a pers
 
 The operator proposes most changes itself, as the result of an edit. For example, a new `talosVersion` on a [](kind:TalosCluster) becomes a rollout, and a `metal.platform-kit.org/wipe` mark on a Host becomes a wipe operation. The proposal names the operator as its proposer. So the person who made the edit must also be on the record.
 
-- If `selfApproval` is `Forbidden`, each request that makes the operator propose work sets the annotation `metal.platform-kit.org/requested-by` to the username of the request. The `requested-by` policy refuses the request if not. A delete of such an object needs the annotation before the delete.
-- If `selfApproval` is `Allowed`, the annotation is optional. But after a person sets it, each request that makes the operator propose work must name its user, as under `Forbidden`. So the annotation does not name a person who did not make the change.
-- The pk-metal commands set the annotation for you in the two modes: [](cli:upgrade), [](cli:scale), [](cli:replace), [](cli:wipe), [](cli:reinstall), and `pk-metal rollout pause`, `resume`, and `abort`.
-- If you use `kubectl`, set the annotation in the same request:
+- Each request that makes the operator propose work names its user in the annotation `metal.platform-kit.org/requested-by`. If `selfApproval` is `Forbidden`, the `requested-by` policy refuses a request that does not name its user.
+- On Kubernetes 1.36 or later, the API server sets the annotation for you. The kustomize component `config/name-stamp` installs the policy [`requested-by-stamp`](ref:admission-policies#requested-by-stamp), which writes the username of the request. This applies to `kubectl`, to a GitOps controller, and to the pk-metal commands. The sample site overlay and the lab install it.
+- On an older release, set the annotation in the same request. The pk-metal commands do this for you, for example [](cli:upgrade), [](cli:wipe), and `pk-metal rollout pause`.
+- A delete of such an object needs the annotation before the delete. The API server cannot stamp a delete. The pk-metal commands set it first, for example [](cli:scale) and [](cli:replace). With `kubectl`, set it first:
 
   ```sh
   me=$(kubectl auth whoami -o jsonpath='{.status.userInfo.username}')
   kubectl annotate talosnode node-2 --overwrite "metal.platform-kit.org/requested-by=$me"
+  kubectl delete talosnode node-2
   ```
 
 - You can set the annotation to your own username only. You cannot remove it. To make a change of another person your own, set your own username.
 - The operator copies the names from the objects behind a proposal into `spec.requestedBy` of the operation or rollout. This field cannot change after the create.
+- An install applies the config of the node. So the install also names the last editor of the [](kind:TalosCluster). It also names the last editor of each patch ConfigMap of the node. A rollout names the same persons.
+- A BIOS or firmware change names the last editor of each profile that it applies. A profile can select the Host by a label of the [](kind:HostClaim). Then the change also names the last editor of the claim. A label that a person puts on the Host directly names nobody.
 - A rollout that the operator proposed ends with `PlanChanged` if a person who is not in its `spec.requestedBy` changes what it applies. The operator then proposes it again, with the new names.
 - A Talos config patch in a ConfigMap must have the label `os.platform-kit.org/patch: "true"`. The operator reads no ConfigMap without it. So the policy `requested-by-patches` can find the patches and ask for a name.
 
 <Callout type="caution">
-A GitOps controller applies the manifests as its own service account. So under `Forbidden`, each manifest that it applies must have `metal.platform-kit.org/requested-by` set to the username of that service account, for example `system:serviceaccount:flux-system:kustomize-controller`. Then `spec.requestedBy` names the service account, not the person who wrote the commit. `Forbidden` does not stop that person from approving the result. Make the review of the commit the second person, or approve only commits that another person wrote. See [](concept:gitops).
+A GitOps controller applies the manifests as its own service account. So `metal.platform-kit.org/requested-by` names that service account, for example `system:serviceaccount:flux-system:kustomize-controller`, and `spec.requestedBy` names it too, not the person who wrote the commit. `Forbidden` does not stop that person from approving the result. Make the review of the commit the second person, or approve only commits that another person wrote. See [](concept:gitops).
 </Callout>
 
 ## Guard-lift annotations
@@ -163,14 +168,14 @@ Two annotations on a [](kind:HostOperation) lift a safety rule for that operatio
 
 - Each person with `patch` on operations can set them, before or after the approval. That is each holder of `pk-metal-approver`. `selfApproval` does not apply to annotations.
 - The value is `<username>: <reason>`, with your own username. The `guard-lift` policy refuses each other value. So the operation records who lifted the rule and why.
+- If the site installs `config/name-stamp`, you give the reason only. The API server writes your username in front of it. See [`guard-lift-stamp`](ref:admission-policies#guard-lift-stamp).
 - [](cli:approve) shows each lifted guard in the plan, with the person and the reason. If an annotation changes after the command showed the plan, the command approves nothing.
 - An annotation with an empty value lifts nothing. The plan shows it as `empty: lifts nothing`.
 
 To lift the window on an operation:
 
 ```sh
-me=$(kubectl auth whoami -o jsonpath='{.status.userInfo.username}')
-kubectl -n pk-metal annotate hostoperation reboot-node-1 metal.platform-kit.org/ignore-window="$me: CVE fix"
+kubectl -n pk-metal annotate hostoperation reboot-node-1 metal.platform-kit.org/ignore-window="CVE fix"
 ```
 
 <Callout type="caution">

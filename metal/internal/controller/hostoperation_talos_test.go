@@ -23,6 +23,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
@@ -494,4 +495,47 @@ func TestWaitNodeReadyWantsAReadyFromSinceTheBoot(t *testing.T) {
 	require.NoError(t, lab.kube.Status().Update(t.Context(), n))
 	op = runOp(t, lab.r)
 	assert.True(t, opSucceeded(op), "%+v", op.Status)
+}
+
+// The Kubernetes API server of a control plane that reboots answers 503 for
+// a while. An uncordon that meets it waits; before, the operation failed for
+// good after the node had rebooted fine, and its rollout stopped.
+func TestUncordonOnABusyAPIServerWaits(t *testing.T) {
+	lab := newTalosLab(t, talosOp("w-1", metalv1alpha1.HostOperationAction{Uncordon: &metalv1alpha1.UncordonAction{NodeRef: ref("w-1")}}))
+	n := &corev1.Node{}
+	require.NoError(t, lab.kube.Get(t.Context(), client.ObjectKey{Name: "w-1"}, n))
+	n.Spec.Unschedulable = true
+	require.NoError(t, lab.kube.Update(t.Context(), n))
+	busy := 1
+	refuse := func() error {
+		if busy > 0 {
+			busy--
+			return apierrors.NewServiceUnavailable("the apiserver is shutting down")
+		}
+		return nil
+	}
+	kube := interceptor.NewClient(lab.kube.(client.WithWatch), interceptor.Funcs{
+		Patch: func(ctx context.Context, c client.WithWatch, obj client.Object, p client.Patch, opts ...client.PatchOption) error {
+			if err := refuse(); err != nil {
+				return err
+			}
+			return c.Patch(ctx, obj, p, opts...)
+		},
+		Update: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.UpdateOption) error {
+			if err := refuse(); err != nil {
+				return err
+			}
+			return c.Update(ctx, obj, opts...)
+		},
+	})
+	lab.r.Workload = func(context.Context, []byte) (client.Client, error) { return kube, nil }
+
+	op := lab.pass(t)
+	require.False(t, op.Finished(), "a busy API server is no verdict: %+v", op.Status)
+	assert.Contains(t, executed(op).Message, "cluster API unavailable")
+	assert.True(t, lab.unschedulable(t, "w-1"))
+
+	op = runOp(t, lab.r)
+	require.True(t, opSucceeded(op), "%+v", op.Status)
+	assert.False(t, lab.unschedulable(t, "w-1"))
 }

@@ -94,8 +94,9 @@ type HostOperationSpec struct {
 
 	// RequestedBy names the people whose change made the operator propose
 	// this operation: the metal.platform-kit.org/requested-by annotations of the
-	// objects behind it (the claim, the node, the Host, the profiles). It
-	// is frozen after creation. Where the site forbids self-approval, none
+	// objects behind it (the claim, the node, the Host, the profiles; for an
+	// install also the node's cluster and the patch ConfigMaps that the
+	// node's config reads). It is frozen after creation. Where the site forbids self-approval, none
 	// of them may approve the operation. Empty for an operation a person
 	// proposed; that person is its proposer.
 	// +kubebuilder:validation:MaxItems=32

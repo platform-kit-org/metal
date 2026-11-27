@@ -302,10 +302,13 @@ func (s *State) ResetManager(_ context.Context, action bmc.PowerAction) error {
 // resetManagerLocked moves the manager reset-time observable — only where the
 // fixture serves it (the iBMC doesn't; the sim never invents withheld facts) —
 // and applies a staged HTTPS identity (a manager reboot is the certificate
-// apply mechanism of both OEM identity surfaces).
+// apply mechanism of both OEM identity surfaces). It ends every session: a
+// manager keeps them in memory, so a client that sends its token after the
+// restart gets 401.
 func (s *State) resetManagerLocked() {
 	if !s.fw.lastReset.IsZero() {
 		s.fw.lastReset = time.Now()
 	}
 	s.applyIdentityLocked()
+	clear(s.sessions)
 }

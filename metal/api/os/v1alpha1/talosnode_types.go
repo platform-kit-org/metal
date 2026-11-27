@@ -187,7 +187,10 @@ type SystemExtensions struct {
 
 // Patch is one Talos configuration patch: a multi-document YAML strategic
 // merge patch (documents merge by apiVersion, kind and name; `$patch: delete`
-// removes one), given inline or read from a ConfigMap key.
+// removes one), given inline or read from a ConfigMap key. A patch that
+// changes the install (UnattendedInstallConfig: the disk, the installer
+// image, the wipe) stops the render: installDiskSelector and schematic
+// decide them.
 // +kubebuilder:validation:XValidation:rule="has(self.inline) != has(self.configMapRef)",message="exactly one of inline or configMapRef"
 type Patch struct {
 	// Inline is the patch text.

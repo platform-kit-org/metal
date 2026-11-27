@@ -2,9 +2,13 @@ package gofish_test
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/stmcginnis/gofish/schemas"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -184,4 +188,20 @@ func TestReadOnlyRefusesMutation(t *testing.T) {
 	assert.Error(t, c.UpdateFirmware(ctx, []byte("SIMFW 1")), "UpdateFirmware on read-only")
 	assert.Error(t, c.ResetManager(ctx, bmc.ActionGracefulRestart), "ResetManager on read-only")
 	assert.Error(t, c.SetBiosAttributes(ctx, "1", map[string]any{"QuietBoot": false}), "SetBiosAttributes on read-only")
+}
+
+// A manager that says it cannot serve the request now is busy; one that
+// refuses or does not know the request is not.
+func TestBusy(t *testing.T) {
+	for code, busy := range map[int]bool{
+		http.StatusTooManyRequests: true, http.StatusBadGateway: true,
+		http.StatusServiceUnavailable: true, http.StatusGatewayTimeout: true,
+		http.StatusBadRequest: false, http.StatusUnauthorized: false, http.StatusNotFound: false,
+		http.StatusInternalServerError: false,
+	} {
+		err := fmt.Errorf("power: %w", &schemas.Error{HTTPReturnedStatusCode: code})
+		assert.Equal(t, busy, gofishclient.Busy(err), "%d", code)
+	}
+	assert.False(t, gofishclient.Busy(errors.New("no status")))
+	assert.False(t, gofishclient.Busy(nil))
 }

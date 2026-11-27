@@ -255,7 +255,11 @@ func (r *ConvergenceReconciler) firmware(ctx context.Context, host *metalv1alpha
 	op := r.proposal(host.Name, "firmware", hash, metalv1alpha1.OperationReasonFirmwareConvergence, []metalv1alpha1.HostOperationAction{
 		{FlashFirmware: &metalv1alpha1.FlashFirmwareAction{Image: target.Image, Version: target.Version}},
 	})
-	op.Spec.RequestedBy = profileRequesters(profiles)
+	requesters, err := convergenceRequesters(ctx, r.Client, host, profiles)
+	if err != nil {
+		return false, err
+	}
+	op.Spec.RequestedBy = requesters
 	// Create before recording: a crash between the two re-proposes into
 	// AlreadyExists (benign), the reverse order would hold on a ghost.
 	if err := r.propose(ctx, op); err != nil {
@@ -402,7 +406,9 @@ func (r *ConvergenceReconciler) bios(ctx context.Context, host *metalv1alpha1.Ho
 				Attributes:  settings.Spec.Attributes,
 			}},
 		}))
-		op.Spec.RequestedBy = profileRequesters(profiles)
+		if op.Spec.RequestedBy, err = convergenceRequesters(ctx, r.Client, host, profiles); err != nil {
+			return false, err
+		}
 		if err := r.propose(ctx, op); err != nil {
 			return false, err
 		}
@@ -536,20 +542,50 @@ func (r *ConvergenceReconciler) proposal(hostName, domain, hash, reason string, 
 	}
 }
 
-// profileRequesters names the people who last changed the profiles that a
-// convergence proposal serves (metal.platform-kit.org/requested-by): any of their
-// edits may be what the proposal carries.
-func profileRequesters[P metalv1alpha1.BiosProfile | metalv1alpha1.FirmwareProfile](profiles []P) []string {
-	annotations := make([]map[string]string, len(profiles))
+// convergenceRequesters names the people who asked for what a convergence
+// proposal applies (metal.platform-kit.org/requested-by): who last changed
+// each profile it serves, and who last changed the host's claim when a
+// profile selects the host by a label of the claim. The claim's labels
+// are its intent: a change of them chose the profile for this machine.
+func convergenceRequesters[P metalv1alpha1.BiosProfile | metalv1alpha1.FirmwareProfile](ctx context.Context, c client.Reader,
+	host *metalv1alpha1.Host, profiles []P) ([]string, error) {
+	annotations := make([]map[string]string, 0, len(profiles)+1)
+	var selectors []metav1.LabelSelector
 	for i := range profiles {
 		switch p := any(&profiles[i]).(type) {
 		case *metalv1alpha1.BiosProfile:
-			annotations[i] = p.Annotations
+			annotations, selectors = append(annotations, p.Annotations), append(selectors, p.Spec.Match)
 		case *metalv1alpha1.FirmwareProfile:
-			annotations[i] = p.Annotations
+			annotations, selectors = append(annotations, p.Annotations), append(selectors, p.Spec.Match)
 		}
 	}
-	return metalv1alpha1.RequestedBy(annotations...)
+	if ref := host.Spec.ClaimRef; ref != nil {
+		claim := &metalv1alpha1.HostClaim{}
+		if err := c.Get(ctx, client.ObjectKey{Namespace: ref.Namespace, Name: ref.Name}, claim); client.IgnoreNotFound(err) != nil {
+			return nil, err
+		} else if err == nil && selectsByClaim(selectors, claim) {
+			annotations = append(annotations, claim.Annotations)
+		}
+	}
+	return metalv1alpha1.RequestedBy(annotations...), nil
+}
+
+// selectsByClaim: one of the selectors names a label key that the claim
+// puts on its host.
+func selectsByClaim(selectors []metav1.LabelSelector, claim *metalv1alpha1.HostClaim) bool {
+	for _, s := range selectors {
+		for k := range s.MatchLabels {
+			if _, ok := claim.Spec.Labels[k]; ok {
+				return true
+			}
+		}
+		for _, e := range s.MatchExpressions {
+			if _, ok := claim.Spec.Labels[e.Key]; ok {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // observeBios reads the machine's BIOS state and registry over a read-only
@@ -557,10 +593,7 @@ func profileRequesters[P metalv1alpha1.BiosProfile | metalv1alpha1.FirmwareProfi
 func (r *ConvergenceReconciler) observeBios(ctx context.Context, host *metalv1alpha1.Host) (bmc.BiosState, []bmc.BiosAttribute, error) {
 	cctx, cancel := context.WithTimeout(ctx, connectTimeout)
 	defer cancel()
-	cl, _, holdMsg, err := hostPathClient(cctx, r.Client, r.CredentialsNamespace, host, true)
-	if err != nil {
-		return bmc.BiosState{}, nil, err
-	}
+	cl, _, holdMsg := hostPathClient(cctx, r.Client, r.CredentialsNamespace, host, true)
 	if holdMsg != "" {
 		return bmc.BiosState{}, nil, errors.New(holdMsg)
 	}

@@ -7,7 +7,9 @@ xref: { cat: ref, id: rbac }
 sources:
   - /repo/metal/config/rbac/role.yaml
   - /repo/metal/config/rbac/role_binding.yaml
+  - /repo/metal/config/rbac/admin_role.yaml
   - /repo/metal/config/rbac/approver_role.yaml
+  - /repo/metal/config/samples/site-overlay/bindings.yaml
   - /repo/metal/config/rbac/backup_role.yaml
   - /repo/metal/config/rbac/oncall_role.yaml
 ---
@@ -54,8 +56,10 @@ Kubernetes RBAC does the split. The [admission policies](ref:admission-policies)
 <dl>
   <dt>`pk-metal-manager` (ClusterRole and Role)</dt>
   <dd>Generated from the `+kubebuilder:rbac` markers of the controllers. The ClusterRole holds the kinds. The Role in `pk-metal` holds Secrets, ConfigMaps, Jobs, the lease and certificate requests.</dd>
+  <dt>`pk-metal-admin` (ClusterRole and Role)</dt>
+  <dd>What the admin group needs. The ClusterRole holds each pk-metal kind, but not its status. The Role in `pk-metal` holds the Secrets and ConfigMaps there, and the logs of the manager and the imager Jobs. It has no `impersonate`, `escalate` or `bind`, and no RBAC objects. So a member cannot approve or lift a guard in the name of another person. The sample site overlay and the lab bind it to `pk-metal:admins`. Installing the operator and [](cli:pivot) need cluster admin.</dd>
   <dt>`pk-metal-approver` (ClusterRole)</dt>
-  <dd>Read and patch operations and rollouts. Read Hosts, clusters and nodes. Nothing binds it by default. A patch can also set annotations on an operation: abort, retry, and the guard overrides `metal.platform-kit.org/ignore-window` and `metal.platform-kit.org/override-cluster-guard`. So an approver can also lift these guards. The [`guard-lift`](ref:admission-policies#guard-lift) policy makes the value name the approver.</dd>
+  <dd>Read and patch operations and rollouts. Read what the plan of [](cli:approve) names: Hosts, BMC endpoints, boot assets, clusters and nodes. Nothing binds it by default. A patch can also set annotations on an operation: abort, retry, and the guard overrides `metal.platform-kit.org/ignore-window` and `metal.platform-kit.org/override-cluster-guard`. So an approver can also lift these guards. The [`guard-lift`](ref:admission-policies#guard-lift) policy makes the value name the approver.</dd>
   <dt>`pk-metal-oncall` (ClusterRole)</dt>
   <dd>What the [runbooks](rb:index) do. Read each pk-metal kind and the events. Delete operations and rollouts, patch claims, Hosts, Assets and clusters. It has no `patch` on operations or rollouts, so it cannot approve. It holds no Secret. Nothing binds it by default.</dd>
   <dt>`pk-metal-backup` (ClusterRole)</dt>
@@ -65,6 +69,14 @@ Kubernetes RBAC does the split. The [admission policies](ref:admission-policies)
 <Callout type="warning">
 Secret read in `pk-metal` is admin on every managed cluster and every BMC. The namespace holds the secrets bundles, the published admin credentials and the BMC logins. Give `get`, `list` and `watch` on Secrets in `pk-metal` to the admin group only. The built-in roles `edit` and `admin` include Secret read: do not bind them in `pk-metal`. [](cli:restore) needs only `<cluster>-talosconfig`: use a Role with `resourceNames` for it. See [](ref:threat-model).
 </Callout>
+
+### pk-metal-admin, cluster scope
+
+<RbacRows role="pk-metal-admin" kind="ClusterRole" />
+
+### pk-metal-admin, namespace pk-metal
+
+<RbacRows role="pk-metal-admin" kind="Role" />
 
 ### pk-metal-approver
 
@@ -99,7 +111,7 @@ Each controller page shows the rules that its markers ask for. See [](ctrl:index
 | `pk-metal-manager` | ClusterRoleBinding | ClusterRole `pk-metal-manager` | ServiceAccount `pk-metal/pk-metal-manager` |
 | `pk-metal-manager` | RoleBinding in `pk-metal` | Role `pk-metal-manager` | ServiceAccount `pk-metal/pk-metal-manager` |
 
-You bind the approver, backup and on-call roles yourself. Bind them to a group, not to single users:
+You bind the admin, approver, backup and on-call roles yourself. The sample site overlay binds `pk-metal-admin` to `pk-metal:admins`, with a ClusterRoleBinding and a RoleBinding in `pk-metal`. Do not bind `cluster-admin` to the admin group: it can impersonate each user. An install from an older sample has the ClusterRoleBinding `pk-metal-admins` to `cluster-admin`. Delete it after you apply the new sample. Bind the roles to a group, not to single users:
 
 ```yaml
 apiVersion: rbac.authorization.k8s.io/v1

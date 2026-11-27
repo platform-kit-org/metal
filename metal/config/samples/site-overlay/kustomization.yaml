@@ -18,10 +18,15 @@ resources:
   - ../../default
   - bindings.yaml
 
-# One-slot BMCs (a Huawei iBMC, for example) need the media store. It asks for
-# a 10 GiB PersistentVolumeClaim, so the cluster needs a storage class.
-# components:
-#   - ../../media-store
+components:
+  # The API server writes the username of the person who asks into
+  # metal.platform-kit.org/requested-by and into each guard lift, so nobody
+  # types their own. It needs Kubernetes 1.36 or later: remove it on an
+  # older release.
+  - ../../name-stamp
+  # One-slot BMCs (a Huawei iBMC, for example) need the media store. It asks
+  # for a 10 GiB PersistentVolumeClaim, so the cluster needs a storage class.
+  # - ../../media-store
 
 # The operator image. The base has a placeholder that cannot be pulled, so a
 # missing entry here fails the pull.

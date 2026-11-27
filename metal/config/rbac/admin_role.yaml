@@ -1,0 +1,56 @@
+# What the platform admins need: every pk-metal kind, and the Secrets and
+# ConfigMaps of the operator's namespace (the Role below). Bind both to the
+# admin group, the group that the admission policies name (ConfigMap
+# hostoperation-approval, key adminGroup, default pk-metal:admins); the
+# sample site overlay does (config/samples/site-overlay/bindings.yaml).
+#
+# What it leaves out on purpose:
+#   - impersonate, escalate, bind and the RBAC objects. An admin who can act
+#     as another user can approve in the name of an approver, or lift a guard
+#     in the name of another person, and the record names the wrong person.
+#     cluster-admin has all three;
+#   - the status of the kinds: the operator writes it, and it says what the
+#     operator found;
+#   - Secrets outside the operator's namespace;
+#   - CRDs, admission policies and the manager's Deployment. Installing and
+#     upgrading the operator, and pk-metal pivot, are cluster-admin work.
+#
+# Edit the list of kinds with the CRDs (a test in internal/envtest checks it).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: pk-metal-admin
+rules:
+  - apiGroups: ["metal.platform-kit.org"]
+    resources: ["assets", "biosprofiles", "biosschemas", "biossettings", "endpointprofiles", "firmwareprofiles",
+      "hostclaims", "hostoperations", "hosts", "maintenancewindows", "managementendpoints"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["os.platform-kit.org"]
+    resources: ["bootassets", "etcdbackuppolicies", "etcdsnapshots", "talosclusters", "talosnodes", "talosrollouts"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["", "events.k8s.io"]
+    resources: ["events"]
+    verbs: ["get", "list", "watch"]
+  - nonResourceURLs: ["/metrics"]
+    verbs: ["get"]
+---
+# The operator's namespace: the BMC logins, the secrets bundles, the published
+# admin credentials, the site settings, the ledger and the Talos config
+# patches. Read access to these Secrets is admin on each managed cluster and
+# each BMC: bind this Role to the admin group only. The logs of the manager
+# and of the imager Jobs are here too.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: pk-metal-admin
+  namespace: pk-metal
+rules:
+  - apiGroups: [""]
+    resources: ["secrets", "configmaps"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list", "watch"]

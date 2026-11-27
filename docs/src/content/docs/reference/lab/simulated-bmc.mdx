@@ -124,12 +124,16 @@ A fixture is a YAML file. `personality` in a fleet file can be the name of an em
 By default, the simulator answers at once and never refuses. Real BMCs are slow and have limits.
 These fixture fields copy that. All are off by default. Tests use them.
 
+A restart of the simulated BMC ends all its Redfish sessions, as on a real BMC. A firmware update and a new HTTPS certificate restart it.
+
 | Fixture field | Behavior |
 | --- | --- |
 | `protocol.latency` | Each answer waits this time. A real BMC answers in 0.3 to 1.5 seconds. |
 | `protocol.max_connections` | The BMC handles this number of requests at the same time. One more request gets 503 with `Retry-After`. |
 | `protocol.power_transition` | After a reset, the system shows `PoweringOn` or `PoweringOff` for this time before `On` or `Off`. |
 | `protocol.task_in_body` | An answer 202 names its Task only in the body, with no `Location` header. |
+| `protocol.task_failure_completed` | A task that fails ends with `TaskState` `Completed` and `TaskStatus` `Critical`, not with `Exception`. |
+| `protocol.session_timeout` | A Redfish session that gets no request for this time ends. |
 | `identity.csr_delay` | The OEM CSR (`identity.csr_native`) needs this time. Until then, the BMC shows the previous CSR. |
 | `ntp.slots` | The number of NTP server slots. The BMC refuses more servers. |
 | `reserved_account_slots` | Empty account slots that refuse a write, as iDRAC keeps slot 1. |

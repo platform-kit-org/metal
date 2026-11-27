@@ -131,14 +131,16 @@ func (s *Server) task(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	for _, t := range s.st.tasksView() {
 		if t.id == id {
-			s.reply(w, r, taskDoc(t))
+			s.reply(w, r, taskDoc(t, s.f.Protocol.TaskFailureCompleted))
 			return
 		}
 	}
 	s.fail(w, notFound("Task", id))
 }
 
-func taskDoc(t task) map[string]any {
+// taskDoc serves a task. With failCompleted, a failed task reads Completed
+// and says the failure only in TaskStatus.
+func taskDoc(t task, failCompleted bool) map[string]any {
 	uri := taskServiceURI + "/Tasks/" + t.id
 	doc := resource("#Task.v1_7_4.Task", uri, t.id, t.name)
 	doc["TaskMonitor"] = uri
@@ -150,6 +152,9 @@ func taskDoc(t task) map[string]any {
 		doc["PercentComplete"] = 100
 		doc["EndTime"] = t.ended.UTC().Format(time.RFC3339)
 	case "Exception":
+		if failCompleted {
+			doc["TaskState"] = "Completed"
+		}
 		doc["TaskStatus"] = "Critical"
 		doc["EndTime"] = t.ended.UTC().Format(time.RFC3339)
 		doc["Messages"] = []map[string]any{{
@@ -233,6 +238,9 @@ func (s *Server) sessionService(w http.ResponseWriter, r *http.Request) {
 	doc := resource("#SessionService.v1_1_9.SessionService", sessionServiceURI, "SessionService", "Session Service")
 	doc["ServiceEnabled"] = true
 	doc["SessionTimeout"] = 1800
+	if d := s.f.Protocol.SessionTimeout; d > 0 {
+		doc["SessionTimeout"] = max(1, int(d/time.Second))
+	}
 	doc["Sessions"] = link(sessionServiceURI + "/Sessions")
 	s.reply(w, r, doc)
 }

@@ -11,6 +11,7 @@ sources:
   - /repo/metal/internal/bmc/bmctest/bmctest.go
   - /repo/metal/internal/bmc/bmc.go
   - /repo/metal/internal/bmc/gofish/firmware.go
+  - /repo/metal/internal/bmc/gofish/renew.go
   - /repo/metal/internal/boot/boot.go
 ---
 
@@ -42,7 +43,7 @@ No test in the repository runs against a real BMC without a person, and no resul
 | Architecture | x86-64 or ARM64, one for each operator. The manager flag `--machine-arch` (default `amd64`) selects the images that the operator asks the image factory and the imager for. | x86-64 in the lab. ARM64 servers are not tested. |
 | Boot mode | UEFI. The operator sets the one-time boot in UEFI mode. | In the lab. Legacy mode is not tested. |
 | Secure Boot | The lab does not use it. | Not tested |
-| BMC protocol | Redfish over HTTPS, with Basic authentication. IPMI is not used. | In the lab |
+| BMC protocol | Redfish over HTTPS. The operator logs in with a Redfish session, or with HTTP Basic authentication if the BMC has no sessions. IPMI is not used. | In the lab |
 | Virtual media | The BMC can mount an ISO from an HTTPS URL. The BMC needs the license for this. | In the lab |
 | Boot override | The BMC can set a one-time boot from the virtual CD. | In the lab |
 | Media slots | Two usable slots, or one slot with the [media store](concept:one-slot-bmc). | In the lab, both shapes |
@@ -84,7 +85,9 @@ A BMC that follows the DMTF specification can work without a change. Each vendor
 - System firmware uses the multipart push with the apply time `OnReset`. It is proven only for the generic BMC.
 - The simulated X12 does not offer `OnReset`, and the operator refuses the stage. The X12 also needs OEM fields that the operator does not send for system firmware.
 - A firmware version in a [](kind:FirmwareProfile) must be the string that the BMC shows in its inventory, character for character.
-- The operator sends the user name and password with each request (Basic authentication). It opens no Redfish session. Some BMCs write an audit log entry for each request. Expect many entries for the account of the operator.
+- The operator opens a Redfish session for each pass, and deletes it after the pass. A BMC without sessions gets the user name and password with each request (HTTP Basic). Some BMCs then write an audit log entry for each request.
+- A restart of the BMC ends its sessions. A firmware update and a new HTTPS certificate restart it. The session also ends when it gets no request for the timeout of the BMC. Then the operator logs in again one time. If the BMC refuses that login, the operator does not try again, because each refused login counts towards the lockout of the account.
+- Some BMCs end a failed task with the state `Completed` and the status `Critical`. The operator reads this as a failure, and shows the message of the BMC.
 
 ## Licenses
 

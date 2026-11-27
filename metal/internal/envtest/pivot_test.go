@@ -19,6 +19,7 @@ import (
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -382,6 +383,9 @@ func TestPivot(t *testing.T) {
 		Provisioner: "rancher.io/local-path",
 	}))
 
+	// The stamp comes last, so that the objects above name no requester:
+	// the move then names itself.
+	installStamp(t, ctx, cl)
 	plan, err := mover.Preflight(ctx)
 	require.NoError(t, err)
 	require.Len(t, plan.Claims, 1)
@@ -408,6 +412,12 @@ func TestPivot(t *testing.T) {
 		assert.Contains(t, d.Spec.Template.Spec.Containers[0].Args, "--media-store-claim=pk-metal-media-store",
 			"the imager Jobs mount the claim the manager does")
 		require.NoError(t, mover.Install(ctx), "a second install leaves the claim as it is")
+	})
+	t.Run("the policy that names the requester moves", func(t *testing.T) {
+		for _, name := range []string{"requested-by-stamp", "requested-by-stamp-patches", "guard-lift-stamp"} {
+			require.NoError(t, dst.cl.Get(ctx, client.ObjectKey{Name: name}, &admissionregistrationv1.MutatingAdmissionPolicy{}))
+			require.NoError(t, dst.cl.Get(ctx, client.ObjectKey{Name: name}, &admissionregistrationv1.MutatingAdmissionPolicyBinding{}))
+		}
 	})
 	t.Run("the NetworkPolicy of the media port moves", func(t *testing.T) {
 		np := &networkingv1.NetworkPolicy{}

@@ -186,3 +186,14 @@ jobs:
           kubectl kustomize metal/config/lab > /dev/null
           kubectl kustomize metal/config/samples > /dev/null
           kubectl kustomize metal/config/samples/site-overlay > /dev/null
+      # What the change does to the operator's API, for the reviewer: kinds,
+      # versions and fields that go, new required fields, narrower enums and
+      # limits, new CEL rules. The API is v1alpha1 and may break, so this does
+      # not fail; a break shows on the run's summary and needs an upgrade note.
+      - name: Compare the CRDs with the base branch
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$BASE_REF"
+          CRD_DIFF_BASE=FETCH_HEAD mise run crd:diff | tee -a "$GITHUB_STEP_SUMMARY"

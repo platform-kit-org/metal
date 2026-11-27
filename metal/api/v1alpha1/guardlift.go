@@ -8,7 +8,8 @@ import "strings"
 // (config/policy/guard-lift.yaml) accepts a new or changed value only in
 // that form, and only with the username of the person who sets it, so that
 // the object records who decided. Removing the annotation is always
-// allowed: it puts the rule back.
+// allowed: it puts the rule back. Where the site installs config/name-stamp,
+// the API server writes the username in front of a bare reason.
 //
 // The decisions: an abort says why in its reason; the upload of an etcd
 // snapshot gives the sha256 it uploaded as its reason.

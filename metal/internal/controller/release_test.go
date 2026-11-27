@@ -318,18 +318,10 @@ func TestStaleCacheDoesNotHideABootThatRan(t *testing.T) {
 	live := fake.NewClientBuilder().WithScheme(testScheme(t)).
 		WithStatusSubresource(&metalv1alpha1.HostOperation{}, &metalv1alpha1.HostClaim{}).
 		WithObjects(slotlessEndpoint(), boundHost(claim), bootOp("boot", "node-b", false, true)).Build()
-	cached := interceptor.NewClient(live, interceptor.Funcs{
-		List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
-			if err := c.List(ctx, list, opts...); err != nil {
-				return err
-			}
-			if ops, ok := list.(*metalv1alpha1.HostOperationList); ok {
-				for i := range ops.Items {
-					ops.Items[i].Status = metalv1alpha1.HostOperationStatus{}
-				}
-			}
-			return nil
-		},
+	cached := staleList(live, func(ops *metalv1alpha1.HostOperationList) {
+		for i := range ops.Items {
+			ops.Items[i].Status = metalv1alpha1.HostOperationStatus{}
+		}
 	})
 	r := &HostClaimReconciler{Client: cached, APIReader: live, OperationsNamespace: "pk-metal", Proposer: "operator"}
 

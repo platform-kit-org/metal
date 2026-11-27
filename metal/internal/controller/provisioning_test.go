@@ -1,7 +1,6 @@
 package controller
 
 import (
-	"context"
 	"strings"
 	"testing"
 
@@ -587,17 +586,6 @@ func TestReleaseReadsPastAStaleCache(t *testing.T) {
 		require.NoError(t, r.Get(t.Context(), client.ObjectKeyFromObject(host), got))
 		assert.Nil(t, got.Spec.ClaimRef, "the host is handed back before the claim goes")
 	})
-}
-
-// staleLists answers lists from a cache that lags behind the API server;
-// everything else goes to the API server.
-type staleLists struct {
-	client.Client
-	cache client.Client
-}
-
-func (c *staleLists) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
-	return c.cache.List(ctx, list, opts...)
 }
 
 func TestDroppedIntentStopsARunningBoot(t *testing.T) {

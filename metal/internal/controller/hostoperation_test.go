@@ -711,27 +711,15 @@ func TestBootRecordsItsStartPastAStaleCache(t *testing.T) {
 	host.Spec.ClaimRef = &metalv1alpha1.ClaimReference{Namespace: claim.Namespace, Name: claim.Name, UID: claim.UID}
 	require.NoError(t, r.Update(ctx, host))
 	r.APIReader = r.Client
-	r.Client = &staleHost{Client: r.Client, host: free}
+	r.Client = staleGet(r.Client, func(_ client.ObjectKey, h *metalv1alpha1.Host) error {
+		free.DeepCopyInto(h)
+		return nil
+	})
 
 	got := runOp(t, r)
 	require.True(t, opSucceeded(got), "%+v", got.Status)
 	require.NoError(t, r.APIReader.Get(ctx, client.ObjectKey{Name: "host-a"}, host))
 	assert.True(t, powerOffDecided(host, claim), "the boot's start is on the host")
-}
-
-// staleHost answers reads of the host from a cache that has not seen its
-// latest write; everything else goes to the API server.
-type staleHost struct {
-	client.Client
-	host *metalv1alpha1.Host
-}
-
-func (c *staleHost) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
-	if h, ok := obj.(*metalv1alpha1.Host); ok && key.Name == c.host.Name {
-		c.host.DeepCopyInto(h)
-		return nil
-	}
-	return c.Client.Get(ctx, key, obj, opts...)
 }
 
 // A boot does not start once its claim is being deleted, or once the claim no

@@ -49,9 +49,10 @@ pass reads one kind and then acts on another, and the act stays:
 ## Prove it
 
 1. Build the reconciler with a client whose reads answer from an older
-   snapshot, and the real store as `APIReader`. `internal/controller` has
-   `staleLists` (lists from a second fake client), `staleSecrets`,
-   `staleClaims` and `staleBootstrap`.
+   snapshot, and the real store as `APIReader`.
+   `internal/controller/stalecache_test.go` has these clients: `staleGet`
+   and `staleList` change what a read of one kind returns, and `staleLists`
+   answers all lists from a second fake client.
 2. Assert the safe outcome. Then set `APIReader` to nil, or revert the fix,
    and see the test fail. A test that passes either way proves nothing.
 3. Run `mise run lint:reads` and `go test ./internal/controller/`.

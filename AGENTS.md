@@ -46,8 +46,8 @@ the check to make a change pass.
 2. A test that passes either way proves nothing. A conformance check that
    waits for a later read-back can hide an error of an earlier step.
 3. For a stale cache, give the reconciler a client whose reads answer from an
-   older snapshot (`staleLists`, `staleSecrets`, `staleClaims` in
-   `internal/controller`), and the real store as `APIReader`.
+   older snapshot (`internal/controller/stalecache_test.go` has them), and
+   the real store as `APIReader`.
 
 ## Keep the repository consistent
 

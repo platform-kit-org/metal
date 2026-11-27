@@ -62,16 +62,6 @@ Each part of the spec is one lane. A lane is active only when the profile has th
   <dd>The operator gets a certificate for `bmc-<endpoint>.<domain>` from cert-manager and puts it on the BMC. It gets a new certificate before the old one expires.</dd>
 </dl>
 
-### How a password changes
-
-1. The operator makes a new password and keeps it in the Secret, with the keys `next-username` and `next-password`.
-2. It sets the password on the BMC. It uses the managed account first, and the factory account second.
-3. It does a login with the new password.
-4. If the login works, the new password replaces the old one in the Secret.
-
-If the BMC refuses the password, the old password stays in the Secret and continues to work.
-The operator does not change the factory account. That account is the way back to the BMC.
-
 ## More than one profile
 
 More than one profile can select the same endpoint. The operator merges them one part at a time.

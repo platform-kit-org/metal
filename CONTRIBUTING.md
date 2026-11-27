@@ -76,8 +76,7 @@ Do not edit these by hand:
 - `metal/config/rbac/role.yaml`
 - `docs/src/data/generated/**`
 
-After a change to the API types, the RBAC markers, the `pk-metal` commands or
-the glossary:
+After a change to the API types, the RBAC markers or the `pk-metal` commands:
 
 ```sh
 mise run generate

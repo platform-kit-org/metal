@@ -22,8 +22,6 @@ One approval covers the full plan. The operator then changes one node at a time 
 ## At a glance
 
 <dl class="pk-glance">
-  <dt>Group and version</dt>
-  <dd>`os.platform-kit.org/v1alpha1`</dd>
   <dt>Scope</dt>
   <dd>Cluster.</dd>
   <dt>Written by</dt>
@@ -109,7 +107,7 @@ If not, the operation fails with `RolloutRefused` and the machine does not chang
 
 | Condition | Reasons |
 | --- | --- |
-| `Planned` | `PlanReady`, `PlanBlocked`, `NothingToDo` |
+| `Planned` | `PlanReady`, `PlanBlocked` |
 | `Approved` | `AwaitingApproval`, `PlanApproved`, `PlanChanged` |
 | `Progressing` | `NotStarted`, `NodeRunning`, `WaitingForHealth`, `PausedAfterFirstNode`, `PausedByPerson`, `Succeeded`, `RolloutFailed`, `Aborted`, `PlanChanged` |
 | `Paused` | `PausedAfterFirstNode`, `PausedByPerson`, `NotPaused` |

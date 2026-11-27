@@ -21,8 +21,6 @@ The operator bootstraps it one time, publishes its admin credentials and reports
 ## At a glance
 
 <dl class="pk-glance">
-  <dt>Group and version</dt>
-  <dd>`os.platform-kit.org/v1alpha1`</dd>
   <dt>Scope</dt>
   <dd>Cluster. The cluster name is `metadata.name`.</dd>
   <dt>Written by</dt>
@@ -84,8 +82,8 @@ If all control planes answer and none runs etcd, `Bootstrapped=False` with reaso
 
 | Condition | True means | Reasons when not True |
 | --- | --- | --- |
-| `Bootstrapped` | etcd runs. | `AwaitingControlPlane`, `NoControlPlane`, `BootstrapRefused`, `EtcdDataLost`, `EtcdUnavailable`, `EtcdDataPresent`, `RestorePending` |
-| `Available` | The Kubernetes API answers and all members are Ready. | `NotBootstrapped`, `KubernetesUnreachable`, `NodesNotReady` |
+| `Bootstrapped` | etcd runs. | False: `AwaitingControlPlane`, `NoControlPlane`, `BootstrapRefused`, `EtcdDataLost`, `EtcdUnavailable`, `EtcdDataPresent`, `RestorePending`. Unknown: `BootstrapRequested`, `SecretsUnavailable`. |
+| `Available` | The Kubernetes API answers and all members are Ready. | False: `NotBootstrapped`, `KubernetesUnreachable`, `NodesNotReady`. Unknown: `SecretsUnavailable`. |
 | `VersionsSupported` | The Talos version supports the Kubernetes version. | `UnsupportedVersionPair` |
 | `VersionsCurrent` | All nodes and the API server run the versions of the spec. | `VersionsBehind` |
 | `SecretsBundleHeld` | The operator holds the applied bundle, because `spec.secretsRef` changed. | `BundleApplied` (False: no difference) |

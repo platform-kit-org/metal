@@ -4,7 +4,6 @@
 // the name, the os.platform-kit.org row has the prefix os- (#os-verified). The last column lists
 // the reasons that the source ties to the condition.
 import { conditionId, conditions, reasonId, reasons, sentence, sourceUrl } from './data';
-import { conditionNotes } from './condition-notes';
 
 interface Props {
   group: 'metal.platform-kit.org' | 'os.platform-kit.org';
@@ -15,7 +14,7 @@ const rows = conditions
   .map((c) => ({
     ...c,
     id: conditionId(c),
-    text: conditionNotes[`${c.group}/${c.value}`] ?? sentence(c.description, c.name),
+    text: sentence(c.description, c.name),
     reasons: reasons.filter((r) => r.group === group && r.on?.some((o) => o.condition === c.value)),
   }))
   .sort((a, b) => a.value.localeCompare(b.value));

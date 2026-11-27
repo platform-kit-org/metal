@@ -95,9 +95,6 @@ const (
 	// TalosNode was removed from its cluster and the machine wiped; the
 	// claim keeps the machine for whatever node it names next.
 	ReasonNodeRemoved = "NodeRemoved"
-	// ReasonReinstalling on a claim's Provisioned=False: a reinstall the
-	// claim asked for (AnnotationReinstall) is proposed or running.
-	ReasonReinstalling = "Reinstalling"
 	// ReasonReplacing on a claim's Bound=False: the claim was pointed at
 	// another machine, and the one it ran on is being removed first.
 	ReasonReplacing = "Replacing"

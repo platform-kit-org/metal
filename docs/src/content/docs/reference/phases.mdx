@@ -41,7 +41,7 @@ The diagrams show the usual order. An object can go from one phase to a differen
 
 ## Host
 
-A [](kind:Host) has nine phases. The [](ctrl:host) calculates the inputs.
+A [](kind:Host) has these phases. The [](ctrl:host) calculates the inputs.
 
 <HostPhases />
 
@@ -49,7 +49,7 @@ A [](kind:Host) has nine phases. The [](ctrl:host) calculates the inputs.
 
 ## ManagementEndpoint
 
-A [](kind:ManagementEndpoint) has eight phases. Two controllers write its conditions: one [observes](ctrl:managementendpoint) the BMC, and one [configures](ctrl:endpointconvergence) it.
+A [](kind:ManagementEndpoint) has these phases. Two controllers write its conditions: one [observes](ctrl:managementendpoint) the BMC, and one [configures](ctrl:endpointconvergence) it.
 Only the controller that observes the BMC writes the phase.
 
 <EndpointPhases />
@@ -60,7 +60,7 @@ The phase Configuring shows only when an [](kind:EndpointProfile) applies to the
 
 ## HostClaim
 
-A [](kind:HostClaim) has three phases. The [](ctrl:hostclaim) writes its conditions.
+A [](kind:HostClaim) has these phases. The [](ctrl:hostclaim) writes its conditions.
 
 <ClaimPhases />
 
@@ -68,7 +68,7 @@ A [](kind:HostClaim) has three phases. The [](ctrl:hostclaim) writes its conditi
 
 ## HostOperation
 
-A [](kind:HostOperation) has six phases. The [](ctrl:hostoperation) writes its conditions.
+A [](kind:HostOperation) has these phases. The [](ctrl:hostoperation) writes its conditions.
 
 <OperationPhases />
 

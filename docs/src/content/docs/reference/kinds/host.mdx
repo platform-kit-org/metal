@@ -20,8 +20,6 @@ The operator makes the Host and writes all of it. You read it to see the state o
 ## At a glance
 
 <dl class="pk-glance">
-  <dt>Group and version</dt>
-  <dd>`metal.platform-kit.org/v1alpha1`</dd>
   <dt>Scope</dt>
   <dd>Cluster. A Host has no namespace.</dd>
   <dt>Written by</dt>
@@ -32,8 +30,6 @@ The operator makes the Host and writes all of it. You read it to see the state o
   <dd>The serial number of the machine, in lower case.</dd>
   <dt>Bound by</dt>
   <dd>A [](kind:HostClaim), through [`spec.claimRef`](kind:Host#spec.claimRef).</dd>
-  <dt>Phases</dt>
-  <dd>Enrolling, Inspecting, Available, Assigned, Provisioning, Provisioned, Releasing, Failed, Maintenance. [](ref:phases) has the rule for each.</dd>
   <dt>Source</dt>
   <dd>[host_types.go](/repo/metal/api/v1alpha1/host_types.go)</dd>
 </dl>

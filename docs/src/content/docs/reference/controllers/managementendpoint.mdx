@@ -91,11 +91,7 @@ The controller applies only its share of the status. It leaves out the `Configur
 
 ## Conditions
 
-| Condition | True means | False reasons |
-| --- | --- | --- |
-| `Reachable` | A Redfish session is open (`SessionUp`). | `CredentialsMissing`, `CAMissing`, `DialError` |
-| `Inventoried` | Discovery wrote the facts (`FactsGathered`). | `DiscoveryError` |
-| `Verified` | The serial of the Asset is among the discovered serials (`SerialMatch`). | `MACMismatch`, `SerialMismatch`. Unknown: `NoAssertion`, `NoSerialAnchor` |
+The [ManagementEndpoint page](kind:ManagementEndpoint#conditions) lists the conditions and their reasons.
 
 ## Failure modes
 

@@ -349,32 +349,42 @@ const (
 // Reasons of the backup kinds' conditions. Ready uses ReasonSinkReady and the
 // refusals below; BackedUp uses ReasonSnapshotRecent and the gaps below.
 const (
+	// ReasonSinkReady on Ready=True: the sink can take snapshots.
 	ReasonSinkReady = "SinkReady"
-	// ReasonSinkRefused: a pvc sink for the cluster the operator runs on.
+	// ReasonSinkRefused on Ready=False: a pvc sink for the cluster the
+	// operator runs on.
 	ReasonSinkRefused = "SinkRefused"
-	// ReasonSinkUnavailable: the sink cannot be used (no backup volume
-	// mounted, a credentials Secret missing or incomplete).
+	// ReasonSinkUnavailable on Ready=False: the sink cannot be used (no
+	// backup volume mounted, a credentials Secret missing or incomplete).
 	ReasonSinkUnavailable = "SinkUnavailable"
-	// ReasonRecipientsInvalid: an age recipient does not parse.
+	// ReasonRecipientsInvalid on Ready=False: an age recipient does not
+	// parse.
 	ReasonRecipientsInvalid = "RecipientsInvalid"
 
+	// ReasonSnapshotRecent on BackedUp=True: the newest verified snapshot is
+	// newer than twice the interval.
 	ReasonSnapshotRecent = "SnapshotRecent"
-	// ReasonNoSnapshot: no verified snapshot yet.
+	// ReasonNoSnapshot on BackedUp=False: no verified snapshot yet.
 	ReasonNoSnapshot = "NoSnapshot"
-	// ReasonBackupTooOld: the newest verified snapshot is older than twice
-	// the interval.
+	// ReasonBackupTooOld on BackedUp=False: the newest verified snapshot is
+	// older than twice the interval.
 	ReasonBackupTooOld = "BackupTooOld"
 
-	// ReasonStored on Complete=True; ReasonSnapshotFailed on
-	// Complete=False (the message says what failed).
-	ReasonStored         = "Stored"
+	// ReasonStored on Complete=True: the sink holds the snapshot.
+	ReasonStored = "Stored"
+	// ReasonSnapshotFailed on Complete=False: the message says what failed.
 	ReasonSnapshotFailed = "SnapshotFailed"
 	// ReasonTaking on Complete=Unknown: the snapshot is being taken, or
 	// waits for an etcd member to take it from.
 	ReasonTaking = "Taking"
-	// ReasonIntact on Verified=True; ReasonDamaged and ReasonReadBackFailed
-	// on Verified=False.
-	ReasonIntact         = "Intact"
-	ReasonDamaged        = "Damaged"
+	// ReasonIntact on Verified=True: the snapshot is an intact etcd
+	// database, and the sink holds the bytes that the operator sent.
+	ReasonIntact = "Intact"
+	// ReasonDamaged on Verified=False: the snapshot is not an intact etcd
+	// database.
+	ReasonDamaged = "Damaged"
+	// ReasonReadBackFailed on Verified=False: the operator could not read
+	// the snapshot back from the sink, or the sink holds other bytes than the
+	// operator sent.
 	ReasonReadBackFailed = "ReadBackFailed"
 )

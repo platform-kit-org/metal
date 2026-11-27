@@ -10,7 +10,7 @@ file=$(jq -r '.tool_input.file_path // empty')
 
 case "$file" in
   */metal/config/crd/*|*/metal/config/rbac/role.yaml|*/docs/src/data/generated/*|*/zz_generated.deepcopy.go)
-    echo "$file is generated: change its source (API types, kubebuilder markers, pk-metal commands, glossary) and run 'mise run generate'." >&2
+    echo "$file is generated: change its source (API types, kubebuilder markers, pk-metal commands) and run 'mise run generate'." >&2
     exit 2
     ;;
 esac

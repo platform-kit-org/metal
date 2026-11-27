@@ -29,6 +29,9 @@ const (
 	// LastResetTime advance) — information, not error.
 	ConditionDrifted = "Drifted"
 	// ConditionApprovalPending: a proposed HostOperation awaits its human gate.
+	// The reason of True is the operation's spec.reason (BiosConvergence,
+	// Provisioning) or, for an operation that a person asked for, its first
+	// action (PowerCycle).
 	ConditionApprovalPending = "ApprovalPending"
 	// ConditionMaintenance: a person put the host in maintenance (annotation
 	// metal.platform-kit.org/maintenance); the message is their reason. Absent otherwise.
@@ -94,6 +97,18 @@ const (
 	// (annotation metal.platform-kit.org/abort, pk-metal abort). It stopped between two
 	// steps and undid what it could; the message says what.
 	ReasonAborted = "Aborted"
+	// ReasonRolloutRefused on Executed=False: the operation names a TalosRollout
+	// (spec.rolloutRef), but the approval of the rollout does not cover it. The
+	// rollout is gone, not approved, aborted or approved for another planHash, or
+	// its plan gives this node other actions. The machine did not change.
+	ReasonRolloutRefused = "RolloutRefused"
+	// ReasonWaiverRefused on Approved=False and Executed=False: the operator
+	// proposed the operation with no approval of its own, but it is not one
+	// of the kinds the operator may run without a person: the node step of an
+	// approved rollout, the install of a claim set to Automatic, or a release.
+	// The executor refuses it before it acts on the machine. A request with
+	// the operator's token that the operator code did not make ends here.
+	ReasonWaiverRefused = "WaiverRefused"
 )
 
 // Reasons on the host's Booted / OSReady conditions. Both mirror the bound
@@ -195,8 +210,21 @@ const (
 	ReasonTLSNotVerified = "TLSNotVerified"
 )
 
-// Reasons on the endpoint's Reachable condition about the BMC's TLS key.
+// Reasons on the endpoint's Reachable, Inventoried and Verified conditions:
+// what the observing pass saw when it dialed the BMC.
 const (
+	// ReasonSessionUp on Reachable=True: the BMC answered and the session is open.
+	ReasonSessionUp = "SessionUp"
+	// ReasonDialError on Reachable=False: the BMC did not answer, refused the
+	// session, or its certificate could not be read.
+	ReasonDialError = "DialError"
+	// ReasonCredentialsMissing on Reachable=False and Configured=False:
+	// neither the managed Secret nor spec.credentialsRef gives a password
+	// that the operator can use.
+	ReasonCredentialsMissing = "CredentialsMissing"
+	// ReasonCAMissing on Reachable=False and Configured=False: the CA Secret
+	// that spec.tls names is missing or holds no valid CA certificate.
+	ReasonCAMissing = "CAMissing"
 	// ReasonTLSKeyChanged on Reachable=False: the BMC presents another key
 	// than the pinned one. The operator sends it nothing until a person
 	// approves the new key (annotation metal.platform-kit.org/approve-tls-key).
@@ -205,6 +233,54 @@ const (
 	// of this BMC is pinned yet, and no CA checks it. The observing pass
 	// pins the key it sees first.
 	ReasonTLSKeyNotPinned = "TLSKeyNotPinned"
+	// ReasonDiscoveryError on Inventoried=False: the session is open, but the
+	// manager, the chassis or the systems could not be read.
+	ReasonDiscoveryError = "DiscoveryError"
+	// ReasonFactsGathered on Inventoried=True: the status holds the
+	// discovered facts.
+	ReasonFactsGathered = "FactsGathered"
+	// ReasonNoAssertion on Verified=Unknown: the operator never resolved the
+	// Asset, so it has no assertion to compare with.
+	ReasonNoAssertion = "NoAssertion"
+	// ReasonNoSerialAnchor on Verified=Unknown: discovery found no serial to
+	// compare with the asserted one.
+	ReasonNoSerialAnchor = "NoSerialAnchor"
+	// ReasonSerialMatch on Verified=True: the asserted serial is one of the
+	// discovered serials.
+	ReasonSerialMatch = "SerialMatch"
+	// ReasonSerialMismatch on Verified=False: the asserted serial is not the discovered
+	// one — the machine behind this endpoint is not the machine the org claims.
+	ReasonSerialMismatch = "SerialMismatch"
+	// ReasonMACMismatch on Verified=False: the manager at this address reports a NIC MAC
+	// other than the asserted bmcMac — the ledger join resolved to the wrong box.
+	ReasonMACMismatch = "MACMismatch"
+)
+
+// Reasons on the host's Reachable, Inspected, Verified and ApprovalPending
+// conditions. The host reads Reachable and Verified from the endpoints that
+// front it; a Verified=False carries the reason of the endpoint.
+const (
+	// ReasonPathUp on Reachable=True: at least one management path answers.
+	// The message counts the paths.
+	ReasonPathUp = "PathUp"
+	// ReasonAllPathsDown on Reachable=False: no management path answers.
+	ReasonAllPathsDown = "AllPathsDown"
+	// ReasonRedfishFacts on Inspected=True: the hardware facts come from
+	// Redfish.
+	ReasonRedfishFacts = "RedfishFacts"
+	// ReasonIdentityDiverged on Inspected=False: two paths to the same serial anchor
+	// give different identities. The anchor leads to different machine facts, so
+	// no single Host identity exists. The operator alerts and holds.
+	ReasonIdentityDiverged = "IdentityDiverged"
+	// ReasonAllPathsVerified on Verified=True: each endpoint that fronts the
+	// host has the condition Verified.
+	ReasonAllPathsVerified = "AllPathsVerified"
+	// ReasonVerifying on Verified=Unknown: some endpoints do not have the
+	// condition Verified yet. The message counts them.
+	ReasonVerifying = "Verifying"
+	// ReasonNonePending on ApprovalPending=False: no operation for the host
+	// waits for approval.
+	ReasonNonePending = "NonePending"
 )
 
 // Reasons on the host's Drifted condition (information, not error).
@@ -227,35 +303,39 @@ const (
 	// ReasonHandedOff on Provisioned=True: the machine checked in with the
 	// node's config.
 	ReasonHandedOff = "HandedOff"
-	// ReasonAwaitingRender: the TalosNode (or its cluster) is missing or has
-	// no rendered config yet.
+	// ReasonAwaitingRender on Provisioned=False: the TalosNode (or its cluster)
+	// is missing or has no rendered config yet.
 	ReasonAwaitingRender = "AwaitingRender"
-	// ReasonAwaitingBootAsset: the installer image, the config medium or the
-	// installer with the config built in is not built (Ready) for the current
-	// render yet.
+	// ReasonAwaitingBootAsset on Provisioned=False: the installer image, the
+	// config medium or the installer with the config built in is not built
+	// (Ready) for the current render yet.
 	ReasonAwaitingBootAsset = "AwaitingBootAsset"
-	// ReasonSingleMediumUnsupported: the endpoint can hold one virtual medium
-	// only, and the machine has no Talos to boot from disk. An installer with
-	// the config inside cannot help either. The Talos release of the cluster
-	// cannot read one (before 1.12), or the one slot does not boot an ISO.
+	// ReasonSingleMediumUnsupported on Provisioned=False: the endpoint can hold
+	// one virtual medium only, and the machine has no Talos to boot from disk.
+	// An installer with the config inside cannot help either. The Talos release
+	// of the cluster cannot read one (before 1.12), or the one slot does not
+	// boot an ISO.
 	ReasonSingleMediumUnsupported = "SingleMediumUnsupported"
-	// ReasonNoBootableMedia: the endpoint advertises no insertable media slot
-	// or no removable-media boot target.
+	// ReasonNoBootableMedia on Provisioned=False: the endpoint advertises no
+	// insertable media slot or no removable-media boot target.
 	ReasonNoBootableMedia = "NoBootableMedia"
-	// ReasonReleasing: the claim is being deleted; the release operation
-	// (power off, eject) runs before the machine is handed back.
+	// ReasonReleasing on Provisioned=False: the claim is being deleted; the
+	// release operation (power off, eject) runs before the machine is handed
+	// back.
 	ReasonReleasing = "Releasing"
-	// ReasonReleaseFailed: the release operation failed — the machine stays
-	// bound until a person deletes the failed operation (which retries it).
+	// ReasonReleaseFailed on Provisioned=False: the release operation failed —
+	// the machine stays bound until a person deletes the failed operation (which
+	// retries it).
 	ReasonReleaseFailed = "ReleaseFailed"
-	// ReasonHeldByUser: the claim carries the metal.platform-kit.org/hold annotation —
-	// nothing is proposed for it until the annotation is removed.
+	// ReasonHeldByUser on Provisioned=False: the claim carries the
+	// metal.platform-kit.org/hold annotation — nothing is proposed for it until
+	// the annotation is removed.
 	ReasonHeldByUser = "HeldByUser"
-	// ReasonHostInMaintenance: the bound host carries the
-	// metal.platform-kit.org/maintenance annotation, so the operator proposes nothing for
-	// it. It is also the reason on Maintenance=True and on the blockedOn of a
-	// host in maintenance. An operation that waits for the end of the
-	// maintenance has it on Executed=Unknown.
+	// ReasonHostInMaintenance on Provisioned=False: the bound host carries
+	// the metal.platform-kit.org/maintenance annotation, so the operator
+	// proposes nothing for it. It is also the reason on Maintenance=True and
+	// on the blockedOn of a host in maintenance. An operation that waits for
+	// the end of the maintenance has it on Executed=Unknown.
 	ReasonHostInMaintenance = "HostInMaintenance"
 	// ReasonSelfDisruption: the step would reboot or power off a machine that
 	// the operator needs. This is the node of its pod, or a control plane of
@@ -290,10 +370,6 @@ const (
 	ReasonMaterializeConflict = "MaterializeConflict"
 )
 
-// ReasonAssetNotMaterialized on a claim's Bound=False: the Asset has no
-// endpoint, and its Materialized condition says why.
-const ReasonAssetNotMaterialized = "AssetNotMaterialized"
-
 // ReasonHostClaimed on DeletionHeld=True: a claim holds the machine.
 const ReasonHostClaimed = "HostClaimed"
 
@@ -305,28 +381,22 @@ const (
 	// ReasonBindRetained on Bound=True: the assetRef no longer resolves but a live
 	// bind exists — alert-and-hold, a resolution failure never releases a machine.
 	ReasonBindRetained = "BindRetained"
-	// ReasonAssetNotFound: the referenced Asset does not exist.
+	// ReasonAssetNotFound on Bound=False: the referenced Asset does not exist.
 	ReasonAssetNotFound = "AssetNotFound"
-	// ReasonHostNotDiscovered: no Host has been discovered for the asset yet.
+	// ReasonAssetNotMaterialized on a claim's Bound=False: the Asset has no
+	// endpoint, and its Materialized condition says why.
+	ReasonAssetNotMaterialized = "AssetNotMaterialized"
+	// ReasonHostNotDiscovered on Bound=False: no Host has been discovered for
+	// the asset yet.
 	ReasonHostNotDiscovered = "HostNotDiscovered"
-	// ReasonAmbiguousSystem: the endpoint fronts several systems and no systemRef
-	// says which one is meant — a chassis with more than one node in it.
+	// ReasonAmbiguousSystem on Bound=False: the endpoint fronts several systems
+	// and no systemRef says which one is meant — a chassis with more than one
+	// node in it.
 	ReasonAmbiguousSystem = "AmbiguousSystem"
-	// ReasonSystemNotFound: systemRef names no system the endpoint fronts.
+	// ReasonSystemNotFound on Bound=False: systemRef names no system the
+	// endpoint fronts.
 	ReasonSystemNotFound = "SystemNotFound"
-	// ReasonHostAlreadyClaimed: another claim holds the host (first writer won).
+	// ReasonHostAlreadyClaimed on Bound=False: another claim holds the host
+	// (first writer won).
 	ReasonHostAlreadyClaimed = "HostAlreadyClaimed"
 )
-
-// ReasonSerialMismatch on Verified=False: the asserted serial is not the discovered
-// one — the machine behind this endpoint is not the machine the org claims.
-const ReasonSerialMismatch = "SerialMismatch"
-
-// ReasonMACMismatch on Verified=False: the manager at this address reports a NIC MAC
-// other than the asserted bmcMac — the ledger join resolved to the wrong box.
-const ReasonMACMismatch = "MACMismatch"
-
-// ReasonIdentityDiverged on Inspected=False: two paths to the same serial anchor
-// give different identities. The anchor leads to different machine facts, so
-// no single Host identity exists. The operator alerts and holds.
-const ReasonIdentityDiverged = "IdentityDiverged"

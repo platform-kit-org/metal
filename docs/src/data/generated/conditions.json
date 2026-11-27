@@ -75,7 +75,7 @@
       "value": "ApprovalPending",
       "group": "metal.platform-kit.org",
       "source": "metal/api/v1alpha1/conditions.go",
-      "description": "a proposed HostOperation awaits its human gate."
+      "description": "a proposed HostOperation awaits its human gate. The reason of True is the operation's spec.reason (BiosConvergence, Provisioning) or, for an operation that a person asked for, its first action (PowerCycle)."
     },
     {
       "name": "ConditionMaintenance",
@@ -166,7 +166,7 @@
       "value": "Ready",
       "group": "os.platform-kit.org",
       "source": "metal/api/os/v1alpha1/conditions.go",
-      "description": "the BootAsset's artifact exists and is fetchable (built into its artifact Secret, or, factory, addressed by a computed URL). On a TalosNode it is the check-in verdict instead: the machine's aggregated status reports stage running and ready."
+      "description": "the BootAsset's artifact exists and is fetchable (built into its artifact Secret, or, factory, addressed by a computed URL). On a TalosNode it is the check-in verdict instead: the machine's aggregated status reports stage running and ready. On an EtcdBackupPolicy, the sink can take snapshots."
     },
     {
       "name": "ConditionMachineReachable",
@@ -236,28 +236,28 @@
       "value": "Planned",
       "group": "os.platform-kit.org",
       "source": "metal/api/os/v1alpha1/conditions_rollout.go",
-      "description": "ConditionPlanned, ConditionApproved, ConditionProgressing, ConditionPaused and ConditionComplete (declared with the backup kinds, which use it the same way) are a TalosRollout's."
+      "description": "on a TalosRollout, the operator made the plan for all nodes. False means that it cannot plan a step yet."
     },
     {
       "name": "ConditionApproved",
       "value": "Approved",
       "group": "os.platform-kit.org",
       "source": "metal/api/os/v1alpha1/conditions_rollout.go",
-      "description": ""
+      "description": "on a TalosRollout, a person approved the plan, and the approval names the plan as it is now."
     },
     {
       "name": "ConditionProgressing",
       "value": "Progressing",
       "group": "os.platform-kit.org",
       "source": "metal/api/os/v1alpha1/conditions_rollout.go",
-      "description": ""
+      "description": "on a TalosRollout, the rollout changes a node, waits for health, or stays in a pause. False means that it did not start or that it ended."
     },
     {
       "name": "ConditionPaused",
       "value": "Paused",
       "group": "os.platform-kit.org",
       "source": "metal/api/os/v1alpha1/conditions_rollout.go",
-      "description": ""
+      "description": "on a TalosRollout, the rollout stays between two nodes, after the first node or because a person paused it."
     },
     {
       "name": "ConditionBackedUp",
@@ -443,6 +443,38 @@
       "source": "metal/api/v1alpha1/conditions.go",
       "description": "a person asked the operation to stop (annotation metal.platform-kit.org/abort, pk-metal abort). It stopped between two steps and undid what it could; the message says what.",
       "on": [
+        {
+          "condition": "Executed",
+          "status": "False"
+        }
+      ],
+      "context": "Reasons on the operation's Approved / Executed conditions."
+    },
+    {
+      "name": "ReasonRolloutRefused",
+      "value": "RolloutRefused",
+      "group": "metal.platform-kit.org",
+      "source": "metal/api/v1alpha1/conditions.go",
+      "description": "the operation names a TalosRollout (spec.rolloutRef), but the approval of the rollout does not cover it. The rollout is gone, not approved, aborted or approved for another planHash, or its plan gives this node other actions. The machine did not change.",
+      "on": [
+        {
+          "condition": "Executed",
+          "status": "False"
+        }
+      ],
+      "context": "Reasons on the operation's Approved / Executed conditions."
+    },
+    {
+      "name": "ReasonWaiverRefused",
+      "value": "WaiverRefused",
+      "group": "metal.platform-kit.org",
+      "source": "metal/api/v1alpha1/conditions.go",
+      "description": "the operator proposed the operation with no approval of its own, but it is not one of the kinds the operator may run without a person: the node step of an approved rollout, the install of a claim set to Automatic, or a release. The executor refuses it before it acts on the machine. A request with the operator's token that the operator code did not make ends here.",
+      "on": [
+        {
+          "condition": "Approved",
+          "status": "False"
+        },
         {
           "condition": "Executed",
           "status": "False"
@@ -745,6 +777,70 @@
       "context": "Reasons on the endpoint's Configured condition (the EndpointProfile lanes). InSync and ProfileConflict are shared with the convergence vocabulary above. There is no operation gate here — merging the profile is the approval — so every False is either in-flight work or an alert-and-hold the next pass retries (the factory account stays as break-glass, faults self-heal)."
     },
     {
+      "name": "ReasonSessionUp",
+      "value": "SessionUp",
+      "group": "metal.platform-kit.org",
+      "source": "metal/api/v1alpha1/conditions.go",
+      "description": "the BMC answered and the session is open.",
+      "on": [
+        {
+          "condition": "Reachable",
+          "status": "True"
+        }
+      ],
+      "context": "Reasons on the endpoint's Reachable, Inventoried and Verified conditions: what the observing pass saw when it dialed the BMC."
+    },
+    {
+      "name": "ReasonDialError",
+      "value": "DialError",
+      "group": "metal.platform-kit.org",
+      "source": "metal/api/v1alpha1/conditions.go",
+      "description": "the BMC did not answer, refused the session, or its certificate could not be read.",
+      "on": [
+        {
+          "condition": "Reachable",
+          "status": "False"
+        }
+      ],
+      "context": "Reasons on the endpoint's Reachable, Inventoried and Verified conditions: what the observing pass saw when it dialed the BMC."
+    },
+    {
+      "name": "ReasonCredentialsMissing",
+      "value": "CredentialsMissing",
+      "group": "metal.platform-kit.org",
+      "source": "metal/api/v1alpha1/conditions.go",
+      "description": "neither the managed Secret nor spec.credentialsRef gives a password that the operator can use.",
+      "on": [
+        {
+          "condition": "Reachable",
+          "status": "False"
+        },
+        {
+          "condition": "Configured",
+          "status": "False"
+        }
+      ],
+      "context": "Reasons on the endpoint's Reachable, Inventoried and Verified conditions: what the observing pass saw when it dialed the BMC."
+    },
+    {
+      "name": "ReasonCAMissing",
+      "value": "CAMissing",
+      "group": "metal.platform-kit.org",
+      "source": "metal/api/v1alpha1/conditions.go",
+      "description": "the CA Secret that spec.tls names is missing or holds no valid CA certificate.",
+      "on": [
+        {
+          "condition": "Reachable",
+          "status": "False"
+        },
+        {
+          "condition": "Configured",
+          "status": "False"
+        }
+      ],
+      "context": "Reasons on the endpoint's Reachable, Inventoried and Verified conditions: what the observing pass saw when it dialed the BMC."
+    },
+    {
       "name": "ReasonTLSKeyChanged",
       "value": "TLSKeyChanged",
       "group": "metal.platform-kit.org",
@@ -756,7 +852,7 @@
           "status": "False"
         }
       ],
-      "context": "Reasons on the endpoint's Reachable condition about the BMC's TLS key."
+      "context": "Reasons on the endpoint's Reachable, Inventoried and Verified conditions: what the observing pass saw when it dialed the BMC."
     },
     {
       "name": "ReasonTLSKeyNotPinned",
@@ -774,7 +870,203 @@
           "status": "False"
         }
       ],
-      "context": "Reasons on the endpoint's Reachable condition about the BMC's TLS key."
+      "context": "Reasons on the endpoint's Reachable, Inventoried and Verified conditions: what the observing pass saw when it dialed the BMC."
+    },
+    {
+      "name": "ReasonDiscoveryError",
+      "value": "DiscoveryError",
+      "group": "metal.platform-kit.org",
+      "source": "metal/api/v1alpha1/conditions.go",
+      "description": "the session is open, but the manager, the chassis or the systems could not be read.",
+      "on": [
+        {
+          "condition": "Inventoried",
+          "status": "False"
+        }
+      ],
+      "context": "Reasons on the endpoint's Reachable, Inventoried and Verified conditions: what the observing pass saw when it dialed the BMC."
+    },
+    {
+      "name": "ReasonFactsGathered",
+      "value": "FactsGathered",
+      "group": "metal.platform-kit.org",
+      "source": "metal/api/v1alpha1/conditions.go",
+      "description": "the status holds the discovered facts.",
+      "on": [
+        {
+          "condition": "Inventoried",
+          "status": "True"
+        }
+      ],
+      "context": "Reasons on the endpoint's Reachable, Inventoried and Verified conditions: what the observing pass saw when it dialed the BMC."
+    },
+    {
+      "name": "ReasonNoAssertion",
+      "value": "NoAssertion",
+      "group": "metal.platform-kit.org",
+      "source": "metal/api/v1alpha1/conditions.go",
+      "description": "the operator never resolved the Asset, so it has no assertion to compare with.",
+      "on": [
+        {
+          "condition": "Verified",
+          "status": "Unknown"
+        }
+      ],
+      "context": "Reasons on the endpoint's Reachable, Inventoried and Verified conditions: what the observing pass saw when it dialed the BMC."
+    },
+    {
+      "name": "ReasonNoSerialAnchor",
+      "value": "NoSerialAnchor",
+      "group": "metal.platform-kit.org",
+      "source": "metal/api/v1alpha1/conditions.go",
+      "description": "discovery found no serial to compare with the asserted one.",
+      "on": [
+        {
+          "condition": "Verified",
+          "status": "Unknown"
+        }
+      ],
+      "context": "Reasons on the endpoint's Reachable, Inventoried and Verified conditions: what the observing pass saw when it dialed the BMC."
+    },
+    {
+      "name": "ReasonSerialMatch",
+      "value": "SerialMatch",
+      "group": "metal.platform-kit.org",
+      "source": "metal/api/v1alpha1/conditions.go",
+      "description": "the asserted serial is one of the discovered serials.",
+      "on": [
+        {
+          "condition": "Verified",
+          "status": "True"
+        }
+      ],
+      "context": "Reasons on the endpoint's Reachable, Inventoried and Verified conditions: what the observing pass saw when it dialed the BMC."
+    },
+    {
+      "name": "ReasonSerialMismatch",
+      "value": "SerialMismatch",
+      "group": "metal.platform-kit.org",
+      "source": "metal/api/v1alpha1/conditions.go",
+      "description": "the asserted serial is not the discovered one — the machine behind this endpoint is not the machine the org claims.",
+      "on": [
+        {
+          "condition": "Verified",
+          "status": "False"
+        }
+      ],
+      "context": "Reasons on the endpoint's Reachable, Inventoried and Verified conditions: what the observing pass saw when it dialed the BMC."
+    },
+    {
+      "name": "ReasonMACMismatch",
+      "value": "MACMismatch",
+      "group": "metal.platform-kit.org",
+      "source": "metal/api/v1alpha1/conditions.go",
+      "description": "the manager at this address reports a NIC MAC other than the asserted bmcMac — the ledger join resolved to the wrong box.",
+      "on": [
+        {
+          "condition": "Verified",
+          "status": "False"
+        }
+      ],
+      "context": "Reasons on the endpoint's Reachable, Inventoried and Verified conditions: what the observing pass saw when it dialed the BMC."
+    },
+    {
+      "name": "ReasonPathUp",
+      "value": "PathUp",
+      "group": "metal.platform-kit.org",
+      "source": "metal/api/v1alpha1/conditions.go",
+      "description": "at least one management path answers. The message counts the paths.",
+      "on": [
+        {
+          "condition": "Reachable",
+          "status": "True"
+        }
+      ],
+      "context": "Reasons on the host's Reachable, Inspected, Verified and ApprovalPending conditions. The host reads Reachable and Verified from the endpoints that front it; a Verified=False carries the reason of the endpoint."
+    },
+    {
+      "name": "ReasonAllPathsDown",
+      "value": "AllPathsDown",
+      "group": "metal.platform-kit.org",
+      "source": "metal/api/v1alpha1/conditions.go",
+      "description": "no management path answers.",
+      "on": [
+        {
+          "condition": "Reachable",
+          "status": "False"
+        }
+      ],
+      "context": "Reasons on the host's Reachable, Inspected, Verified and ApprovalPending conditions. The host reads Reachable and Verified from the endpoints that front it; a Verified=False carries the reason of the endpoint."
+    },
+    {
+      "name": "ReasonRedfishFacts",
+      "value": "RedfishFacts",
+      "group": "metal.platform-kit.org",
+      "source": "metal/api/v1alpha1/conditions.go",
+      "description": "the hardware facts come from Redfish.",
+      "on": [
+        {
+          "condition": "Inspected",
+          "status": "True"
+        }
+      ],
+      "context": "Reasons on the host's Reachable, Inspected, Verified and ApprovalPending conditions. The host reads Reachable and Verified from the endpoints that front it; a Verified=False carries the reason of the endpoint."
+    },
+    {
+      "name": "ReasonIdentityDiverged",
+      "value": "IdentityDiverged",
+      "group": "metal.platform-kit.org",
+      "source": "metal/api/v1alpha1/conditions.go",
+      "description": "two paths to the same serial anchor give different identities. The anchor leads to different machine facts, so no single Host identity exists. The operator alerts and holds.",
+      "on": [
+        {
+          "condition": "Inspected",
+          "status": "False"
+        }
+      ],
+      "context": "Reasons on the host's Reachable, Inspected, Verified and ApprovalPending conditions. The host reads Reachable and Verified from the endpoints that front it; a Verified=False carries the reason of the endpoint."
+    },
+    {
+      "name": "ReasonAllPathsVerified",
+      "value": "AllPathsVerified",
+      "group": "metal.platform-kit.org",
+      "source": "metal/api/v1alpha1/conditions.go",
+      "description": "each endpoint that fronts the host has the condition Verified.",
+      "on": [
+        {
+          "condition": "Verified",
+          "status": "True"
+        }
+      ],
+      "context": "Reasons on the host's Reachable, Inspected, Verified and ApprovalPending conditions. The host reads Reachable and Verified from the endpoints that front it; a Verified=False carries the reason of the endpoint."
+    },
+    {
+      "name": "ReasonVerifying",
+      "value": "Verifying",
+      "group": "metal.platform-kit.org",
+      "source": "metal/api/v1alpha1/conditions.go",
+      "description": "some endpoints do not have the condition Verified yet. The message counts them.",
+      "on": [
+        {
+          "condition": "Verified",
+          "status": "Unknown"
+        }
+      ],
+      "context": "Reasons on the host's Reachable, Inspected, Verified and ApprovalPending conditions. The host reads Reachable and Verified from the endpoints that front it; a Verified=False carries the reason of the endpoint."
+    },
+    {
+      "name": "ReasonNonePending",
+      "value": "NonePending",
+      "group": "metal.platform-kit.org",
+      "source": "metal/api/v1alpha1/conditions.go",
+      "description": "no operation for the host waits for approval.",
+      "on": [
+        {
+          "condition": "ApprovalPending",
+          "status": "False"
+        }
+      ],
+      "context": "Reasons on the host's Reachable, Inspected, Verified and ApprovalPending conditions. The host reads Reachable and Verified from the endpoints that front it; a Verified=False carries the reason of the endpoint."
     },
     {
       "name": "ReasonUnexpectedReset",
@@ -824,7 +1116,12 @@
       "group": "metal.platform-kit.org",
       "source": "metal/api/v1alpha1/conditions.go",
       "description": "the TalosNode (or its cluster) is missing or has no rendered config yet.",
-      "on": [],
+      "on": [
+        {
+          "condition": "Provisioned",
+          "status": "False"
+        }
+      ],
       "context": "Reasons on the claim's Provisioned condition. All but HandedOff are False: in-flight waits (AwaitingRender, AwaitingBootAsset, AwaitingOperation, Releasing), the install operation's gate (AwaitingApproval, shown as blockedOn Approval(Provisioning)), or alert-and-hold stops (SingleMediumUnsupported, NoBootableMedia, OperationFailed, ReleaseFailed) that a person resolves."
     },
     {
@@ -833,7 +1130,12 @@
       "group": "metal.platform-kit.org",
       "source": "metal/api/v1alpha1/conditions.go",
       "description": "the installer image, the config medium or the installer with the config built in is not built (Ready) for the current render yet.",
-      "on": [],
+      "on": [
+        {
+          "condition": "Provisioned",
+          "status": "False"
+        }
+      ],
       "context": "Reasons on the claim's Provisioned condition. All but HandedOff are False: in-flight waits (AwaitingRender, AwaitingBootAsset, AwaitingOperation, Releasing), the install operation's gate (AwaitingApproval, shown as blockedOn Approval(Provisioning)), or alert-and-hold stops (SingleMediumUnsupported, NoBootableMedia, OperationFailed, ReleaseFailed) that a person resolves."
     },
     {
@@ -842,7 +1144,12 @@
       "group": "metal.platform-kit.org",
       "source": "metal/api/v1alpha1/conditions.go",
       "description": "the endpoint can hold one virtual medium only, and the machine has no Talos to boot from disk. An installer with the config inside cannot help either. The Talos release of the cluster cannot read one (before 1.12), or the one slot does not boot an ISO.",
-      "on": [],
+      "on": [
+        {
+          "condition": "Provisioned",
+          "status": "False"
+        }
+      ],
       "context": "Reasons on the claim's Provisioned condition. All but HandedOff are False: in-flight waits (AwaitingRender, AwaitingBootAsset, AwaitingOperation, Releasing), the install operation's gate (AwaitingApproval, shown as blockedOn Approval(Provisioning)), or alert-and-hold stops (SingleMediumUnsupported, NoBootableMedia, OperationFailed, ReleaseFailed) that a person resolves."
     },
     {
@@ -851,7 +1158,12 @@
       "group": "metal.platform-kit.org",
       "source": "metal/api/v1alpha1/conditions.go",
       "description": "the endpoint advertises no insertable media slot or no removable-media boot target.",
-      "on": [],
+      "on": [
+        {
+          "condition": "Provisioned",
+          "status": "False"
+        }
+      ],
       "context": "Reasons on the claim's Provisioned condition. All but HandedOff are False: in-flight waits (AwaitingRender, AwaitingBootAsset, AwaitingOperation, Releasing), the install operation's gate (AwaitingApproval, shown as blockedOn Approval(Provisioning)), or alert-and-hold stops (SingleMediumUnsupported, NoBootableMedia, OperationFailed, ReleaseFailed) that a person resolves."
     },
     {
@@ -860,7 +1172,12 @@
       "group": "metal.platform-kit.org",
       "source": "metal/api/v1alpha1/conditions.go",
       "description": "the claim is being deleted; the release operation (power off, eject) runs before the machine is handed back.",
-      "on": [],
+      "on": [
+        {
+          "condition": "Provisioned",
+          "status": "False"
+        }
+      ],
       "context": "Reasons on the claim's Provisioned condition. All but HandedOff are False: in-flight waits (AwaitingRender, AwaitingBootAsset, AwaitingOperation, Releasing), the install operation's gate (AwaitingApproval, shown as blockedOn Approval(Provisioning)), or alert-and-hold stops (SingleMediumUnsupported, NoBootableMedia, OperationFailed, ReleaseFailed) that a person resolves."
     },
     {
@@ -869,7 +1186,12 @@
       "group": "metal.platform-kit.org",
       "source": "metal/api/v1alpha1/conditions.go",
       "description": "the release operation failed — the machine stays bound until a person deletes the failed operation (which retries it).",
-      "on": [],
+      "on": [
+        {
+          "condition": "Provisioned",
+          "status": "False"
+        }
+      ],
       "context": "Reasons on the claim's Provisioned condition. All but HandedOff are False: in-flight waits (AwaitingRender, AwaitingBootAsset, AwaitingOperation, Releasing), the install operation's gate (AwaitingApproval, shown as blockedOn Approval(Provisioning)), or alert-and-hold stops (SingleMediumUnsupported, NoBootableMedia, OperationFailed, ReleaseFailed) that a person resolves."
     },
     {
@@ -878,7 +1200,12 @@
       "group": "metal.platform-kit.org",
       "source": "metal/api/v1alpha1/conditions.go",
       "description": "the claim carries the metal.platform-kit.org/hold annotation — nothing is proposed for it until the annotation is removed.",
-      "on": [],
+      "on": [
+        {
+          "condition": "Provisioned",
+          "status": "False"
+        }
+      ],
       "context": "Reasons on the claim's Provisioned condition. All but HandedOff are False: in-flight waits (AwaitingRender, AwaitingBootAsset, AwaitingOperation, Releasing), the install operation's gate (AwaitingApproval, shown as blockedOn Approval(Provisioning)), or alert-and-hold stops (SingleMediumUnsupported, NoBootableMedia, OperationFailed, ReleaseFailed) that a person resolves."
     },
     {
@@ -888,6 +1215,10 @@
       "source": "metal/api/v1alpha1/conditions.go",
       "description": "the bound host carries the metal.platform-kit.org/maintenance annotation, so the operator proposes nothing for it. It is also the reason on Maintenance=True and on the blockedOn of a host in maintenance. An operation that waits for the end of the maintenance has it on Executed=Unknown.",
       "on": [
+        {
+          "condition": "Provisioned",
+          "status": "False"
+        },
         {
           "condition": "Maintenance",
           "status": "True"
@@ -992,20 +1323,6 @@
       "context": "Reasons on the Asset's Materialized condition."
     },
     {
-      "name": "ReasonAssetNotMaterialized",
-      "value": "AssetNotMaterialized",
-      "group": "metal.platform-kit.org",
-      "source": "metal/api/v1alpha1/conditions.go",
-      "description": "the Asset has no endpoint, and its Materialized condition says why.",
-      "on": [
-        {
-          "condition": "Bound",
-          "status": "False"
-        }
-      ],
-      "context": ""
-    },
-    {
       "name": "ReasonHostClaimed",
       "value": "HostClaimed",
       "group": "metal.platform-kit.org",
@@ -1053,7 +1370,26 @@
       "group": "metal.platform-kit.org",
       "source": "metal/api/v1alpha1/conditions.go",
       "description": "the referenced Asset does not exist.",
-      "on": [],
+      "on": [
+        {
+          "condition": "Bound",
+          "status": "False"
+        }
+      ],
+      "context": "Reasons on the claim's Bound condition. HostNotDiscovered is in flight (the machine hasn't been discovered yet), the rest are blocked states."
+    },
+    {
+      "name": "ReasonAssetNotMaterialized",
+      "value": "AssetNotMaterialized",
+      "group": "metal.platform-kit.org",
+      "source": "metal/api/v1alpha1/conditions.go",
+      "description": "the Asset has no endpoint, and its Materialized condition says why.",
+      "on": [
+        {
+          "condition": "Bound",
+          "status": "False"
+        }
+      ],
       "context": "Reasons on the claim's Bound condition. HostNotDiscovered is in flight (the machine hasn't been discovered yet), the rest are blocked states."
     },
     {
@@ -1062,7 +1398,12 @@
       "group": "metal.platform-kit.org",
       "source": "metal/api/v1alpha1/conditions.go",
       "description": "no Host has been discovered for the asset yet.",
-      "on": [],
+      "on": [
+        {
+          "condition": "Bound",
+          "status": "False"
+        }
+      ],
       "context": "Reasons on the claim's Bound condition. HostNotDiscovered is in flight (the machine hasn't been discovered yet), the rest are blocked states."
     },
     {
@@ -1071,7 +1412,12 @@
       "group": "metal.platform-kit.org",
       "source": "metal/api/v1alpha1/conditions.go",
       "description": "the endpoint fronts several systems and no systemRef says which one is meant — a chassis with more than one node in it.",
-      "on": [],
+      "on": [
+        {
+          "condition": "Bound",
+          "status": "False"
+        }
+      ],
       "context": "Reasons on the claim's Bound condition. HostNotDiscovered is in flight (the machine hasn't been discovered yet), the rest are blocked states."
     },
     {
@@ -1080,7 +1426,12 @@
       "group": "metal.platform-kit.org",
       "source": "metal/api/v1alpha1/conditions.go",
       "description": "systemRef names no system the endpoint fronts.",
-      "on": [],
+      "on": [
+        {
+          "condition": "Bound",
+          "status": "False"
+        }
+      ],
       "context": "Reasons on the claim's Bound condition. HostNotDiscovered is in flight (the machine hasn't been discovered yet), the rest are blocked states."
     },
     {
@@ -1089,50 +1440,13 @@
       "group": "metal.platform-kit.org",
       "source": "metal/api/v1alpha1/conditions.go",
       "description": "another claim holds the host (first writer won).",
-      "on": [],
+      "on": [
+        {
+          "condition": "Bound",
+          "status": "False"
+        }
+      ],
       "context": "Reasons on the claim's Bound condition. HostNotDiscovered is in flight (the machine hasn't been discovered yet), the rest are blocked states."
-    },
-    {
-      "name": "ReasonSerialMismatch",
-      "value": "SerialMismatch",
-      "group": "metal.platform-kit.org",
-      "source": "metal/api/v1alpha1/conditions.go",
-      "description": "the asserted serial is not the discovered one — the machine behind this endpoint is not the machine the org claims.",
-      "on": [
-        {
-          "condition": "Verified",
-          "status": "False"
-        }
-      ],
-      "context": ""
-    },
-    {
-      "name": "ReasonMACMismatch",
-      "value": "MACMismatch",
-      "group": "metal.platform-kit.org",
-      "source": "metal/api/v1alpha1/conditions.go",
-      "description": "the manager at this address reports a NIC MAC other than the asserted bmcMac — the ledger join resolved to the wrong box.",
-      "on": [
-        {
-          "condition": "Verified",
-          "status": "False"
-        }
-      ],
-      "context": ""
-    },
-    {
-      "name": "ReasonIdentityDiverged",
-      "value": "IdentityDiverged",
-      "group": "metal.platform-kit.org",
-      "source": "metal/api/v1alpha1/conditions.go",
-      "description": "two paths to the same serial anchor give different identities. The anchor leads to different machine facts, so no single Host identity exists. The operator alerts and holds.",
-      "on": [
-        {
-          "condition": "Inspected",
-          "status": "False"
-        }
-      ],
-      "context": ""
     },
     {
       "name": "ReasonNoMatchingComponent",
@@ -1179,34 +1493,6 @@
         }
       ],
       "context": "Reasons added for day-2 convergence and scheduling. They live apart from conditions.go so that each concern's reasons are found next to each other."
-    },
-    {
-      "name": "ReasonRolloutRefused",
-      "value": "RolloutRefused",
-      "group": "metal.platform-kit.org",
-      "source": "metal/api/v1alpha1/hostoperation_rollout.go",
-      "description": "the operation names a TalosRollout (spec.rolloutRef), but the approval of the rollout does not cover it. The rollout is gone, not approved, aborted or approved for another planHash, or its plan gives this node other actions. The machine did not change.",
-      "on": [
-        {
-          "condition": "Executed",
-          "status": "False"
-        }
-      ],
-      "context": ""
-    },
-    {
-      "name": "ReasonWaiverRefused",
-      "value": "WaiverRefused",
-      "group": "metal.platform-kit.org",
-      "source": "metal/api/v1alpha1/hostoperation_waiver.go",
-      "description": "the operator proposed the operation with no approval of its own, but it is not one of the kinds the operator may run without a person: the node step of an approved rollout, the install of a claim set to Automatic, or a release. The executor refuses it before it acts on the machine. A request with the operator's token that the operator code did not make ends here.",
-      "on": [
-        {
-          "condition": "Executed",
-          "status": "False"
-        }
-      ],
-      "context": ""
     },
     {
       "name": "ReasonInstalledNodeRemains",
@@ -1298,20 +1584,6 @@
       "group": "metal.platform-kit.org",
       "source": "metal/api/v1alpha1/lifecycle_types.go",
       "description": "the claim's TalosNode was removed from its cluster and the machine wiped; the claim keeps the machine for whatever node it names next.",
-      "on": [
-        {
-          "condition": "Provisioned",
-          "status": "False"
-        }
-      ],
-      "context": "Reasons of the node lifecycle."
-    },
-    {
-      "name": "ReasonReinstalling",
-      "value": "Reinstalling",
-      "group": "metal.platform-kit.org",
-      "source": "metal/api/v1alpha1/lifecycle_types.go",
-      "description": "a reinstall the claim asked for (AnnotationReinstall) is proposed or running.",
       "on": [
         {
           "condition": "Provisioned",
@@ -1441,6 +1713,10 @@
       "on": [
         {
           "condition": "Rendered",
+          "status": "False"
+        },
+        {
+          "condition": "Ready",
           "status": "False"
         }
       ],
@@ -1907,114 +2183,159 @@
       "value": "InSync",
       "group": "os.platform-kit.org",
       "source": "metal/api/os/v1alpha1/conditions_rollout.go",
-      "description": "",
-      "on": [],
-      "context": "Reasons on ConfigInSync and VersionCurrent."
+      "description": "the machine runs the rendered config.",
+      "on": [
+        {
+          "condition": "ConfigInSync",
+          "status": "True"
+        }
+      ],
+      "context": "Reasons on a TalosNode's ConfigInSync and VersionCurrent conditions."
     },
     {
       "name": "ReasonConfigDrift",
       "value": "ConfigDrift",
       "group": "os.platform-kit.org",
       "source": "metal/api/os/v1alpha1/conditions_rollout.go",
-      "description": "",
-      "on": [],
-      "context": "Reasons on ConfigInSync and VersionCurrent."
+      "description": "a dry-run apply of the rendered config reports a change. The message says what differs and whether it needs a reboot.",
+      "on": [
+        {
+          "condition": "ConfigInSync",
+          "status": "False"
+        }
+      ],
+      "context": "Reasons on a TalosNode's ConfigInSync and VersionCurrent conditions."
     },
     {
       "name": "ReasonDriftUnknown",
       "value": "DriftUnknown",
       "group": "os.platform-kit.org",
       "source": "metal/api/os/v1alpha1/conditions_rollout.go",
-      "description": "",
-      "on": [],
-      "context": "Reasons on ConfigInSync and VersionCurrent."
+      "description": "the dry-run apply failed.",
+      "on": [
+        {
+          "condition": "ConfigInSync",
+          "status": "Unknown"
+        }
+      ],
+      "context": "Reasons on a TalosNode's ConfigInSync and VersionCurrent conditions."
     },
     {
       "name": "ReasonVersionCurrent",
       "value": "VersionCurrent",
       "group": "os.platform-kit.org",
       "source": "metal/api/os/v1alpha1/conditions_rollout.go",
-      "description": "",
-      "on": [],
-      "context": "Reasons on ConfigInSync and VersionCurrent."
+      "description": "the machine runs the Talos version that the cluster asks for. On a cluster's VersionsCurrent=True, every machine and the Kubernetes API do.",
+      "on": [
+        {
+          "condition": "VersionCurrent",
+          "status": "True"
+        },
+        {
+          "condition": "VersionsCurrent",
+          "status": "True"
+        }
+      ],
+      "context": "Reasons on a TalosNode's ConfigInSync and VersionCurrent conditions."
     },
     {
       "name": "ReasonVersionSkew",
       "value": "VersionSkew",
       "group": "os.platform-kit.org",
       "source": "metal/api/os/v1alpha1/conditions_rollout.go",
-      "description": "",
-      "on": [],
-      "context": "Reasons on ConfigInSync and VersionCurrent."
+      "description": "the machine runs another Talos version. The operator renders the config for the version that it runs.",
+      "on": [
+        {
+          "condition": "VersionCurrent",
+          "status": "False"
+        }
+      ],
+      "context": "Reasons on a TalosNode's ConfigInSync and VersionCurrent conditions."
     },
     {
       "name": "ReasonUnsupportedVersion",
       "value": "UnsupportedVersionPair",
       "group": "os.platform-kit.org",
       "source": "metal/api/os/v1alpha1/conditions_rollout.go",
-      "description": "",
-      "on": [],
-      "context": "Reasons on ConfigInSync and VersionCurrent."
+      "description": "Talos does not support the Kubernetes version that the spec asks for. Nothing renders.",
+      "on": [
+        {
+          "condition": "VersionsSupported",
+          "status": "False"
+        },
+        {
+          "condition": "Rendered",
+          "status": "False"
+        }
+      ],
+      "context": "Reasons on a TalosCluster's VersionsSupported and VersionsCurrent conditions."
     },
     {
       "name": "ReasonVersionsSupported",
       "value": "VersionsSupported",
       "group": "os.platform-kit.org",
       "source": "metal/api/os/v1alpha1/conditions_rollout.go",
-      "description": "",
-      "on": [],
-      "context": "Reasons on ConfigInSync and VersionCurrent."
+      "description": "Talos supports the Kubernetes version that the spec asks for.",
+      "on": [
+        {
+          "condition": "VersionsSupported",
+          "status": "True"
+        }
+      ],
+      "context": "Reasons on a TalosCluster's VersionsSupported and VersionsCurrent conditions."
     },
     {
       "name": "ReasonVersionsBehind",
       "value": "VersionsBehind",
       "group": "os.platform-kit.org",
       "source": "metal/api/os/v1alpha1/conditions_rollout.go",
-      "description": "",
-      "on": [],
-      "context": "Reasons on ConfigInSync and VersionCurrent."
+      "description": "a machine or the Kubernetes API runs another version than the spec asks for. The operator proposes an upgrade rollout.",
+      "on": [
+        {
+          "condition": "VersionsCurrent",
+          "status": "False"
+        }
+      ],
+      "context": "Reasons on a TalosCluster's VersionsSupported and VersionsCurrent conditions."
     },
     {
       "name": "ReasonBundleChanged",
       "value": "BundleChanged",
       "group": "os.platform-kit.org",
       "source": "metal/api/os/v1alpha1/conditions_rollout.go",
-      "description": "",
-      "on": [],
-      "context": "Reasons on ConfigInSync and VersionCurrent."
+      "description": "the spec names another secrets bundle than the machines run. The operator continues to use the bundle that they run.",
+      "on": [
+        {
+          "condition": "SecretsBundleHeld",
+          "status": "True"
+        }
+      ],
+      "context": "Reasons on a TalosCluster's SecretsBundleHeld condition."
     },
     {
       "name": "ReasonBundleApplied",
       "value": "BundleApplied",
       "group": "os.platform-kit.org",
       "source": "metal/api/os/v1alpha1/conditions_rollout.go",
-      "description": "",
-      "on": [],
-      "context": "Reasons on ConfigInSync and VersionCurrent."
-    },
-    {
-      "name": "ReasonCredentialsPublished",
-      "value": "CredentialsPublished",
-      "group": "os.platform-kit.org",
-      "source": "metal/api/os/v1alpha1/conditions_rollout.go",
-      "description": "",
-      "on": [],
-      "context": "Reasons on ConfigInSync and VersionCurrent."
+      "description": "the machines run the bundle that the spec names.",
+      "on": [
+        {
+          "condition": "SecretsBundleHeld",
+          "status": "False"
+        }
+      ],
+      "context": "Reasons on a TalosCluster's SecretsBundleHeld condition."
     },
     {
       "name": "ReasonPlanReady",
       "value": "PlanReady",
       "group": "os.platform-kit.org",
       "source": "metal/api/os/v1alpha1/conditions_rollout.go",
-      "description": "ReasonPlanReady on Planned=True; ReasonPlanBlocked on Planned=False when a step cannot be planned yet (the message says which and why).",
+      "description": "the operator planned a step for each node that needs the change, or found no such node.",
       "on": [
         {
           "condition": "Planned",
           "status": "True"
-        },
-        {
-          "condition": "Planned",
-          "status": "False"
         }
       ],
       "context": "Reasons on a TalosRollout's conditions."
@@ -2024,8 +2345,13 @@
       "value": "PlanBlocked",
       "group": "os.platform-kit.org",
       "source": "metal/api/os/v1alpha1/conditions_rollout.go",
-      "description": "",
-      "on": [],
+      "description": "the operator cannot plan a step yet. The message says which step and why.",
+      "on": [
+        {
+          "condition": "Planned",
+          "status": "False"
+        }
+      ],
       "context": "Reasons on a TalosRollout's conditions."
     },
     {
@@ -2075,10 +2401,18 @@
       "value": "PlanChanged",
       "group": "os.platform-kit.org",
       "source": "metal/api/os/v1alpha1/conditions_rollout.go",
-      "description": "the approval names a planHash the plan no longer has. Nothing runs; approve a new rollout.",
+      "description": "the approval names a planHash the plan no longer has, or a person not in spec.requestedBy changed the plan. Nothing runs; approve a new rollout.",
       "on": [
         {
           "condition": "Approved",
+          "status": "False"
+        },
+        {
+          "condition": "Progressing",
+          "status": "False"
+        },
+        {
+          "condition": "Complete",
           "status": "False"
         }
       ],
@@ -2089,8 +2423,13 @@
       "value": "NodeRunning",
       "group": "os.platform-kit.org",
       "source": "metal/api/os/v1alpha1/conditions_rollout.go",
-      "description": "Progressing reasons.",
-      "on": [],
+      "description": "a step runs on a node.",
+      "on": [
+        {
+          "condition": "Progressing",
+          "status": "True"
+        }
+      ],
       "context": "Reasons on a TalosRollout's conditions."
     },
     {
@@ -2098,8 +2437,17 @@
       "value": "WaitingForHealth",
       "group": "os.platform-kit.org",
       "source": "metal/api/os/v1alpha1/conditions_rollout.go",
-      "description": "",
-      "on": [],
+      "description": "the next step waits for the health gate, or for another rollout of the cluster. On Progressing=Unknown, the cluster does not exist.",
+      "on": [
+        {
+          "condition": "Progressing",
+          "status": "True"
+        },
+        {
+          "condition": "Progressing",
+          "status": "Unknown"
+        }
+      ],
       "context": "Reasons on a TalosRollout's conditions."
     },
     {
@@ -2107,8 +2455,21 @@
       "value": "RolloutFailed",
       "group": "os.platform-kit.org",
       "source": "metal/api/os/v1alpha1/conditions_rollout.go",
-      "description": "",
-      "on": [],
+      "description": "a step failed, and no other step starts. Progressing=True has this reason until the last step that runs ends.",
+      "on": [
+        {
+          "condition": "Progressing",
+          "status": "False"
+        },
+        {
+          "condition": "Complete",
+          "status": "False"
+        },
+        {
+          "condition": "Progressing",
+          "status": "True"
+        }
+      ],
       "context": "Reasons on a TalosRollout's conditions."
     },
     {
@@ -2116,8 +2477,21 @@
       "value": "Aborted",
       "group": "os.platform-kit.org",
       "source": "metal/api/os/v1alpha1/conditions_rollout.go",
-      "description": "",
-      "on": [],
+      "description": "a person aborted the rollout, and no other step starts. Progressing=True has this reason until the last step that runs ends.",
+      "on": [
+        {
+          "condition": "Progressing",
+          "status": "False"
+        },
+        {
+          "condition": "Complete",
+          "status": "False"
+        },
+        {
+          "condition": "Progressing",
+          "status": "True"
+        }
+      ],
       "context": "Reasons on a TalosRollout's conditions."
     },
     {
@@ -2125,8 +2499,17 @@
       "value": "Succeeded",
       "group": "os.platform-kit.org",
       "source": "metal/api/os/v1alpha1/conditions_rollout.go",
-      "description": "",
-      "on": [],
+      "description": "each step succeeded.",
+      "on": [
+        {
+          "condition": "Progressing",
+          "status": "False"
+        },
+        {
+          "condition": "Complete",
+          "status": "True"
+        }
+      ],
       "context": "Reasons on a TalosRollout's conditions."
     },
     {
@@ -2134,8 +2517,17 @@
       "value": "PausedAfterFirstNode",
       "group": "os.platform-kit.org",
       "source": "metal/api/os/v1alpha1/conditions_rollout.go",
-      "description": "",
-      "on": [],
+      "description": "the operator changed the first node. The rollout waits until a person resumes it.",
+      "on": [
+        {
+          "condition": "Paused",
+          "status": "True"
+        },
+        {
+          "condition": "Progressing",
+          "status": "True"
+        }
+      ],
       "context": "Reasons on a TalosRollout's conditions."
     },
     {
@@ -2143,8 +2535,17 @@
       "value": "PausedByPerson",
       "group": "os.platform-kit.org",
       "source": "metal/api/os/v1alpha1/conditions_rollout.go",
-      "description": "",
-      "on": [],
+      "description": "spec.paused is set.",
+      "on": [
+        {
+          "condition": "Paused",
+          "status": "True"
+        },
+        {
+          "condition": "Progressing",
+          "status": "True"
+        }
+      ],
       "context": "Reasons on a TalosRollout's conditions."
     },
     {
@@ -2152,8 +2553,13 @@
       "value": "NotPaused",
       "group": "os.platform-kit.org",
       "source": "metal/api/os/v1alpha1/conditions_rollout.go",
-      "description": "",
-      "on": [],
+      "description": "ReasonNotPaused on Paused=False.",
+      "on": [
+        {
+          "condition": "Paused",
+          "status": "False"
+        }
+      ],
       "context": "Reasons on a TalosRollout's conditions."
     },
     {
@@ -2161,8 +2567,13 @@
       "value": "NotStarted",
       "group": "os.platform-kit.org",
       "source": "metal/api/os/v1alpha1/conditions_rollout.go",
-      "description": "",
-      "on": [],
+      "description": "nobody approved the plan yet.",
+      "on": [
+        {
+          "condition": "Progressing",
+          "status": "False"
+        }
+      ],
       "context": "Reasons on a TalosRollout's conditions."
     },
     {
@@ -2170,8 +2581,13 @@
       "value": "SinkReady",
       "group": "os.platform-kit.org",
       "source": "metal/api/os/v1alpha1/etcdbackup_types.go",
-      "description": "",
-      "on": [],
+      "description": "the sink can take snapshots.",
+      "on": [
+        {
+          "condition": "Ready",
+          "status": "True"
+        }
+      ],
       "context": "Reasons of the backup kinds' conditions. Ready uses ReasonSinkReady and the refusals below; BackedUp uses ReasonSnapshotRecent and the gaps below."
     },
     {
@@ -2180,7 +2596,12 @@
       "group": "os.platform-kit.org",
       "source": "metal/api/os/v1alpha1/etcdbackup_types.go",
       "description": "a pvc sink for the cluster the operator runs on.",
-      "on": [],
+      "on": [
+        {
+          "condition": "Ready",
+          "status": "False"
+        }
+      ],
       "context": "Reasons of the backup kinds' conditions. Ready uses ReasonSinkReady and the refusals below; BackedUp uses ReasonSnapshotRecent and the gaps below."
     },
     {
@@ -2189,7 +2610,12 @@
       "group": "os.platform-kit.org",
       "source": "metal/api/os/v1alpha1/etcdbackup_types.go",
       "description": "the sink cannot be used (no backup volume mounted, a credentials Secret missing or incomplete).",
-      "on": [],
+      "on": [
+        {
+          "condition": "Ready",
+          "status": "False"
+        }
+      ],
       "context": "Reasons of the backup kinds' conditions. Ready uses ReasonSinkReady and the refusals below; BackedUp uses ReasonSnapshotRecent and the gaps below."
     },
     {
@@ -2198,7 +2624,12 @@
       "group": "os.platform-kit.org",
       "source": "metal/api/os/v1alpha1/etcdbackup_types.go",
       "description": "an age recipient does not parse.",
-      "on": [],
+      "on": [
+        {
+          "condition": "Ready",
+          "status": "False"
+        }
+      ],
       "context": "Reasons of the backup kinds' conditions. Ready uses ReasonSinkReady and the refusals below; BackedUp uses ReasonSnapshotRecent and the gaps below."
     },
     {
@@ -2206,8 +2637,13 @@
       "value": "SnapshotRecent",
       "group": "os.platform-kit.org",
       "source": "metal/api/os/v1alpha1/etcdbackup_types.go",
-      "description": "",
-      "on": [],
+      "description": "the newest verified snapshot is newer than twice the interval.",
+      "on": [
+        {
+          "condition": "BackedUp",
+          "status": "True"
+        }
+      ],
       "context": "Reasons of the backup kinds' conditions. Ready uses ReasonSinkReady and the refusals below; BackedUp uses ReasonSnapshotRecent and the gaps below."
     },
     {
@@ -2216,7 +2652,12 @@
       "group": "os.platform-kit.org",
       "source": "metal/api/os/v1alpha1/etcdbackup_types.go",
       "description": "no verified snapshot yet.",
-      "on": [],
+      "on": [
+        {
+          "condition": "BackedUp",
+          "status": "False"
+        }
+      ],
       "context": "Reasons of the backup kinds' conditions. Ready uses ReasonSinkReady and the refusals below; BackedUp uses ReasonSnapshotRecent and the gaps below."
     },
     {
@@ -2225,7 +2666,12 @@
       "group": "os.platform-kit.org",
       "source": "metal/api/os/v1alpha1/etcdbackup_types.go",
       "description": "the newest verified snapshot is older than twice the interval.",
-      "on": [],
+      "on": [
+        {
+          "condition": "BackedUp",
+          "status": "False"
+        }
+      ],
       "context": "Reasons of the backup kinds' conditions. Ready uses ReasonSinkReady and the refusals below; BackedUp uses ReasonSnapshotRecent and the gaps below."
     },
     {
@@ -2233,15 +2679,11 @@
       "value": "Stored",
       "group": "os.platform-kit.org",
       "source": "metal/api/os/v1alpha1/etcdbackup_types.go",
-      "description": "ReasonStored on Complete=True; ReasonSnapshotFailed on Complete=False (the message says what failed).",
+      "description": "the sink holds the snapshot.",
       "on": [
         {
           "condition": "Complete",
           "status": "True"
-        },
-        {
-          "condition": "Complete",
-          "status": "False"
         }
       ],
       "context": "Reasons of the backup kinds' conditions. Ready uses ReasonSinkReady and the refusals below; BackedUp uses ReasonSnapshotRecent and the gaps below."
@@ -2251,8 +2693,13 @@
       "value": "SnapshotFailed",
       "group": "os.platform-kit.org",
       "source": "metal/api/os/v1alpha1/etcdbackup_types.go",
-      "description": "",
-      "on": [],
+      "description": "the message says what failed.",
+      "on": [
+        {
+          "condition": "Complete",
+          "status": "False"
+        }
+      ],
       "context": "Reasons of the backup kinds' conditions. Ready uses ReasonSinkReady and the refusals below; BackedUp uses ReasonSnapshotRecent and the gaps below."
     },
     {
@@ -2274,15 +2721,11 @@
       "value": "Intact",
       "group": "os.platform-kit.org",
       "source": "metal/api/os/v1alpha1/etcdbackup_types.go",
-      "description": "ReasonIntact on Verified=True; ReasonDamaged and ReasonReadBackFailed on Verified=False.",
+      "description": "the snapshot is an intact etcd database, and the sink holds the bytes that the operator sent.",
       "on": [
         {
           "condition": "Verified",
           "status": "True"
-        },
-        {
-          "condition": "Verified",
-          "status": "False"
         }
       ],
       "context": "Reasons of the backup kinds' conditions. Ready uses ReasonSinkReady and the refusals below; BackedUp uses ReasonSnapshotRecent and the gaps below."
@@ -2292,8 +2735,13 @@
       "value": "Damaged",
       "group": "os.platform-kit.org",
       "source": "metal/api/os/v1alpha1/etcdbackup_types.go",
-      "description": "",
-      "on": [],
+      "description": "the snapshot is not an intact etcd database.",
+      "on": [
+        {
+          "condition": "Verified",
+          "status": "False"
+        }
+      ],
       "context": "Reasons of the backup kinds' conditions. Ready uses ReasonSinkReady and the refusals below; BackedUp uses ReasonSnapshotRecent and the gaps below."
     },
     {
@@ -2301,8 +2749,13 @@
       "value": "ReadBackFailed",
       "group": "os.platform-kit.org",
       "source": "metal/api/os/v1alpha1/etcdbackup_types.go",
-      "description": "",
-      "on": [],
+      "description": "the operator could not read the snapshot back from the sink, or the sink holds other bytes than the operator sent.",
+      "on": [
+        {
+          "condition": "Verified",
+          "status": "False"
+        }
+      ],
       "context": "Reasons of the backup kinds' conditions. Ready uses ReasonSinkReady and the refusals below; BackedUp uses ReasonSnapshotRecent and the gaps below."
     }
   ],

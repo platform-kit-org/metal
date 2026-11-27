@@ -86,14 +86,4 @@ func relPath(root, path string) string {
 	return filepath.ToSlash(rel)
 }
 
-func splitList(s string) []string {
-	var out []string
-	for p := range strings.SplitSeq(s, ",") {
-		if p = strings.TrimSpace(p); p != "" {
-			out = append(out, p)
-		}
-	}
-	return out
-}
-
 func lowerKind(kind string) string { return strings.ToLower(kind) }

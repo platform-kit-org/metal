@@ -76,7 +76,7 @@ func (r *ManagementEndpointReconciler) checkPin(ctx context.Context, ep *metalv1
 	}
 	leaf, err := r.Probe.orDefault()(ctx, ep.Spec.Address)
 	if err != nil {
-		return unreachable("DialError", "cannot read the BMC's certificate: "+err.Error())
+		return unreachable(metalv1alpha1.ReasonDialError, "cannot read the BMC's certificate: "+err.Error())
 	}
 	presented := gofishclient.PublicKeyPin(leaf)
 	pin := func(source string) {

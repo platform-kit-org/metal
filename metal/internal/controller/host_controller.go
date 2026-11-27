@@ -293,15 +293,15 @@ func projectHost(host *metalv1alpha1.Host, paths []hostPath, ops []metalv1alpha1
 
 	pathMsg := fmt.Sprintf("%d/%d paths reachable", reachable, len(paths))
 	if reachable > 0 {
-		setCond(metalv1alpha1.ConditionReachable, metav1.ConditionTrue, "PathUp", pathMsg)
+		setCond(metalv1alpha1.ConditionReachable, metav1.ConditionTrue, metalv1alpha1.ReasonPathUp, pathMsg)
 	} else {
-		setCond(metalv1alpha1.ConditionReachable, metav1.ConditionFalse, "AllPathsDown", pathMsg)
+		setCond(metalv1alpha1.ConditionReachable, metav1.ConditionFalse, metalv1alpha1.ReasonAllPathsDown, pathMsg)
 	}
 
 	if diverged != "" {
 		setCond(metalv1alpha1.ConditionInspected, metav1.ConditionFalse, metalv1alpha1.ReasonIdentityDiverged, diverged)
 	} else {
-		setCond(metalv1alpha1.ConditionInspected, metav1.ConditionTrue, "RedfishFacts", "")
+		setCond(metalv1alpha1.ConditionInspected, metav1.ConditionTrue, metalv1alpha1.ReasonRedfishFacts, "")
 	}
 
 	vstatus, vreason, vmsg := hostVerified(paths)
@@ -358,7 +358,7 @@ func projectApproval(setCond func(string, metav1.ConditionStatus, string, string
 		}
 	}
 	if len(pending) == 0 {
-		setCond(metalv1alpha1.ConditionApprovalPending, metav1.ConditionFalse, "NonePending", "")
+		setCond(metalv1alpha1.ConditionApprovalPending, metav1.ConditionFalse, metalv1alpha1.ReasonNonePending, "")
 		return
 	}
 	slices.SortFunc(pending, func(a, b metalv1alpha1.HostOperation) int {
@@ -421,9 +421,9 @@ func hostVerified(paths []hostPath) (metav1.ConditionStatus, string, string) {
 		}
 	}
 	if verified == len(paths) {
-		return metav1.ConditionTrue, "AllPathsVerified", ""
+		return metav1.ConditionTrue, metalv1alpha1.ReasonAllPathsVerified, ""
 	}
-	return metav1.ConditionUnknown, "Verifying", fmt.Sprintf("%d/%d paths verified", verified, len(paths))
+	return metav1.ConditionUnknown, metalv1alpha1.ReasonVerifying, fmt.Sprintf("%d/%d paths verified", verified, len(paths))
 }
 
 // endpointOwnerRefs rebuilds the endpoint-kind owner references to the current

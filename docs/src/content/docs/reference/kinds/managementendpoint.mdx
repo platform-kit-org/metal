@@ -22,8 +22,6 @@ The operator makes it from an Asset. You read it to see if the BMC answers and w
 ## At a glance
 
 <dl class="pk-glance">
-  <dt>Group and version</dt>
-  <dd>`metal.platform-kit.org/v1alpha1`</dd>
   <dt>Scope</dt>
   <dd>Cluster. Short name: `mep`.</dd>
   <dt>Written by</dt>
@@ -34,8 +32,6 @@ The operator makes it from an Asset. You read it to see if the BMC answers and w
   <dd>The name of the [](kind:Asset).</dd>
   <dt>Owned by</dt>
   <dd>The Asset. One endpoint can own one or more [Hosts](kind:Host).</dd>
-  <dt>Phases</dt>
-  <dd>Pending, Connecting, Inventorying, Verifying, Configuring, Ready, Unreachable, Mismatch.</dd>
   <dt>Source</dt>
   <dd>[managementendpoint_types.go](/repo/metal/api/v1alpha1/managementendpoint_types.go)</dd>
 </dl>
@@ -128,13 +124,13 @@ The Asset controller writes the spec. A change that you make does not stay.
 
 ### Conditions
 
-| Condition | True means | Effect on the phase |
-| --- | --- | --- |
-| `Reachable` | The BMC answers with a trusted certificate and the login works. Reason `TLSKeyChanged` when the BMC shows a key that is not pinned. | Unreachable when False |
-| `Inventoried` | The operator has the facts of the BMC. | Inventorying until True |
-| `Verified` | The MAC address and the serial number agree with the Asset. | Mismatch when False |
-| `Configured` | The BMC has the configuration of its EndpointProfiles. Absent when no profile applies. | Configuring until True |
-| `DeletionHeld` | A person deleted the endpoint, but a claim holds its machine. | None |
+| Condition | True means | Reasons when not True | Effect on the phase |
+| --- | --- | --- | --- |
+| `Reachable` | The BMC answers with a trusted certificate and the login works. | `DialError`, `CredentialsMissing`, `CAMissing`, `TLSKeyChanged` (the BMC shows a key that is not pinned), `TLSKeyNotPinned` | Unreachable when False |
+| `Inventoried` | The operator has the facts of the BMC. | `DiscoveryError` | Inventorying until True |
+| `Verified` | The MAC address and the serial number agree with the Asset. | False: `MACMismatch`, `SerialMismatch`. Unknown: `NoAssertion`, `NoSerialAnchor`. | Mismatch when False |
+| `Configured` | The BMC has the configuration of its EndpointProfiles. Absent when no profile applies. | See [Configured](ref:conditions#configured). | Configuring until True |
+| `DeletionHeld` | A person deleted the endpoint, but a claim holds its machine. | None | None |
 
 ### Labels
 

@@ -81,13 +81,7 @@ It finds the address of the BMC in the [ledger](concept:ledger) and writes the f
 
 ## Conditions
 
-| Condition | Status | Reason | Meaning |
-| --- | --- | --- | --- |
-| `Materialized` | True | `EndpointMaterialized` | The endpoint exists at the address from the ledger. |
-| `Materialized` | False | `NoBMCMac` | The Asset names no BMC MAC. |
-| `Materialized` | False | `NoLedgerEntry` | The MAC is not in the ledger. |
-| `Materialized` | False | `LedgerEntryInvalid` | The ledger line for the MAC did not parse. |
-| `Materialized` | False | `MaterializeConflict` | An endpoint with this name belongs to another Asset. |
+The [Asset page](kind:Asset#conditions) lists the conditions and their reasons.
 
 ## Failure modes
 

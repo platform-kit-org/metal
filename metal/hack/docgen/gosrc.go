@@ -16,13 +16,11 @@ import (
 )
 
 // goSources is what docgen reads from the Go code rather than from a manifest:
-// the action union of HostOperation, the typed string constants (phases and
-// other enums), the condition and reason constants, and the label, annotation
-// and finalizer keys.
+// the action union of HostOperation, the phases (typed string constants), the
+// condition and reason constants, and the label, annotation and finalizer keys.
 type goSources struct {
 	actions    actionsDoc
 	phases     phasesDoc
-	enums      enumsDoc
 	conditions conditionsDoc
 	keys       keysDoc
 }
@@ -62,17 +60,13 @@ type actionField struct {
 	Markers     []string `json:"markers"`
 }
 
-type enumsDoc struct {
-	Enums []enumDoc `json:"enums"`
-}
-
 // phasesDoc holds the enums that are a kind's status.phase.
 type phasesDoc struct {
 	Phases []enumDoc `json:"phases"`
 }
 
-// enumDoc is a typed string with its constants. For a phase, Kinds names the
-// kinds whose status.phase it is.
+// enumDoc is a typed string with its constants. Kinds names the kinds whose
+// status.phase it is.
 type enumDoc struct {
 	Type        string      `json:"type"`
 	Group       string      `json:"group"`
@@ -167,7 +161,7 @@ func readGoSources(cfg config) (goSources, error) {
 	if src.actions, err = buildActions(pkgs); err != nil {
 		return src, err
 	}
-	src.enums, src.phases = buildEnums(pkgs)
+	src.phases = buildPhases(pkgs)
 	src.conditions = buildConditions(pkgs)
 	if src.keys, err = scanKeys(cfg); err != nil {
 		return src, err
@@ -367,8 +361,9 @@ func unionPath(p goPackage, union string) (unionField, error) {
 	return unionField{}, fmt.Errorf("no Spec struct has a []%s field", union)
 }
 
-func buildEnums(pkgs []goPackage) (enums enumsDoc, phases phasesDoc) {
-	enums.Enums, phases.Phases = []enumDoc{}, []enumDoc{}
+// buildPhases returns the typed string enums that are a kind's status.phase.
+func buildPhases(pkgs []goPackage) (phases phasesDoc) {
+	phases.Phases = []enumDoc{}
 	for _, p := range pkgs {
 		byType := map[string]*enumDoc{}
 		var order []string
@@ -406,14 +401,12 @@ func buildEnums(pkgs []goPackage) (enums enumsDoc, phases phasesDoc) {
 			}
 		}
 		for _, typ := range order {
-			e := byType[typ]
-			enums.Enums = append(enums.Enums, *e)
-			if len(e.Kinds) > 0 {
+			if e := byType[typ]; len(e.Kinds) > 0 {
 				phases.Phases = append(phases.Phases, *e)
 			}
 		}
 	}
-	return enums, phases
+	return phases
 }
 
 var condPair = regexp.MustCompile(`\b([A-Z][A-Za-z]+)=(True|False|Unknown)\b`)

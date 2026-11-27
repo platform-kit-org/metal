@@ -109,14 +109,7 @@ When you delete a BootAsset, the manager deletes its files.
 
 ## Manager flags
 
-| Flag | Default | Description |
-| --- | --- | --- |
-| `--media-listen` | `:8443` | The address of the HTTPS listener in the pod. |
-| `--media-url` | empty | The `https://host[:port]` at which the BMCs reach the service, for example a NodePort. Empty stops the service. Then the operator cannot install machines. |
-| `--media-cert-secret` | empty | A Secret with `tls.crt` and `tls.key`. Empty: a self-signed certificate. |
-| `--media-store` | empty | The directory of the store. Empty: a directory in the temporary directory of the pod, which holds the downloads only. Then the operator cannot install machines behind a [one-slot BMC](concept:one-slot-bmc). |
-| `--media-store-claim` | empty | The PersistentVolumeClaim mounted at `--media-store`. The imager Jobs mount it too. Empty: the imager builds no installer. |
-
+The [manager flags](ctrl:manager#flags) `--media-*` set the service and the store.
 The component makes the claim `pk-metal-media-store` of 10 GiB. One installer is about 400 MiB, so the claim holds about twenty machines.
 
 <Callout type="warning">

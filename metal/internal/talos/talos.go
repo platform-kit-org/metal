@@ -136,8 +136,6 @@ type ApplyResult struct {
 	// Details is the node's human-readable account; on a dry run it carries
 	// the config diff and whether a reboot would be needed.
 	Details string
-	// Warnings are config validation warnings.
-	Warnings []string
 }
 
 // BootstrapOptions select a fresh bootstrap or a recovery.
@@ -145,17 +143,12 @@ type BootstrapOptions struct {
 	// RecoverEtcd starts etcd from the snapshot uploaded with EtcdRecover
 	// instead of from an empty database.
 	RecoverEtcd bool
-	// RecoverSkipHashCheck accepts a snapshot without etcd's integrity
-	// hash, which is what a copy of the database file (not a snapshot taken
-	// over the API) lacks.
-	RecoverSkipHashCheck bool
 }
 
 // EtcdMember is one member of the etcd cluster.
 type EtcdMember struct {
 	ID         uint64
 	Hostname   string
-	PeerURLs   []string
 	ClientURLs []string
 	// IsLearner: the member receives the log but does not vote yet. Talos
 	// adds a joining control plane as a learner and promotes it once it has
@@ -168,15 +161,9 @@ type EtcdStatus struct {
 	MemberID uint64
 	// LeaderID is the member this one follows (itself when it leads; zero
 	// when it knows no leader, which is how a lost quorum looks).
-	LeaderID         uint64
-	ProtocolVersion  string
-	StorageVersion   string
-	DBSize           int64
-	DBSizeInUse      int64
-	RaftIndex        uint64
-	RaftTerm         uint64
-	RaftAppliedIndex uint64
-	IsLearner        bool
+	LeaderID  uint64
+	RaftIndex uint64
+	IsLearner bool
 	// Errors are the errors etcd itself reports for this member.
 	Errors []string
 }
@@ -188,7 +175,7 @@ type EtcdAlarm struct {
 	Alarm string
 }
 
-// RebootMode is how a reboot ends.
+// RebootMode is how a reboot ends, also the reboot into a new image.
 type RebootMode string
 
 const (
@@ -244,14 +231,6 @@ type ResetOptions struct {
 	UserDisks []string
 }
 
-// UpgradeRebootMode is how the reboot into a new image ends.
-type UpgradeRebootMode string
-
-const (
-	UpgradeRebootDefault    UpgradeRebootMode = ""
-	UpgradeRebootPowerCycle UpgradeRebootMode = "powercycle"
-)
-
 // UpgradeOptions describe one upgrade.
 type UpgradeOptions struct {
 	// Image is the installer image reference, pinned by digest.
@@ -264,8 +243,9 @@ type UpgradeOptions struct {
 	// preserve; the field is passed through for older nodes.
 	Preserve bool
 	// Force skips the etcd health check Talos runs on a control plane.
-	Force      bool
-	RebootMode UpgradeRebootMode
+	Force bool
+	// RebootMode is how the reboot into the new image ends.
+	RebootMode RebootMode
 }
 
 // Status is the machine's aggregated state.

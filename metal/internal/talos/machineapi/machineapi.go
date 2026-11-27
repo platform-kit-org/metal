@@ -124,9 +124,8 @@ func (m *conn) ApplyConfiguration(ctx context.Context, machineConfig []byte, opt
 	var res talos.ApplyResult
 	if msgs := resp.GetMessages(); len(msgs) > 0 {
 		res = talos.ApplyResult{
-			Mode:     applyModeOf(msgs[0].GetMode()),
-			Details:  msgs[0].GetModeDetails(),
-			Warnings: msgs[0].GetWarnings(),
+			Mode:    applyModeOf(msgs[0].GetMode()),
+			Details: msgs[0].GetModeDetails(),
 		}
 	}
 
@@ -137,10 +136,7 @@ func (m *conn) Bootstrap(ctx context.Context, opts talos.BootstrapOptions) error
 	ctx, cancel := bounded(ctx)
 	defer cancel()
 
-	if err := m.c.Bootstrap(ctx, &machineapi.BootstrapRequest{
-		RecoverEtcd:          opts.RecoverEtcd,
-		RecoverSkipHashCheck: opts.RecoverSkipHashCheck,
-	}); err != nil {
+	if err := m.c.Bootstrap(ctx, &machineapi.BootstrapRequest{RecoverEtcd: opts.RecoverEtcd}); err != nil {
 		// Talos answers AlreadyExists exactly when the etcd data directory
 		// is not empty, which is the observable form of "bootstrapped".
 		if status.Code(err) == codes.AlreadyExists {
@@ -169,7 +165,6 @@ func (m *conn) EtcdMembers(ctx context.Context) ([]talos.EtcdMember, error) {
 			members = append(members, talos.EtcdMember{
 				ID:         member.GetId(),
 				Hostname:   member.GetHostname(),
-				PeerURLs:   member.GetPeerUrls(),
 				ClientURLs: member.GetClientUrls(),
 				IsLearner:  member.GetIsLearner(),
 			})
@@ -195,17 +190,11 @@ func (m *conn) EtcdStatus(ctx context.Context) (talos.EtcdStatus, error) {
 	st := resp.GetMessages()[0].GetMemberStatus()
 
 	return talos.EtcdStatus{
-		MemberID:         st.GetMemberId(),
-		LeaderID:         st.GetLeader(),
-		ProtocolVersion:  st.GetProtocolVersion(),
-		StorageVersion:   st.GetStorageVersion(),
-		DBSize:           st.GetDbSize(),
-		DBSizeInUse:      st.GetDbSizeInUse(),
-		RaftIndex:        st.GetRaftIndex(),
-		RaftTerm:         st.GetRaftTerm(),
-		RaftAppliedIndex: st.GetRaftAppliedIndex(),
-		IsLearner:        st.GetIsLearner(),
-		Errors:           st.GetErrors(),
+		MemberID:  st.GetMemberId(),
+		LeaderID:  st.GetLeader(),
+		RaftIndex: st.GetRaftIndex(),
+		IsLearner: st.GetIsLearner(),
+		Errors:    st.GetErrors(),
 	}, nil
 }
 
@@ -369,9 +358,9 @@ func (m *conn) Upgrade(ctx context.Context, opts talos.UpgradeOptions) (string, 
 	var rebootMode machineapi.UpgradeRequest_RebootMode
 
 	switch opts.RebootMode {
-	case talos.UpgradeRebootDefault:
+	case talos.RebootDefault:
 		rebootMode = machineapi.UpgradeRequest_DEFAULT
-	case talos.UpgradeRebootPowerCycle:
+	case talos.RebootPowerCycle:
 		rebootMode = machineapi.UpgradeRequest_POWERCYCLE
 	default:
 		return "", fmt.Errorf("upgrade: unknown reboot mode %q", opts.RebootMode)

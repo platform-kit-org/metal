@@ -1287,34 +1287,15 @@ func opExists(ops []metalv1alpha1.HostOperation, name string) bool {
 	return slices.ContainsFunc(ops, func(op metalv1alpha1.HostOperation) bool { return op.Name == name })
 }
 
-// releaseOp takes the machine's node out of its cluster, shuts the machine
-// down and empties every insertable slot (see removal.go for the steps).
-// When the node does not answer, or the executor cannot run the Talos steps,
-// the machine is only shut down, the OS first and forced off after the
-// release shutdown timeout, and the Host is marked as still holding the
-// install (AnnotationDiskNotWiped) before the operation is created.
-//
-// A machine that runs its node is a server, and turning it off is as
-// disruptive as installing it: the release then waits for a person, as a
-// boot does, unless the claim waived approval (provisioning.approval:
-// Automatic). Whether it runs its node is read from the records, not only
-// from its readiness now (installedOnRecord): readiness drops for a Talos
-// upgrade, a kubelet restart or one failed dial, and a release made in such
-// a moment would power off a production node with nobody asked. A machine
-// that never got that far — no hand-off, no boot that reached its check-in
-// — is released pre-cleared: deleting the claim was the decision, and
-// admission lets only the operator create such an operation.
-//
-// The gate is decided once, here. A node that comes up after a pre-cleared
-// release was created does not make that release wait for a person: the
-// claim's deletion still stands, and approval.required is frozen.
+// releaseOp builds the release of host: the exit operation (exitOp) of the
+// node that the host, or the claim's hand-off record, names. When that
+// TalosNode is gone, the release only shuts the machine down.
 //
 // The eject list is fixed when the operation is created, so it is built only
 // from slots that were read. While no reachable, inventoried endpoint fronts
 // the host, releaseOp returns nil and says what it waits for; the endpoint
 // and host watches bring the claim back when that changes. The power-off
-// could not run before then either. It also returns nil, with the reason,
-// while a control plane may not leave etcd yet (removalVerdict).
+// could not run before then either.
 func (r *HostClaimReconciler) releaseOp(ctx context.Context, claim *metalv1alpha1.HostClaim, host *metalv1alpha1.Host, name string,
 	provisionOps []metalv1alpha1.HostOperation) (*metalv1alpha1.HostOperation, string, string, error) {
 	shape, err := r.endpointShape(ctx, host)
@@ -1325,9 +1306,52 @@ func (r *HostClaimReconciler) releaseOp(ctx context.Context, claim *metalv1alpha
 		return nil, metalv1alpha1.ReasonReleasing, fmt.Sprintf("releasing host %s waits until a reachable management path has read its media slots, "+
 			"so that the release can eject them; see: kubectl get host %s -o wide", host.Name, host.Name), nil
 	}
-	steps, wipes, nodeName, cluster, reason, msg, err := r.nodeExit(ctx, claim, host, name, "")
-	if err != nil || reason != "" {
-		return nil, reason, "the claim is deleted, but " + msg, err
+	var nodeName string
+	switch {
+	case host.Spec.OS != nil:
+		nodeName = host.Spec.OS.NodeRef.Name
+	case claim.Status.HandOff != nil && claim.Status.HandOff.Host == host.Name:
+		nodeName = claim.Status.HandOff.Node
+	}
+	var node *osv1alpha1.TalosNode
+	if nodeName != "" {
+		node = &osv1alpha1.TalosNode{}
+		if err := r.Get(ctx, client.ObjectKey{Name: nodeName}, node); apierrors.IsNotFound(err) {
+			node = nil
+		} else if err != nil {
+			return nil, "", "", err
+		}
+	}
+	// The claim's deletion or new machine asked for this release.
+	op, reason, msg, err := r.exitOp(ctx, claim, host, node, nodeName, name, purposeRelease,
+		metalv1alpha1.RequestedBy(claim.Annotations), shape.insertable, provisionOps)
+	if reason != "" {
+		msg = "the claim is deleted, but " + msg
+	}
+	return op, reason, msg, err
+}
+
+// exitOp builds the operation that takes node out of its cluster, shuts
+// host down and ejects each slot in insertable (see removal.go for the
+// steps). node is nil when the TalosNode is gone; nodeName still names it.
+// When there is no node, the node does not answer, or the executor cannot
+// run its steps, the operation only shuts the machine down: the OS first,
+// forced off after the release shutdown timeout. It then carries
+// AnnotationDiskNotWiped, and the caller marks the host with it before it
+// creates the operation. exitOp returns nil, with the reason, while a
+// control plane may not leave etcd yet (etcdExitGuard).
+func (r *HostClaimReconciler) exitOp(ctx context.Context, claim *metalv1alpha1.HostClaim, host *metalv1alpha1.Host,
+	node *osv1alpha1.TalosNode, nodeName, name, purpose string, requestedBy, insertable []string,
+	provisionOps []metalv1alpha1.HostOperation) (*metalv1alpha1.HostOperation, string, string, error) {
+	var steps []metalv1alpha1.HostOperationAction
+	wipes, cluster := false, "unknown-cluster"
+	if node != nil {
+		member, last, reason, msg, err := r.etcdExitGuard(ctx, claim, node, name)
+		if err != nil || reason != "" {
+			return nil, reason, msg, err
+		}
+		steps, wipes, _ = r.exitSteps(node, member, last, "")
+		cluster = node.Spec.ClusterRef.Name
 	}
 	graceful := int32(r.releaseShutdownTimeout().Seconds())
 	if wipes {
@@ -1335,69 +1359,29 @@ func (r *HostClaimReconciler) releaseOp(ctx context.Context, claim *metalv1alpha
 		graceful = 0
 	}
 	actions := append(steps, metalv1alpha1.HostOperationAction{PowerOff: &metalv1alpha1.PowerOffAction{GracefulTimeoutSeconds: graceful}})
-	for _, s := range shape.insertable {
+	for _, s := range insertable {
 		actions = append(actions, metalv1alpha1.HostOperationAction{EjectMedia: &metalv1alpha1.EjectMediaAction{MediaID: s}})
 	}
-	labels := claimLabels(claim, purposeRelease)
+	labels := claimLabels(claim, purpose)
 	if nodeName != "" {
 		labels[labelNode] = nodeName
 	}
 	var annotations map[string]string
 	if !wipes {
-		// The operation says what it leaves on the disk; the caller marks
-		// the host with it, together with the power-off decision, before
-		// the operation is created.
 		annotations = map[string]string{metalv1alpha1.AnnotationDiskNotWiped: cluster + "/" + nodeName}
 	}
 	return &metalv1alpha1.HostOperation{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: name, Namespace: r.OperationsNamespace,
-			Labels: labels, Annotations: annotations,
-		},
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: r.OperationsNamespace, Labels: labels, Annotations: annotations},
 		Spec: metalv1alpha1.HostOperationSpec{
-			HostRef:    metalv1alpha1.Reference{Name: host.Name},
-			ProposedBy: r.Proposer,
-			// The claim's deletion or new machine asked for this release.
-			RequestedBy:             metalv1alpha1.RequestedBy(claim.Annotations),
+			HostRef:                 metalv1alpha1.Reference{Name: host.Name},
+			ProposedBy:              r.Proposer,
+			RequestedBy:             requestedBy,
 			Reason:                  reasonRelease,
 			Actions:                 actions,
 			Approval:                metalv1alpha1.OperationApproval{Required: ptr.To(releaseNeedsPerson(claim, host, provisionOps))},
 			TTLSecondsAfterFinished: ptr.To(releaseTTL),
 		},
 	}, "", "", nil
-}
-
-// nodeExit decides the steps that take the node the host runs out of its
-// cluster, before any power action: the TalosNode the host's hand-off (or
-// the claim's record) names. It returns no steps, and wipes false, when that
-// node is gone or the executor runs none of its steps; the caller then marks
-// the host as not wiped. reason is set when a control plane may not leave
-// etcd now. resetMode is the Talos reset's mode ("" wipes every disk).
-func (r *HostClaimReconciler) nodeExit(ctx context.Context, claim *metalv1alpha1.HostClaim, host *metalv1alpha1.Host, opName, resetMode string) (
-	steps []metalv1alpha1.HostOperationAction, wipes bool, nodeName, cluster, reason, msg string, err error) {
-	switch {
-	case host.Spec.OS != nil:
-		nodeName = host.Spec.OS.NodeRef.Name
-	case claim.Status.HandOff != nil && claim.Status.HandOff.Host == host.Name:
-		nodeName = claim.Status.HandOff.Node
-	}
-	cluster = "unknown-cluster"
-	if nodeName == "" {
-		return nil, false, "", cluster, "", "", nil
-	}
-	node := &osv1alpha1.TalosNode{}
-	if err := r.Get(ctx, client.ObjectKey{Name: nodeName}, node); err != nil {
-		return nil, false, nodeName, cluster, "", "", client.IgnoreNotFound(err)
-	}
-	cluster = node.Spec.ClusterRef.Name
-	member, last, reason, msg, err := r.etcdExitGuard(ctx, claim, node, opName)
-	if err != nil || reason != "" {
-		return nil, false, nodeName, cluster, reason, msg, err
-	}
-	if s, w, ok := r.exitSteps(node, member, last, resetMode); ok {
-		steps, wipes = s, w
-	}
-	return steps, wipes, nodeName, cluster, "", "", nil
 }
 
 // describeRelease says in a clause what an approved release does.
@@ -1429,9 +1413,21 @@ func describeRelease(op *metalv1alpha1.HostOperation) string {
 	return s
 }
 
-// releaseNeedsPerson: the release of host waits for a person. It does when
-// the machine runs its node now or ran it on record, unless the claim waived
-// approval.
+// releaseNeedsPerson: the exit operation of host waits for a person. It does
+// when the machine runs its node now or ran it on record, unless the claim
+// waived approval (provisioning.approval: Automatic). A machine that runs its
+// node is a server, and to turn it off is as disruptive as to install it.
+// The records count, not only its readiness now (installedOnRecord):
+// readiness drops for a Talos upgrade, a kubelet restart or one failed dial,
+// and a release made in such a moment would power off a production node with
+// nobody asked. A machine that never got that far (no hand-off, no boot that
+// reached its check-in) is released pre-cleared: the deletion of the claim
+// was the decision, and admission lets only the operator create such an
+// operation.
+//
+// The gate is decided once, when the operation is made. A node that comes up
+// after a pre-cleared release was created does not make that release wait
+// for a person: approval.required is frozen.
 func releaseNeedsPerson(claim *metalv1alpha1.HostClaim, host *metalv1alpha1.Host, provisionOps []metalv1alpha1.HostOperation) bool {
 	return !approvalWaived(claim) && (runsNode(host) || installedOnRecord(claim, host.Name, provisionOps))
 }

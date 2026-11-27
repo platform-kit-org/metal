@@ -3,14 +3,12 @@ package controller
 import (
 	"context"
 	"fmt"
-	"slices"
 	"strings"
 	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -288,8 +286,8 @@ func (r *HostClaimReconciler) removeNode(ctx context.Context, claim *metalv1alph
 }
 
 // removalOp builds the operation that removes node from host while the claim
-// keeps it: the node's exit steps, then a power-off and empty media slots.
-// It returns nil with a reason while the removal must wait.
+// keeps it: the exit operation (exitOp) of the node. It returns nil with a
+// reason while the removal must wait.
 func (r *HostClaimReconciler) removalOp(ctx context.Context, claim *metalv1alpha1.HostClaim, host *metalv1alpha1.Host,
 	node *osv1alpha1.TalosNode, name string, ops []metalv1alpha1.HostOperation) (*metalv1alpha1.HostOperation, string, string, error) {
 	shape, err := r.endpointShape(ctx, host)
@@ -300,36 +298,11 @@ func (r *HostClaimReconciler) removalOp(ctx context.Context, claim *metalv1alpha
 		return nil, metalv1alpha1.ReasonRemovingNode, fmt.Sprintf("removing TalosNode %s waits until a reachable management path of host %s has read its media slots",
 			node.Name, host.Name), nil
 	}
-	member, last, reason, msg, err := r.etcdExitGuard(ctx, claim, node, name)
-	if err != nil || reason != "" {
-		return nil, reason, "TalosNode " + node.Name + " is being deleted, but " + msg, err
+	// The node's deletion asked for this removal.
+	op, reason, msg, err := r.exitOp(ctx, claim, host, node, node.Name, name, purposeRemove,
+		metalv1alpha1.RequestedBy(node.Annotations, claim.Annotations), shape.insertable, ops)
+	if reason != "" {
+		msg = "TalosNode " + node.Name + " is being deleted, but " + msg
 	}
-	steps, wipes, _ := r.exitSteps(node, member, last, "")
-	graceful := int32(r.releaseShutdownTimeout().Seconds())
-	if wipes {
-		graceful = 0
-	}
-	actions := append(slices.Clone(steps), metalv1alpha1.HostOperationAction{PowerOff: &metalv1alpha1.PowerOffAction{GracefulTimeoutSeconds: graceful}})
-	for _, s := range shape.insertable {
-		actions = append(actions, metalv1alpha1.HostOperationAction{EjectMedia: &metalv1alpha1.EjectMediaAction{MediaID: s}})
-	}
-	labels := claimLabels(claim, purposeRemove)
-	labels[labelNode] = node.Name
-	var annotations map[string]string
-	if !wipes {
-		annotations = map[string]string{metalv1alpha1.AnnotationDiskNotWiped: node.Spec.ClusterRef.Name + "/" + node.Name}
-	}
-	return &metalv1alpha1.HostOperation{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: r.OperationsNamespace, Labels: labels, Annotations: annotations},
-		Spec: metalv1alpha1.HostOperationSpec{
-			HostRef:    metalv1alpha1.Reference{Name: host.Name},
-			ProposedBy: r.Proposer,
-			// The node's deletion asked for this removal.
-			RequestedBy:             metalv1alpha1.RequestedBy(node.Annotations, claim.Annotations),
-			Reason:                  reasonRelease,
-			Actions:                 actions,
-			Approval:                metalv1alpha1.OperationApproval{Required: ptr.To(releaseNeedsPerson(claim, host, ops))},
-			TTLSecondsAfterFinished: ptr.To(releaseTTL),
-		},
-	}, "", "", nil
+	return op, reason, msg, err
 }

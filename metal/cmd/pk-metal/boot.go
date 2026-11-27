@@ -60,7 +60,6 @@ func bootCmd(args []string) {
 	relaySecretFile := fs.String("relay-secret-file", "", "file with the relay's shared secret (or set $"+relay.SecretEnv+")")
 	hold := fs.Bool("hold", false, "keep serving and keep the medium mounted until interrupted (Ctrl-C)")
 	yes := fs.Bool("yes", false, "allow a hard reset of a machine that is on")
-	forceRestart := fs.Bool("force-restart", false, "same as --yes")
 	noPower := fs.Bool("no-power", false, "mount the medium and set the next boot only; you restart the machine")
 	bf := connectFlags(fs)
 	parseFlags(fs, args)
@@ -73,8 +72,8 @@ func bootCmd(args []string) {
 	if *relaySecretFile != "" && *relayAddr == "" {
 		badUsage(fs, "--relay-secret-file goes with --relay")
 	}
-	if *noPower && (*yes || *forceRestart) {
-		badUsage(fs, "--no-power does not touch power, so --yes or --force-restart has no meaning with it")
+	if *noPower && *yes {
+		badUsage(fs, "--no-power does not touch power, so --yes has no meaning with it")
 	}
 
 	cfg, err := os.ReadFile(*configPath)
@@ -115,7 +114,7 @@ func bootCmd(args []string) {
 		Listen:       *listen,
 		Relay:        rc,
 		Hold:         *hold,
-		AllowRestart: *yes || *forceRestart,
+		AllowRestart: *yes,
 		NoPower:      *noPower,
 		Logf:         log.Printf,
 	})

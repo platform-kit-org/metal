@@ -26,13 +26,6 @@
       "global": false
     },
     {
-      "name": "force-restart",
-      "type": "bool",
-      "default": "",
-      "usage": "same as --yes",
-      "global": false
-    },
-    {
       "name": "hold",
       "type": "bool",
       "default": "",

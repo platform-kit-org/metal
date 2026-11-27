@@ -371,10 +371,24 @@ func TestBuildKeyFollowsEveryInput(t *testing.T) {
 		"image":      {ConfigDigest: base.ConfigDigest, TalosVersion: base.TalosVersion, Image: "img@sha256:9", KernelArgs: base.KernelArgs, Extensions: base.Extensions},
 		"kernelArgs": {ConfigDigest: base.ConfigDigest, TalosVersion: base.TalosVersion, Image: base.Image, Extensions: base.Extensions},
 		"extensions": {ConfigDigest: base.ConfigDigest, TalosVersion: base.TalosVersion, Image: base.Image, KernelArgs: base.KernelArgs},
+		"arch": {ConfigDigest: base.ConfigDigest, TalosVersion: base.TalosVersion, Image: base.Image, KernelArgs: base.KernelArgs,
+			Extensions: base.Extensions, Arch: "arm64"},
 	} {
 		k := in.key()
 		_, dup := seen[k]
 		assert.False(t, dup, "%s does not change the key", name)
 		seen[k] = name
 	}
+}
+
+// An amd64 build keeps the key it had before the operator knew other
+// architectures, so an upgrade of the operator builds nothing again; the
+// imager is told the architecture either way.
+func TestBuildArch(t *testing.T) {
+	assert.Empty(t, (&Imager{}).buildArch())
+	assert.Empty(t, (&Imager{Arch: "amd64"}).buildArch())
+	assert.Equal(t, "arm64", (&Imager{Arch: "arm64"}).buildArch())
+
+	assert.Contains(t, strings.Join(imagerArgs("build-x", imagerInputs{}), " "), "--arch amd64")
+	assert.Contains(t, strings.Join(imagerArgs("build-x", imagerInputs{Arch: "arm64"}), " "), "--arch arm64")
 }

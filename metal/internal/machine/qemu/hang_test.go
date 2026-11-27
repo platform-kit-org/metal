@@ -207,6 +207,12 @@ func TestHangGuardGivesUpOnAnUnreadableConsole(t *testing.T) {
 	assert.Contains(t, r.log.all(), "cannot read the console")
 }
 
+func TestDefaultHangTimeout(t *testing.T) {
+	assert.Equal(t, DefaultHangTimeout, defaultHangTimeout(AccelKVM))
+	assert.Equal(t, DefaultHangTimeoutTCG, defaultHangTimeout(AccelTCG),
+		"an emulated CPU loads the kernel slower: the guard waits longer")
+}
+
 // newGuardedMachine is a Machine whose guard runs on the test's clock and
 // ticks, and whose power cycle only counts; no qemu is started.
 func newGuardedMachine(t *testing.T, timeout time.Duration) (*Machine, *fakeClock, chan time.Time, chan struct{}) {

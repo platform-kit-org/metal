@@ -20,4 +20,4 @@ machines:
       bmcMAC: "02:77:00:00:01:01"
       nicMACs: ["52:54:00:77:00:11"]
     backend: qemu
-    qemu: { tap: pktap1, memoryMiB: 4096, cpus: 2, diskGiB: 20, diskSerial: pklab-disk-1 }
+    qemu: { tap: pktap1, memoryMiB: 4096, cpus: 2, diskGiB: 20, diskSerial: pklab-disk-1, arch: amd64, accel: kvm }

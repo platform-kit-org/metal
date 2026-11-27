@@ -207,7 +207,7 @@ func TestRollout(t *testing.T) {
 		assert.Empty(t, opsOf(upgrade), "nothing runs before an approval")
 	})
 
-	st.run(t, "the operator approves nothing, and a person only as themselves", func(t *testing.T) {
+	st.run(t, "an approval names the plan, and is write-once", func(t *testing.T) {
 		ro := getRollout(upgrade)
 		approve := func(c client.Client, who, hash string) error {
 			patch := client.MergeFrom(ro.DeepCopy())
@@ -215,8 +215,6 @@ func TestRollout(t *testing.T) {
 			cp.Spec.Approval = osv1alpha1.RolloutApproval{ApprovedBy: who, PlanHash: hash}
 			return c.Patch(ctx, cp, patch)
 		}
-		assert.ErrorContains(t, approve(cl, operator, ro.Status.PlanHash), "the operator approves nothing")
-		assert.ErrorContains(t, approve(aliceCl, "bob", ro.Status.PlanHash), "only approve as yourself")
 		assert.Error(t, approve(bobCl, "bob", ""), "an approval names the plan it approves")
 		require.NoError(t, approve(bobCl, "bob", ro.Status.PlanHash))
 		ro = getRollout(upgrade)

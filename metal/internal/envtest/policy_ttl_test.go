@@ -42,6 +42,9 @@ func TestCredentialTTLGuard(t *testing.T) {
 	err := refusedOnceEnforcing(t, ctx, cl, alice, cluster("long", 720*time.Hour), "only an admin")
 	assert.Contains(t, err.Error(), "spec.credentials.ttl above 24h")
 	require.NoError(t, ada.Create(ctx, cluster("long", 720*time.Hour)), "an admin sets a long ttl")
+	err = ada.Create(ctx, cluster("too-long", 721*time.Hour))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "ttl must be at most 720h", "the schema caps it for an admin too")
 	require.NoError(t, alice.Create(ctx, cluster("short", 12*time.Hour)), "a short ttl needs no group")
 	require.NoError(t, alice.Create(ctx, cluster("default", 0)))
 

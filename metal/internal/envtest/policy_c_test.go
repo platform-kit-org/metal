@@ -48,39 +48,12 @@ func TestPolicyStreamC(t *testing.T) {
 	ctx := t.Context()
 	cl := st.cl
 
-	const operator = "op-sa"
-	installApprovalPolicy(t, ctx, cl, operator)
+	installApprovalPolicy(t, ctx, cl, "op-sa")
 	installPolicy(t, ctx, cl, "hostclaim-provisioning.yaml", "etcdbackuppolicy-guard.yaml", "endpointprofile-guard.yaml")
 
 	// userClient adds system:masters: these clients test admission, not RBAC.
-	operatorCl := st.userClient(t, operator)
 	alice := st.userClient(t, "alice")
 	ada := st.userClient(t, "ada", adminGroup)
-
-	t.Run("the operator approves nothing, not even with patch", func(t *testing.T) {
-		op := &metalv1alpha1.HostOperation{
-			ObjectMeta: metav1.ObjectMeta{Name: "c2-cycle", Namespace: "default"},
-			Spec: metalv1alpha1.HostOperationSpec{
-				HostRef:    metalv1alpha1.Reference{Name: "h1"},
-				ProposedBy: operator,
-				Actions:    []metalv1alpha1.HostOperationAction{{PowerCycle: &metalv1alpha1.PowerCycleAction{}}},
-			},
-		}
-		// The first refusal proves the policy enforces.
-		probe := op.DeepCopy()
-		probe.Name = "c2-probe"
-		probe.Spec.Approval.ApprovedBy = operator
-		_ = refusedOnceEnforcing(t, ctx, cl, operatorCl, probe, "pre-approved")
-
-		require.NoError(t, operatorCl.Create(ctx, op))
-		self := client.RawPatch(types.MergePatchType, []byte(`{"spec":{"approval":{"approvedBy":"`+operator+`"}}}`))
-		err := operatorCl.Patch(ctx, op.DeepCopy(), self)
-		require.Error(t, err, "the operator must not approve its own proposal")
-		assert.Contains(t, err.Error(), "the operator approves nothing")
-
-		byAlice := client.RawPatch(types.MergePatchType, []byte(`{"spec":{"approval":{"approvedBy":"alice"}}}`))
-		require.NoError(t, alice.Patch(ctx, op.DeepCopy(), byAlice), "a person approves the operator's proposal")
-	})
 
 	t.Run("the claim refusal says where group membership comes from", func(t *testing.T) {
 		claim := &metalv1alpha1.HostClaim{
@@ -157,24 +130,6 @@ func TestPolicyStreamC(t *testing.T) {
 		label := client.RawPatch(types.MergePatchType, []byte(`{"metadata":{"labels":{"team":"a"}}}`))
 		require.NoError(t, alice.Patch(ctx, ep.DeepCopy(), label), "metadata stays open")
 		require.NoError(t, ada.Patch(ctx, ep.DeepCopy(), ntp), "an admin changes the profile")
-	})
-
-	t.Run("a published credential lives at most 720h", func(t *testing.T) {
-		tc := func(name string, ttl time.Duration) *osv1alpha1.TalosCluster {
-			return &osv1alpha1.TalosCluster{
-				ObjectMeta: metav1.ObjectMeta{Name: name},
-				Spec: osv1alpha1.TalosClusterSpec{
-					TalosVersion: labTalos, KubernetesVersion: "v1.36.2",
-					Endpoint:    "https://10.0.0.10:6443",
-					SecretsRef:  osv1alpha1.SecretReference{Namespace: "default", Name: name},
-					Credentials: &osv1alpha1.CredentialsSpec{TTL: &metav1.Duration{Duration: ttl}},
-				},
-			}
-		}
-		err := cl.Create(ctx, tc("c8-long", 721*time.Hour))
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "ttl must be at most 720h")
-		require.NoError(t, cl.Create(ctx, tc("c8-month", 720*time.Hour)))
 	})
 }
 

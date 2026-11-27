@@ -27,7 +27,8 @@ type RolloutState struct {
 }
 
 // RolloutStateOf picks the deciding condition. The order is the order in
-// which they hold a rollout up: an ended rollout reports how it ended; a plan
+// which they hold a rollout up: an ended rollout reports how it ended, and
+// one that fails or is aborted while a step still runs reports that; a plan
 // that cannot be made, then a missing approval, come before any progress; a
 // pause comes before the progress it stops.
 func RolloutStateOf(ro *osv1alpha1.TalosRollout) RolloutState {
@@ -44,6 +45,10 @@ func RolloutStateOf(ro *osv1alpha1.TalosRollout) RolloutState {
 	if c := is(osv1alpha1.ConditionComplete, metav1.ConditionFalse); c != nil {
 		return RolloutState{Reason: c.Reason, Message: c.Message, Ended: true}
 	}
+	progress := meta.FindStatusCondition(conds, osv1alpha1.ConditionProgressing)
+	if progress != nil && (progress.Reason == osv1alpha1.ReasonRolloutAborted || progress.Reason == osv1alpha1.ReasonRolloutFailed) {
+		return RolloutState{Reason: progress.Reason, Message: progress.Message}
+	}
 	for _, t := range []string{osv1alpha1.ConditionPlanned, osv1alpha1.ConditionApproved} {
 		if c := is(t, metav1.ConditionFalse); c != nil {
 			return RolloutState{Reason: c.Reason, Message: c.Message}
@@ -52,8 +57,8 @@ func RolloutStateOf(ro *osv1alpha1.TalosRollout) RolloutState {
 	if c := is(osv1alpha1.ConditionPaused, metav1.ConditionTrue); c != nil {
 		return RolloutState{Reason: c.Reason, Message: c.Message}
 	}
-	if c := meta.FindStatusCondition(conds, osv1alpha1.ConditionProgressing); c != nil && c.Reason != "" {
-		return RolloutState{Reason: c.Reason, Message: c.Message}
+	if progress != nil && progress.Reason != "" {
+		return RolloutState{Reason: progress.Reason, Message: progress.Message}
 	}
 	return RolloutState{Reason: osv1alpha1.ReasonRolloutNotStarted}
 }

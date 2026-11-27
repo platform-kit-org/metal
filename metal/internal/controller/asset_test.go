@@ -48,7 +48,7 @@ func TestAssetSaysWhyItHasNoEndpoint(t *testing.T) {
 			}
 			cl := fake.NewClientBuilder().WithScheme(testScheme(t)).
 				WithStatusSubresource(&metalv1alpha1.Asset{}).WithObjects(asset).Build()
-			r := &AssetReconciler{Client: cl, Scheme: cl.Scheme(), Ledger: led,
+			r := &AssetReconciler{Client: cl, Ledger: led,
 				LedgerSource: "the test ledger", LedgerReload: "Then restart the manager.",
 				Recorder: events.NewFakeRecorder(10)}
 

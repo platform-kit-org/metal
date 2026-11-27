@@ -13,7 +13,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -33,7 +32,6 @@ import (
 // a machine.
 type TalosNodeReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
 	// Namespace receives the rendered config Secrets: the operator's
 	// namespace, since TalosNodes are cluster-scoped and Secrets are not.
 	Namespace string

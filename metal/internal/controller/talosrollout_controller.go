@@ -15,7 +15,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -57,7 +56,6 @@ type ImageResolver func(ctx context.Context, ref string) (string, error)
 // status polled minutes ago).
 type TalosRolloutReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
 	// Namespace is the operator's: config Secrets and credentials live
 	// there.
 	Namespace string
@@ -523,7 +521,7 @@ func (r *TalosRolloutReconciler) startStep(ctx context.Context, ro *osv1alpha1.T
 			RolloutRef: &metalv1alpha1.RolloutReference{Name: ro.Name, PlanHash: ro.Status.PlanHash},
 		},
 	}
-	if err := controllerutil.SetControllerReference(ro, op, r.Scheme); err != nil {
+	if err := controllerutil.SetControllerReference(ro, op, r.Scheme()); err != nil {
 		return err
 	}
 	err := r.Create(ctx, op)

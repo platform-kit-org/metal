@@ -201,7 +201,7 @@ func SetupAll(mgr ctrl.Manager, o Options, lanes ...Lane) error {
 
 // reconciler builds the reconciler of one lane from o.
 func (o Options) reconciler(mgr ctrl.Manager, l Lane) (string, reconciler) {
-	c, scheme := mgr.GetClient(), mgr.GetScheme()
+	c := mgr.GetClient()
 	var self *SelfGuard
 	if o.NodeName != "" {
 		self = &SelfGuard{Reader: mgr.GetAPIReader(), NodeName: o.NodeName, Dial: o.TalosDial, Namespace: o.CredentialsNamespace}
@@ -212,7 +212,7 @@ func (o Options) reconciler(mgr ctrl.Manager, l Lane) (string, reconciler) {
 	switch l {
 	case LaneAsset:
 		return "asset", &AssetReconciler{
-			Client: c, Scheme: scheme, Ledger: o.Ledger,
+			Client: c, Ledger: o.Ledger,
 			LedgerSource: o.LedgerSource, LedgerReload: o.LedgerReload,
 			TLS: o.TLS, Recorder: recorder(),
 		}
@@ -259,7 +259,7 @@ func (o Options) reconciler(mgr ctrl.Manager, l Lane) (string, reconciler) {
 		// The member finalizer rides with the node lane: every setup that
 		// renders nodes also holds their deletion until they left.
 		return "talosnode", reconcilers{&TalosNodeReconciler{
-			Client: c, Scheme: scheme, Namespace: o.CredentialsNamespace,
+			Client: c, Namespace: o.CredentialsNamespace,
 			Factory: o.Factory, Dial: o.TalosDial,
 			CheckInterval: o.CheckInterval, ReadyInterval: o.ReadyInterval, DriftInterval: o.DriftInterval,
 		}, &TalosNodeMemberReconciler{
@@ -268,7 +268,7 @@ func (o Options) reconciler(mgr ctrl.Manager, l Lane) (string, reconciler) {
 		}}
 	case LaneTalosCluster:
 		return "taloscluster", &TalosClusterReconciler{
-			Client: c, Scheme: scheme, Namespace: o.CredentialsNamespace,
+			Client: c, Namespace: o.CredentialsNamespace,
 			Dial: o.TalosDial, ProbeKubernetes: o.ProbeKubernetes,
 			CheckInterval: o.CheckInterval, ReadyInterval: o.ReadyInterval,
 		}
@@ -281,7 +281,7 @@ func (o Options) reconciler(mgr ctrl.Manager, l Lane) (string, reconciler) {
 	case LaneTalosRollout:
 		return "talosrollout", rolloutLane{
 			run: &TalosRolloutReconciler{
-				Client: c, Scheme: scheme, Namespace: o.CredentialsNamespace,
+				Client: c, Namespace: o.CredentialsNamespace,
 				OperationsNamespace: o.OperationsNamespace, Proposer: o.Proposer,
 				Factory: o.Factory, ResolveImage: o.ResolveImage, Dial: o.TalosDial,
 				Workload: o.Workload, GateInterval: o.GateInterval, Audit: o.Audit,
@@ -295,7 +295,7 @@ func (o Options) reconciler(mgr ctrl.Manager, l Lane) (string, reconciler) {
 			Namespace: o.CredentialsNamespace, Audit: o.Audit, Interval: o.SettingsInterval}
 	default: // LaneBootAsset; SetupAll has checked the range
 		return "bootasset", &BootAssetReconciler{
-			Client: c, Scheme: scheme, Namespace: o.CredentialsNamespace, Factory: o.Factory,
+			Client: c, Namespace: o.CredentialsNamespace, Factory: o.Factory,
 			Store: o.MediaStore, Imager: o.Imager,
 		}
 	}

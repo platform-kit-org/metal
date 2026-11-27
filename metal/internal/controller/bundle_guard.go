@@ -87,7 +87,7 @@ func (r *TalosClusterReconciler) guardBundle(ctx context.Context, cluster *osv1a
 	}
 	op, err := controllerutil.CreateOrUpdate(ctx, r.Client, secret, func() error {
 		secret.Data = map[string][]byte{render.BundleKey: specData}
-		return controllerutil.SetControllerReference(cluster, secret, r.Scheme)
+		return controllerutil.SetControllerReference(cluster, secret, r.Scheme())
 	})
 	if err != nil {
 		return fmt.Errorf("keep applied bundle of %s: %w", cluster.Name, err)

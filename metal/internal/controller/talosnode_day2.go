@@ -89,7 +89,7 @@ func (r *TalosNodeReconciler) writeConfigSecret(ctx context.Context, node *osv1a
 		Immutable: ptr.To(true),
 		Data:      map[string][]byte{asset.ConfigFilename: machineConfig},
 	}
-	if err := controllerutil.SetControllerReference(node, secret, r.Scheme); err != nil {
+	if err := controllerutil.SetControllerReference(node, secret, r.Scheme()); err != nil {
 		return nil, err
 	}
 	if err := r.Create(ctx, secret); err != nil {

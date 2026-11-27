@@ -13,7 +13,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -43,7 +42,6 @@ const (
 // too.
 type BootAssetReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
 	// Namespace receives the artifact Secrets (the operator's namespace).
 	Namespace string
 	// Factory serves the images the factory strategy addresses, and is told
@@ -255,7 +253,7 @@ func (r *BootAssetReconciler) build(ctx context.Context, ba *osv1alpha1.BootAsse
 		}
 		artifact.Annotations[configDigestAnnotation] = configDigest
 		artifact.Data = map[string][]byte{artifactKey: iso}
-		return controllerutil.SetControllerReference(ba, artifact, r.Scheme)
+		return controllerutil.SetControllerReference(ba, artifact, r.Scheme())
 	})
 	if err != nil {
 		return fmt.Errorf("write artifact secret for %s: %w", ba.Name, err)

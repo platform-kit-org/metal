@@ -52,6 +52,22 @@ func TestForEndpoint(t *testing.T) {
 				c(metalv1alpha1.ConditionConfigured, metav1.ConditionFalse, "RotatingCredentials"),
 			},
 			phase: metalv1alpha1.EndpointConfiguring},
+		{name: "a configuration failure shows in blockedOn",
+			conds: []metav1.Condition{
+				c(metalv1alpha1.ConditionReachable, metav1.ConditionTrue, "SessionUp"),
+				c(metalv1alpha1.ConditionInventoried, metav1.ConditionTrue, "FactsGathered"),
+				c(metalv1alpha1.ConditionVerified, metav1.ConditionTrue, "SerialMatch"),
+				c(metalv1alpha1.ConditionConfigured, metav1.ConditionFalse, metalv1alpha1.ReasonAccountRetireFailed),
+			},
+			phase: metalv1alpha1.EndpointConfiguring, blocked: metalv1alpha1.ReasonAccountRetireFailed},
+		{name: "a certificate that waits for its signature is not blocked",
+			conds: []metav1.Condition{
+				c(metalv1alpha1.ConditionReachable, metav1.ConditionTrue, "SessionUp"),
+				c(metalv1alpha1.ConditionInventoried, metav1.ConditionTrue, "FactsGathered"),
+				c(metalv1alpha1.ConditionVerified, metav1.ConditionTrue, "SerialMatch"),
+				c(metalv1alpha1.ConditionConfigured, metav1.ConditionFalse, metalv1alpha1.ReasonAwaitingIssuance),
+			},
+			phase: metalv1alpha1.EndpointConfiguring},
 		{name: "ready without any profile matched (Configured absent)",
 			conds: []metav1.Condition{
 				c(metalv1alpha1.ConditionReachable, metav1.ConditionTrue, "SessionUp"),

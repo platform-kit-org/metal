@@ -52,9 +52,24 @@ func ForEndpoint(conds []metav1.Condition) (metalv1alpha1.EndpointPhase, string)
 	// Configured is profile-driven: absent means no EndpointProfile matched — that is
 	// Ready, not an eternal Configuring.
 	if c := meta.FindStatusCondition(conds, metalv1alpha1.ConditionConfigured); c != nil && c.Status != metav1.ConditionTrue {
+		if blocked == "" && c.Status == metav1.ConditionFalse && configFailures[c.Reason] {
+			blocked = c.Reason
+		}
 		return metalv1alpha1.EndpointConfiguring, blocked
 	}
 	return metalv1alpha1.EndpointReady, blocked
+}
+
+// configFailures are the Configured=False reasons that the operator cannot
+// clear alone. The other False reasons are work in flight.
+var configFailures = map[string]bool{
+	metalv1alpha1.ReasonRotationFailed:      true,
+	metalv1alpha1.ReasonAccountRetireFailed: true,
+	metalv1alpha1.ReasonNTPFailed:           true,
+	metalv1alpha1.ReasonProfileConflict:     true,
+	metalv1alpha1.ReasonIdentityPushFailed:  true,
+	metalv1alpha1.ReasonNoIdentityTransport: true,
+	metalv1alpha1.ReasonTLSNotVerified:      true,
 }
 
 // HostFacts are the spec-derived inputs to the Host derivation — booleans the owning

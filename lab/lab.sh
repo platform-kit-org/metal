@@ -2252,6 +2252,18 @@ state_dir_removable() {
   [[ -f $dir/$STATE_MARK ]]
 }
 
+# forget_clusters removes what the lab keeps about the clusters on its disks:
+# the marks of a moved operator and an older release, and the kubeconfigs and
+# talosconfigs of the workload clusters. After a wipe no cluster answers them,
+# and lab:top would dial an API address no machine holds. The tasks that need
+# them fetch them again once a cluster publishes them.
+forget_clusters() {
+  local lab_dir=$1
+  rm -f "$lab_dir/$PIVOT_MARK" "$lab_dir/$TALOS_MARK" \
+    "$lab_dir/workload.kubeconfig" "$lab_dir/talosconfig" \
+    "$lab_dir/second.kubeconfig" "$lab_dir/second.talosconfig"
+}
+
 reset() {
   local root=$1 lab_dir=$2 fleet=$3
   local state_dir
@@ -2259,7 +2271,7 @@ reset() {
     && die "the fleet is running and has the disks open. Take the lab down first: mise run lab:down"
   state_dir=$(fleet_state_dir "$root" "$fleet")
   if [[ ! -e $state_dir ]]; then
-    rm -f "$lab_dir/$PIVOT_MARK" "$lab_dir/$TALOS_MARK"
+    forget_clusters "$lab_dir"
     echo "nothing to wipe: $state_dir does not exist" >&2
     return 0
   fi
@@ -2268,8 +2280,7 @@ reset() {
   $STATE_MARK file, so it may not be the lab's (or it holds the repository). Nothing was removed.
   Remove the directory by hand if it really holds the lab's disks."
   rm -rf "$state_dir"
-  # No disk holds a moved operator or an older release any more.
-  rm -f "$lab_dir/$PIVOT_MARK" "$lab_dir/$TALOS_MARK"
+  forget_clusters "$lab_dir"
   echo "wiped $state_dir. The next lab:up installs every machine from scratch." >&2
 }
 

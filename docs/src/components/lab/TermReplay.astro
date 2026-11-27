@@ -82,18 +82,11 @@ const paint = (s: string) =>
     margin: 1.5rem 0;
   }
   .pk-tr-win {
-    --tr-bg: #1b1f27;
-    --tr-bar: #252a34;
-    --tr-ink: #d7dce5;
-    --tr-dim: #8590a3;
-    --tr-ok: #8fd18a;
-    --tr-warn: #f0c36a;
-    --tr-err: #f2777a;
-    border-radius: var(--pk-radius-lg, 10px);
-    background: var(--tr-bg);
-    color: var(--tr-ink);
-    border: 1px solid color-mix(in srgb, var(--tr-ink) 14%, transparent);
-    box-shadow: var(--pk-shadow, none);
+    border-radius: var(--pk-radius-lg);
+    background: var(--pk-ex-bg);
+    color: var(--pk-ex-ink);
+    border: 1px solid color-mix(in srgb, var(--pk-ex-ink) 14%, transparent);
+    box-shadow: var(--pk-shadow);
     overflow: hidden;
   }
   .pk-tr-bar {
@@ -101,10 +94,10 @@ const paint = (s: string) =>
     align-items: center;
     gap: 0.6rem;
     padding: 0.45rem 0.75rem;
-    background: var(--tr-bar);
-    font-family: var(--pk-font-mono, monospace);
+    background: var(--pk-ex-box);
+    font-family: var(--pk-font-mono);
     font-size: 0.75rem;
-    color: var(--tr-dim);
+    color: var(--pk-ex-dim);
   }
   .pk-tr-dots {
     display: inline-flex;
@@ -114,7 +107,7 @@ const paint = (s: string) =>
     inline-size: 0.6rem;
     block-size: 0.6rem;
     border-radius: 50%;
-    background: color-mix(in srgb, var(--tr-ink) 22%, transparent);
+    background: color-mix(in srgb, var(--pk-ex-ink) 22%, transparent);
   }
   .pk-tr-title {
     flex: 1;
@@ -122,11 +115,11 @@ const paint = (s: string) =>
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    color: var(--tr-ink);
+    color: var(--pk-ex-ink);
   }
   .pk-tr-tag {
     padding: 0 0.4rem;
-    border: 1px solid color-mix(in srgb, var(--tr-dim) 50%, transparent);
+    border: 1px solid color-mix(in srgb, var(--pk-ex-dim) 50%, transparent);
     border-radius: 999px;
     font-size: 0.65rem;
     letter-spacing: 0.08em;
@@ -141,13 +134,13 @@ const paint = (s: string) =>
     border: 0;
     border-radius: 4px;
     background: transparent;
-    color: var(--tr-dim);
+    color: var(--pk-ex-dim);
     cursor: pointer;
   }
   .pk-tr-btn:hover,
   .pk-tr-btn:focus-visible {
-    color: var(--tr-ink);
-    background: color-mix(in srgb, var(--tr-ink) 12%, transparent);
+    color: var(--pk-ex-ink);
+    background: color-mix(in srgb, var(--pk-ex-ink) 12%, transparent);
   }
   .pk-tr-btn svg {
     inline-size: 0.9rem;
@@ -173,7 +166,7 @@ const paint = (s: string) =>
     background: transparent;
     border: 0;
     color: inherit;
-    font-family: var(--pk-font-mono, monospace);
+    font-family: var(--pk-font-mono);
     font-size: 0.74rem;
     line-height: 1.5;
     white-space: pre;
@@ -206,7 +199,7 @@ const paint = (s: string) =>
   }
   .pk-tr-cmd.is-typing [data-tr='typed']::after {
     content: '▍';
-    color: var(--tr-ok);
+    color: var(--pk-ok);
   }
   .pk-tr .tr-g {
     display: inline-block;
@@ -216,16 +209,16 @@ const paint = (s: string) =>
     white-space: nowrap;
   }
   .pk-tr .tr-ok {
-    color: var(--tr-ok);
+    color: var(--pk-ok);
   }
   .pk-tr .tr-warn {
-    color: var(--tr-warn);
+    color: var(--pk-warn);
   }
   .pk-tr .tr-err {
-    color: var(--tr-err);
+    color: var(--pk-err);
   }
   .pk-tr .tr-dim {
-    color: var(--tr-dim);
+    color: var(--pk-ex-dim);
   }
   .pk-tr .tr-b {
     font-weight: 700;

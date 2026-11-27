@@ -104,6 +104,50 @@ spec:
             summary: "The admission policy {{ $labels.policy }} of the approval gate is missing or does not deny"
             description: "kubectl get validatingadmissionpolicy,validatingadmissionpolicybinding {{ $labels.policy }} shows what is wrong; the gate.degraded line of the operator audit log says it in words. Apply metal/config/policy again."
             runbook_url: https://metal.platform-kit.org/operate/runbooks/admission-gate-degraded/
+        - alert: PkMetalReconcileFailing
+          # More passes of one controller fail than succeed, for half an
+          # hour. A BMC or a node that does not answer is no error here: the
+          # controllers write it into a condition. What is left is the API
+          # server saying no: missing RBAC after an upgrade, CRDs of another
+          # commit, a field selector that an older API server refuses. The
+          # objects of that controller stop changing, and no other alert
+          # says so.
+          expr: |
+            sum by (controller) (rate(controller_runtime_reconcile_total{job="pk-metal-metrics", namespace="pk-metal", result="error"}[15m]))
+              / sum by (controller) (rate(controller_runtime_reconcile_total{job="pk-metal-metrics", namespace="pk-metal"}[15m]))
+              > 0.5
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "More than half of the passes of controller {{ $labels.controller }} fail"
+            description: "kubectl -n pk-metal logs deploy/pk-metal-manager --since=1h | grep 'Reconciler error' | grep '\"controller\":\"{{ $labels.controller }}\"' shows the error."
+            runbook_url: https://metal.platform-kit.org/operate/runbooks/reconcile-failing/
+        - alert: PkMetalReconcilePanicked
+          # A panic is a bug. controller-runtime recovers, and the object
+          # comes back to the queue, where it can panic again.
+          expr: sum by (controller) (increase(controller_runtime_reconcile_panics_total{job="pk-metal-metrics", namespace="pk-metal"}[1h])) > 0
+          labels:
+            severity: warning
+          annotations:
+            summary: "Controller {{ $labels.controller }} panicked in the last hour"
+            description: "The manager log has the stack: kubectl -n pk-metal logs deploy/pk-metal-manager --since=1h | grep -A40 'Observed a panic'."
+            runbook_url: https://metal.platform-kit.org/operate/runbooks/reconcile-failing/
+        - alert: PkMetalOperationWorkersBusy
+          # Each operation worker has been busy for an hour. Approved
+          # operations of other hosts wait, and nothing on them says why. A
+          # firmware update of many hosts does this: each flash keeps its
+          # worker for up to 15 minutes.
+          expr: |
+            min(controller_runtime_active_workers{job="pk-metal-metrics", namespace="pk-metal", controller="hostoperation"})
+              >= min(controller_runtime_max_concurrent_reconciles{job="pk-metal-metrics", namespace="pk-metal", controller="hostoperation"})
+          for: 1h
+          labels:
+            severity: info
+          annotations:
+            summary: "Every HostOperation worker has been busy for an hour"
+            description: "Approved operations of other hosts wait for a free worker. For a planned change of many hosts, wait. Otherwise raise --operation-workers of the manager."
+            runbook_url: https://metal.platform-kit.org/operate/runbooks/workers-busy/
     - name: pk-metal.clusters
       rules:
         - alert: PkMetalNodeNotReady

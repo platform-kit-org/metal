@@ -135,12 +135,12 @@ The operation fails with `gave up waiting for TalosNode ... to check in`. See []
    talosctl -n 10.77.0.12 --insecure get addresses
    ```
 
-3. Make sure that the machines can get to the outside. Without NAT or DNS, Talos cannot pull its installer or set its clock.
+3. Make sure that the machines can get to the outside. Without NAT or DNS, Talos cannot pull its installer or set its clock. Run [](lab:doctor): its table of [outside endpoints](lab:page/prerequisites#outside-endpoints) shows which DNS server, NTP server or registry does not answer.
 
 ## A machine stays in its firmware
 
 The console log contains only control sequences and no text, or it ends with the boot manager's countdown and no kernel messages follow.
-The [firmware-hang guard](lab:page/simulated-bmc#firmware-hang-guard) power cycles such a machine after 90 seconds, up to three times for each power-on.
+The [firmware-hang guard](lab:page/simulated-bmc#firmware-hang-guard) power cycles such a machine after 90 seconds (3 minutes under TCG), up to three times for each power-on.
 
 1. Look for the guard in the fleet log.
 

@@ -12,10 +12,13 @@ import (
 	"net/netip"
 	"os"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
 	"go.yaml.in/yaml/v4"
+
+	"github.com/dennisklein/platform-kit/metal/internal/machine/qemu"
 )
 
 // Config is the fleet file.
@@ -29,7 +32,7 @@ import (
 //	    credentials: { username: admin, password: admin-pass }
 //	    identity: { serial: PKLAB0001, uuid: …, bmcMAC: "02:…", nicMACs: ["52:54:…"] }
 //	    backend: qemu
-//	    qemu: { tap: pktap1, memoryMiB: 4096, cpus: 2, diskGiB: 20, diskSerial: pklab-disk-1 }
+//	    qemu: { tap: pktap1, memoryMiB: 4096, cpus: 2, diskGiB: 20, diskSerial: pklab-disk-1, arch: arm64, accel: tcg }
 //
 // Relative paths are taken from the working directory.
 type Config struct {
@@ -97,7 +100,11 @@ type Qemu struct {
 	// DiskSerial is the serial of the VM's disk, which the BMC's drive
 	// inventory reports as well.
 	DiskSerial string `yaml:"diskSerial"`
-	// Accel is the accelerator; empty is kvm.
+	// Arch is the VM's CPU architecture, amd64 or arm64; empty is the
+	// host's.
+	Arch string `yaml:"arch"`
+	// Accel is the accelerator, kvm or tcg; empty is kvm. kvm runs only a VM
+	// of the host's architecture.
 	Accel string `yaml:"accel"`
 	// HostIP and ForwardPorts forward guest TCP ports in user-mode
 	// networking.
@@ -228,6 +235,12 @@ func (c *Config) validate() error {
 		case BackendQemu:
 			if c.StateDir == "" {
 				bad("machine %q: the qemu backend needs stateDir", name)
+			}
+			if q := m.Qemu; q != nil && q.Arch != "" && !slices.Contains(qemu.Arches(), q.Arch) {
+				bad("machine %q: qemu.arch %q is not one of %v", name, q.Arch, qemu.Arches())
+			}
+			if q := m.Qemu; q != nil && q.Accel != "" && q.Accel != qemu.AccelKVM && q.Accel != qemu.AccelTCG {
+				bad("machine %q: qemu.accel %q is not one of %s, %s", name, q.Accel, qemu.AccelKVM, qemu.AccelTCG)
 			}
 			if q := m.Qemu; q != nil && q.Tap != "" {
 				unique(name, "tap device", q.Tap)

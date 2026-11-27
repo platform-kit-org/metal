@@ -39,7 +39,7 @@ func TestBootOrder(t *testing.T) {
 func TestArgsBootSourceAndTap(t *testing.T) {
 	ctx := context.Background()
 	m := New(Options{
-		Name: "node-1", Dir: t.TempDir(), OVMFCode: "/fw/CODE.fd",
+		Name: "node-1", Dir: t.TempDir(), OVMFCode: "/fw/CODE.fd", Arch: ArchAMD64,
 		MemoryMiB: 8192, CPUs: 4, DiskSerial: "pklab-disk-1",
 		Tap: "pktap1", MAC: "52:54:00:77:00:11",
 	})

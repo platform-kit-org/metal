@@ -26,7 +26,7 @@ func TestWaiverRefusal(t *testing.T) {
 	}
 	install := func() *metalv1alpha1.HostOperation {
 		op := preClearedOp(metalv1alpha1.HostOperationAction{PowerCycle: &metalv1alpha1.PowerCycleAction{}})
-		op.Spec.Reason = reasonProvisioning
+		op.Spec.Reason = metalv1alpha1.OperationReasonProvisioning
 		op.Labels = claimLabels(claim(true), purposeProvision)
 		return op
 	}
@@ -41,13 +41,13 @@ func TestWaiverRefusal(t *testing.T) {
 		"an install whose claim is gone is refused": {op: install, refused: "does not exist"},
 		"a release runs": {op: func() *metalv1alpha1.HostOperation {
 			op := preClearedOp(metalv1alpha1.HostOperationAction{PowerOff: &metalv1alpha1.PowerOffAction{}})
-			op.Spec.Reason = reasonRelease
+			op.Spec.Reason = metalv1alpha1.OperationReasonRelease
 			op.Labels = map[string]string{labelPurpose: purposeRelease}
 			return op
 		}},
 		"a release without its label is refused": {op: func() *metalv1alpha1.HostOperation {
 			op := preClearedOp(metalv1alpha1.HostOperationAction{PowerOff: &metalv1alpha1.PowerOffAction{}})
-			op.Spec.Reason = reasonRelease
+			op.Spec.Reason = metalv1alpha1.OperationReasonRelease
 			return op
 		}, refused: "purpose label"},
 		"a rollout step is left to the rollout gate": {op: func() *metalv1alpha1.HostOperation {

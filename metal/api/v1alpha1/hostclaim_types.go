@@ -11,6 +11,32 @@ import (
 // stopped by it. Remove the annotation to go on.
 const AnnotationHold = "metal.platform-kit.org/hold"
 
+// The keys that join the operator's objects to the HostClaim they serve.
+// Operations live in the operator's namespace, claims wherever they are.
+const (
+	// LabelClaimNamespace on an operation the operator proposed for a
+	// claim: the namespace of the claim.
+	LabelClaimNamespace = "metal.platform-kit.org/claim-namespace"
+	// LabelClaimName on an operation the operator proposed for a claim: the
+	// name of the claim. pk-metal retry reads it to say what comes back.
+	LabelClaimName = "metal.platform-kit.org/claim-name"
+	// LabelClaimUID on an operation the operator proposed for a claim: the
+	// UID of the claim. A claim made again under the same name has another
+	// UID, so it does not take the operations of the earlier claim. pk-metal
+	// pivot rewrites it on the target, where the claim has another UID.
+	LabelClaimUID = "metal.platform-kit.org/claim-uid"
+	// AnnotationReleasePowerOff on a Host names the UID of the claim whose
+	// release powers the machine off. The executor writes it when a boot of
+	// the claim starts, before its first BMC write; the release writes it
+	// when it decides. It keeps that decision after the records it was read
+	// from are gone: the boot operations are deleted to stop the boot or by
+	// pk-metal retry, and the release operation itself can be deleted by
+	// pk-metal retry or by its TTL. Without it, the next pass would find no
+	// boot and hand back a machine that is still mid-boot. The release
+	// removes it when the host is unbound.
+	AnnotationReleasePowerOff = "metal.platform-kit.org/release-power-off"
+)
+
 // ClaimPhase says how many machines the claim's selection resolved to: none yet
 // (Pending), exactly one (Bound), or more than one with nothing to choose between
 // them (Ambiguous). Ambiguous is a stop — the cluster will not guess.

@@ -49,34 +49,50 @@
       ]
     },
     {
-      "key": "metal.platform-kit.org/claim-name",
+      "key": "metal.platform-kit.org/asset",
       "kind": "label",
       "exported": false,
-      "description": "",
+      "description": "labelAsset joins a Host to the Asset a person named the machine by, so `kubectl get hosts -l metal.platform-kit.org/asset=node-1` finds it.",
       "constants": [
         {
-          "name": "labelClaimName",
-          "source": "metal/internal/controller/provisioning.go"
-        },
+          "name": "labelAsset",
+          "source": "metal/internal/controller/labels.go"
+        }
+      ]
+    },
+    {
+      "key": "metal.platform-kit.org/certificate-request",
+      "kind": "annotation",
+      "exported": false,
+      "description": "crNameAnnotation on the Secret of a BMC identity in progress: the name of the CertificateRequest for the identity.",
+      "constants": [
         {
-          "name": "labelClaimName",
-          "source": "metal/cmd/pk-metal/cluster.go"
+          "name": "crNameAnnotation",
+          "source": "metal/internal/controller/identity.go"
+        }
+      ]
+    },
+    {
+      "key": "metal.platform-kit.org/claim-name",
+      "kind": "label",
+      "exported": true,
+      "description": "LabelClaimName on an operation the operator proposed for a claim: the name of the claim. pk-metal retry reads it to say what comes back.",
+      "constants": [
+        {
+          "name": "LabelClaimName",
+          "source": "metal/api/v1alpha1/hostclaim_types.go"
         }
       ]
     },
     {
       "key": "metal.platform-kit.org/claim-namespace",
       "kind": "label",
-      "exported": false,
-      "description": "Labels joining the operator's operations back to the claim they serve — operations live in the operator's namespace, claims wherever they are.",
+      "exported": true,
+      "description": "LabelClaimNamespace on an operation the operator proposed for a claim: the namespace of the claim.",
       "constants": [
         {
-          "name": "labelClaimNamespace",
-          "source": "metal/internal/controller/provisioning.go"
-        },
-        {
-          "name": "labelClaimNamespace",
-          "source": "metal/cmd/pk-metal/cluster.go"
+          "name": "LabelClaimNamespace",
+          "source": "metal/api/v1alpha1/hostclaim_types.go"
         }
       ]
     },
@@ -95,16 +111,12 @@
     {
       "key": "metal.platform-kit.org/claim-uid",
       "kind": "label",
-      "exported": false,
-      "description": "",
+      "exported": true,
+      "description": "LabelClaimUID on an operation the operator proposed for a claim: the UID of the claim. A claim made again under the same name has another UID, so it does not take the operations of the earlier claim. pk-metal pivot rewrites it on the target, where the claim has another UID.",
       "constants": [
         {
-          "name": "labelClaimUID",
-          "source": "metal/internal/controller/provisioning.go"
-        },
-        {
-          "name": "labelClaimUID",
-          "source": "metal/internal/pivot/copy.go"
+          "name": "LabelClaimUID",
+          "source": "metal/api/v1alpha1/hostclaim_types.go"
         }
       ]
     },
@@ -181,6 +193,30 @@
       ]
     },
     {
+      "key": "metal.platform-kit.org/managed-labels",
+      "kind": "annotation",
+      "exported": false,
+      "description": "managedLabelsAnnotation on a Host and a ManagementEndpoint lists the label keys that the operator manages there. The operator does not change a label that is not in the list.",
+      "constants": [
+        {
+          "name": "managedLabelsAnnotation",
+          "source": "metal/internal/controller/labels.go"
+        }
+      ]
+    },
+    {
+      "key": "metal.platform-kit.org/model",
+      "kind": "label",
+      "exported": false,
+      "description": "labelModel on a Host and a ManagementEndpoint: the model that the BMC reports.",
+      "constants": [
+        {
+          "name": "labelModel",
+          "source": "metal/internal/controller/labels.go"
+        }
+      ]
+    },
+    {
       "key": "metal.platform-kit.org/override-cluster-guard",
       "kind": "annotation",
       "exported": true,
@@ -225,6 +261,18 @@
         {
           "name": "AnnotationMovedTo",
           "source": "metal/internal/pivot/pivot.go"
+        }
+      ]
+    },
+    {
+      "key": "metal.platform-kit.org/plan-hash",
+      "kind": "annotation",
+      "exported": false,
+      "description": "planHashAnnotation on the Secret of a BMC identity in progress: the hash of the identity that its key and certificate request are for.",
+      "constants": [
+        {
+          "name": "planHashAnnotation",
+          "source": "metal/internal/controller/identity.go"
         }
       ]
     },
@@ -291,16 +339,12 @@
     {
       "key": "metal.platform-kit.org/release-power-off",
       "kind": "annotation",
-      "exported": false,
-      "description": "annotationReleasePowerOff on a Host names the UID of the claim whose release powers the machine off. The executor writes it when a boot of the claim starts, before its first BMC write; the release writes it when it decides. It keeps that decision after the records it was read from are gone: the boot operations are deleted to stop the boot or by pk-metal retry, and the release operation itself can be deleted by pk-metal retry or by its TTL. Without it, the next pass would find no boot and hand back a machine that is still mid-boot. releaseAll removes it when the host is unbound.",
+      "exported": true,
+      "description": "AnnotationReleasePowerOff on a Host names the UID of the claim whose release powers the machine off. The executor writes it when a boot of the claim starts, before its first BMC write; the release writes it when it decides. It keeps that decision after the records it was read from are gone: the boot operations are deleted to stop the boot or by pk-metal retry, and the release operation itself can be deleted by pk-metal retry or by its TTL. Without it, the next pass would find no boot and hand back a machine that is still mid-boot. The release removes it when the host is unbound.",
       "constants": [
         {
-          "name": "annotationReleasePowerOff",
-          "source": "metal/internal/controller/provisioning.go"
-        },
-        {
-          "name": "annotationReleasePowerOff",
-          "source": "metal/internal/pivot/copy.go"
+          "name": "AnnotationReleasePowerOff",
+          "source": "metal/api/v1alpha1/hostclaim_types.go"
         }
       ]
     },
@@ -317,14 +361,62 @@
       ]
     },
     {
+      "key": "metal.platform-kit.org/retire-account",
+      "kind": "annotation",
+      "exported": false,
+      "description": "retireAccountAnnotation on the managed-credential Secret names the managed account that a new username replaced, until it is disabled on the manager. It outlives a crash between the promotion and the disable.",
+      "constants": [
+        {
+          "name": "retireAccountAnnotation",
+          "source": "metal/internal/controller/endpointprofile_controller.go"
+        }
+      ]
+    },
+    {
       "key": "metal.platform-kit.org/retry",
       "kind": "annotation",
       "exported": true,
-      "description": "AnnotationRetry on a failed convergence proposal (spec.reason BiosConvergence or FirmwareConvergence) asks the operator for the same plan again: it deletes the failed operation and proposes a new one, which waits for approval like the first. pk-metal retry sets it. Deleting such an operation instead is not a retry: deletion is how a proposal is refused.",
+      "description": "AnnotationRetry on a failed convergence proposal (spec.reason BiosConvergence, FirmwareConvergence or SystemFirmwareConvergence) asks the operator for the same plan again: it deletes the failed operation and proposes a new one, which waits for approval like the first. pk-metal retry sets it. Deleting such an operation instead is not a retry: deletion is how a proposal is refused.",
       "constants": [
         {
           "name": "AnnotationRetry",
           "source": "metal/api/v1alpha1/hostoperation_types.go"
+        }
+      ]
+    },
+    {
+      "key": "metal.platform-kit.org/rotated-at",
+      "kind": "annotation",
+      "exported": false,
+      "description": "rotatedAtAnnotation on the managed-credential Secret records when the password was last generated — the rotation-cadence observable.",
+      "constants": [
+        {
+          "name": "rotatedAtAnnotation",
+          "source": "metal/internal/controller/endpointprofile_controller.go"
+        }
+      ]
+    },
+    {
+      "key": "metal.platform-kit.org/vendor",
+      "kind": "label",
+      "exported": false,
+      "description": "labelVendor on a Host and a ManagementEndpoint: the vendor that the BMC reports, for example Huawei.",
+      "constants": [
+        {
+          "name": "labelVendor",
+          "source": "metal/internal/controller/labels.go"
+        }
+      ]
+    },
+    {
+      "key": "metal.platform-kit.org/vlan",
+      "kind": "label",
+      "exported": false,
+      "description": "labelVLAN on a ManagementEndpoint: the VLAN of its Asset. Absent when the Asset has no VLAN.",
+      "constants": [
+        {
+          "name": "labelVLAN",
+          "source": "metal/internal/controller/labels.go"
         }
       ]
     },
@@ -392,15 +484,11 @@
       "key": "os.platform-kit.org/config-digest",
       "kind": "annotation",
       "exported": false,
-      "description": "configDigestAnnotation records which config digest an artifact Secret was built from. ISO recording metadata would make artifact bytes per-build, so rebuilds key on this — never on the artifact digest.",
+      "description": "configDigestAnnotation records which config digest an artifact Secret was built from. ISO recording metadata would make artifact bytes per-build, so rebuilds key on this — never on the artifact digest. On a rendered config Secret it carries the full digest of the config.",
       "constants": [
         {
           "name": "configDigestAnnotation",
           "source": "metal/internal/controller/bootasset_controller.go"
-        },
-        {
-          "name": "annotationConfigSecretDigest",
-          "source": "metal/internal/controller/talosnode_day2.go"
         }
       ]
     },
@@ -444,15 +532,11 @@
       "key": "os.platform-kit.org/node",
       "kind": "label",
       "exported": false,
-      "description": "labelNode on a lifecycle operation names the TalosNode it acts for.",
+      "description": "labelNode on a lifecycle operation names the TalosNode it acts for, and on a rendered config Secret the TalosNode it configures.",
       "constants": [
         {
           "name": "labelNode",
           "source": "metal/internal/controller/removal.go"
-        },
-        {
-          "name": "labelConfigNode",
-          "source": "metal/internal/controller/talosnode_day2.go"
         }
       ]
     },

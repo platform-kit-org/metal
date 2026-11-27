@@ -485,7 +485,7 @@ func loadPlanContext(ctx context.Context, cl client.Client, op *metalv1alpha1.Ho
 				pc.BootAssets[name] = ba
 			}
 		}
-		if name := talosNodeRef(a); name != "" && pc.Nodes[name] == nil {
+		if name := a.NodeName(); name != "" && pc.Nodes[name] == nil {
 			n := &osv1alpha1.TalosNode{}
 			if ok, err := optional(name, n, "TalosNode"); err != nil {
 				return pc, err
@@ -655,10 +655,7 @@ func describeAction(a metalv1alpha1.HostOperationAction, pc planContext) string 
 			a.StageFirmware.Version, a.StageFirmware.Image, strings.Join(a.StageFirmware.Targets, ", "))
 	case a.AwaitCheckIn != nil:
 		node := a.AwaitCheckIn.NodeRef.Name
-		timeout := 30 * time.Minute
-		if a.AwaitCheckIn.TimeoutSeconds > 0 {
-			timeout = time.Duration(a.AwaitCheckIn.TimeoutSeconds) * time.Second
-		}
+		timeout, _ := a.Budget()
 		where := ""
 		if n := pc.Nodes[node]; n != nil && nodeAddress(n) != "" {
 			where = " at " + nodeAddress(n)

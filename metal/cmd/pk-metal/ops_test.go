@@ -77,30 +77,39 @@ func TestHold(t *testing.T) {
 	assert.ErrorContains(t, err, "it is in namespace default: use default/node-1")
 }
 
-// A failed BIOS proposal is marked, not deleted: deleting a proposal is how a
-// person refuses it, and the operator would never propose it again.
+// A failed convergence proposal is marked, not deleted: deleting a proposal
+// is how a person refuses it, and the operator would never propose it again.
 func TestRetryMarksAConvergenceProposal(t *testing.T) {
 	ctx := context.Background()
-	op := &metalv1alpha1.HostOperation{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "pk-metal", Name: "box-1-bios-0123abcd"},
-		Spec: metalv1alpha1.HostOperationSpec{
-			HostRef: metalv1alpha1.Reference{Name: "box-1"}, Reason: metalv1alpha1.OperationReasonBiosConvergence,
-			Actions: []metalv1alpha1.HostOperationAction{{PowerCycle: &metalv1alpha1.PowerCycleAction{}}},
-		},
-		Status: metalv1alpha1.HostOperationStatus{Conditions: []metav1.Condition{{
-			Type: metalv1alpha1.ConditionExecuted, Status: metav1.ConditionFalse,
-			Reason: metalv1alpha1.ReasonStepFailed, Message: "step 1/2 applyBios: refused",
-		}}},
-	}
-	cl := fakeClient(op)
-	var out bytes.Buffer
-	require.NoError(t, retry(ctx, cl, op.Namespace, op.Name, &out))
+	for _, reason := range []string{
+		metalv1alpha1.OperationReasonBiosConvergence,
+		metalv1alpha1.OperationReasonFirmwareConvergence,
+		metalv1alpha1.OperationReasonSystemFirmwareConvergence,
+	} {
+		t.Run(reason, func(t *testing.T) {
+			op := &metalv1alpha1.HostOperation{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "pk-metal", Name: "box-1-plan-0123abcd"},
+				Spec: metalv1alpha1.HostOperationSpec{
+					HostRef: metalv1alpha1.Reference{Name: "box-1"}, Reason: reason,
+					ProposedBy: "system:serviceaccount:pk-metal:manager",
+					Actions:    []metalv1alpha1.HostOperationAction{{PowerCycle: &metalv1alpha1.PowerCycleAction{}}},
+				},
+				Status: metalv1alpha1.HostOperationStatus{Conditions: []metav1.Condition{{
+					Type: metalv1alpha1.ConditionExecuted, Status: metav1.ConditionFalse,
+					Reason: metalv1alpha1.ReasonStepFailed, Message: "step 1/2 applyBios: refused",
+				}}},
+			}
+			cl := fakeClient(op)
+			var out bytes.Buffer
+			require.NoError(t, retry(ctx, cl, op.Namespace, op.Name, &out))
 
-	got := &metalv1alpha1.HostOperation{}
-	require.NoError(t, cl.Get(ctx, client.ObjectKeyFromObject(op), got), "the operator, not the CLI, replaces it")
-	assert.Contains(t, got.Annotations, metalv1alpha1.AnnotationRetry)
-	assert.Contains(t, out.String(), "marked pk-metal/box-1-bios-0123abcd for retry")
-	assert.Contains(t, out.String(), "new proposal of the same plan for host box-1")
+			got := &metalv1alpha1.HostOperation{}
+			require.NoError(t, cl.Get(ctx, client.ObjectKeyFromObject(op), got), "the operator, not the CLI, replaces it")
+			assert.Contains(t, got.Annotations, metalv1alpha1.AnnotationRetry)
+			assert.Contains(t, out.String(), "marked pk-metal/box-1-plan-0123abcd for retry")
+			assert.Contains(t, out.String(), "new proposal of the same plan for host box-1")
+		})
+	}
 }
 
 // TestRetryNamesHowItComesBack: an operation that no claim stands behind is
@@ -119,7 +128,7 @@ func TestRetryNamesHowItComesBack(t *testing.T) {
 		return &metalv1alpha1.HostOperation{
 			ObjectMeta: metav1.ObjectMeta{Namespace: "pk-metal", Name: "reboot-w-1-x7k2p"},
 			Spec: metalv1alpha1.HostOperationSpec{
-				HostRef: metalv1alpha1.Reference{Name: "pk0004"}, Reason: "Reboot", ProposedBy: "alice",
+				HostRef: metalv1alpha1.Reference{Name: "pk0004"}, Reason: metalv1alpha1.OperationReasonReboot, ProposedBy: "alice",
 				Actions: rebootPlan("w-1", osv1alpha1.RoleWorker, rebootOptions{DrainTimeout: 15 * time.Minute}),
 			},
 			Status: failedAt(step),
@@ -136,7 +145,7 @@ func TestRetryNamesHowItComesBack(t *testing.T) {
 			want: "Nothing proposes a reboot again. Propose it again: pk-metal reboot w-1\n"},
 		{name: "a restore step", op: func() *metalv1alpha1.HostOperation {
 			op := reboot("etcdRecover")
-			op.Spec.Reason, op.Labels = restoreReason, map[string]string{labelRestoreCluster: "lab"}
+			op.Spec.Reason, op.Labels = metalv1alpha1.OperationReasonEtcdRestore, map[string]string{labelRestoreCluster: "lab"}
 			return op
 		}, want: "pk-metal restore plan lab --propose"},
 		{name: "a rollout step", op: func() *metalv1alpha1.HostOperation {

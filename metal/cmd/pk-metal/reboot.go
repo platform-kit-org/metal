@@ -145,7 +145,7 @@ func proposeReboot(ctx context.Context, cl client.Client, o rebootOptions, w io.
 		ObjectMeta: metav1.ObjectMeta{Namespace: operatorNamespace, GenerateName: "reboot-" + o.Node + "-"},
 		Spec: metalv1alpha1.HostOperationSpec{
 			HostRef:    metalv1alpha1.Reference{Name: host.Name},
-			Reason:     "Reboot",
+			Reason:     metalv1alpha1.OperationReasonReboot,
 			ProposedBy: o.User,
 			Actions:    rebootPlan(o.Node, node.Spec.Role, o),
 			Approval:   metalv1alpha1.OperationApproval{Required: ptr.To(true)},

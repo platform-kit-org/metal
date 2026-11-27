@@ -29,9 +29,6 @@ import (
 	"github.com/dennisklein/platform-kit/metal/internal/redact"
 )
 
-// defaultCheckInTimeout mirrors the schema default for awaitCheckIn.
-const defaultCheckInTimeout = 30 * time.Minute
-
 // step converges action i to its goal, or reports what it waits for.
 func (x *exec) step(ctx context.Context, i int) (stepState, error) {
 	a := x.op.Spec.Actions[i]
@@ -49,11 +46,7 @@ func (x *exec) step(ctx context.Context, i int) (stepState, error) {
 		}
 		return stepDone, err
 	case a.EjectMedia != nil:
-		cl, _, err := x.client(ctx)
-		if err != nil {
-			return stepState{}, err
-		}
-		return stepDone, boot.EjectAndVerify(ctx, cl, a.EjectMedia.MediaID, nil)
+		return stepDone, x.eject(ctx, a.EjectMedia.MediaID)
 	case a.ApplyBios != nil:
 		cl, sysID, err := x.client(ctx)
 		if err != nil {
@@ -68,8 +61,6 @@ func (x *exec) step(ctx context.Context, i int) (stepState, error) {
 		return stepDone, x.flashFirmware(ctx, i, cl, a.FlashFirmware)
 	case a.AwaitCheckIn != nil:
 		return x.awaitCheckIn(ctx, a.AwaitCheckIn)
-	case a.EtcdRecover != nil:
-		return x.etcdRecover(ctx, a.EtcdRecover)
 	case a.StageFirmware != nil:
 		return stepDone, x.stageFirmware(ctx, i, a.StageFirmware)
 	}
@@ -77,6 +68,65 @@ func (x *exec) step(ctx context.Context, i int) (stepState, error) {
 		return st, err
 	}
 	return stepState{}, fmt.Errorf("action carries no known key")
+}
+
+// actionTraits is what the executor and the guards know about each action,
+// by key. TestEveryActionHasTraits fails for an action of the API that has
+// no row, so the author of a new action decides each column.
+var actionTraits = map[string]struct {
+	// bmc: the BMC carries the action out, so the operation takes the BMC's
+	// baseline before it starts (usesBMC).
+	bmc bool
+	// disrupts: the action takes the node down, or its etcd member away, so
+	// the cluster guard, the self guard and the windows hold it
+	// (disruptsAction). Handing etcd leadership on keeps every member, and
+	// deleting the Kubernetes Node or staging firmware leaves the machine
+	// running. talosApplyConfig disrupts by its mode.
+	disrupts bool
+	// etcd: the action removes an etcd member, by leaving, by ID, or by
+	// wiping a control plane's EPHEMERAL partition. Control planes then
+	// change one at a time (changesEtcd).
+	etcd bool
+	// awaits: the step's budget counts from the end of the previous step,
+	// not from the first look (waitStart).
+	awaits bool
+	// pass: the budget of an executor pass that runs the action, when it
+	// needs more than executeTimeout (passTimeout).
+	pass time.Duration
+}{
+	"powerCycle":            {bmc: true, disrupts: true},
+	"powerOff":              {bmc: true, disrupts: true},
+	"setBootOverride":       {bmc: true},
+	"insertMedia":           {bmc: true},
+	"ejectMedia":            {bmc: true},
+	"applyBios":             {bmc: true},
+	"flashFirmware":         {bmc: true, pass: flashTimeout},
+	"stageFirmware":         {bmc: true, pass: flashTimeout},
+	"awaitCheckIn":          {awaits: true},
+	"cordon":                {},
+	"drain":                 {},
+	"uncordon":              {},
+	"talosReboot":           {disrupts: true},
+	"talosShutdown":         {disrupts: true},
+	"talosUpgrade":          {disrupts: true, pass: talosUpgradePass},
+	"talosApplyConfig":      {},
+	"etcdLeave":             {disrupts: true, etcd: true},
+	"etcdRemoveMember":      {etcd: true},
+	"etcdForfeitLeadership": {},
+	"talosReset":            {disrupts: true, etcd: true},
+	"waitNodeReady":         {awaits: true},
+	"waitEtcdHealthy":       {awaits: true},
+	"etcdRecover":           {awaits: true},
+	"deleteKubernetesNode":  {},
+}
+
+// eject empties a virtual media slot and reads it back empty.
+func (x *exec) eject(ctx context.Context, slot string) error {
+	cl, _, err := x.client(ctx)
+	if err != nil {
+		return err
+	}
+	return boot.EjectAndVerify(ctx, cl, slot, nil)
 }
 
 // waitStart is where a waiting step's budget counts from.
@@ -88,11 +138,14 @@ func (x *exec) step(ctx context.Context, i int) (stepState, error) {
 // window did not show would fail for good after a single look. A restart
 // starts the count again, which can only make a step fail later.
 //
-// awaitCheckIn, waitNodeReady and waitEtcdHealthy act on nothing: the
+// The actions marked awaits in actionTraits wait for the machine:
+// awaitCheckIn, waitNodeReady and waitEtcdHealthy act on nothing, and the
 // machine has been booting since the previous step ended, whether or not
-// anyone looked, so their budget counts from there.
+// anyone looked. etcdRecover first waits for the snapshot upload, which a
+// person starts after the approval. So their budget counts from the end of
+// the previous step.
 func (x *exec) waitStart(i int, entered time.Time) time.Time {
-	if a := x.op.Spec.Actions[i]; a.AwaitCheckIn != nil || a.WaitNodeReady != nil || a.WaitEtcdHealthy != nil || a.EtcdRecover != nil {
+	if actionTraits[x.op.Spec.Actions[i].Key()].awaits {
 		return x.stepStart(i)
 	}
 	key := types.NamespacedName{Namespace: x.op.Namespace, Name: x.op.Name}
@@ -112,37 +165,27 @@ func (x *exec) stepStart(i int) time.Time {
 	return time.Now()
 }
 
-// stepBudget is how long step i may keep waiting before it fails. A graceful
-// powerOff gets its graceful window on top of the forced one's.
+// stepBudget is how long step i may keep waiting before it fails: the
+// action's own budget (HostOperationAction.Budget), else the manager's power
+// timeout. A graceful powerOff gets its graceful window on top of the forced
+// one's.
 func (x *exec) stepBudget(i int) time.Duration {
-	if a := x.op.Spec.Actions[i].AwaitCheckIn; a != nil {
-		return checkInTimeout(a)
+	a := x.op.Spec.Actions[i]
+	if d, ok := a.Budget(); ok {
+		return d
 	}
-	if a := x.op.Spec.Actions[i].EtcdRecover; a != nil {
-		return etcdRecoverTimeout(a)
+	if a.PowerOff != nil {
+		return gracefulWindow(a.PowerOff) + x.r.powerTimeout()
 	}
-	if a := x.op.Spec.Actions[i].PowerOff; a != nil {
-		return gracefulWindow(a) + x.r.powerTimeout()
-	}
-	if a := x.op.Spec.Actions[i].InsertMedia; a != nil && a.BootAssetRef == nil {
+	if a.InsertMedia != nil && a.InsertMedia.BootAssetRef == nil {
 		// The image is downloaded into the media store first.
 		return fetchTimeout + x.r.powerTimeout()
-	}
-	if d, ok := talosStepBudget(x.op.Spec.Actions[i]); ok {
-		return d
 	}
 	return x.r.powerTimeout()
 }
 
 func gracefulWindow(a *metalv1alpha1.PowerOffAction) time.Duration {
 	return time.Duration(a.GracefulTimeoutSeconds) * time.Second
-}
-
-func checkInTimeout(a *metalv1alpha1.AwaitCheckInAction) time.Duration {
-	if a.TimeoutSeconds > 0 {
-		return time.Duration(a.TimeoutSeconds) * time.Second
-	}
-	return defaultCheckInTimeout
 }
 
 // power reads the system's reported power state.
@@ -625,7 +668,8 @@ func (x *exec) grantTTL(i int) time.Duration {
 	ttl := grantMargin + x.r.powerTimeout()
 	for _, a := range x.op.Spec.Actions[i:] {
 		if a.AwaitCheckIn != nil {
-			ttl += checkInTimeout(a.AwaitCheckIn)
+			d, _ := a.Budget()
+			ttl += d
 		}
 	}
 	return ttl

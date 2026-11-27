@@ -43,8 +43,12 @@ import (
 // moment the identity verifies, so a key never outlives its push.
 
 const (
-	planHashAnnotation = labelDomain + "plan-hash"
-	crNameAnnotation   = labelDomain + "certificate-request"
+	// planHashAnnotation on the Secret of a BMC identity in progress: the
+	// hash of the identity that its key and certificate request are for.
+	planHashAnnotation = "metal.platform-kit.org/plan-hash"
+	// crNameAnnotation on the Secret of a BMC identity in progress: the name
+	// of the CertificateRequest for the identity.
+	crNameAnnotation = "metal.platform-kit.org/certificate-request"
 
 	identityDefaultDuration    = 2160 * time.Hour // 90 days
 	identityDefaultRenewBefore = 720 * time.Hour  // 30 days

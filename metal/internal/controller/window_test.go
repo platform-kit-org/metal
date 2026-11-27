@@ -130,7 +130,7 @@ func TestDecideWindow(t *testing.T) {
 	urgent.Annotations = map[string]string{metalv1alpha1.AnnotationIgnoreWindow: "CVE fix"}
 	assert.Empty(t, decideWindow([]metalv1alpha1.MaintenanceWindow{sat}, urgent, host, "", now).held)
 	install := op.DeepCopy()
-	install.Spec.Reason = reasonProvisioning
+	install.Spec.Reason = metalv1alpha1.OperationReasonProvisioning
 	assert.Empty(t, decideWindow([]metalv1alpha1.MaintenanceWindow{sat}, install, host, "", now).held,
 		"a new install is not held")
 

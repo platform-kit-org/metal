@@ -43,6 +43,13 @@
       "description": "firmware matches the matched FirmwareProfile. Firmware converges before BIOS — the BIOS schema depends on firmware."
     },
     {
+      "name": "ConditionSystemFirmwareConverged",
+      "value": "SystemFirmwareConverged",
+      "group": "metal.platform-kit.org",
+      "source": "metal/api/v1alpha1/conditions.go",
+      "description": "on a Host, whether the system firmware (BIOS/UEFI, NIC, RAID) its FirmwareProfiles ask for is what the inventory reports. Absent when no profile asks for any."
+    },
+    {
       "name": "ConditionBiosConverged",
       "value": "BiosConverged",
       "group": "metal.platform-kit.org",
@@ -132,13 +139,6 @@
       "group": "metal.platform-kit.org",
       "source": "metal/api/v1alpha1/conditions.go",
       "description": "on an Asset — the operator found the BMC's address in the ledger and created the ManagementEndpoint for it. False says what is missing; nothing about the machine is known until it is True."
-    },
-    {
-      "name": "ConditionSystemFirmwareConverged",
-      "value": "SystemFirmwareConverged",
-      "group": "metal.platform-kit.org",
-      "source": "metal/api/v1alpha1/conditions_day2.go",
-      "description": "on a Host, whether the system firmware (BIOS/UEFI, NIC, RAID) its FirmwareProfiles ask for is what the inventory reports. Absent when no profile asks for any."
     },
     {
       "name": "ConditionDiskWiped",
@@ -353,6 +353,20 @@
       "context": "Reasons on the operation's Approved / Executed conditions."
     },
     {
+      "name": "ReasonOutsideMaintenanceWindow",
+      "value": "OutsideMaintenanceWindow",
+      "group": "metal.platform-kit.org",
+      "source": "metal/api/v1alpha1/conditions.go",
+      "description": "a MaintenanceWindow covers its host and none of the windows that cover it is open. The operation starts when one opens; an operation already running is never stopped by a window closing. Also the operation's blockedOn.",
+      "on": [
+        {
+          "condition": "Executed",
+          "status": "Unknown"
+        }
+      ],
+      "context": "Reasons on the operation's Approved / Executed conditions."
+    },
+    {
       "name": "ReasonStepsSucceeded",
       "value": "StepsSucceeded",
       "group": "metal.platform-kit.org",
@@ -490,7 +504,7 @@
           "status": "True"
         }
       ],
-      "context": "Reasons on the convergence conditions (BiosSettings' Converged, the Host's FirmwareConverged / BiosConverged). Each hold alerts and holds: the condition blocks, and nothing destructive follows. An unchanged planHash never makes a second operation. To continue, a person changes the desired state (a profile edit), which changes the hash."
+      "context": "Reasons on the convergence conditions (BiosSettings' Converged, the Host's FirmwareConverged / BiosConverged / SystemFirmwareConverged). Each hold alerts and holds: the condition blocks, and nothing destructive follows. An unchanged planHash never makes a second operation. To continue, a person changes the desired state (a profile edit), which changes the hash."
     },
     {
       "name": "ReasonAwaitingOperation",
@@ -504,7 +518,7 @@
           "status": "False"
         }
       ],
-      "context": "Reasons on the convergence conditions (BiosSettings' Converged, the Host's FirmwareConverged / BiosConverged). Each hold alerts and holds: the condition blocks, and nothing destructive follows. An unchanged planHash never makes a second operation. To continue, a person changes the desired state (a profile edit), which changes the hash."
+      "context": "Reasons on the convergence conditions (BiosSettings' Converged, the Host's FirmwareConverged / BiosConverged / SystemFirmwareConverged). Each hold alerts and holds: the condition blocks, and nothing destructive follows. An unchanged planHash never makes a second operation. To continue, a person changes the desired state (a profile edit), which changes the hash."
     },
     {
       "name": "ReasonOperationFailed",
@@ -518,7 +532,7 @@
           "status": "False"
         }
       ],
-      "context": "Reasons on the convergence conditions (BiosSettings' Converged, the Host's FirmwareConverged / BiosConverged). Each hold alerts and holds: the condition blocks, and nothing destructive follows. An unchanged planHash never makes a second operation. To continue, a person changes the desired state (a profile edit), which changes the hash."
+      "context": "Reasons on the convergence conditions (BiosSettings' Converged, the Host's FirmwareConverged / BiosConverged / SystemFirmwareConverged). Each hold alerts and holds: the condition blocks, and nothing destructive follows. An unchanged planHash never makes a second operation. To continue, a person changes the desired state (a profile edit), which changes the hash."
     },
     {
       "name": "ReasonOperationGone",
@@ -532,7 +546,7 @@
           "status": "False"
         }
       ],
-      "context": "Reasons on the convergence conditions (BiosSettings' Converged, the Host's FirmwareConverged / BiosConverged). Each hold alerts and holds: the condition blocks, and nothing destructive follows. An unchanged planHash never makes a second operation. To continue, a person changes the desired state (a profile edit), which changes the hash."
+      "context": "Reasons on the convergence conditions (BiosSettings' Converged, the Host's FirmwareConverged / BiosConverged / SystemFirmwareConverged). Each hold alerts and holds: the condition blocks, and nothing destructive follows. An unchanged planHash never makes a second operation. To continue, a person changes the desired state (a profile edit), which changes the hash."
     },
     {
       "name": "ReasonConvergenceFailed",
@@ -546,7 +560,7 @@
           "status": "False"
         }
       ],
-      "context": "Reasons on the convergence conditions (BiosSettings' Converged, the Host's FirmwareConverged / BiosConverged). Each hold alerts and holds: the condition blocks, and nothing destructive follows. An unchanged planHash never makes a second operation. To continue, a person changes the desired state (a profile edit), which changes the hash."
+      "context": "Reasons on the convergence conditions (BiosSettings' Converged, the Host's FirmwareConverged / BiosConverged / SystemFirmwareConverged). Each hold alerts and holds: the condition blocks, and nothing destructive follows. An unchanged planHash never makes a second operation. To continue, a person changes the desired state (a profile edit), which changes the hash."
     },
     {
       "name": "ReasonProfileConflict",
@@ -560,7 +574,7 @@
           "status": "False"
         }
       ],
-      "context": "Reasons on the convergence conditions (BiosSettings' Converged, the Host's FirmwareConverged / BiosConverged). Each hold alerts and holds: the condition blocks, and nothing destructive follows. An unchanged planHash never makes a second operation. To continue, a person changes the desired state (a profile edit), which changes the hash."
+      "context": "Reasons on the convergence conditions (BiosSettings' Converged, the Host's FirmwareConverged / BiosConverged / SystemFirmwareConverged). Each hold alerts and holds: the condition blocks, and nothing destructive follows. An unchanged planHash never makes a second operation. To continue, a person changes the desired state (a profile edit), which changes the hash."
     },
     {
       "name": "ReasonSchemaViolation",
@@ -574,7 +588,7 @@
           "status": "False"
         }
       ],
-      "context": "Reasons on the convergence conditions (BiosSettings' Converged, the Host's FirmwareConverged / BiosConverged). Each hold alerts and holds: the condition blocks, and nothing destructive follows. An unchanged planHash never makes a second operation. To continue, a person changes the desired state (a profile edit), which changes the hash."
+      "context": "Reasons on the convergence conditions (BiosSettings' Converged, the Host's FirmwareConverged / BiosConverged / SystemFirmwareConverged). Each hold alerts and holds: the condition blocks, and nothing destructive follows. An unchanged planHash never makes a second operation. To continue, a person changes the desired state (a profile edit), which changes the hash."
     },
     {
       "name": "ReasonAwaitingFirmware",
@@ -588,7 +602,7 @@
           "status": "False"
         }
       ],
-      "context": "Reasons on the convergence conditions (BiosSettings' Converged, the Host's FirmwareConverged / BiosConverged). Each hold alerts and holds: the condition blocks, and nothing destructive follows. An unchanged planHash never makes a second operation. To continue, a person changes the desired state (a profile edit), which changes the hash."
+      "context": "Reasons on the convergence conditions (BiosSettings' Converged, the Host's FirmwareConverged / BiosConverged / SystemFirmwareConverged). Each hold alerts and holds: the condition blocks, and nothing destructive follows. An unchanged planHash never makes a second operation. To continue, a person changes the desired state (a profile edit), which changes the hash."
     },
     {
       "name": "ReasonNoUpdateTransport",
@@ -602,7 +616,39 @@
           "status": "False"
         }
       ],
-      "context": "Reasons on the convergence conditions (BiosSettings' Converged, the Host's FirmwareConverged / BiosConverged). Each hold alerts and holds: the condition blocks, and nothing destructive follows. An unchanged planHash never makes a second operation. To continue, a person changes the desired state (a profile edit), which changes the hash."
+      "context": "Reasons on the convergence conditions (BiosSettings' Converged, the Host's FirmwareConverged / BiosConverged / SystemFirmwareConverged). Each hold alerts and holds: the condition blocks, and nothing destructive follows. An unchanged planHash never makes a second operation. To continue, a person changes the desired state (a profile edit), which changes the hash."
+    },
+    {
+      "name": "ReasonNoMatchingComponent",
+      "value": "NoMatchingComponent",
+      "group": "metal.platform-kit.org",
+      "source": "metal/api/v1alpha1/conditions.go",
+      "description": "a profile names a component that no FirmwareInventory entry of the machine matches. Nothing is proposed for a component that cannot be found.",
+      "on": [
+        {
+          "condition": "SystemFirmwareConverged",
+          "status": "False"
+        }
+      ],
+      "context": "Reasons on the convergence conditions (BiosSettings' Converged, the Host's FirmwareConverged / BiosConverged / SystemFirmwareConverged). Each hold alerts and holds: the condition blocks, and nothing destructive follows. An unchanged planHash never makes a second operation. To continue, a person changes the desired state (a profile edit), which changes the hash."
+    },
+    {
+      "name": "ReasonInstalledNodeMissing",
+      "value": "InstalledNodeMissing",
+      "group": "metal.platform-kit.org",
+      "source": "metal/api/v1alpha1/conditions.go",
+      "description": "the host's claim says it runs a TalosNode that no longer exists. The node cannot be drained, so no change that reboots the machine is proposed until the record and the node agree.",
+      "on": [
+        {
+          "condition": "BiosConverged",
+          "status": "False"
+        },
+        {
+          "condition": "FirmwareConverged",
+          "status": "False"
+        }
+      ],
+      "context": "Reasons on the convergence conditions (BiosSettings' Converged, the Host's FirmwareConverged / BiosConverged / SystemFirmwareConverged). Each hold alerts and holds: the condition blocks, and nothing destructive follows. An unchanged planHash never makes a second operation. To continue, a person changes the desired state (a profile edit), which changes the hash."
     },
     {
       "name": "ReasonAwaitingVerification",
@@ -1133,52 +1179,6 @@
         }
       ],
       "context": ""
-    },
-    {
-      "name": "ReasonNoMatchingComponent",
-      "value": "NoMatchingComponent",
-      "group": "metal.platform-kit.org",
-      "source": "metal/api/v1alpha1/conditions_day2.go",
-      "description": "a profile names a component that no FirmwareInventory entry of the machine matches. Nothing is proposed for a component that cannot be found.",
-      "on": [
-        {
-          "condition": "SystemFirmwareConverged",
-          "status": "False"
-        }
-      ],
-      "context": "Reasons added for day-2 convergence and scheduling. They live apart from conditions.go so that each concern's reasons are found next to each other."
-    },
-    {
-      "name": "ReasonInstalledNodeMissing",
-      "value": "InstalledNodeMissing",
-      "group": "metal.platform-kit.org",
-      "source": "metal/api/v1alpha1/conditions_day2.go",
-      "description": "the host's claim says it runs a TalosNode that no longer exists. The node cannot be drained, so no change that reboots the machine is proposed until the record and the node agree.",
-      "on": [
-        {
-          "condition": "BiosConverged",
-          "status": "False"
-        },
-        {
-          "condition": "FirmwareConverged",
-          "status": "False"
-        }
-      ],
-      "context": "Reasons added for day-2 convergence and scheduling. They live apart from conditions.go so that each concern's reasons are found next to each other."
-    },
-    {
-      "name": "ReasonOutsideMaintenanceWindow",
-      "value": "OutsideMaintenanceWindow",
-      "group": "metal.platform-kit.org",
-      "source": "metal/api/v1alpha1/conditions_day2.go",
-      "description": "a MaintenanceWindow covers its host and none of the windows that cover it is open. The operation starts when one opens; an operation already running is never stopped by a window closing. Also the operation's blockedOn.",
-      "on": [
-        {
-          "condition": "Executed",
-          "status": "Unknown"
-        }
-      ],
-      "context": "Reasons added for day-2 convergence and scheduling. They live apart from conditions.go so that each concern's reasons are found next to each other."
     },
     {
       "name": "ReasonRolloutRefused",
@@ -2308,32 +2308,67 @@
   ],
   "operationReasons": [
     {
-      "name": "OperationReasonSystemFirmwareConvergence",
-      "value": "SystemFirmwareConvergence",
+      "name": "OperationReasonProvisioning",
+      "value": "Provisioning",
       "group": "metal.platform-kit.org",
-      "source": "metal/api/v1alpha1/conditions_day2.go",
-      "description": "OperationReasonSystemFirmwareConvergence is the spec.reason of a proposal that stages system firmware."
+      "source": "metal/api/v1alpha1/hostoperation_types.go",
+      "description": "the operator installs a machine for its claim."
+    },
+    {
+      "name": "OperationReasonRelease",
+      "value": "Release",
+      "group": "metal.platform-kit.org",
+      "source": "metal/api/v1alpha1/hostoperation_types.go",
+      "description": "the operator takes the node off a machine. The claim gave the machine back, or the TalosNode was deleted while the claim keeps the machine."
+    },
+    {
+      "name": "OperationReasonWipe",
+      "value": "Wipe",
+      "group": "metal.platform-kit.org",
+      "source": "metal/api/v1alpha1/hostoperation_types.go",
+      "description": "the operator wipes the system disk of a released machine that a person asked to wipe (pk-metal wipe)."
     },
     {
       "name": "OperationReasonBiosConvergence",
       "value": "BiosConvergence",
       "group": "metal.platform-kit.org",
       "source": "metal/api/v1alpha1/hostoperation_types.go",
-      "description": ""
+      "description": "the convergence lane applies the BIOS settings of the matched profiles."
     },
     {
       "name": "OperationReasonFirmwareConvergence",
       "value": "FirmwareConvergence",
       "group": "metal.platform-kit.org",
       "source": "metal/api/v1alpha1/hostoperation_types.go",
-      "description": ""
+      "description": "the convergence lane flashes the BMC firmware of the matched FirmwareProfile."
     },
     {
-      "name": "OperationReasonWipe",
-      "value": "Wipe",
+      "name": "OperationReasonSystemFirmwareConvergence",
+      "value": "SystemFirmwareConvergence",
       "group": "metal.platform-kit.org",
-      "source": "metal/api/v1alpha1/lifecycle_types.go",
-      "description": "OperationReasonWipe is the spec reason of a wipe operation."
+      "source": "metal/api/v1alpha1/hostoperation_types.go",
+      "description": "the convergence lane stages system firmware (BIOS/UEFI, NIC, RAID)."
+    },
+    {
+      "name": "OperationReasonTalosRollout",
+      "value": "TalosRollout",
+      "group": "metal.platform-kit.org",
+      "source": "metal/api/v1alpha1/hostoperation_types.go",
+      "description": "a step of a TalosRollout."
+    },
+    {
+      "name": "OperationReasonReboot",
+      "value": "Reboot",
+      "group": "metal.platform-kit.org",
+      "source": "metal/api/v1alpha1/hostoperation_types.go",
+      "description": "pk-metal reboot restarts a node."
+    },
+    {
+      "name": "OperationReasonEtcdRestore",
+      "value": "EtcdRestore",
+      "group": "metal.platform-kit.org",
+      "source": "metal/api/v1alpha1/hostoperation_types.go",
+      "description": "pk-metal restore rebuilds the etcd of a cluster from a snapshot."
     }
   ]
 }

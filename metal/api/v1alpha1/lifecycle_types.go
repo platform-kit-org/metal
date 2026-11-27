@@ -105,6 +105,3 @@ const (
 	// and its operation is proposed or running.
 	ReasonWipeRequested = "WipeRequested"
 )
-
-// OperationReasonWipe is the spec reason of a wipe operation.
-const OperationReasonWipe = "Wipe"

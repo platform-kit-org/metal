@@ -2,14 +2,11 @@ package controller
 
 import (
 	"context"
-	"fmt"
 	"slices"
 	"strings"
 
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
 	"github.com/dennisklein/platform-kit/metal/internal/bmc"
-	"github.com/dennisklein/platform-kit/metal/internal/boot"
-	"github.com/dennisklein/platform-kit/metal/internal/drain"
 	"github.com/dennisklein/platform-kit/metal/internal/redact"
 )
 
@@ -45,11 +42,7 @@ func (x *exec) undo(ctx context.Context, i int) (undone, failed []string, err er
 	}
 
 	for _, slot := range x.leftMounted(i, true) {
-		cl, _, cerr := x.client(ctx)
-		if cerr == nil {
-			cerr = boot.EjectAndVerify(ctx, cl, slot, nil)
-		}
-		if e := note("ejected virtual media "+slot, cerr); e != nil {
+		if e := note("ejected virtual media "+slot, x.eject(ctx, slot)); e != nil {
 			return nil, nil, e
 		}
 	}
@@ -113,11 +106,7 @@ func (x *exec) ejectAfterFailure(ctx context.Context, i int) string {
 	}
 	var done, failed []string
 	for _, slot := range slots {
-		cl, _, err := x.client(ctx)
-		if err == nil {
-			err = boot.EjectAndVerify(ctx, cl, slot, nil)
-		}
-		if err != nil {
+		if err := x.eject(ctx, slot); err != nil {
 			failed = append(failed, slot+": "+redact.String(err.Error()))
 			continue
 		}
@@ -158,12 +147,5 @@ func (x *exec) uncordonNode(ctx context.Context, node string) error {
 	if err != nil {
 		return err
 	}
-	kube, err := x.workload(ctx, acc)
-	if err != nil {
-		return err
-	}
-	if _, err := drain.Uncordon(ctx, kube, node); err != nil {
-		return fmt.Errorf("uncordon %s: %w", node, err)
-	}
-	return nil
+	return x.uncordonVia(ctx, acc, node)
 }

@@ -31,7 +31,7 @@ The release wipes the system disk of the node. To stop management without a chan
 3. If the node ran on this machine, the release waits for approval. Approve it with [](cli:approve).
 4. If the node answers, the operation does these actions:
    1. [](act:Cordon) and [](act:Drain);
-   2. on a control plane, [](act:EtcdForfeitLeadership) and [](act:EtcdLeave);
+   2. on a control plane, [](act:EtcdLeave);
    3. [](act:TalosReset), which wipes the system disk;
    4. [](act:DeleteKubernetesNode).
 5. If the node does not answer, the operation does [](act:EtcdRemoveMember) on a control plane and [](act:DeleteKubernetesNode).

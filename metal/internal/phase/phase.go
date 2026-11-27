@@ -199,8 +199,8 @@ func blockedOn(conds []metav1.Condition) string {
 		return v.Reason
 	}
 	if ap := meta.FindStatusCondition(conds, metalv1alpha1.ConditionApprovalPending); ap != nil && ap.Status == metav1.ConditionTrue {
-		// Reason names the gated domain (Bios, Firmware, Reboot…); rendered in the
-		// documented Approval(bios) shape. Condition reasons cannot carry parens.
+		// Reason names the gated domain (BiosConvergence, Provisioning, Reboot…);
+		// rendered as Approval(BiosConvergence). Condition reasons cannot carry parens.
 		return fmt.Sprintf("Approval(%s)", ap.Reason)
 	}
 	// A machine that may still hold a node's install waits for a person's

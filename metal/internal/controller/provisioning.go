@@ -40,36 +40,23 @@ const (
 	// releaseFinalizer holds a deleted claim until its machine is handed back.
 	releaseFinalizer = "metal.platform-kit.org/release"
 
-	// Labels joining the operator's operations back to the claim they serve —
-	// operations live in the operator's namespace, claims wherever they are.
-	labelClaimNamespace = "metal.platform-kit.org/claim-namespace"
-	labelClaimName      = "metal.platform-kit.org/claim-name"
-	labelClaimUID       = "metal.platform-kit.org/claim-uid"
-	labelPurpose        = "metal.platform-kit.org/purpose"
-	purposeProvision    = "provision"
-	purposeRelease      = "release"
+	// Short names of the API keys, so that the functions a specification
+	// names keep their text.
+	labelClaimNamespace       = metalv1alpha1.LabelClaimNamespace
+	labelClaimName            = metalv1alpha1.LabelClaimName
+	labelClaimUID             = metalv1alpha1.LabelClaimUID
+	annotationReleasePowerOff = metalv1alpha1.AnnotationReleasePowerOff
+
+	labelPurpose     = "metal.platform-kit.org/purpose"
+	purposeProvision = "provision"
+	purposeRelease   = "release"
 
 	// annotationConfigDigest on a boot operation names the rendered config
 	// it boots, so its success can be recorded with the digest.
 	annotationConfigDigest = "metal.platform-kit.org/config-digest"
 
-	// annotationReleasePowerOff on a Host names the UID of the claim whose
-	// release powers the machine off. The executor writes it when a boot of
-	// the claim starts, before its first BMC write; the release writes it
-	// when it decides. It keeps that decision after the records it was read
-	// from are gone: the boot operations are deleted to stop the boot or by
-	// pk-metal retry, and the release operation itself can be deleted by
-	// pk-metal retry or by its TTL. Without it, the next pass would find no
-	// boot and hand back a machine that is still mid-boot. releaseAll
-	// removes it when the host is unbound.
-	annotationReleasePowerOff = "metal.platform-kit.org/release-power-off"
-
 	// labelProvisioning marks BootAssets the lane created for itself.
 	labelProvisioning = "metal.platform-kit.org/provisioning"
-
-	// Operation reasons — the Approval(<reason>) domain on the Host.
-	reasonProvisioning = "Provisioning"
-	reasonRelease      = "Release"
 
 	// releaseTTL marks a release operation as one the operator may delete
 	// once it succeeded: nothing guards on its existence once the claim is
@@ -667,7 +654,7 @@ func (r *HostClaimReconciler) provisionOp(claim *metalv1alpha1.HostClaim, hostNa
 			HostRef:     metalv1alpha1.Reference{Name: hostName},
 			ProposedBy:  r.Proposer,
 			RequestedBy: requestedBy,
-			Reason:      reasonProvisioning,
+			Reason:      metalv1alpha1.OperationReasonProvisioning,
 			PlanHash:    planHash(plan),
 			Actions:     actions,
 			Approval:    metalv1alpha1.OperationApproval{Required: ptr.To(required)},
@@ -679,7 +666,7 @@ func (r *HostClaimReconciler) checkInTimeoutSeconds() int32 {
 	if r.CheckInTimeoutSeconds > 0 {
 		return r.CheckInTimeoutSeconds
 	}
-	return int32(defaultCheckInTimeout.Seconds())
+	return int32(metalv1alpha1.DefaultCheckInTimeout.Seconds())
 }
 
 func claimLabels(claim *metalv1alpha1.HostClaim, purpose string) map[string]string {
@@ -1354,7 +1341,7 @@ func (r *HostClaimReconciler) releaseOp(ctx context.Context, claim *metalv1alpha
 			ProposedBy: r.Proposer,
 			// The claim's deletion or new machine asked for this release.
 			RequestedBy:             metalv1alpha1.RequestedBy(claim.Annotations),
-			Reason:                  reasonRelease,
+			Reason:                  metalv1alpha1.OperationReasonRelease,
 			Actions:                 actions,
 			Approval:                metalv1alpha1.OperationApproval{Required: ptr.To(releaseNeedsPerson(claim, host, provisionOps))},
 			TTLSecondsAfterFinished: ptr.To(releaseTTL),
@@ -1365,8 +1352,7 @@ func (r *HostClaimReconciler) releaseOp(ctx context.Context, claim *metalv1alpha
 // nodeExit decides the steps that take the node the host runs out of its
 // cluster, before any power action: the TalosNode the host's hand-off (or
 // the claim's record) names. It returns no steps, and wipes false, when that
-// node is gone or the executor runs none of its steps; the caller then marks
-// the host as not wiped. reason is set when a control plane may not leave
+// node is gone; the caller then marks the host as not wiped. reason is set when a control plane may not leave
 // etcd now. resetMode is the Talos reset's mode ("" wipes every disk).
 func (r *HostClaimReconciler) nodeExit(ctx context.Context, claim *metalv1alpha1.HostClaim, host *metalv1alpha1.Host, opName, resetMode string) (
 	steps []metalv1alpha1.HostOperationAction, wipes bool, nodeName, cluster, reason, msg string, err error) {
@@ -1389,9 +1375,7 @@ func (r *HostClaimReconciler) nodeExit(ctx context.Context, claim *metalv1alpha1
 	if err != nil || reason != "" {
 		return nil, false, nodeName, cluster, reason, msg, err
 	}
-	if s, w, ok := r.exitSteps(node, member, last, resetMode); ok {
-		steps, wipes = s, w
-	}
+	steps, wipes = exitSteps(node, member, last, resetMode)
 	return steps, wipes, nodeName, cluster, "", "", nil
 }
 

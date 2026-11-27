@@ -55,7 +55,7 @@
     },
     {
       "name": "retry",
-      "summary": "delete a failed or aborted operation, so that the operator proposes it again (it then waits for approval again); a BIOS or firmware proposal is marked for retry instead",
+      "summary": "delete a failed or aborted operation, so that the operator proposes it again (it then waits for approval again); a BIOS, firmware or system firmware proposal is marked for retry instead",
       "changes": true
     },
     {

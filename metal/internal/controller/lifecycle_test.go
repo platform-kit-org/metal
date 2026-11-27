@@ -174,7 +174,6 @@ func newLifecycleLab(t *testing.T, cps, workers []string, extra ...client.Object
 	lab.r = &HostClaimReconciler{
 		Client: cl, OperationsNamespace: "pk-metal", Proposer: "operator",
 		Dial: lab.fleet.Dialer(), CredentialsNamespace: "pk-metal",
-		SupportsAction: func(string) bool { return true },
 	}
 	return lab
 }
@@ -221,9 +220,9 @@ func TestReleaseOfAnsweringControlPlaneLeavesEtcdAndWipes(t *testing.T) {
 	require.False(t, releasePass(t, lab.r, claim))
 	rel := releaseOps(t, lab.r, claim)
 	require.Len(t, rel, 1)
-	assert.Equal(t, []string{"cordon", "drain", "etcdForfeitLeadership", "etcdLeave", "talosReset", "deleteKubernetesNode", "powerOff"},
+	assert.Equal(t, []string{"cordon", "drain", "etcdLeave", "talosReset", "deleteKubernetesNode", "powerOff"},
 		opActionKeys(&rel[0]), "leave etcd, wipe, then power off; no slot to eject behind this endpoint")
-	reset := rel[0].Spec.Actions[4].TalosReset
+	reset := rel[0].Spec.Actions[3].TalosReset
 	assert.False(t, *reset.Graceful, "the steps before did what a graceful reset does")
 	assert.Empty(t, reset.Mode, "a release wipes every disk")
 	assert.Empty(t, rel[0].Annotations[metalv1alpha1.AnnotationDiskNotWiped])
@@ -314,22 +313,6 @@ func TestOneControlPlaneLeavesAtATime(t *testing.T) {
 	assert.Contains(t, c.Message, "release-host-b")
 }
 
-func TestReleaseOfAWorkerWithoutTalosStepsMarksTheHost(t *testing.T) {
-	claim, host := claimOn("w-1")
-	lab := newLifecycleLab(t, []string{"cp-1"}, []string{"w-1"}, host)
-	lab.r.SupportsAction = nil // the executor's own list: no Talos steps yet
-	require.False(t, releasePass(t, lab.r, claim))
-	rel := releaseOps(t, lab.r, claim)
-	require.Len(t, rel, 1)
-	if implementedActions["talosReset"] {
-		t.Skip("the executor runs the Talos steps: covered by the tests above")
-	}
-	assert.Equal(t, []string{"powerOff"}, opActionKeys(&rel[0]))
-	got := &metalv1alpha1.Host{}
-	require.NoError(t, lab.r.Get(t.Context(), client.ObjectKey{Name: "host-a"}, got))
-	assert.Equal(t, "lab/w-1", got.Annotations[metalv1alpha1.AnnotationDiskNotWiped])
-}
-
 // ---- a deleted TalosNode --------------------------------------------------
 
 func TestDeletedTalosNodeIsRemovedWhileTheClaimKeepsTheMachine(t *testing.T) {
@@ -403,6 +386,27 @@ func TestFinalizerWaitsForTheEtcdMember(t *testing.T) {
 	_, err = fin.Reconcile(t.Context(), ctrl.Request{NamespacedName: client.ObjectKey{Name: "cp-2"}})
 	require.NoError(t, err)
 	assert.Error(t, lab.r.Get(t.Context(), client.ObjectKey{Name: "cp-2"}, node), "gone")
+}
+
+// An etcd recovery that has not finished acts on its target node: the
+// node's deletion waits for it, and an event of the operation wakes the node.
+func TestFinalizerWaitsForAnEtcdRecovery(t *testing.T) {
+	op := &metalv1alpha1.HostOperation{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "pk-metal", Name: "lab-etcd-recover-cp-1"},
+		Spec: metalv1alpha1.HostOperationSpec{HostRef: metalv1alpha1.Reference{Name: "host-a"}, Actions: []metalv1alpha1.HostOperationAction{{
+			EtcdRecover: &metalv1alpha1.EtcdRecoverAction{NodeRef: metalv1alpha1.Reference{Name: "cp-1"}},
+		}}},
+	}
+	lab := newLifecycleLab(t, []string{"cp-1", "cp-2"}, nil, op)
+	node := &osv1alpha1.TalosNode{}
+	require.NoError(t, lab.r.Get(t.Context(), client.ObjectKey{Name: "cp-1"}, node))
+	fin := &TalosNodeMemberReconciler{Client: lab.r.Client, Dial: lab.fleet.Dialer(), CredentialsNamespace: "pk-metal", OperationsNamespace: "pk-metal"}
+
+	reason, msg, err := fin.blocked(t.Context(), node)
+	require.NoError(t, err)
+	assert.Equal(t, osv1alpha1.ReasonMachineAssigned, reason, msg)
+	assert.Contains(t, msg, "operation pk-metal/lab-etcd-recover-cp-1 acts on this node")
+	assert.Equal(t, []ctrl.Request{requestFor("cp-1")}, nodesOfOperation(t.Context(), op))
 }
 
 // ---- joining ---------------------------------------------------------------
@@ -483,8 +487,8 @@ func TestReinstallLeavesEtcdBeforeTheBoot(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, reason, msg)
 	op := &metalv1alpha1.HostOperation{Spec: metalv1alpha1.HostOperationSpec{Actions: steps}}
-	assert.Equal(t, []string{"cordon", "drain", "etcdForfeitLeadership", "etcdLeave", "talosReset", "deleteKubernetesNode"}, opActionKeys(op))
-	assert.Equal(t, "SystemDisk", steps[4].TalosReset.Mode, "a reinstall keeps the user disks")
+	assert.Equal(t, []string{"cordon", "drain", "etcdLeave", "talosReset", "deleteKubernetesNode"}, opActionKeys(op))
+	assert.Equal(t, "SystemDisk", steps[3].TalosReset.Mode, "a reinstall keeps the user disks")
 }
 
 // ---- wipe ------------------------------------------------------------------

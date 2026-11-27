@@ -32,7 +32,7 @@ func bootPlan() (*metalv1alpha1.HostOperation, []client.Object) {
 	op := &metalv1alpha1.HostOperation{
 		ObjectMeta: metav1.ObjectMeta{Namespace: "pk-metal", Name: "provision-node1-1a2b3c4d",
 			CreationTimestamp: metav1.NewTime(time.Date(2030, 1, 1, 12, 0, 0, 0, time.UTC)),
-			Labels:            map[string]string{labelClaimNamespace: "default", labelClaimName: "node-1"}},
+			Labels:            map[string]string{metalv1alpha1.LabelClaimNamespace: "default", metalv1alpha1.LabelClaimName: "node-1"}},
 		Spec: metalv1alpha1.HostOperationSpec{
 			HostRef:    metalv1alpha1.Reference{Name: "pk0001"},
 			Reason:     "Provisioning",

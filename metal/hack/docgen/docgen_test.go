@@ -134,6 +134,12 @@ func TestStripName(t *testing.T) {
 	assert.Equal(t, "Something else.", stripName("ReasonX", "Something else."))
 }
 
+func TestKeyKind(t *testing.T) {
+	assert.Equal(t, "annotation", keyKind("managedLabelsAnnotation"))
+	assert.Equal(t, "label", keyKind("labelVendor"))
+	assert.Equal(t, "finalizer", keyKind("releaseFinalizer"))
+}
+
 func TestCheckGlossary(t *testing.T) {
 	require.NoError(t, checkGlossary("testdata/glossary.yaml"))
 

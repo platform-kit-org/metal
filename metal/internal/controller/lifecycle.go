@@ -69,13 +69,7 @@ func (r *HostClaimReconciler) bootPrefix(ctx context.Context, claim *metalv1alph
 			if old.Name == node.Name {
 				mode = "SystemDisk"
 			}
-			s, _, ok := r.exitSteps(old, member, last, mode)
-			if !ok && member != nil {
-				return nil, metalv1alpha1.ReasonAwaitingOperation, fmt.Sprintf(
-					"host %s runs control plane %s, whose etcd member has to leave before the machine is installed again, "+
-						"and this operator's executor cannot run that step yet", host.Name, old.Name), nil
-			}
-			steps = s
+			steps, _ = exitSteps(old, member, last, mode)
 		}
 	}
 	if node.Spec.Role != osv1alpha1.RoleControlPlane || r.Dial == nil || cluster.Status.BootstrappedAt == nil || prior == node.Name {
@@ -295,7 +289,7 @@ func (r *HostClaimReconciler) removalOp(ctx context.Context, claim *metalv1alpha
 	if err != nil || reason != "" {
 		return nil, reason, "TalosNode " + node.Name + " is being deleted, but " + msg, err
 	}
-	steps, wipes, _ := r.exitSteps(node, member, last, "")
+	steps, wipes := exitSteps(node, member, last, "")
 	graceful := int32(r.releaseShutdownTimeout().Seconds())
 	if wipes {
 		graceful = 0
@@ -317,7 +311,7 @@ func (r *HostClaimReconciler) removalOp(ctx context.Context, claim *metalv1alpha
 			ProposedBy: r.Proposer,
 			// The node's deletion asked for this removal.
 			RequestedBy:             metalv1alpha1.RequestedBy(node.Annotations, claim.Annotations),
-			Reason:                  reasonRelease,
+			Reason:                  metalv1alpha1.OperationReasonRelease,
 			Actions:                 actions,
 			Approval:                metalv1alpha1.OperationApproval{Required: ptr.To(releaseNeedsPerson(claim, host, ops))},
 			TTLSecondsAfterFinished: ptr.To(releaseTTL),

@@ -278,10 +278,11 @@ func (r *HostOperationReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return res, err
 	}
 
-	// An action this executor does not run yet fails the operation before it
-	// starts: before the queue, the baseline and any call to the machine, so
-	// the failure costs nothing and says exactly why. Running the actions in
-	// front of it and stopping at it would leave a machine half-changed.
+	// An action this operator version does not know (the CRD is newer) fails
+	// the operation before it starts: before the queue, the baseline and any
+	// call to the machine, so the failure costs nothing and says exactly why.
+	// Running the actions in front of it and stopping at it would leave a
+	// machine half-changed.
 	if op.Status.Baseline == nil {
 		if i, key := unimplementedAction(op); key != "" {
 			msg := fmt.Sprintf("action %s is not implemented by this operator version yet; nothing was done to the machine", key)
@@ -994,12 +995,7 @@ func (r *HostOperationReconciler) recordBootStart(ctx context.Context, op *metal
 func passTimeout(op *metalv1alpha1.HostOperation) time.Duration {
 	budget := executeTimeout
 	for _, a := range op.Spec.Actions {
-		switch {
-		case a.TalosUpgrade != nil:
-			budget = max(budget, talosUpgradePass)
-		case a.FlashFirmware != nil, a.StageFirmware != nil:
-			budget = max(budget, flashTimeout)
-		}
+		budget = max(budget, actionTraits[a.Key()].pass)
 	}
 	return budget
 }
@@ -1020,8 +1016,7 @@ func usesBMC(op *metalv1alpha1.HostOperation) bool {
 // actionUsesBMC: the action is one the BMC carries out. The Talos and
 // Kubernetes actions are not; awaitCheckIn reads the TalosNode.
 func actionUsesBMC(a metalv1alpha1.HostOperationAction) bool {
-	return a.PowerCycle != nil || a.PowerOff != nil || a.SetBootOverride != nil || a.InsertMedia != nil ||
-		a.EjectMedia != nil || a.ApplyBios != nil || a.FlashFirmware != nil || a.StageFirmware != nil
+	return actionTraits[a.Key()].bmc
 }
 
 // opActive: approved and unfinished — holds (or is about to hold) the host.
@@ -1201,23 +1196,13 @@ type pathClient struct {
 	systemID string
 }
 
-// implementedActions are the action keys step runs. The API defines more
-// (the Talos and Kubernetes actions arrive before their executor does); an
-// operation that names one of the others is refused by unimplementedAction.
-var implementedActions = map[string]bool{
-	"powerCycle": true, "powerOff": true, "setBootOverride": true, "insertMedia": true,
-	"ejectMedia": true, "applyBios": true, "flashFirmware": true, "awaitCheckIn": true,
-	"cordon": true, "drain": true, "uncordon": true, "talosReboot": true, "talosShutdown": true,
-	"talosUpgrade": true, "talosApplyConfig": true, "etcdLeave": true, "etcdRemoveMember": true,
-	"talosReset": true, "waitNodeReady": true, "waitEtcdHealthy": true, "etcdRecover": true,
-	"etcdForfeitLeadership": true, "deleteKubernetesNode": true, "stageFirmware": true,
-}
-
-// unimplementedAction returns the index and key of the first action step
-// cannot run, or "" when it can run them all.
+// unimplementedAction returns the index and key of the first action that
+// this operator version does not know, or "" when it knows them all. An
+// operator older than the CRD reads an action of a newer key as an empty
+// union, whose key is "unknown".
 func unimplementedAction(op *metalv1alpha1.HostOperation) (int, string) {
 	for i, a := range op.Spec.Actions {
-		if key := a.Key(); !implementedActions[key] {
+		if key := a.Key(); key == "unknown" {
 			return i, key
 		}
 	}

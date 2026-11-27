@@ -31,14 +31,14 @@ func (r *HostOperationReconciler) waiverRefusal(ctx context.Context, op *metalv1
 	case op.Spec.RolloutRef != nil:
 		// The rollout's approval covers it; gateRollout checks that.
 		return "", nil
-	case op.Spec.Reason == reasonRelease:
+	case op.Spec.Reason == metalv1alpha1.OperationReasonRelease:
 		// A release that needs no person: the machine runs no node the
 		// operator could stop (releaseNeedsPerson).
 		if p := op.Labels[labelPurpose]; p == purposeRelease || p == purposeRemove {
 			return "", nil
 		}
 		return "a release without approval must carry the purpose label of a release", nil
-	case op.Spec.Reason == reasonProvisioning:
+	case op.Spec.Reason == metalv1alpha1.OperationReasonProvisioning:
 		// An install waives approval only while its claim says Automatic.
 		claim := &metalv1alpha1.HostClaim{}
 		key := client.ObjectKey{Namespace: op.Labels[labelClaimNamespace], Name: op.Labels[labelClaimName]}

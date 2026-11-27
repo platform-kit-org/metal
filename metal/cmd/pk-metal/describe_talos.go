@@ -15,39 +15,6 @@ import (
 // The executor's step semantics are in docs/src/content/docs/reference/actions.mdx; keep the
 // two in step.
 
-// talosNodeRef is the TalosNode a Talos or Kubernetes action names, or "".
-func talosNodeRef(a metalv1alpha1.HostOperationAction) string {
-	switch {
-	case a.Cordon != nil:
-		return a.Cordon.NodeRef.Name
-	case a.Drain != nil:
-		return a.Drain.NodeRef.Name
-	case a.Uncordon != nil:
-		return a.Uncordon.NodeRef.Name
-	case a.TalosReboot != nil:
-		return a.TalosReboot.NodeRef.Name
-	case a.TalosShutdown != nil:
-		return a.TalosShutdown.NodeRef.Name
-	case a.TalosUpgrade != nil:
-		return a.TalosUpgrade.NodeRef.Name
-	case a.TalosApplyConfig != nil:
-		return a.TalosApplyConfig.NodeRef.Name
-	case a.EtcdLeave != nil:
-		return a.EtcdLeave.NodeRef.Name
-	case a.EtcdRemoveMember != nil:
-		return a.EtcdRemoveMember.NodeRef.Name
-	case a.TalosReset != nil:
-		return a.TalosReset.NodeRef.Name
-	case a.WaitNodeReady != nil:
-		return a.WaitNodeReady.NodeRef.Name
-	case a.WaitEtcdHealthy != nil:
-		return a.WaitEtcdHealthy.NodeRef.Name
-	case a.AwaitCheckIn != nil:
-		return a.AwaitCheckIn.NodeRef.Name
-	}
-	return ""
-}
-
 // nodeLabel names a node with its role and cluster when they are known.
 func nodeLabel(name string, pc planContext) string {
 	n := pc.Nodes[name]
@@ -61,17 +28,12 @@ func nodeLabel(name string, pc planContext) string {
 	return fmt.Sprintf("node %s (%s of cluster %s)", name, role, n.Spec.ClusterRef.Name)
 }
 
-func secondsOr(s int32, def time.Duration) string {
-	if s > 0 {
-		return shortDuration(time.Duration(s) * time.Second)
-	}
-	return shortDuration(def)
-}
-
 // describeTalosAction is the plan line of a Talos or Kubernetes action; ok
 // is false for the other actions.
 func describeTalosAction(a metalv1alpha1.HostOperationAction, pc planContext) (string, bool) {
-	node := nodeLabel(talosNodeRef(a), pc)
+	node := nodeLabel(a.NodeName(), pc)
+	budget, _ := a.Budget()
+	wait := shortDuration(budget)
 	switch {
 	case a.Cordon != nil:
 		return fmt.Sprintf("cordon %s: Kubernetes schedules no new pods there; running pods stay", node), true
@@ -79,7 +41,7 @@ func describeTalosAction(a metalv1alpha1.HostOperationAction, pc planContext) (s
 		d := a.Drain
 		s := fmt.Sprintf("drain %s: evict its pods through the Eviction API, so every PodDisruptionBudget holds "+
 			"(DaemonSet and static pods stay); wait up to %s, then fail and leave the node cordoned",
-			node, secondsOr(d.TimeoutSeconds, 15*time.Minute))
+			node, wait)
 		if d.GracePeriodSeconds != nil {
 			s += fmt.Sprintf("; each pod gets %ds to stop", *d.GracePeriodSeconds)
 		}
@@ -96,7 +58,7 @@ func describeTalosAction(a metalv1alpha1.HostOperationAction, pc planContext) (s
 		if a.TalosReboot.Mode == "PowerCycle" {
 			how += ", then a cold power cycle"
 		}
-		return fmt.Sprintf("REBOOT %s through Talos (%s); wait up to 20m for it to boot and run ready", node, how), true
+		return fmt.Sprintf("REBOOT %s through Talos (%s); wait up to %s for it to boot and run ready", node, how, wait), true
 	case a.TalosShutdown != nil:
 		s := fmt.Sprintf("SHUT DOWN %s through Talos and wait until it stops answering; it stays off until powered on", node)
 		if a.TalosShutdown.Force {
@@ -106,8 +68,8 @@ func describeTalosAction(a metalv1alpha1.HostOperationAction, pc planContext) (s
 	case a.TalosUpgrade != nil:
 		u := a.TalosUpgrade
 		s := fmt.Sprintf("UPGRADE Talos on %s to %s from %s (image pinned by digest %s); the node reboots into it; "+
-			"wait up to 45m for it to run %s (a node already on %s is left alone)",
-			node, u.Version, imageRepo(u.Image), shortDigest(imageDigest(u.Image)), u.Version, u.Version)
+			"wait up to %s for it to run %s (a node already on %s is left alone)",
+			node, u.Version, imageRepo(u.Image), shortDigest(imageDigest(u.Image)), wait, u.Version, u.Version)
 		var notes []string
 		if u.Stage {
 			notes = append(notes, "staged: installed at the reboot")
@@ -128,7 +90,7 @@ func describeTalosAction(a metalv1alpha1.HostOperationAction, pc planContext) (s
 	case a.TalosApplyConfig != nil:
 		c := a.TalosApplyConfig
 		return fmt.Sprintf("apply the machine config in Secret %s (content %s) to %s; %s",
-			c.ConfigSecretRef.Name, shortDigest(c.Digest), node, applyModeText(c)), true
+			c.ConfigSecretRef.Name, shortDigest(c.Digest), node, applyModeText(c, wait)), true
 	case a.EtcdLeave != nil:
 		return fmt.Sprintf("remove the etcd member of %s, asked on the node itself (leadership is handed over first); "+
 			"etcd then has one member fewer", node), true
@@ -145,22 +107,22 @@ func describeTalosAction(a metalv1alpha1.HostOperationAction, pc planContext) (s
 	case a.WaitNodeReady != nil:
 		w := a.WaitNodeReady
 		s := fmt.Sprintf("wait up to %s for %s to run ready in Talos and as a Kubernetes Node",
-			secondsOr(w.TimeoutSeconds, 30*time.Minute), node)
+			wait, node)
 		if w.Version != "" {
 			s += ", on Talos " + w.Version
 		}
 		return s, true
 	case a.WaitEtcdHealthy != nil:
 		return fmt.Sprintf("wait up to %s until etcd of the cluster of %s is healthy: every member answers and votes, no alarm",
-			secondsOr(a.WaitEtcdHealthy.TimeoutSeconds, 15*time.Minute), node), true
+			wait, node), true
 	}
 	return "", false
 }
 
-func applyModeText(c *metalv1alpha1.TalosApplyConfigAction) string {
+func applyModeText(c *metalv1alpha1.TalosApplyConfigAction, wait string) string {
 	switch c.Mode {
 	case "Reboot":
-		return "the node REBOOTS into it; wait up to 20m for it to run ready"
+		return "the node REBOOTS into it; wait up to " + wait + " for it to run ready"
 	case "Staged":
 		return "staged: it takes effect at the next reboot, nothing changes now"
 	case "Try":

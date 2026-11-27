@@ -208,7 +208,7 @@ func TestEtcdRecoverRefusesWhatWasNotApproved(t *testing.T) {
 		op := runOp(t, w.r)
 		ex := meta.FindStatusCondition(op.Status.Conditions, metalv1alpha1.ConditionExecuted)
 		assert.Equal(t, metav1.ConditionFalse, ex.Status)
-		assert.Contains(t, ex.Message, "does not run TalosNode cp-1")
+		assert.Contains(t, ex.Message, "the step names TalosNode cp-1, but host host-a runs TalosNode cp-2")
 	})
 }
 
@@ -243,8 +243,9 @@ func TestProbeEtcdSeesAStoppedEtcdWhoseCallsHang(t *testing.T) {
 		}
 		return etcdHangs{c}, nil
 	}
-	assert.Equal(t, etcdStopped, probeEtcd(t.Context(), dial, []byte("tc"), "192.0.2.11"))
+	acc := &talosAccess{dial: dial, talosconfig: []byte("tc")}
+	assert.Equal(t, etcdStopped, probeEtcd(t.Context(), acc, "192.0.2.11"))
 
 	m.SetUnreachable(true)
-	assert.Equal(t, etcdSilent, probeEtcd(t.Context(), dial, []byte("tc"), "192.0.2.11"))
+	assert.Equal(t, etcdSilent, probeEtcd(t.Context(), acc, "192.0.2.11"))
 }

@@ -27,7 +27,7 @@ Take one node out of its cluster and wipe its machine.
 ## What the release does
 
 1. [](act:Cordon) and [](act:Drain). The drain stops after 15 minutes.
-2. For a control plane: [](act:EtcdForfeitLeadership) if it is the leader, and [](act:EtcdLeave).
+2. For a control plane: [](act:EtcdLeave). The member first moves the leadership to another member.
 3. [](act:TalosReset). This wipes the system disk.
 4. [](act:DeleteKubernetesNode).
 5. [](act:PowerOff). The Host returns to the pool.

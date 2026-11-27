@@ -134,20 +134,26 @@ func TestEveryActionIsDescribed(t *testing.T) {
 		TalosReset:       &metalv1alpha1.TalosResetAction{NodeRef: node, Graceful: ptr.To(false), UserDisks: []string{"/dev/sdb"}},
 		WaitNodeReady:    &metalv1alpha1.WaitNodeReadyAction{NodeRef: node, Version: "v1.14.7"},
 		WaitEtcdHealthy:  &metalv1alpha1.WaitEtcdHealthyAction{NodeRef: node},
+		EtcdRecover: &metalv1alpha1.EtcdRecoverAction{NodeRef: node,
+			SnapshotRef: metalv1alpha1.Reference{Name: "lab-daily"}, SHA256: digest},
+		EtcdForfeitLeadership: &metalv1alpha1.EtcdForfeitLeadershipAction{NodeRef: node},
+		DeleteKubernetesNode:  &metalv1alpha1.DeleteKubernetesNodeAction{NodeRef: node},
+		StageFirmware: &metalv1alpha1.StageFirmwareAction{Image: "https://x/fw.bin", Version: "2.1",
+			Targets: []string{"/redfish/v1/UpdateService/FirmwareInventory/BIOS"}},
 	}
 	pc := planContext{Nodes: map[string]*osv1alpha1.TalosNode{"cp-2": talosNodeObj("cp-2", osv1alpha1.RoleControlPlane)}}
 	// One action at a time: copy each set field into an otherwise empty union.
 	v := reflect.ValueOf(all)
 	for i := range v.NumField() {
+		require.Falsef(t, v.Field(i).IsNil(), "set %s in all", metalv1alpha1.ActionKeys()[i])
 		one := metalv1alpha1.HostOperationAction{}
 		reflect.ValueOf(&one).Elem().Field(i).Set(v.Field(i))
 		got := describeAction(one, pc)
 		assert.NotContains(t, got, "not described", one.Key())
-		if talosNodeRef(one) != "" && one.AwaitCheckIn == nil {
+		if _, talos := describeTalosAction(one, pc); talos {
 			assert.Contains(t, got, "node cp-2 (control plane of cluster lab)", one.Key())
 		}
 	}
-	assert.Equal(t, len(metalv1alpha1.ActionKeys()), v.NumField(), "the test sets every action")
 
 	reset := describeAction(metalv1alpha1.HostOperationAction{TalosReset: all.TalosReset}, pc)
 	assert.Contains(t, reset, "WIPE the system disk and the user disks /dev/sdb of")
@@ -156,6 +162,9 @@ func TestEveryActionIsDescribed(t *testing.T) {
 	assert.Contains(t, reset, "not graceful")
 	upgrade := describeAction(metalv1alpha1.HostOperationAction{TalosUpgrade: all.TalosUpgrade}, pc)
 	assert.Contains(t, upgrade, "UPGRADE Talos on node cp-2 (control plane of cluster lab) to v1.14.7 from factory.talos.dev/installer/x:v1.14.7")
+	assert.Contains(t, upgrade, "wait up to 45m", "the executor's budget")
+	reboot := describeAction(metalv1alpha1.HostOperationAction{TalosReboot: all.TalosReboot}, pc)
+	assert.Contains(t, reboot, "wait up to 20m", "the executor's budget")
 	drain := describeAction(metalv1alpha1.HostOperationAction{Drain: all.Drain}, pc)
 	assert.Contains(t, drain, "wait up to 15m")
 	assert.Contains(t, drain, "a pod with emptyDir data fails the step")

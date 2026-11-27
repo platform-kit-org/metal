@@ -21,9 +21,10 @@ func init() {
 A failed operation stays in the cluster, so that you can read why it failed
 (pk-metal status shows the reason). The operator does not try again while it
 is there. retry deletes it; the operator then proposes the same plan again,
-and the new operation waits for approval like the first one. A BIOS or
-firmware proposal is not deleted by retry but marked for retry: the operator
-itself replaces it, because deleting a proposal is how it is refused.
+and the new operation waits for approval like the first one. A BIOS,
+firmware or system firmware proposal is not deleted by retry but marked for
+retry: the operator itself replaces it, because deleting a proposal is how it
+is refused.
 
 Only what the operator proposed comes back by itself. For an operation that a
 person made (pk-metal reboot, pk-metal restore) or a step of a rollout, retry
@@ -67,16 +68,6 @@ func retryCmd(args []string) {
 	}
 }
 
-// convergenceProposal reports an operation the convergence lane proposed for
-// a BIOS or firmware plan.
-func convergenceProposal(op *metalv1alpha1.HostOperation) bool {
-	switch op.Spec.Reason {
-	case metalv1alpha1.OperationReasonBiosConvergence, metalv1alpha1.OperationReasonFirmwareConvergence:
-		return true
-	}
-	return false
-}
-
 // retry deletes a failed operation, or marks a failed convergence proposal
 // for retry, after saying what happens next.
 func retry(ctx context.Context, cl client.Client, namespace, name string, w io.Writer) error {
@@ -97,7 +88,7 @@ func retry(ctx context.Context, cl client.Client, namespace, name string, w io.W
 		}
 		fmt.Fprintf(w, "operation %s %s: %s\n", ref, verb, why)
 	}
-	if convergenceProposal(op) {
+	if metalv1alpha1.ConvergenceReason(op.Spec.Reason) {
 		// Deleting a convergence proposal reads as refusing it, so the
 		// operator would never propose it again. The mark asks for the
 		// retry; the operator deletes this operation and proposes anew.
@@ -115,8 +106,8 @@ func retry(ctx context.Context, cl client.Client, namespace, name string, w io.W
 		return nil
 	}
 	claim := ""
-	if n := op.Labels[labelClaimName]; n != "" {
-		claim = op.Labels[labelClaimNamespace] + "/" + n
+	if n := op.Labels[metalv1alpha1.LabelClaimName]; n != "" {
+		claim = op.Labels[metalv1alpha1.LabelClaimNamespace] + "/" + n
 	}
 	if err := cl.Delete(ctx, op); client.IgnoreNotFound(err) != nil {
 		return fmt.Errorf("delete %s: %w", ref, err)
@@ -129,7 +120,7 @@ func retry(ctx context.Context, cl client.Client, namespace, name string, w io.W
 	fmt.Fprintf(w, "The operator proposes it again for claim %s in a few seconds; "+
 		"it then waits for approval: pk-metal approve\n", claim)
 	c := &metalv1alpha1.HostClaim{}
-	if err := cl.Get(ctx, client.ObjectKey{Namespace: op.Labels[labelClaimNamespace], Name: op.Labels[labelClaimName]}, c); err == nil {
+	if err := cl.Get(ctx, client.ObjectKey{Namespace: op.Labels[metalv1alpha1.LabelClaimNamespace], Name: op.Labels[metalv1alpha1.LabelClaimName]}, c); err == nil {
 		if _, held := c.Annotations[holdAnnotation]; held {
 			fmt.Fprintf(w, "Claim %s is on hold, so nothing is proposed until: pk-metal unhold %s\n", claim, claim)
 		}
@@ -151,7 +142,7 @@ func recreateHint(op *metalv1alpha1.HostOperation) string {
 	if cluster := op.Labels[labelRestoreCluster]; cluster != "" {
 		return fmt.Sprintf("Nothing proposes it again. Propose the repair again: pk-metal restore plan %s --propose", cluster)
 	}
-	if op.Spec.Reason == "Reboot" {
+	if op.Spec.Reason == metalv1alpha1.OperationReasonReboot {
 		if node := rebootedNode(op); node != "" {
 			cmd := "pk-metal reboot " + node
 			if failedStep(op) == "drain" {

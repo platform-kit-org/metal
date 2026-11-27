@@ -277,6 +277,7 @@ type TalosRolloutStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Cluster,categories=metal;os
+// +kubebuilder:selectablefield:JSONPath=`.spec.clusterRef.name`
 // +kubebuilder:printcolumn:name="Cluster",type=string,JSONPath=`.spec.clusterRef.name`
 // +kubebuilder:printcolumn:name="Kind",type=string,JSONPath=`.spec.kind`
 // +kubebuilder:printcolumn:name="Approved",type=string,JSONPath=`.spec.approval.approvedBy`

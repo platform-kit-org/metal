@@ -55,7 +55,7 @@ For a different release, give the manager `--imager-digest=<version>=sha256:<dig
 
 | What | Needed | Used in the tests |
 | --- | --- | --- |
-| Kubernetes | A release with `ValidatingAdmissionPolicy` in `admissionregistration.k8s.io/v1`: 1.30 or later. Only 1.36 is tested. | 1.36 (kind and the controller tests) |
+| Kubernetes | A release with `ValidatingAdmissionPolicy` in `admissionregistration.k8s.io/v1` and with selectable fields of CRDs: 1.32 or later. Only 1.36 is tested. | 1.36 (kind and the controller tests) |
 | Operator architecture | The architecture of the machine that builds the image. Only x86-64 is tested. | x86-64 |
 | Operator replicas | One. See [Scale and sizing](concept:architecture#scale-and-sizing). | One |
 

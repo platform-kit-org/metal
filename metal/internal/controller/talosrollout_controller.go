@@ -633,7 +633,7 @@ func (r *TalosRolloutReconciler) workload(ctx context.Context, cluster *osv1alph
 // another rollout's approval or its first step would let both start.
 func (r *TalosRolloutReconciler) otherHolder(ctx context.Context, ro *osv1alpha1.TalosRollout) (string, error) {
 	rollouts := &osv1alpha1.TalosRolloutList{}
-	if err := r.reader().List(ctx, rollouts); err != nil {
+	if err := r.reader().List(ctx, rollouts, client.MatchingFields{rolloutClusterField: ro.Spec.ClusterRef.Name}); err != nil {
 		return "", err
 	}
 	h := clusterHolder(rollouts.Items, ro.Spec.ClusterRef.Name)
@@ -1062,6 +1062,11 @@ func (r *TalosRolloutReconciler) etcdLeader(ctx context.Context, cluster *osv1al
 	}
 	return ""
 }
+
+// rolloutClusterField is a selectable field of the TalosRollout CRD: the API
+// server lists the rollouts of one cluster. Both readers of it read from the
+// API server, so the cache has no index of this name.
+const rolloutClusterField = "spec.clusterRef.name"
 
 func (r *TalosRolloutReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.APIReader == nil {

@@ -72,7 +72,7 @@ func (r *RolloutProposer) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		reader = r.APIReader
 	}
 	rollouts := &osv1alpha1.TalosRolloutList{}
-	if err := reader.List(ctx, rollouts); err != nil {
+	if err := reader.List(ctx, rollouts, client.MatchingFields{rolloutClusterField: cluster.Name}); err != nil {
 		return ctrl.Result{}, err
 	}
 	existing := map[string]*osv1alpha1.TalosRollout{}

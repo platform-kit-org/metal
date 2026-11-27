@@ -32,8 +32,10 @@ import (
 	"github.com/dennisklein/platform-kit/metal/internal/talos"
 )
 
-// opHostIndex joins operations to the Host they act on.
-const opHostIndex = ".spec.hostRef.name"
+// opHostIndex joins operations to the Host they act on. It is the name of
+// the cache index and a selectable field of the CRD, so the same selector
+// filters the cache and the API server.
+const opHostIndex = "spec.hostRef.name"
 
 // executeTimeout bounds one whole executor pass — dial, every step (a Huawei
 // VmmControl insert polls its task monitor), and the closing observation.
@@ -1072,16 +1074,15 @@ func (r *HostOperationReconciler) activePredecessor(ctx context.Context, op *met
 // API server holds them. The cache can lag behind another operation's
 // baseline write; deciding from it would let two operations start on one
 // host. Passes on one host run one at a time (passLocks), so a pass that
-// confirms here and then writes its baseline is seen by the next.
+// confirms here and then writes its baseline is seen by the next. The API
+// server filters by host: each start reads the operations of one host, not
+// those of the fleet.
 func (r *HostOperationReconciler) activePredecessorUncached(ctx context.Context, op *metalv1alpha1.HostOperation) (string, error) {
 	ops := &metalv1alpha1.HostOperationList{}
-	if err := r.reader().List(ctx, ops); err != nil {
+	if err := r.reader().List(ctx, ops, client.MatchingFields{opHostIndex: op.Spec.HostRef.Name}); err != nil {
 		return "", err
 	}
-	onHost := slices.DeleteFunc(ops.Items, func(o metalv1alpha1.HostOperation) bool {
-		return o.Spec.HostRef.Name != op.Spec.HostRef.Name
-	})
-	return holderOtherThan(onHost, op), nil
+	return holderOtherThan(ops.Items, op), nil
 }
 
 // holderOtherThan names the holder of the host when it is not op.

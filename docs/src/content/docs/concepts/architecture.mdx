@@ -98,6 +98,17 @@ It reads the objects that you write and changes the machines through their BMCs.
 | Read of each BMC | Each 5 minutes | `--poll-interval` |
 | Approvals | One for each install, one for each rollout plan | See [](concept:approval) |
 
+### Reads from the API server
+
+Some checks read from the API server and not from the cache of the manager, because the cache can be late. The API server filters these reads where it can.
+
+| Check | What it reads | When |
+| --- | --- | --- |
+| The start of an operation | The operations of its host | One time, before the first step |
+| A rollout step, a rollout proposal | The rollouts of the cluster | Each pass |
+| The guard of the operator's own cluster | The Host, the TalosNodes and the Kubernetes node of the manager. For the node of the manager and the control planes of its cluster, also all Hosts and all operations. | Before each reboot and each power-off |
+| The release of a claim | All Hosts | Each pass of a claim that you deleted |
+
 ### What is tested
 
 The largest shape in the tests is one cluster of five virtual machines. No test measures a fleet of tens or hundreds of machines.

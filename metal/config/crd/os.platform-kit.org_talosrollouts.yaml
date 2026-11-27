@@ -291,6 +291,8 @@ spec:
           required:
             - spec
           type: object
+      selectableFields:
+        - jsonPath: .spec.clusterRef.name
       served: true
       storage: true
       subresources:

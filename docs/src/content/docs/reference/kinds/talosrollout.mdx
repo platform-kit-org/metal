@@ -140,6 +140,7 @@ A reboot of all nodes is a rollout that you write. `metal/config/samples/rollout
 
 ## Tasks
 
+- List the rollouts of one cluster: `kubectl get talosrollouts --field-selector spec.clusterRef.name=<cluster>`.
 - [](howto:upgrade-talos)
 - [](howto:change-machine-config)
 - [](flow:day-2-change)

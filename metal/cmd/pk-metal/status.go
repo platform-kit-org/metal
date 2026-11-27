@@ -258,6 +258,12 @@ func explain(conds []metav1.Condition, blockedOn string, failTypes ...string) st
 
 func nsName(namespace, name string) string { return namespace + "/" + name }
 
+// etcdTurn: a claim's blockedOn waits for its turn to change etcd. It clears
+// by itself, so it needs no person.
+func etcdTurn(reason string) bool {
+	return reason == metalv1alpha1.ReasonEtcdJoinWaiting || reason == metalv1alpha1.ReasonRemovalWaiting
+}
+
 // buildReport is the pure part of status: objects in, report out, sorted by
 // name so that two runs on the same cluster print the same thing.
 func buildReport(hosts []metalv1alpha1.Host, eps []metalv1alpha1.ManagementEndpoint, claims []metalv1alpha1.HostClaim,
@@ -323,7 +329,7 @@ func buildReport(hosts []metalv1alpha1.Host, eps []metalv1alpha1.ManagementEndpo
 				row.Node.Address = nodeAddress(n)
 			}
 		}
-		row.NeedsAttention = row.BlockedOn != "" || h.Status.Phase == metalv1alpha1.HostFailed
+		row.NeedsAttention = (row.BlockedOn != "" && !etcdTurn(row.BlockedOn)) || h.Status.Phase == metalv1alpha1.HostFailed
 		rep.Hosts = append(rep.Hosts, row)
 	}
 
@@ -357,7 +363,7 @@ func buildReport(hosts []metalv1alpha1.Host, eps []metalv1alpha1.ManagementEndpo
 		}
 		_, row.OnHold = c.Annotations[holdAnnotation]
 		row.Message = explain(c.Status.Conditions, c.Status.BlockedOn)
-		row.NeedsAttention = row.BlockedOn != "" || c.Status.Phase == metalv1alpha1.ClaimAmbiguous
+		row.NeedsAttention = (row.BlockedOn != "" && !etcdTurn(row.BlockedOn)) || c.Status.Phase == metalv1alpha1.ClaimAmbiguous
 		rep.Claims = append(rep.Claims, row)
 	}
 

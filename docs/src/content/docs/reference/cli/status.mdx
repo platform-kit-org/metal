@@ -71,6 +71,7 @@ A failed operation stays in the table until you run [](cli:retry).
 </dl>
 
 Two blocks of an operation need no person: `OperationQueued` and `OutsideMaintenanceWindow`. The operator continues by itself.
+Two blocks of a claim need no person: `EtcdJoinWaiting` and `RemovalWaiting`. A control plane waits for its turn in etcd.
 
 ## Examples
 

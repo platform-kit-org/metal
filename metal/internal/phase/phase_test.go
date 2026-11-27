@@ -210,6 +210,21 @@ func TestForClaim(t *testing.T) {
 			},
 			phase: metalv1alpha1.ClaimBound, blocked: "Approval(Provisioning)"},
 	}
+	// Each stop a runbook names under the claim's BLOCKED column shows there.
+	for _, reason := range []string{metalv1alpha1.ReasonDiskNotWiped, metalv1alpha1.ReasonEtcdRiskRefused,
+		metalv1alpha1.ReasonEtcdJoinWaiting, metalv1alpha1.ReasonRemovalWaiting} {
+		tests = append(tests, struct {
+			name    string
+			conds   []metav1.Condition
+			phase   metalv1alpha1.ClaimPhase
+			blocked string
+		}{name: reason + " shows in blockedOn",
+			conds: []metav1.Condition{
+				c(metalv1alpha1.ConditionBound, metav1.ConditionTrue, metalv1alpha1.ReasonHostBound),
+				c(metalv1alpha1.ConditionProvisioned, metav1.ConditionFalse, reason),
+			},
+			phase: metalv1alpha1.ClaimBound, blocked: reason})
+	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			p, b := phase.ForClaim(tt.conds)

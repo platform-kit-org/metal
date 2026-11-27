@@ -151,8 +151,9 @@ func ForClaim(conds []metav1.Condition) (metalv1alpha1.ClaimPhase, string) {
 	return metalv1alpha1.ClaimPending, b.Reason
 }
 
-// provisioningHolds are the Provisioned=False reasons that need a person —
-// the rest are in-flight waits, not blocks.
+// provisioningHolds are the Provisioned=False reasons that show in
+// blockedOn: a stop that a person resolves, or a wait for an etcd turn
+// (EtcdJoinWaiting, RemovalWaiting). The rest are in-flight waits.
 var provisioningHolds = map[string]bool{
 	metalv1alpha1.ReasonSingleMediumUnsupported: true,
 	metalv1alpha1.ReasonNoBootableMedia:         true,
@@ -161,6 +162,10 @@ var provisioningHolds = map[string]bool{
 	metalv1alpha1.ReasonHeldByUser:              true,
 	metalv1alpha1.ReasonHostInMaintenance:       true,
 	metalv1alpha1.ReasonSelfDisruption:          true,
+	metalv1alpha1.ReasonDiskNotWiped:            true,
+	metalv1alpha1.ReasonEtcdRiskRefused:         true,
+	metalv1alpha1.ReasonEtcdJoinWaiting:         true,
+	metalv1alpha1.ReasonRemovalWaiting:          true,
 }
 
 // ForOperation derives the HostOperation phase from Approved + Executed. A

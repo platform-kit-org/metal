@@ -101,7 +101,7 @@ The Host has a different set of phases. Read [](kind:Host).
 | Condition | True means | Effect on the phase |
 | --- | --- | --- |
 | `Bound` | The claim holds its Host. | Bound when True |
-| `Provisioned` | The machine runs the configuration of the TalosNode. Absent when the claim holds no Host. | None. A reason that needs a person shows in `blockedOn`. |
+| `Provisioned` | The machine runs the configuration of the TalosNode. Absent when the claim holds no Host. | None. A reason that needs a person, or a wait for etcd, shows in `blockedOn`. |
 
 ### Why a claim waits
 
@@ -123,6 +123,10 @@ The column BLOCKED of `kubectl get hostclaims -o wide` shows `status.blockedOn`.
 | `NoBootableMedia` | The BMC shows no media slot that can mount an image, or no boot target for it. | [](rb:media-slot-busy) |
 | `OperationFailed` | The install operation failed. | [](rb:operation-failed) |
 | `ReleaseFailed` | The release operation failed. The machine stays bound. | [](rb:operation-failed) |
+| `DiskNotWiped` | The machine can still hold the install of a different node. | [](rb:disk-not-wiped) |
+| `EtcdRiskRefused` | The removal of a control plane would make etcd unsafe. | [](rb:operation-held) |
+| `EtcdJoinWaiting` | A control plane waits for its turn to join etcd. | Wait. [](cli:status) does not flag it. |
+| `RemovalWaiting` | A control plane waits for its turn to leave etcd. | Wait. [](cli:status) does not flag it. |
 
 An empty `blockedOn` on a Pending claim means that the machine did not appear yet. The operator waits.
 

@@ -16,6 +16,7 @@ import (
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
+	"github.com/dennisklein/platform-kit/metal/internal/boot"
 )
 
 // claimReconcilerFor builds a claim reconciler over a fake API that also
@@ -498,7 +499,7 @@ func TestBootOverrideAsksForUEFIOnlyWhereNeeded(t *testing.T) {
 	config := &osv1alpha1.BootAsset{ObjectMeta: metav1.ObjectMeta{Name: "node-config"}}
 	installer := &osv1alpha1.BootAsset{ObjectMeta: metav1.ObjectMeta{Name: "installer"}}
 	for served, want := range map[string]string{"Legacy": "UEFI", "UEFI": "", "": ""} {
-		plan := provisionPlan{Slots: []string{"VirtualMedia1", "VirtualMedia2"}, Target: "UsbCd", Mode: overrideMode(served)}
+		plan := provisionPlan{Slots: []string{"VirtualMedia1", "VirtualMedia2"}, Target: "UsbCd", Mode: boot.OverrideMode(served)}
 		op := r.provisionOp(testClaim("node"), "host-a", "op", plan, node, config, installer, nil)
 		var got *metalv1alpha1.SetBootOverrideAction
 		for _, a := range op.Spec.Actions {

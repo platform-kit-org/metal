@@ -139,7 +139,7 @@ func wipeOp(namespace, proposer, host, name string, asset *osv1alpha1.BootAsset,
 			Digest: asset.Status.Digest,
 		}},
 		metalv1alpha1.HostOperationAction{SetBootOverride: &metalv1alpha1.SetBootOverrideAction{
-			Target: target, Once: ptr.To(true), Mode: overrideMode(shape.mode),
+			Target: target, Once: ptr.To(true), Mode: boot.OverrideMode(shape.mode),
 		}},
 		metalv1alpha1.HostOperationAction{PowerCycle: &metalv1alpha1.PowerCycleAction{}},
 	)

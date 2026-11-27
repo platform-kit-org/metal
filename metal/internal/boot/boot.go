@@ -183,13 +183,7 @@ func Run(ctx context.Context, o Options) (Result, error) {
 		m.arm()
 	}
 
-	override := bmc.BootOverride{Target: target, Enabled: bmc.OverrideOnce}
-	// The medium boots UEFI. A system that serves another mode would take the
-	// override as a legacy boot (the X12 reports Legacy out of the box), so
-	// the mode goes along; one that serves none is not asked for it.
-	if mode := system.BootOverride.Mode; mode != "" && mode != "UEFI" {
-		override.Mode = "UEFI"
-	}
+	override := bmc.BootOverride{Target: target, Enabled: bmc.OverrideOnce, Mode: OverrideMode(system.BootOverride.Mode)}
 	if err := o.Client.SetBootOverride(ctx, system.ID, override); err != nil {
 		return res, cleanupAfter(ctx, o, grants, grant.Token, slot, err)
 	}
@@ -341,6 +335,18 @@ func PickTarget(targets []string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("boot: no removable-media boot target in %v", targets)
+}
+
+// OverrideMode is the override mode a boot asks for, given the mode the
+// system serves. The media boot UEFI: a system that serves another mode would
+// take the override as a legacy boot (the X12 reports Legacy out of the box),
+// so the mode goes along. One that serves UEFI needs nothing, and one that
+// serves none is not asked for it (it may refuse).
+func OverrideMode(served string) string {
+	if served != "" && served != "UEFI" {
+		return "UEFI"
+	}
+	return ""
 }
 
 // EjectAndVerify clears the slot if occupied and verifies Inserted=false —

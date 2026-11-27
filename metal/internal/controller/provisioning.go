@@ -437,7 +437,7 @@ func (r *HostClaimReconciler) installPlan(ctx context.Context, claim *metalv1alp
 			return plan, nil, nil, metalv1alpha1.ReasonNoBootableMedia, err.Error(), nil
 		}
 		plan.ArtifactDigest, plan.Embedded = installer.Status.Digest, true
-		plan.Slots, plan.Target, plan.Mode = []string{shape.bootSlots[0]}, target, overrideMode(shape.mode)
+		plan.Slots, plan.Target, plan.Mode = []string{shape.bootSlots[0]}, target, boot.OverrideMode(shape.mode)
 	default:
 		if config, err = r.ensureConfigAsset(ctx, node); err != nil {
 			return plan, nil, nil, "", "", err
@@ -462,7 +462,7 @@ func (r *HostClaimReconciler) installPlan(ctx context.Context, claim *metalv1alp
 		}
 		plan.Installer, plan.InstallerDigest = installer.Status.URL, installer.Status.Digest
 		plan.Slots, plan.Target = []string{bootSlot, configSlot}, target
-		plan.Mode = overrideMode(shape.mode)
+		plan.Mode = boot.OverrideMode(shape.mode)
 	}
 
 	if prior != "" {
@@ -577,17 +577,6 @@ func recordHandOff(claim *metalv1alpha1.HostClaim, hostName, nodeName, digest st
 	if booted != nil {
 		claim.Status.HandOff.Operation = booted.Namespace + "/" + booted.Name
 	}
-}
-
-// overrideMode is the override mode a boot asks for, given the one the system
-// serves. The media boot UEFI: a system serving another mode would take the
-// override as a legacy boot, so the mode goes along; one serving UEFI already
-// needs nothing, and one serving none is not asked for it (it may refuse).
-func overrideMode(served string) string {
-	if served != "" && served != "UEFI" {
-		return "UEFI"
-	}
-	return ""
 }
 
 // bootsNode: the operation acts on the host and waits for the node to check in.

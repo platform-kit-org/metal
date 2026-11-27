@@ -10,7 +10,6 @@ sources:
   - /repo/docs/src/data/generated/conditions.json
 ---
 
-import Callout from '../../../components/Callout.astro';
 import CatalogFilter from '../../../components/catalog/CatalogFilter.astro';
 import ConditionTable from '../../../components/catalog/ConditionTable.astro';
 import ReasonTable from '../../../components/catalog/ReasonTable.astro';
@@ -70,10 +69,6 @@ Each block is one group of reasons in the source. The column "On" shows the cond
 ## Reasons of os.platform-kit.org
 
 <ReasonTable group="os.platform-kit.org" />
-
-<Callout type="note">
-The list has only the reasons that the API packages declare. A controller can write a reason that is not in this list, for example `SessionUp` on `Reachable`.
-</Callout>
 
 ## Operation reasons
 

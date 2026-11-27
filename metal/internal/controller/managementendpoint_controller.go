@@ -168,12 +168,12 @@ func (r *ManagementEndpointReconciler) observe(ctx context.Context, ep *metalv1a
 		logf.FromContext(ctx).V(1).Info("observation pass", "duration", time.Since(start).Round(time.Millisecond))
 	}()
 	err = withSession(ctx, r.Dial, cfg, func(ctx context.Context, cl bmc.Client) error {
-		setCond(metalv1alpha1.ConditionReachable, metav1.ConditionTrue, "SessionUp", "")
+		setCond(metalv1alpha1.ConditionReachable, metav1.ConditionTrue, metalv1alpha1.ReasonSessionUp, "")
 		r.noteAuthentication(ctx, ep, gofishclient.Authentication(cl))
 
 		d, err := discover(ctx, cl)
 		if err != nil {
-			setCond(metalv1alpha1.ConditionInventoried, metav1.ConditionFalse, "DiscoveryError", err.Error())
+			setCond(metalv1alpha1.ConditionInventoried, metav1.ConditionFalse, metalv1alpha1.ReasonDiscoveryError, err.Error())
 			return nil
 		}
 		ep.Status.Vendor = d.mgr.Vendor
@@ -184,14 +184,14 @@ func (r *ManagementEndpointReconciler) observe(ctx context.Context, ep *metalv1a
 		ep.Status.Systems = discoveredSystems(d.systems)
 		ep.Status.Capabilities = endpointCapabilities(d.caps)
 		ep.Status.VirtualMedia = discoveredMedia(d.media)
-		setCond(metalv1alpha1.ConditionInventoried, metav1.ConditionTrue, "FactsGathered", "")
+		setCond(metalv1alpha1.ConditionInventoried, metav1.ConditionTrue, metalv1alpha1.ReasonFactsGathered, "")
 
 		status, reason, msg := verifiedCondition(ep.Status.Asset, d.mgr.MAC, serialAnchors(d.chassis, d.systems))
 		setCond(metalv1alpha1.ConditionVerified, status, reason, msg)
 		return nil
 	})
 	if err != nil {
-		setCond(metalv1alpha1.ConditionReachable, metav1.ConditionFalse, "DialError", err.Error())
+		setCond(metalv1alpha1.ConditionReachable, metav1.ConditionFalse, metalv1alpha1.ReasonDialError, err.Error())
 	}
 }
 
@@ -232,12 +232,12 @@ func endpointClientConfig(ctx context.Context, c client.Client, credentialsNames
 	// login is still the way in.
 	if apierrors.IsNotFound(err) || errors.Is(err, errNoCredentials) {
 		if ep.Spec.CredentialsRef == nil {
-			return cfg, "CredentialsMissing", fmt.Errorf("spec.credentialsRef is not set")
+			return cfg, metalv1alpha1.ReasonCredentialsMissing, fmt.Errorf("spec.credentialsRef is not set")
 		}
 		cfg.Username, cfg.Password, err = secretCreds(ctx, c, credentialsNamespace, ep.Spec.CredentialsRef.Name)
 	}
 	if err != nil {
-		return cfg, "CredentialsMissing", err
+		return cfg, metalv1alpha1.ReasonCredentialsMissing, err
 	}
 	return cfg, "", nil
 }
@@ -260,11 +260,11 @@ func endpointTLSConfig(ctx context.Context, c client.Client, credentialsNamespac
 		ca := &corev1.Secret{}
 		key := types.NamespacedName{Namespace: credentialsNamespace, Name: tlsSpec.CASecretRef.Name}
 		if err := c.Get(ctx, key, ca); err != nil {
-			return cfg, "CAMissing", fmt.Errorf("ca secret %s: %w", key, err)
+			return cfg, metalv1alpha1.ReasonCAMissing, fmt.Errorf("ca secret %s: %w", key, err)
 		}
 		pool, err := cert.NewPoolFromBytes(ca.Data[corev1.ServiceAccountRootCAKey])
 		if err != nil {
-			return cfg, "CAMissing", fmt.Errorf("ca secret %s: %s: %w", key, corev1.ServiceAccountRootCAKey, err)
+			return cfg, metalv1alpha1.ReasonCAMissing, fmt.Errorf("ca secret %s: %s: %w", key, corev1.ServiceAccountRootCAKey, err)
 		}
 		cfg.RootCAs = pool
 	case tlsSpec.InsecureSkipVerify:
@@ -427,17 +427,17 @@ func serialAnchors(chassis bmc.Chassis, systems []bmc.System) []string {
 // phase ladder, the reconciler keeps observing, nothing destructive follows.
 func verifiedCondition(snap *metalv1alpha1.AssetSnapshot, mgrMAC string, anchors []string) (metav1.ConditionStatus, string, string) {
 	if snap == nil {
-		return metav1.ConditionUnknown, "NoAssertion", "asset has never been resolved"
+		return metav1.ConditionUnknown, metalv1alpha1.ReasonNoAssertion, "asset has never been resolved"
 	}
 	if snap.BMCMac != "" && mgrMAC != "" && !identity.SameMAC(snap.BMCMac, mgrMAC) {
 		return metav1.ConditionFalse, metalv1alpha1.ReasonMACMismatch,
 			fmt.Sprintf("asserted bmcMac %s, endpoint reports %s — wrong box behind this address", snap.BMCMac, mgrMAC)
 	}
 	if len(anchors) == 0 {
-		return metav1.ConditionUnknown, "NoSerialAnchor", "discovery offered no serial to verify against"
+		return metav1.ConditionUnknown, metalv1alpha1.ReasonNoSerialAnchor, "discovery offered no serial to verify against"
 	}
 	if slices.Contains(anchors, snap.Serial) {
-		return metav1.ConditionTrue, "SerialMatch", ""
+		return metav1.ConditionTrue, metalv1alpha1.ReasonSerialMatch, ""
 	}
 	return metav1.ConditionFalse, metalv1alpha1.ReasonSerialMismatch,
 		fmt.Sprintf("asserted serial %s not among discovered %v", snap.Serial, anchors)

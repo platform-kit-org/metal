@@ -75,7 +75,7 @@
       "value": "ApprovalPending",
       "group": "metal.platform-kit.org",
       "source": "metal/api/v1alpha1/conditions.go",
-      "description": "a proposed HostOperation awaits its human gate."
+      "description": "a proposed HostOperation awaits its human gate. The reason of True is the operation's spec.reason (BiosConvergence, Provisioning) or, for an operation that a person asked for, its first action (PowerCycle)."
     },
     {
       "name": "ConditionMaintenance",
@@ -451,6 +451,34 @@
       "context": "Reasons on the operation's Approved / Executed conditions."
     },
     {
+      "name": "ReasonRolloutRefused",
+      "value": "RolloutRefused",
+      "group": "metal.platform-kit.org",
+      "source": "metal/api/v1alpha1/conditions.go",
+      "description": "the operation names a TalosRollout (spec.rolloutRef), but the approval of the rollout does not cover it. The rollout is gone, not approved, aborted or approved for another planHash, or its plan gives this node other actions. The machine did not change.",
+      "on": [
+        {
+          "condition": "Executed",
+          "status": "False"
+        }
+      ],
+      "context": "Reasons on the operation's Approved / Executed conditions."
+    },
+    {
+      "name": "ReasonWaiverRefused",
+      "value": "WaiverRefused",
+      "group": "metal.platform-kit.org",
+      "source": "metal/api/v1alpha1/conditions.go",
+      "description": "the operator proposed the operation with no approval of its own, but it is not one of the kinds the operator may run without a person: the node step of an approved rollout, the install of a claim set to Automatic, or a release. The executor refuses it before it acts on the machine. A request with the operator's token that the operator code did not make ends here.",
+      "on": [
+        {
+          "condition": "Executed",
+          "status": "False"
+        }
+      ],
+      "context": "Reasons on the operation's Approved / Executed conditions."
+    },
+    {
       "name": "ReasonNodeNotFound",
       "value": "NodeNotFound",
       "group": "metal.platform-kit.org",
@@ -745,6 +773,70 @@
       "context": "Reasons on the endpoint's Configured condition (the EndpointProfile lanes). InSync and ProfileConflict are shared with the convergence vocabulary above. There is no operation gate here — merging the profile is the approval — so every False is either in-flight work or an alert-and-hold the next pass retries (the factory account stays as break-glass, faults self-heal)."
     },
     {
+      "name": "ReasonSessionUp",
+      "value": "SessionUp",
+      "group": "metal.platform-kit.org",
+      "source": "metal/api/v1alpha1/conditions.go",
+      "description": "the BMC answered and the session is open.",
+      "on": [
+        {
+          "condition": "Reachable",
+          "status": "True"
+        }
+      ],
+      "context": "Reasons on the endpoint's Reachable, Inventoried and Verified conditions: what the observing pass saw when it dialed the BMC."
+    },
+    {
+      "name": "ReasonDialError",
+      "value": "DialError",
+      "group": "metal.platform-kit.org",
+      "source": "metal/api/v1alpha1/conditions.go",
+      "description": "the BMC did not answer, refused the session, or its certificate could not be read.",
+      "on": [
+        {
+          "condition": "Reachable",
+          "status": "False"
+        }
+      ],
+      "context": "Reasons on the endpoint's Reachable, Inventoried and Verified conditions: what the observing pass saw when it dialed the BMC."
+    },
+    {
+      "name": "ReasonCredentialsMissing",
+      "value": "CredentialsMissing",
+      "group": "metal.platform-kit.org",
+      "source": "metal/api/v1alpha1/conditions.go",
+      "description": "neither the managed Secret nor spec.credentialsRef gives a password that the operator can use.",
+      "on": [
+        {
+          "condition": "Reachable",
+          "status": "False"
+        },
+        {
+          "condition": "Configured",
+          "status": "False"
+        }
+      ],
+      "context": "Reasons on the endpoint's Reachable, Inventoried and Verified conditions: what the observing pass saw when it dialed the BMC."
+    },
+    {
+      "name": "ReasonCAMissing",
+      "value": "CAMissing",
+      "group": "metal.platform-kit.org",
+      "source": "metal/api/v1alpha1/conditions.go",
+      "description": "the CA Secret that spec.tls names is missing or holds no valid CA certificate.",
+      "on": [
+        {
+          "condition": "Reachable",
+          "status": "False"
+        },
+        {
+          "condition": "Configured",
+          "status": "False"
+        }
+      ],
+      "context": "Reasons on the endpoint's Reachable, Inventoried and Verified conditions: what the observing pass saw when it dialed the BMC."
+    },
+    {
       "name": "ReasonTLSKeyChanged",
       "value": "TLSKeyChanged",
       "group": "metal.platform-kit.org",
@@ -756,7 +848,7 @@
           "status": "False"
         }
       ],
-      "context": "Reasons on the endpoint's Reachable condition about the BMC's TLS key."
+      "context": "Reasons on the endpoint's Reachable, Inventoried and Verified conditions: what the observing pass saw when it dialed the BMC."
     },
     {
       "name": "ReasonTLSKeyNotPinned",
@@ -774,7 +866,203 @@
           "status": "False"
         }
       ],
-      "context": "Reasons on the endpoint's Reachable condition about the BMC's TLS key."
+      "context": "Reasons on the endpoint's Reachable, Inventoried and Verified conditions: what the observing pass saw when it dialed the BMC."
+    },
+    {
+      "name": "ReasonDiscoveryError",
+      "value": "DiscoveryError",
+      "group": "metal.platform-kit.org",
+      "source": "metal/api/v1alpha1/conditions.go",
+      "description": "the session is open, but the manager, the chassis or the systems could not be read.",
+      "on": [
+        {
+          "condition": "Inventoried",
+          "status": "False"
+        }
+      ],
+      "context": "Reasons on the endpoint's Reachable, Inventoried and Verified conditions: what the observing pass saw when it dialed the BMC."
+    },
+    {
+      "name": "ReasonFactsGathered",
+      "value": "FactsGathered",
+      "group": "metal.platform-kit.org",
+      "source": "metal/api/v1alpha1/conditions.go",
+      "description": "the status holds the discovered facts.",
+      "on": [
+        {
+          "condition": "Inventoried",
+          "status": "True"
+        }
+      ],
+      "context": "Reasons on the endpoint's Reachable, Inventoried and Verified conditions: what the observing pass saw when it dialed the BMC."
+    },
+    {
+      "name": "ReasonNoAssertion",
+      "value": "NoAssertion",
+      "group": "metal.platform-kit.org",
+      "source": "metal/api/v1alpha1/conditions.go",
+      "description": "the operator never resolved the Asset, so it has no assertion to compare with.",
+      "on": [
+        {
+          "condition": "Verified",
+          "status": "Unknown"
+        }
+      ],
+      "context": "Reasons on the endpoint's Reachable, Inventoried and Verified conditions: what the observing pass saw when it dialed the BMC."
+    },
+    {
+      "name": "ReasonNoSerialAnchor",
+      "value": "NoSerialAnchor",
+      "group": "metal.platform-kit.org",
+      "source": "metal/api/v1alpha1/conditions.go",
+      "description": "discovery found no serial to compare with the asserted one.",
+      "on": [
+        {
+          "condition": "Verified",
+          "status": "Unknown"
+        }
+      ],
+      "context": "Reasons on the endpoint's Reachable, Inventoried and Verified conditions: what the observing pass saw when it dialed the BMC."
+    },
+    {
+      "name": "ReasonSerialMatch",
+      "value": "SerialMatch",
+      "group": "metal.platform-kit.org",
+      "source": "metal/api/v1alpha1/conditions.go",
+      "description": "the asserted serial is one of the discovered serials.",
+      "on": [
+        {
+          "condition": "Verified",
+          "status": "True"
+        }
+      ],
+      "context": "Reasons on the endpoint's Reachable, Inventoried and Verified conditions: what the observing pass saw when it dialed the BMC."
+    },
+    {
+      "name": "ReasonSerialMismatch",
+      "value": "SerialMismatch",
+      "group": "metal.platform-kit.org",
+      "source": "metal/api/v1alpha1/conditions.go",
+      "description": "the asserted serial is not the discovered one — the machine behind this endpoint is not the machine the org claims.",
+      "on": [
+        {
+          "condition": "Verified",
+          "status": "False"
+        }
+      ],
+      "context": "Reasons on the endpoint's Reachable, Inventoried and Verified conditions: what the observing pass saw when it dialed the BMC."
+    },
+    {
+      "name": "ReasonMACMismatch",
+      "value": "MACMismatch",
+      "group": "metal.platform-kit.org",
+      "source": "metal/api/v1alpha1/conditions.go",
+      "description": "the manager at this address reports a NIC MAC other than the asserted bmcMac — the ledger join resolved to the wrong box.",
+      "on": [
+        {
+          "condition": "Verified",
+          "status": "False"
+        }
+      ],
+      "context": "Reasons on the endpoint's Reachable, Inventoried and Verified conditions: what the observing pass saw when it dialed the BMC."
+    },
+    {
+      "name": "ReasonPathUp",
+      "value": "PathUp",
+      "group": "metal.platform-kit.org",
+      "source": "metal/api/v1alpha1/conditions.go",
+      "description": "at least one management path answers. The message counts the paths.",
+      "on": [
+        {
+          "condition": "Reachable",
+          "status": "True"
+        }
+      ],
+      "context": "Reasons on the host's Reachable, Inspected, Verified and ApprovalPending conditions. The host reads Reachable and Verified from the endpoints that front it; a Verified=False carries the reason of the endpoint."
+    },
+    {
+      "name": "ReasonAllPathsDown",
+      "value": "AllPathsDown",
+      "group": "metal.platform-kit.org",
+      "source": "metal/api/v1alpha1/conditions.go",
+      "description": "no management path answers.",
+      "on": [
+        {
+          "condition": "Reachable",
+          "status": "False"
+        }
+      ],
+      "context": "Reasons on the host's Reachable, Inspected, Verified and ApprovalPending conditions. The host reads Reachable and Verified from the endpoints that front it; a Verified=False carries the reason of the endpoint."
+    },
+    {
+      "name": "ReasonRedfishFacts",
+      "value": "RedfishFacts",
+      "group": "metal.platform-kit.org",
+      "source": "metal/api/v1alpha1/conditions.go",
+      "description": "the hardware facts come from Redfish.",
+      "on": [
+        {
+          "condition": "Inspected",
+          "status": "True"
+        }
+      ],
+      "context": "Reasons on the host's Reachable, Inspected, Verified and ApprovalPending conditions. The host reads Reachable and Verified from the endpoints that front it; a Verified=False carries the reason of the endpoint."
+    },
+    {
+      "name": "ReasonIdentityDiverged",
+      "value": "IdentityDiverged",
+      "group": "metal.platform-kit.org",
+      "source": "metal/api/v1alpha1/conditions.go",
+      "description": "two paths to the same serial anchor give different identities. The anchor leads to different machine facts, so no single Host identity exists. The operator alerts and holds.",
+      "on": [
+        {
+          "condition": "Inspected",
+          "status": "False"
+        }
+      ],
+      "context": "Reasons on the host's Reachable, Inspected, Verified and ApprovalPending conditions. The host reads Reachable and Verified from the endpoints that front it; a Verified=False carries the reason of the endpoint."
+    },
+    {
+      "name": "ReasonAllPathsVerified",
+      "value": "AllPathsVerified",
+      "group": "metal.platform-kit.org",
+      "source": "metal/api/v1alpha1/conditions.go",
+      "description": "each endpoint that fronts the host has the condition Verified.",
+      "on": [
+        {
+          "condition": "Verified",
+          "status": "True"
+        }
+      ],
+      "context": "Reasons on the host's Reachable, Inspected, Verified and ApprovalPending conditions. The host reads Reachable and Verified from the endpoints that front it; a Verified=False carries the reason of the endpoint."
+    },
+    {
+      "name": "ReasonVerifying",
+      "value": "Verifying",
+      "group": "metal.platform-kit.org",
+      "source": "metal/api/v1alpha1/conditions.go",
+      "description": "some endpoints do not have the condition Verified yet. The message counts them.",
+      "on": [
+        {
+          "condition": "Verified",
+          "status": "Unknown"
+        }
+      ],
+      "context": "Reasons on the host's Reachable, Inspected, Verified and ApprovalPending conditions. The host reads Reachable and Verified from the endpoints that front it; a Verified=False carries the reason of the endpoint."
+    },
+    {
+      "name": "ReasonNonePending",
+      "value": "NonePending",
+      "group": "metal.platform-kit.org",
+      "source": "metal/api/v1alpha1/conditions.go",
+      "description": "no operation for the host waits for approval.",
+      "on": [
+        {
+          "condition": "ApprovalPending",
+          "status": "False"
+        }
+      ],
+      "context": "Reasons on the host's Reachable, Inspected, Verified and ApprovalPending conditions. The host reads Reachable and Verified from the endpoints that front it; a Verified=False carries the reason of the endpoint."
     },
     {
       "name": "ReasonUnexpectedReset",
@@ -992,20 +1280,6 @@
       "context": "Reasons on the Asset's Materialized condition."
     },
     {
-      "name": "ReasonAssetNotMaterialized",
-      "value": "AssetNotMaterialized",
-      "group": "metal.platform-kit.org",
-      "source": "metal/api/v1alpha1/conditions.go",
-      "description": "the Asset has no endpoint, and its Materialized condition says why.",
-      "on": [
-        {
-          "condition": "Bound",
-          "status": "False"
-        }
-      ],
-      "context": ""
-    },
-    {
       "name": "ReasonHostClaimed",
       "value": "HostClaimed",
       "group": "metal.platform-kit.org",
@@ -1057,6 +1331,20 @@
       "context": "Reasons on the claim's Bound condition. HostNotDiscovered is in flight (the machine hasn't been discovered yet), the rest are blocked states."
     },
     {
+      "name": "ReasonAssetNotMaterialized",
+      "value": "AssetNotMaterialized",
+      "group": "metal.platform-kit.org",
+      "source": "metal/api/v1alpha1/conditions.go",
+      "description": "the Asset has no endpoint, and its Materialized condition says why.",
+      "on": [
+        {
+          "condition": "Bound",
+          "status": "False"
+        }
+      ],
+      "context": "Reasons on the claim's Bound condition. HostNotDiscovered is in flight (the machine hasn't been discovered yet), the rest are blocked states."
+    },
+    {
       "name": "ReasonHostNotDiscovered",
       "value": "HostNotDiscovered",
       "group": "metal.platform-kit.org",
@@ -1091,48 +1379,6 @@
       "description": "another claim holds the host (first writer won).",
       "on": [],
       "context": "Reasons on the claim's Bound condition. HostNotDiscovered is in flight (the machine hasn't been discovered yet), the rest are blocked states."
-    },
-    {
-      "name": "ReasonSerialMismatch",
-      "value": "SerialMismatch",
-      "group": "metal.platform-kit.org",
-      "source": "metal/api/v1alpha1/conditions.go",
-      "description": "the asserted serial is not the discovered one — the machine behind this endpoint is not the machine the org claims.",
-      "on": [
-        {
-          "condition": "Verified",
-          "status": "False"
-        }
-      ],
-      "context": ""
-    },
-    {
-      "name": "ReasonMACMismatch",
-      "value": "MACMismatch",
-      "group": "metal.platform-kit.org",
-      "source": "metal/api/v1alpha1/conditions.go",
-      "description": "the manager at this address reports a NIC MAC other than the asserted bmcMac — the ledger join resolved to the wrong box.",
-      "on": [
-        {
-          "condition": "Verified",
-          "status": "False"
-        }
-      ],
-      "context": ""
-    },
-    {
-      "name": "ReasonIdentityDiverged",
-      "value": "IdentityDiverged",
-      "group": "metal.platform-kit.org",
-      "source": "metal/api/v1alpha1/conditions.go",
-      "description": "two paths to the same serial anchor give different identities. The anchor leads to different machine facts, so no single Host identity exists. The operator alerts and holds.",
-      "on": [
-        {
-          "condition": "Inspected",
-          "status": "False"
-        }
-      ],
-      "context": ""
     },
     {
       "name": "ReasonNoMatchingComponent",
@@ -1179,34 +1425,6 @@
         }
       ],
       "context": "Reasons added for day-2 convergence and scheduling. They live apart from conditions.go so that each concern's reasons are found next to each other."
-    },
-    {
-      "name": "ReasonRolloutRefused",
-      "value": "RolloutRefused",
-      "group": "metal.platform-kit.org",
-      "source": "metal/api/v1alpha1/hostoperation_rollout.go",
-      "description": "the operation names a TalosRollout (spec.rolloutRef), but the approval of the rollout does not cover it. The rollout is gone, not approved, aborted or approved for another planHash, or its plan gives this node other actions. The machine did not change.",
-      "on": [
-        {
-          "condition": "Executed",
-          "status": "False"
-        }
-      ],
-      "context": ""
-    },
-    {
-      "name": "ReasonWaiverRefused",
-      "value": "WaiverRefused",
-      "group": "metal.platform-kit.org",
-      "source": "metal/api/v1alpha1/hostoperation_waiver.go",
-      "description": "the operator proposed the operation with no approval of its own, but it is not one of the kinds the operator may run without a person: the node step of an approved rollout, the install of a claim set to Automatic, or a release. The executor refuses it before it acts on the machine. A request with the operator's token that the operator code did not make ends here.",
-      "on": [
-        {
-          "condition": "Executed",
-          "status": "False"
-        }
-      ],
-      "context": ""
     },
     {
       "name": "ReasonInstalledNodeRemains",

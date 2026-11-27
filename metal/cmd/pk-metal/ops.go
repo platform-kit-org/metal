@@ -106,8 +106,8 @@ func retry(ctx context.Context, cl client.Client, namespace, name string, w io.W
 		return nil
 	}
 	claim := ""
-	if n := op.Labels[labelClaimName]; n != "" {
-		claim = op.Labels[labelClaimNamespace] + "/" + n
+	if n := op.Labels[metalv1alpha1.LabelClaimName]; n != "" {
+		claim = op.Labels[metalv1alpha1.LabelClaimNamespace] + "/" + n
 	}
 	if err := cl.Delete(ctx, op); client.IgnoreNotFound(err) != nil {
 		return fmt.Errorf("delete %s: %w", ref, err)
@@ -120,7 +120,7 @@ func retry(ctx context.Context, cl client.Client, namespace, name string, w io.W
 	fmt.Fprintf(w, "The operator proposes it again for claim %s in a few seconds; "+
 		"it then waits for approval: pk-metal approve\n", claim)
 	c := &metalv1alpha1.HostClaim{}
-	if err := cl.Get(ctx, client.ObjectKey{Namespace: op.Labels[labelClaimNamespace], Name: op.Labels[labelClaimName]}, c); err == nil {
+	if err := cl.Get(ctx, client.ObjectKey{Namespace: op.Labels[metalv1alpha1.LabelClaimNamespace], Name: op.Labels[metalv1alpha1.LabelClaimName]}, c); err == nil {
 		if _, held := c.Annotations[holdAnnotation]; held {
 			fmt.Fprintf(w, "Claim %s is on hold, so nothing is proposed until: pk-metal unhold %s\n", claim, claim)
 		}

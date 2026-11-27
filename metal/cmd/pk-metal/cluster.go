@@ -25,12 +25,6 @@ const operatorNamespace = "pk-metal"
 // operation for it. Its value is the reason a person gave, possibly empty.
 const holdAnnotation = metalv1alpha1.AnnotationHold
 
-// The labels the operator puts on the operations it proposes for a claim.
-const (
-	labelClaimNamespace = "metal.platform-kit.org/claim-namespace"
-	labelClaimName      = "metal.platform-kit.org/claim-name"
-)
-
 // claimNamespace is where HostClaims usually live: they are the user's
 // requests, not the operator's records.
 const claimNamespace = "default"

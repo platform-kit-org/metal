@@ -33,11 +33,6 @@ import (
 // +kubebuilder:rbac:groups=os.platform-kit.org,resources=talosrollouts,verbs=get;list;watch
 
 const (
-	// labelConfigNode marks a rendered config Secret with its TalosNode.
-	labelConfigNode = "os.platform-kit.org/node"
-	// annotationConfigSecretDigest carries the full digest of a config Secret.
-	annotationConfigSecretDigest = "os.platform-kit.org/config-digest"
-
 	defaultDriftInterval = 10 * time.Minute
 	// rollingDriftInterval is the drift cadence while a rollout of the
 	// node's cluster runs: a step is planned from it.
@@ -83,8 +78,8 @@ func (r *TalosNodeReconciler) writeConfigSecret(ctx context.Context, node *osv1a
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace:   key.Namespace,
 			Name:        key.Name,
-			Labels:      map[string]string{labelConfigNode: node.Name},
-			Annotations: map[string]string{annotationConfigSecretDigest: sum.String()},
+			Labels:      map[string]string{labelNode: node.Name},
+			Annotations: map[string]string{configDigestAnnotation: sum.String()},
 		},
 		Immutable: ptr.To(true),
 		Data:      map[string][]byte{asset.ConfigFilename: machineConfig},
@@ -147,7 +142,7 @@ func (r *TalosNodeReconciler) collectConfigSecrets(ctx context.Context, node *os
 	}
 
 	secrets := &corev1.SecretList{}
-	if err := r.List(ctx, secrets, client.InNamespace(r.Namespace), client.MatchingLabels{labelConfigNode: node.Name}); err != nil {
+	if err := r.List(ctx, secrets, client.InNamespace(r.Namespace), client.MatchingLabels{labelNode: node.Name}); err != nil {
 		return err
 	}
 	candidates := secrets.Items

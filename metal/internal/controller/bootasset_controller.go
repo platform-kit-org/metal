@@ -31,7 +31,8 @@ const (
 	artifactKey = "asset.iso"
 	// configDigestAnnotation records which config digest an artifact Secret was
 	// built from. ISO recording metadata would make artifact bytes per-build, so
-	// rebuilds key on this — never on the artifact digest.
+	// rebuilds key on this — never on the artifact digest. On a rendered config
+	// Secret it carries the full digest of the config.
 	configDigestAnnotation = "os.platform-kit.org/config-digest"
 )
 

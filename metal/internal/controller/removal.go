@@ -42,7 +42,8 @@ const (
 	// TalosNode was deleted while its claim stays.
 	purposeRemove = "remove"
 
-	// labelNode on a lifecycle operation names the TalosNode it acts for.
+	// labelNode on a lifecycle operation names the TalosNode it acts for,
+	// and on a rendered config Secret the TalosNode it configures.
 	labelNode = "os.platform-kit.org/node"
 
 	// annotationReinstallOf on a reinstall operation is the hand-off time

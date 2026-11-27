@@ -40,29 +40,20 @@ const (
 	// releaseFinalizer holds a deleted claim until its machine is handed back.
 	releaseFinalizer = "metal.platform-kit.org/release"
 
-	// Labels joining the operator's operations back to the claim they serve —
-	// operations live in the operator's namespace, claims wherever they are.
-	labelClaimNamespace = "metal.platform-kit.org/claim-namespace"
-	labelClaimName      = "metal.platform-kit.org/claim-name"
-	labelClaimUID       = "metal.platform-kit.org/claim-uid"
-	labelPurpose        = "metal.platform-kit.org/purpose"
-	purposeProvision    = "provision"
-	purposeRelease      = "release"
+	// Short names of the API keys, so that the functions a specification
+	// names keep their text.
+	labelClaimNamespace       = metalv1alpha1.LabelClaimNamespace
+	labelClaimName            = metalv1alpha1.LabelClaimName
+	labelClaimUID             = metalv1alpha1.LabelClaimUID
+	annotationReleasePowerOff = metalv1alpha1.AnnotationReleasePowerOff
+
+	labelPurpose     = "metal.platform-kit.org/purpose"
+	purposeProvision = "provision"
+	purposeRelease   = "release"
 
 	// annotationConfigDigest on a boot operation names the rendered config
 	// it boots, so its success can be recorded with the digest.
 	annotationConfigDigest = "metal.platform-kit.org/config-digest"
-
-	// annotationReleasePowerOff on a Host names the UID of the claim whose
-	// release powers the machine off. The executor writes it when a boot of
-	// the claim starts, before its first BMC write; the release writes it
-	// when it decides. It keeps that decision after the records it was read
-	// from are gone: the boot operations are deleted to stop the boot or by
-	// pk-metal retry, and the release operation itself can be deleted by
-	// pk-metal retry or by its TTL. Without it, the next pass would find no
-	// boot and hand back a machine that is still mid-boot. releaseAll
-	// removes it when the host is unbound.
-	annotationReleasePowerOff = "metal.platform-kit.org/release-power-off"
 
 	// labelProvisioning marks BootAssets the lane created for itself.
 	labelProvisioning = "metal.platform-kit.org/provisioning"

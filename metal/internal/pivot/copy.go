@@ -27,12 +27,7 @@ import (
 	pkscheme "github.com/dennisklein/platform-kit/metal/internal/scheme"
 )
 
-// Keys the operator puts on objects that carry a HostClaim's UID
-// (internal/controller/provisioning.go). A claim has another UID on the
-// target, so each is rewritten.
 const (
-	labelClaimUID             = "metal.platform-kit.org/claim-uid"
-	annotationReleasePowerOff = "metal.platform-kit.org/release-power-off"
 	// impersonatedMover is the user the move creates HostClaims as: the
 	// claim policy lets only an admin name a TalosNode.
 	impersonatedMover = "pk-metal-pivot"
@@ -165,15 +160,15 @@ func (r *rewriter) rewrite(src *unstructured.Unstructured) (out *unstructured.Un
 		}
 		return v, false
 	}
-	if labels := out.GetLabels(); labels[labelClaimUID] != "" {
-		v, ok := claimUID(labels[labelClaimUID])
-		labels[labelClaimUID] = v
+	if labels := out.GetLabels(); labels[metalv1alpha1.LabelClaimUID] != "" {
+		v, ok := claimUID(labels[metalv1alpha1.LabelClaimUID])
+		labels[metalv1alpha1.LabelClaimUID] = v
 		out.SetLabels(labels)
 		complete = complete && ok
 	}
-	if ann := out.GetAnnotations(); ann[annotationReleasePowerOff] != "" {
-		v, ok := claimUID(ann[annotationReleasePowerOff])
-		ann[annotationReleasePowerOff] = v
+	if ann := out.GetAnnotations(); ann[metalv1alpha1.AnnotationReleasePowerOff] != "" {
+		v, ok := claimUID(ann[metalv1alpha1.AnnotationReleasePowerOff])
+		ann[metalv1alpha1.AnnotationReleasePowerOff] = v
 		out.SetAnnotations(ann)
 		complete = complete && ok
 	}

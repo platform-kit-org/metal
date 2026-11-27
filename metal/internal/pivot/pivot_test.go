@@ -32,8 +32,8 @@ func TestRewriteOwnerReferencesAndClaimUIDs(t *testing.T) {
 	host.SetName("node-1")
 	host.SetUID("host-src")
 	host.SetResourceVersion("42")
-	host.SetLabels(map[string]string{labelClaimUID: "claim-src"})
-	host.SetAnnotations(map[string]string{annotationReleasePowerOff: "claim-gone"})
+	host.SetLabels(map[string]string{metalv1alpha1.LabelClaimUID: "claim-src"})
+	host.SetAnnotations(map[string]string{metalv1alpha1.AnnotationReleasePowerOff: "claim-gone"})
 	host.SetOwnerReferences([]metav1.OwnerReference{
 		{APIVersion: metalGV.String(), Kind: "ManagementEndpoint", Name: "bmc-1", UID: "ep-src"},
 		{APIVersion: "cert-manager.io/v1", Kind: "CertificateRequest", Name: "x", UID: "cr"},
@@ -49,8 +49,8 @@ func TestRewriteOwnerReferencesAndClaimUIDs(t *testing.T) {
 	assert.Equal(t, types.UID("ep-dst"), out.GetOwnerReferences()[0].UID)
 	uid, _, _ := unstructured.NestedString(out.Object, "spec", "claimRef", "uid")
 	assert.Equal(t, "claim-dst", uid)
-	assert.Equal(t, "claim-dst", out.GetLabels()[labelClaimUID])
-	assert.Equal(t, "claim-gone", out.GetAnnotations()[annotationReleasePowerOff],
+	assert.Equal(t, "claim-dst", out.GetLabels()[metalv1alpha1.LabelClaimUID])
+	assert.Equal(t, "claim-gone", out.GetAnnotations()[metalv1alpha1.AnnotationReleasePowerOff],
 		"a UID of a claim gone on both sides is a record and stays")
 	assert.Equal(t, types.UID("host-src"), host.GetUID(), "the source object is not changed")
 }

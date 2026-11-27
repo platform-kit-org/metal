@@ -53,7 +53,8 @@ func TestStepBudgetCountsFromTheFirstLook(t *testing.T) {
 }
 
 // TestPassesOnOneBMCDoNotOverlap: a pass on another machine behind the same
-// BMC holds the BMC; this pass comes back later and touches nothing.
+// BMC holds the BMC; this pass comes back later and touches nothing. Its
+// status says that it is approved and why it waits.
 func TestPassesOnOneBMCDoNotOverlap(t *testing.T) {
 	op := preClearedOp(metalv1alpha1.HostOperationAction{PowerOff: &metalv1alpha1.PowerOffAction{}})
 	r, _, rec := executorFor(t, "huawei-2288h-v5", op)
@@ -72,6 +73,11 @@ func TestPassesOnOneBMCDoNotOverlap(t *testing.T) {
 	require.NoError(t, r.Get(t.Context(), key, got))
 	assert.Nil(t, got.Status.Baseline, "not started")
 	assert.Empty(t, rec.powers)
+	assert.True(t, meta.IsStatusConditionTrue(got.Status.Conditions, metalv1alpha1.ConditionApproved))
+	ex := meta.FindStatusCondition(got.Status.Conditions, metalv1alpha1.ConditionExecuted)
+	require.NotNil(t, ex, "the status says why it waits")
+	assert.Equal(t, metalv1alpha1.ReasonOperationQueued, ex.Reason)
+	assert.Contains(t, ex.Message, "host-a")
 
 	r.locks.unlock(other)
 	require.True(t, opSucceeded(runOp(t, r)))

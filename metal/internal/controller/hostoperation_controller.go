@@ -321,10 +321,15 @@ func (r *HostOperationReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	// queue check below and the baseline write are one step only while no
 	// other pass on the host runs between them, and one BMC is driven by one
 	// pass at a time, as before. A pass that finds either taken comes back
-	// later; it changed nothing yet.
+	// later; it changed nothing yet. Its status says that it is approved
+	// and that it waits.
 	keys := passKeys(host)
 	if !r.locks.tryLock(keys) {
-		return ctrl.Result{RequeueAfter: r.waitInterval()}, nil
+		if op.Status.Baseline == nil {
+			setCond(metalv1alpha1.ConditionExecuted, metav1.ConditionUnknown, metalv1alpha1.ReasonOperationQueued,
+				"another pass runs on host "+host.Name+" or on a BMC that manages it; this one starts after it")
+		}
+		return ctrl.Result{RequeueAfter: r.waitInterval()}, client.IgnoreNotFound(flush())
 	}
 	defer r.locks.unlock(keys)
 

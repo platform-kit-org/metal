@@ -61,7 +61,7 @@ Step through the figure, or use the arrow keys.
 4. If the operation names a rollout, check that the approved plan of the [](kind:TalosRollout) covers it. If not, fail with `RolloutRefused`.
 5. If an action is not known to this operator version, fail the operation before it starts.
 6. If another operation holds the Host, wait with `OperationQueued`.
-7. Take the locks on the Host and on each BMC of the Host. If one is busy, try again after 5 seconds.
+7. Take the locks on the Host and on each BMC of the Host. If one is busy, wait with `OperationQueued` and try again after 5 seconds.
 8. Before the start only: hold for maintenance, for a closed maintenance window, and for the self guard.
 9. Start: check the queue against the API server, read the BMC baseline, and ask the self guard and the cluster guard again. Write the baseline last.
 10. Run the steps from the last recorded step. Before each step, check for an abort, the pass budget and, for a disruptive step, the cluster guard.
@@ -130,7 +130,7 @@ An Unknown reason other than `Executing` is the `blockedOn` of the operation. Th
 | Phase Failed, `StepFailed` | A step failed or its wait ran out. | Use [](rb:operation-failed). |
 | Waits with `OutsideMaintenanceWindow` | A window covers the Host and is closed. | Wait, or set `metal.platform-kit.org/ignore-window`. See [](ctrl:maintenancewindow). |
 | Waits with `ClusterDisruption` | Etcd would not stay healthy. | Use [](rb:etcd-unhealthy). |
-| Waits with `OperationQueued` | Another operation holds the Host. | Approve or delete that one first. See [](howto:approve-hold-retry). |
+| Waits with `OperationQueued` | Another operation holds the Host, or a pass runs on a Host behind the same BMC. | Approve or delete that one first. A pass on the same BMC ends by itself. See [](howto:approve-hold-retry). |
 | Waits with `NoReachablePath` before the first step | The executor could not read the BMC for the baseline. It tries again every 5 seconds. | Use [](rb:bmc-unreachable). |
 
 <Callout type="note">

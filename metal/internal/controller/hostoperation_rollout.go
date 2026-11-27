@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -96,17 +95,5 @@ func (r *HostOperationReconciler) gateRollout(ctx context.Context, op *metalv1al
 			"covered by the approval of rollout "+op.Spec.RolloutRef.Name)
 		return ctrl.Result{}, false, nil
 	}
-	msg := why + "; nothing was done to the machine"
-	key := "rollout"
-	if len(op.Spec.Actions) > 0 {
-		key = op.Spec.Actions[0].Key()
-	}
-	op.Status.Steps = append(op.Status.Steps, metalv1alpha1.OperationStep{
-		Action: key, Phase: "Failed", Message: msg, FinishedAt: ptrTime(metav1.Now()),
-	})
-	setCond(metalv1alpha1.ConditionExecuted, metav1.ConditionFalse, metalv1alpha1.ReasonRolloutRefused, msg)
-	if r.Recorder != nil {
-		r.Recorder.Eventf(op, nil, corev1.EventTypeWarning, metalv1alpha1.ReasonRolloutRefused, "Execute", "%s", msg)
-	}
-	return ctrl.Result{}, true, client.IgnoreNotFound(flush())
+	return r.refuse(op, setCond, flush, "rollout", metalv1alpha1.ReasonRolloutRefused, why+"; nothing was done to the machine")
 }

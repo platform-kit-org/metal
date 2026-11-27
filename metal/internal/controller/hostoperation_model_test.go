@@ -402,6 +402,16 @@ func runExecutorCase(t *testing.T, seed uint64, image func(string) string, image
 	// The media store is on disk: it outlives a crash of the process.
 	mediaStore, err := asset.NewStore(t.TempDir())
 	require.NoError(t, err)
+	// A pass can leave a download running in the background, and a crash
+	// does not stop it here as it would stop a process. Wait for each
+	// download before the store goes: a download that writes during the
+	// removal makes the removal fail.
+	var fetchers []*mediaFetcher
+	t.Cleanup(func() {
+		for _, f := range fetchers {
+			f.wait()
+		}
+	})
 	handle := grantHandle(types.NamespacedName{Namespace: "pk-metal", Name: "op"})
 	media.Grants.RevokeAsset(handle)
 	iso, err := asset.BuildConfigISO([]byte("version: v1alpha1\n"))
@@ -507,6 +517,8 @@ func runExecutorCase(t *testing.T, seed uint64, image func(string) string, image
 
 		// Each pass is a fresh reconciler: whatever the last one held in
 		// memory is gone, as after a restart.
+		fetches := &mediaFetcher{}
+		fetchers = append(fetchers, fetches)
 		rc := &HostOperationReconciler{
 			Client:               api,
 			CredentialsNamespace: "pk-metal",
@@ -516,6 +528,7 @@ func runExecutorCase(t *testing.T, seed uint64, image func(string) string, image
 			},
 			Media:          media,
 			Store:          mediaStore,
+			Fetches:        fetches,
 			RegistryClient: images,
 			PowerSettle:    10 * time.Millisecond,
 			PassTimeout:    time.Duration(1+r.IntN(30)) * time.Second,

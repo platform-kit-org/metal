@@ -382,12 +382,7 @@ func (r *EndpointConvergenceReconciler) credentials(ctx context.Context, ep *met
 
 	var failures []string
 	if curOK {
-		cfg, _, err := endpointTLSConfig(ctx, r.Client, r.CredentialsNamespace, ep, false)
-		if err != nil {
-			return "", "", "", err
-		}
-		cfg.Username, cfg.Password = cur.user, cur.pass
-		setErr := withSession(ctx, r.Dial, cfg, func(ctx context.Context, cl bmc.Client) error {
+		setErr := r.sessionAs(ctx, ep, cur, false, func(ctx context.Context, cl bmc.Client) error {
 			return cl.EnsureAccount(ctx, next.user, next.pass)
 		})
 		if landed(setErr) {
@@ -500,12 +495,7 @@ func (r *EndpointConvergenceReconciler) promote(ctx context.Context, ep *metalv1
 // session of the new account, which has just been seen to log in. The
 // annotation goes only once the manager took the change.
 func (r *EndpointConvergenceReconciler) retire(ctx context.Context, ep *metalv1alpha1.ManagementEndpoint, sec *corev1.Secret, cur managedCred, old string) (metav1.ConditionStatus, string, string, error) {
-	cfg, _, err := endpointTLSConfig(ctx, r.Client, r.CredentialsNamespace, ep, false)
-	if err != nil {
-		return "", "", "", err
-	}
-	cfg.Username, cfg.Password = cur.user, cur.pass
-	if err := withSession(ctx, r.Dial, cfg, func(ctx context.Context, cl bmc.Client) error {
+	if err := r.sessionAs(ctx, ep, cur, false, func(ctx context.Context, cl bmc.Client) error {
 		return cl.DisableAccount(ctx, old)
 	}); err != nil {
 		return metav1.ConditionFalse, metalv1alpha1.ReasonAccountRetireFailed,
@@ -600,12 +590,7 @@ func (r *EndpointConvergenceReconciler) probe(ctx context.Context, ep *metalv1al
 	if wait := r.logins.wait(key); wait > 0 {
 		return fmt.Errorf("the manager refused this password for %s before; the next login with it is in %s", user, wait.Round(time.Second))
 	}
-	cfg, _, err := endpointTLSConfig(ctx, r.Client, r.CredentialsNamespace, ep, true)
-	if err != nil {
-		return err
-	}
-	cfg.Username, cfg.Password = user, pass
-	err = withSession(ctx, r.Dial, cfg, func(ctx context.Context, cl bmc.Client) error {
+	err := r.sessionAs(ctx, ep, managedCred{user, pass}, true, func(ctx context.Context, cl bmc.Client) error {
 		_, err := cl.Manager(ctx)
 		return err
 	})
@@ -628,12 +613,7 @@ func (r *EndpointConvergenceReconciler) repair(ctx context.Context, ep *metalv1a
 	if err != nil {
 		return fmt.Errorf("factory credentials: %w", err)
 	}
-	cfg, _, err := endpointTLSConfig(ctx, r.Client, r.CredentialsNamespace, ep, false)
-	if err != nil {
-		return err
-	}
-	cfg.Username, cfg.Password = fuser, fpass
-	if err := withSession(ctx, r.Dial, cfg, func(ctx context.Context, cl bmc.Client) error {
+	if err := r.sessionAs(ctx, ep, managedCred{fuser, fpass}, false, func(ctx context.Context, cl bmc.Client) error {
 		return cl.EnsureAccount(ctx, user, pass)
 	}); err != nil {
 		return fmt.Errorf("factory session: %w", err)
@@ -642,6 +622,17 @@ func (r *EndpointConvergenceReconciler) repair(ctx context.Context, ep *metalv1a
 	// nothing any more.
 	r.logins.forget(loginKey(ep.Name, user, pass))
 	return nil
+}
+
+// sessionAs runs fn in a session to the endpoint as the given account.
+func (r *EndpointConvergenceReconciler) sessionAs(ctx context.Context, ep *metalv1alpha1.ManagementEndpoint, as managedCred, readOnly bool,
+	fn func(context.Context, bmc.Client) error) error {
+	cfg, _, err := endpointTLSConfig(ctx, r.Client, r.CredentialsNamespace, ep, readOnly)
+	if err != nil {
+		return err
+	}
+	cfg.Username, cfg.Password = as.user, as.pass
+	return withSession(ctx, r.Dial, cfg, fn)
 }
 
 // matchedEndpointProfiles selects profiles against the endpoint's labels.

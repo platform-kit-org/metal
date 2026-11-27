@@ -156,7 +156,8 @@ func (r *ManagementEndpointReconciler) observe(ctx context.Context, ep *metalv1a
 	if pinsKeys(ep) && !r.checkPin(ctx, ep) {
 		return
 	}
-	cfg, reason, err := r.connectConfig(ctx, ep)
+	// The read-only rail: this reconciler writes nothing to a BMC.
+	cfg, reason, err := endpointClientConfig(ctx, r.Client, r.CredentialsNamespace, ep, true)
 	if err != nil {
 		setCond(metalv1alpha1.ConditionReachable, metav1.ConditionFalse, reason, err.Error())
 		return
@@ -203,12 +204,6 @@ func (r *ManagementEndpointReconciler) noteAuthentication(ctx context.Context, e
 			"endpoint", ep.Name)
 	}
 	ep.Status.Authentication = auth
-}
-
-// connectConfig resolves the read-only observation config (the read-only rail — nothing
-// in the endpoint reconciler writes to a BMC).
-func (r *ManagementEndpointReconciler) connectConfig(ctx context.Context, ep *metalv1alpha1.ManagementEndpoint) (gofishclient.Config, string, error) {
-	return endpointClientConfig(ctx, r.Client, r.CredentialsNamespace, ep, true)
 }
 
 // managedCredsName is the managed-credential Secret an EndpointProfile

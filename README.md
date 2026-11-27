@@ -41,7 +41,7 @@ with KVM, Docker, QEMU with OVMF, `sudo`, and about 12 GiB of free memory.
 All other tools come from [mise](https://mise.jdx.dev/).
 
 ```sh
-mise install
+mise trust && mise install
 mise run lab:doctor    # check the prerequisites; changes nothing
 mise run lab:up        # start the virtual lab
 ```

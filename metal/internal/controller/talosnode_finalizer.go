@@ -110,14 +110,15 @@ func (r *TalosNodeMemberReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	return ctrl.Result{}, nil
 }
 
+func (r *TalosNodeMemberReconciler) reader() client.Reader {
+	return uncachedReader(r.APIReader, r.Client)
+}
+
 // blocked says what the deletion of node still waits for, "" for nothing.
 //
 //pk:uncached
 func (r *TalosNodeMemberReconciler) blocked(ctx context.Context, node *osv1alpha1.TalosNode) (string, string, error) {
-	reader := client.Reader(r.Client)
-	if r.APIReader != nil {
-		reader = r.APIReader
-	}
+	reader := r.reader()
 	claims := &metalv1alpha1.HostClaimList{}
 	if err := reader.List(ctx, claims); err != nil {
 		return "", "", err

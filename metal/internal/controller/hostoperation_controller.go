@@ -159,12 +159,8 @@ type HostOperationReconciler struct {
 	recoveries sync.Map
 }
 
-// reader is the uncached reader when one is wired, the client otherwise.
 func (r *HostOperationReconciler) reader() client.Reader {
-	if r.APIReader != nil {
-		return r.APIReader
-	}
-	return r.Client
+	return uncachedReader(r.APIReader, r.Client)
 }
 
 // exec is one pass over one operation: the operation, its BMC session (opened

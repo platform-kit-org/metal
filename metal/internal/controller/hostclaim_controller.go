@@ -79,13 +79,7 @@ type HostClaimReconciler struct {
 	SupportsAction func(key string) bool
 }
 
-// reader is the uncached reader when one is wired, the client otherwise.
-func (r *HostClaimReconciler) reader() client.Reader {
-	if r.APIReader != nil {
-		return r.APIReader
-	}
-	return r.Client
-}
+func (r *HostClaimReconciler) reader() client.Reader { return uncachedReader(r.APIReader, r.Client) }
 
 // defaultReleaseShutdownTimeout mirrors the manager's flag default.
 const defaultReleaseShutdownTimeout = 5 * time.Minute

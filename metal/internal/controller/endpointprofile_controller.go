@@ -783,13 +783,8 @@ func randomPassword() (string, error) {
 	return string(out), nil
 }
 
-// reader is the uncached reader when one is wired, the client otherwise — a
-// direct construction in a test stays working, it just reads the cache.
 func (r *EndpointConvergenceReconciler) reader() client.Reader {
-	if r.APIReader != nil {
-		return r.APIReader
-	}
-	return r.Client
+	return uncachedReader(r.APIReader, r.Client)
 }
 
 func (r *EndpointConvergenceReconciler) SetupWithManager(mgr ctrl.Manager) error {

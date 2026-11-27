@@ -91,6 +91,8 @@ func (r *ProtectionReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	return ctrl.Result{}, nil
 }
 
+func (r *ProtectionReconciler) reader() client.Reader { return uncachedReader(r.APIReader, r.Client) }
+
 // liveHosts lists the hosts from the API server. The protection finalizer
 // on a deleting endpoint is the last thing that holds it: once it comes off,
 // the endpoint goes, and the release can no longer power the machine off
@@ -99,12 +101,8 @@ func (r *ProtectionReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 //
 //pk:uncached
 func (r *ProtectionReconciler) liveHosts(ctx context.Context) ([]metalv1alpha1.Host, error) {
-	reader := client.Reader(r.Client)
-	if r.APIReader != nil {
-		reader = r.APIReader
-	}
 	hosts := &metalv1alpha1.HostList{}
-	if err := reader.List(ctx, hosts); err != nil {
+	if err := r.reader().List(ctx, hosts); err != nil {
 		return nil, err
 	}
 	return hosts.Items, nil

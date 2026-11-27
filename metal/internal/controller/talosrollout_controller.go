@@ -683,13 +683,7 @@ func rolloutStarted(ro *osv1alpha1.TalosRollout) bool {
 	})
 }
 
-// reader is the uncached reader when one is wired, the client otherwise.
-func (r *TalosRolloutReconciler) reader() client.Reader {
-	if r.APIReader != nil {
-		return r.APIReader
-	}
-	return r.Client
-}
+func (r *TalosRolloutReconciler) reader() client.Reader { return uncachedReader(r.APIReader, r.Client) }
 
 // healthGate checks, live, that the cluster can take the next step: every
 // etcd member answers, votes and reports no error, and every Kubernetes Node

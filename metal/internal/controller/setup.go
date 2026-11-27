@@ -199,6 +199,17 @@ func SetupAll(mgr ctrl.Manager, o Options, lanes ...Lane) error {
 	return nil
 }
 
+// uncachedReader is the reader of a decision that a later pass cannot
+// undo: the API reader when one is wired, the client otherwise.
+// SetupWithManager wires the manager's API reader. A unit test that builds
+// a reconciler without one reads the cache.
+func uncachedReader(api client.Reader, c client.Client) client.Reader {
+	if api != nil {
+		return api
+	}
+	return c
+}
+
 // reconciler builds the reconciler of one lane from o.
 func (o Options) reconciler(mgr ctrl.Manager, l Lane) (string, reconciler) {
 	c := mgr.GetClient()

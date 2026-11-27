@@ -24,7 +24,7 @@ It mounts the installer and the node configuration as virtual media on the BMC, 
   <dt>Boot override</dt>
   <dd>A one-time boot device that the BMC uses at the next start, here the virtual CD.</dd>
   <dt>Grant</dt>
-  <dd>A random token in the media URL, for one operation only. The first BMC address that uses it owns it. A medium that carries a secret also gets a one-time user and password.</dd>
+  <dd>The access of a BMC to the media of one operation. See [Grants](ref:media-store#grants).</dd>
   <dt>Check-in</dt>
   <dd>The moment when the installed node runs its configuration and answers the operator over the Talos API.</dd>
 </dl>

@@ -257,12 +257,12 @@ terms:
     kind: noun
     domain: redfish
     forms: [grant, grants, media grant, media grants]
-    see: concept:virtual-media-boot
+    see: ref:media-store#grants
     related: [media-service, virtual-media]
     def: >-
-      A one-time user name and password for one boot image on the media
-      service. A BMC must have a grant to download the image. The grant stops
-      when the operation ends.
+      A random token in the media URL for one medium of one operation. The
+      first address that fetches it owns it. A medium that carries a secret
+      also gets a one-time user name and password.
 
   - id: media-service
     term: media service

@@ -6,10 +6,11 @@ import (
 )
 
 // AnnotationRetry on a failed convergence proposal (spec.reason
-// BiosConvergence or FirmwareConvergence) asks the operator for the same plan
-// again: it deletes the failed operation and proposes a new one, which waits
-// for approval like the first. pk-metal retry sets it. Deleting such an
-// operation instead is not a retry: deletion is how a proposal is refused.
+// BiosConvergence, FirmwareConvergence or SystemFirmwareConvergence) asks the
+// operator for the same plan again: it deletes the failed operation and
+// proposes a new one, which waits for approval like the first. pk-metal retry
+// sets it. Deleting such an operation instead is not a retry: deletion is how
+// a proposal is refused.
 const AnnotationRetry = "metal.platform-kit.org/retry"
 
 // AnnotationAbort on a HostOperation asks the executor to stop it. The value

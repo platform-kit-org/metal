@@ -35,7 +35,7 @@ func init() {
 		{name: "approve", synopsis: "[-n namespace] [--yes] [<operation> | <namespace>/<operation> ...]", run: approveCmd, changes: true,
 			summary: "show what a proposed operation will do to a machine, then let it run; several names: one plan and one answer each; without a name, list the operations that wait for approval"},
 		{name: "retry", synopsis: "[-n namespace] <operation> | <namespace>/<operation>", run: retryCmd, changes: true,
-			summary: "delete a failed or aborted operation, so that the operator proposes it again (it then waits for approval again); a BIOS or firmware proposal is marked for retry instead"},
+			summary: "delete a failed or aborted operation, so that the operator proposes it again (it then waits for approval again); a BIOS, firmware or system firmware proposal is marked for retry instead"},
 		{name: "abort", synopsis: "[-n namespace] [--reason text] <operation> | <namespace>/<operation>", run: abortCmd, changes: true,
 			summary: "stop an operation before its next step and undo what it left behind (media, boot override, cordon)"},
 		{name: "reboot", synopsis: "[--mode default|powercycle] [--drain-timeout d] [--grace-period s] [--delete-emptydir-data] <node>", run: rebootCmd, changes: true,

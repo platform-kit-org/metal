@@ -140,7 +140,7 @@ Set these annotations on the HostOperation. The value tells who asked and why.
   </dd>
   <dt>`metal.platform-kit.org/retry`</dt>
   <dd>
-    On a failed BIOS or firmware proposal: the operator deletes it and proposes the same plan again, as a new operation that waits for approval.
+    On a failed BIOS, firmware or system firmware proposal: the operator deletes it and proposes the same plan again. The new operation waits for approval.
     [](cli:retry) sets it. For other operations, `retry` deletes the failed operation and the controller proposes it again.
   </dd>
   <dt>`metal.platform-kit.org/override-cluster-guard`</dt>

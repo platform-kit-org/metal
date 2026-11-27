@@ -21,9 +21,10 @@ func init() {
 A failed operation stays in the cluster, so that you can read why it failed
 (pk-metal status shows the reason). The operator does not try again while it
 is there. retry deletes it; the operator then proposes the same plan again,
-and the new operation waits for approval like the first one. A BIOS or
-firmware proposal is not deleted by retry but marked for retry: the operator
-itself replaces it, because deleting a proposal is how it is refused.
+and the new operation waits for approval like the first one. A BIOS,
+firmware or system firmware proposal is not deleted by retry but marked for
+retry: the operator itself replaces it, because deleting a proposal is how it
+is refused.
 
 Only what the operator proposed comes back by itself. For an operation that a
 person made (pk-metal reboot, pk-metal restore) or a step of a rollout, retry
@@ -68,10 +69,11 @@ func retryCmd(args []string) {
 }
 
 // convergenceProposal reports an operation the convergence lane proposed for
-// a BIOS or firmware plan.
+// a BIOS, firmware or system firmware plan.
 func convergenceProposal(op *metalv1alpha1.HostOperation) bool {
 	switch op.Spec.Reason {
-	case metalv1alpha1.OperationReasonBiosConvergence, metalv1alpha1.OperationReasonFirmwareConvergence:
+	case metalv1alpha1.OperationReasonBiosConvergence, metalv1alpha1.OperationReasonFirmwareConvergence,
+		metalv1alpha1.OperationReasonSystemFirmwareConvergence:
 		return true
 	}
 	return false

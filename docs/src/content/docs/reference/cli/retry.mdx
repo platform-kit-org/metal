@@ -50,7 +50,7 @@ While it is there, the operator does not try again.
 Two cases are different:
 
 <dl>
-  <dt>BIOS or firmware proposal</dt>
+  <dt>BIOS, firmware or system firmware proposal</dt>
   <dd>The command does not delete the operation. It sets the annotation `metal.platform-kit.org/retry`, and the operator replaces the operation. If you delete such a proposal, the operator reads this as a refusal.</dd>
   <dt>Operation that the operator does not propose again</dt>
   <dd>The command deletes the operation. Then it tells you how to make the operation again. Refer to the table below.</dd>
@@ -88,7 +88,7 @@ pk-metal hold --reason "disk fault" default/cp-2
 | Object | Access | Purpose |
 | --- | --- | --- |
 | [](kind:HostOperation) | get, list, delete | Reads the result and deletes the operation. |
-| [](kind:HostOperation) | patch | Sets `metal.platform-kit.org/retry` on a BIOS or firmware proposal. |
+| [](kind:HostOperation) | patch | Sets `metal.platform-kit.org/retry` on a BIOS, firmware or system firmware proposal. |
 | [](kind:HostClaim) | get | Finds if the claim is on hold. |
 
 ## Exit status

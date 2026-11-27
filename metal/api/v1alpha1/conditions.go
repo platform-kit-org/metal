@@ -19,6 +19,10 @@ const (
 	// ConditionFirmwareConverged: firmware matches the matched FirmwareProfile.
 	// Firmware converges before BIOS — the BIOS schema depends on firmware.
 	ConditionFirmwareConverged = "FirmwareConverged"
+	// ConditionSystemFirmwareConverged: on a Host, whether the system
+	// firmware (BIOS/UEFI, NIC, RAID) its FirmwareProfiles ask for is what
+	// the inventory reports. Absent when no profile asks for any.
+	ConditionSystemFirmwareConverged = "SystemFirmwareConverged"
 	// ConditionBiosConverged: BIOS settings match the materialized BiosSettings.
 	ConditionBiosConverged = "BiosConverged"
 	// ConditionBooted: the OS payload has been handed off and the machine came up.
@@ -73,6 +77,12 @@ const (
 	// ReasonExecuting on Executed=Unknown: the baseline is persisted and steps are
 	// being issued.
 	ReasonExecuting = "Executing"
+	// ReasonOutsideMaintenanceWindow on Executed=Unknown of an approved
+	// operation that has not started: a MaintenanceWindow covers its host
+	// and none of the windows that cover it is open. The operation starts
+	// when one opens; an operation already running is never stopped by a
+	// window closing. Also the operation's blockedOn.
+	ReasonOutsideMaintenanceWindow = "OutsideMaintenanceWindow"
 	// ReasonStepsSucceeded on Executed=True: every action converged to its goal.
 	ReasonStepsSucceeded = "StepsSucceeded"
 	// ReasonStepFailed on Executed=False: a step failed — terminal, a human decides.
@@ -109,10 +119,10 @@ const (
 )
 
 // Reasons on the convergence conditions (BiosSettings' Converged, the Host's
-// FirmwareConverged / BiosConverged). Each hold alerts and holds: the
-// condition blocks, and nothing destructive follows. An unchanged planHash
-// never makes a second operation. To continue, a person changes the desired
-// state (a profile edit), which changes the hash.
+// FirmwareConverged / BiosConverged / SystemFirmwareConverged). Each hold
+// alerts and holds: the condition blocks, and nothing destructive follows. An
+// unchanged planHash never makes a second operation. To continue, a person
+// changes the desired state (a profile edit), which changes the hash.
 const (
 	// ReasonInSync on Converged=True: observed matches desired.
 	ReasonInSync = "InSync"
@@ -145,6 +155,15 @@ const (
 	// advertises the proven multipart-push dialect — drift is visible but no
 	// flash is proposed over an unproven transport.
 	ReasonNoUpdateTransport = "NoUpdateTransport"
+	// ReasonNoMatchingComponent on SystemFirmwareConverged=False: a profile
+	// names a component that no FirmwareInventory entry of the machine
+	// matches. Nothing is proposed for a component that cannot be found.
+	ReasonNoMatchingComponent = "NoMatchingComponent"
+	// ReasonInstalledNodeMissing on BiosConverged=False or
+	// FirmwareConverged=False: the host's claim says it runs a TalosNode
+	// that no longer exists. The node cannot be drained, so no change that
+	// reboots the machine is proposed until the record and the node agree.
+	ReasonInstalledNodeMissing = "InstalledNodeMissing"
 )
 
 // Reasons on the endpoint's Configured condition (the EndpointProfile lanes).

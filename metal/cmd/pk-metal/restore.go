@@ -62,9 +62,6 @@ examples:
 https://metal.platform-kit.org/operate/day-2/restore-etcd/ walks through each case.`
 }
 
-// restoreReason is the spec.reason of the operations restore proposes.
-const restoreReason = "EtcdRestore"
-
 // labelRestoreCluster marks the operations restore proposes for a cluster.
 const labelRestoreCluster = "os.platform-kit.org/etcd-restore"
 
@@ -477,7 +474,7 @@ func (p *restorePlan) op(host, suffix string, actions []metalv1alpha1.HostOperat
 			},
 		},
 		Spec: metalv1alpha1.HostOperationSpec{
-			HostRef: metalv1alpha1.Reference{Name: host}, Reason: restoreReason,
+			HostRef: metalv1alpha1.Reference{Name: host}, Reason: metalv1alpha1.OperationReasonEtcdRestore,
 			ProposedBy: p.in.User, Actions: actions,
 		},
 	}

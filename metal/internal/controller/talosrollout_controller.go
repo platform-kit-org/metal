@@ -514,7 +514,7 @@ func (r *TalosRolloutReconciler) startStep(ctx context.Context, ro *osv1alpha1.T
 		Spec: metalv1alpha1.HostOperationSpec{
 			HostRef:    metalv1alpha1.Reference{Name: step.Host},
 			ProposedBy: r.Proposer,
-			Reason:     OperationReasonRollout,
+			Reason:     metalv1alpha1.OperationReasonTalosRollout,
 			PlanHash:   ro.Status.PlanHash,
 			Actions:    rolloutActions(ro, step),
 			// The rollout's approval covers this operation; the executor

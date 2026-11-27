@@ -68,17 +68,6 @@ func retryCmd(args []string) {
 	}
 }
 
-// convergenceProposal reports an operation the convergence lane proposed for
-// a BIOS, firmware or system firmware plan.
-func convergenceProposal(op *metalv1alpha1.HostOperation) bool {
-	switch op.Spec.Reason {
-	case metalv1alpha1.OperationReasonBiosConvergence, metalv1alpha1.OperationReasonFirmwareConvergence,
-		metalv1alpha1.OperationReasonSystemFirmwareConvergence:
-		return true
-	}
-	return false
-}
-
 // retry deletes a failed operation, or marks a failed convergence proposal
 // for retry, after saying what happens next.
 func retry(ctx context.Context, cl client.Client, namespace, name string, w io.Writer) error {
@@ -99,7 +88,7 @@ func retry(ctx context.Context, cl client.Client, namespace, name string, w io.W
 		}
 		fmt.Fprintf(w, "operation %s %s: %s\n", ref, verb, why)
 	}
-	if convergenceProposal(op) {
+	if metalv1alpha1.ConvergenceReason(op.Spec.Reason) {
 		// Deleting a convergence proposal reads as refusing it, so the
 		// operator would never propose it again. The mark asks for the
 		// retry; the operator deletes this operation and proposes anew.
@@ -153,7 +142,7 @@ func recreateHint(op *metalv1alpha1.HostOperation) string {
 	if cluster := op.Labels[labelRestoreCluster]; cluster != "" {
 		return fmt.Sprintf("Nothing proposes it again. Propose the repair again: pk-metal restore plan %s --propose", cluster)
 	}
-	if op.Spec.Reason == "Reboot" {
+	if op.Spec.Reason == metalv1alpha1.OperationReasonReboot {
 		if node := rebootedNode(op); node != "" {
 			cmd := "pk-metal reboot " + node
 			if failedStep(op) == "drain" {

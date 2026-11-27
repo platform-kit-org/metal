@@ -36,11 +36,48 @@ const AnnotationAbort = "metal.platform-kit.org/abort"
 // self-protection.
 const AnnotationOverrideClusterGuard = "metal.platform-kit.org/override-cluster-guard"
 
-// Spec reasons of the operations the convergence lane proposes.
+// The values of spec.reason: why an operation exists. A Host whose operation
+// waits for approval shows it as Approval(<reason>) in blockedOn, and the
+// metrics and alerts carry it as the label reason.
 const (
-	OperationReasonBiosConvergence     = "BiosConvergence"
+	// OperationReasonProvisioning: the operator installs a machine for its
+	// claim.
+	OperationReasonProvisioning = "Provisioning"
+	// OperationReasonRelease: the operator takes the node off a machine.
+	// The claim gave the machine back, or the TalosNode was deleted while
+	// the claim keeps the machine.
+	OperationReasonRelease = "Release"
+	// OperationReasonWipe: the operator wipes the system disk of a released
+	// machine that a person asked to wipe (pk-metal wipe).
+	OperationReasonWipe = "Wipe"
+	// OperationReasonBiosConvergence: the convergence lane applies the BIOS
+	// settings of the matched profiles.
+	OperationReasonBiosConvergence = "BiosConvergence"
+	// OperationReasonFirmwareConvergence: the convergence lane flashes the
+	// BMC firmware of the matched FirmwareProfile.
 	OperationReasonFirmwareConvergence = "FirmwareConvergence"
+	// OperationReasonSystemFirmwareConvergence: the convergence lane stages
+	// system firmware (BIOS/UEFI, NIC, RAID).
+	OperationReasonSystemFirmwareConvergence = "SystemFirmwareConvergence"
+	// OperationReasonTalosRollout: a step of a TalosRollout.
+	OperationReasonTalosRollout = "TalosRollout"
+	// OperationReasonReboot: pk-metal reboot restarts a node.
+	OperationReasonReboot = "Reboot"
+	// OperationReasonEtcdRestore: pk-metal restore rebuilds the etcd of a
+	// cluster from a snapshot.
+	OperationReasonEtcdRestore = "EtcdRestore"
 )
+
+// ConvergenceReason reports a reason of the convergence lane. The lane
+// reads a deleted proposal as a refusal, so a retry marks such an operation
+// (AnnotationRetry) and does not delete it.
+func ConvergenceReason(reason string) bool {
+	switch reason {
+	case OperationReasonBiosConvergence, OperationReasonFirmwareConvergence, OperationReasonSystemFirmwareConvergence:
+		return true
+	}
+	return false
+}
 
 // OperationPhase summarizes an operation's conditions. Proposed means it exists
 // but has not been approved; AwaitingApproval that it is waiting on a human;
@@ -77,10 +114,11 @@ type HostOperationSpec struct {
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="hostRef is frozen after creation"
 	HostRef Reference `json:"hostRef"`
 
-	// Reason names the desired-state gate this operation serves (BiosConvergence,
-	// FirmwareConvergence, …); empty for a human-requested op. It becomes the
-	// Approval(<reason>) domain on the Host's blockedOn — hence the condition-reason
-	// shape.
+	// Reason says why the operation exists: Provisioning, Release, Wipe,
+	// BiosConvergence, FirmwareConvergence, SystemFirmwareConvergence,
+	// TalosRollout, Reboot or EtcdRestore. It becomes the Approval(<reason>)
+	// domain on the Host's blockedOn — hence the condition-reason shape. Empty,
+	// the Host shows the first action key there.
 	// +kubebuilder:validation:Pattern=`^[A-Za-z][A-Za-z0-9]*$`
 	// +kubebuilder:validation:MaxLength=128
 	// +optional

@@ -1252,7 +1252,7 @@
       "required": false,
       "pattern": "^[A-Za-z][A-Za-z0-9]*$",
       "maxLength": 128,
-      "description": "Reason names the desired-state gate this operation serves (BiosConvergence, FirmwareConvergence, …); empty for a human-requested op. It becomes the Approval(<reason>) domain on the Host's blockedOn — hence the condition-reason shape."
+      "description": "Reason says why the operation exists: Provisioning, Release, Wipe, BiosConvergence, FirmwareConvergence, SystemFirmwareConvergence, TalosRollout, Reboot or EtcdRestore. It becomes the Approval(<reason>) domain on the Host's blockedOn — hence the condition-reason shape. Empty, the Host shows the first action key there."
     },
     {
       "path": "spec.requestedBy",

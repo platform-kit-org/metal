@@ -317,7 +317,7 @@ func (r *HostClaimReconciler) removalOp(ctx context.Context, claim *metalv1alpha
 			ProposedBy: r.Proposer,
 			// The node's deletion asked for this removal.
 			RequestedBy:             metalv1alpha1.RequestedBy(node.Annotations, claim.Annotations),
-			Reason:                  reasonRelease,
+			Reason:                  metalv1alpha1.OperationReasonRelease,
 			Actions:                 actions,
 			Approval:                metalv1alpha1.OperationApproval{Required: ptr.To(releaseNeedsPerson(claim, host, ops))},
 			TTLSecondsAfterFinished: ptr.To(releaseTTL),

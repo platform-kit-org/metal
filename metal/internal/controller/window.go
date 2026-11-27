@@ -149,7 +149,7 @@ func windowExempt(op *metalv1alpha1.HostOperation) string {
 	if why, ok := guardOverride(op, metalv1alpha1.AnnotationIgnoreWindow); ok {
 		return "annotated " + metalv1alpha1.AnnotationIgnoreWindow + ": " + why
 	}
-	if op.Spec.Reason == reasonProvisioning {
+	if op.Spec.Reason == metalv1alpha1.OperationReasonProvisioning {
 		return "a new install disturbs no running workload"
 	}
 	return ""

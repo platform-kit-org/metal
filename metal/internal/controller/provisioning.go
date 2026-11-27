@@ -67,10 +67,6 @@ const (
 	// labelProvisioning marks BootAssets the lane created for itself.
 	labelProvisioning = "metal.platform-kit.org/provisioning"
 
-	// Operation reasons — the Approval(<reason>) domain on the Host.
-	reasonProvisioning = "Provisioning"
-	reasonRelease      = "Release"
-
 	// releaseTTL marks a release operation as one the operator may delete
 	// once it succeeded: nothing guards on its existence once the claim is
 	// gone. It is the least time the record stays; the site's retention
@@ -667,7 +663,7 @@ func (r *HostClaimReconciler) provisionOp(claim *metalv1alpha1.HostClaim, hostNa
 			HostRef:     metalv1alpha1.Reference{Name: hostName},
 			ProposedBy:  r.Proposer,
 			RequestedBy: requestedBy,
-			Reason:      reasonProvisioning,
+			Reason:      metalv1alpha1.OperationReasonProvisioning,
 			PlanHash:    planHash(plan),
 			Actions:     actions,
 			Approval:    metalv1alpha1.OperationApproval{Required: ptr.To(required)},
@@ -1354,7 +1350,7 @@ func (r *HostClaimReconciler) releaseOp(ctx context.Context, claim *metalv1alpha
 			ProposedBy: r.Proposer,
 			// The claim's deletion or new machine asked for this release.
 			RequestedBy:             metalv1alpha1.RequestedBy(claim.Annotations),
-			Reason:                  reasonRelease,
+			Reason:                  metalv1alpha1.OperationReasonRelease,
 			Actions:                 actions,
 			Approval:                metalv1alpha1.OperationApproval{Required: ptr.To(releaseNeedsPerson(claim, host, provisionOps))},
 			TTLSecondsAfterFinished: ptr.To(releaseTTL),

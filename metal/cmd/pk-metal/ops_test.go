@@ -128,7 +128,7 @@ func TestRetryNamesHowItComesBack(t *testing.T) {
 		return &metalv1alpha1.HostOperation{
 			ObjectMeta: metav1.ObjectMeta{Namespace: "pk-metal", Name: "reboot-w-1-x7k2p"},
 			Spec: metalv1alpha1.HostOperationSpec{
-				HostRef: metalv1alpha1.Reference{Name: "pk0004"}, Reason: "Reboot", ProposedBy: "alice",
+				HostRef: metalv1alpha1.Reference{Name: "pk0004"}, Reason: metalv1alpha1.OperationReasonReboot, ProposedBy: "alice",
 				Actions: rebootPlan("w-1", osv1alpha1.RoleWorker, rebootOptions{DrainTimeout: 15 * time.Minute}),
 			},
 			Status: failedAt(step),
@@ -145,7 +145,7 @@ func TestRetryNamesHowItComesBack(t *testing.T) {
 			want: "Nothing proposes a reboot again. Propose it again: pk-metal reboot w-1\n"},
 		{name: "a restore step", op: func() *metalv1alpha1.HostOperation {
 			op := reboot("etcdRecover")
-			op.Spec.Reason, op.Labels = restoreReason, map[string]string{labelRestoreCluster: "lab"}
+			op.Spec.Reason, op.Labels = metalv1alpha1.OperationReasonEtcdRestore, map[string]string{labelRestoreCluster: "lab"}
 			return op
 		}, want: "pk-metal restore plan lab --propose"},
 		{name: "a rollout step", op: func() *metalv1alpha1.HostOperation {

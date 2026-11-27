@@ -20,9 +20,6 @@ import (
 // rolloutActions, so the actions a person approved in the plan are the actions
 // the operation carries.
 
-// OperationReasonRollout is the spec.reason of a rollout's operations.
-const OperationReasonRollout = "TalosRollout"
-
 // planHashOf hashes everything that decides what a rollout does: the
 // cluster, the kind, the target, the drain policy and every plan step. JSON
 // of Go structs has a fixed field order, so the hash is stable.

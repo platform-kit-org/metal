@@ -17,6 +17,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
@@ -635,21 +636,66 @@ func driftedKeys(desired, observed, pending map[string]any) []string {
 }
 
 func (r *ConvergenceReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	// Each pass reads the BIOS over the BMC. The filters drop the status
+	// writes that change no input of a lane: this reconciler's own
+	// conditions, a step of the executor, a check-in of a node.
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&metalv1alpha1.BiosSettings{}).
-		Watches(&metalv1alpha1.Host{}, handler.EnqueueRequestsFromMapFunc(sameName)).
+		For(&metalv1alpha1.BiosSettings{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
+		Watches(&metalv1alpha1.Host{}, handler.EnqueueRequestsFromMapFunc(sameName),
+			builder.WithPredicates(convergenceHostEvents)).
 		Watches(&metalv1alpha1.BiosProfile{}, handler.EnqueueRequestsFromMapFunc(r.allHosts)).
 		Watches(&metalv1alpha1.FirmwareProfile{}, handler.EnqueueRequestsFromMapFunc(r.allHosts)).
 		Watches(&metalv1alpha1.ManagementEndpoint{}, handler.EnqueueRequestsFromMapFunc(r.hostsBehindEndpoint)).
-		Watches(&metalv1alpha1.HostOperation{}, handler.EnqueueRequestsFromMapFunc(hostForOperation)).
+		Watches(&metalv1alpha1.HostOperation{}, handler.EnqueueRequestsFromMapFunc(hostForOperation),
+			builder.WithPredicates(convergenceOperationEvents)).
 		Watches(&metalv1alpha1.HostClaim{}, handler.EnqueueRequestsFromMapFunc(hostOfClaim)).
-		// Only a node's coming, going and spec matter to the plan; its status
-		// moves with every check-in, and each pass here reads the BIOS over
-		// the BMC.
+		// Only a node's coming, going and spec matter to the plan.
 		Watches(&osv1alpha1.TalosNode{}, handler.EnqueueRequestsFromMapFunc(r.hostsRunningNode),
 			builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Named("convergence").
 		Complete(r)
+}
+
+// convergenceHostEvents passes the Host events that change an input of a
+// lane: the spec (claim, OS), the labels (profile selection), the
+// annotations (maintenance, the guard allowances) and the management paths
+// that hostPathClient dials.
+var convergenceHostEvents = predicate.Or(
+	predicate.GenerationChangedPredicate{},
+	predicate.LabelChangedPredicate{},
+	predicate.AnnotationChangedPredicate{},
+	predicate.Funcs{UpdateFunc: func(e event.UpdateEvent) bool {
+		return !equality.Semantic.DeepEqual(e.ObjectOld.(*metalv1alpha1.Host).Status.ManagedBy,
+			e.ObjectNew.(*metalv1alpha1.Host).Status.ManagedBy)
+	}},
+)
+
+// convergenceOperationEvents passes the HostOperation events that change
+// the verdict of a plan (planVerdict, withdrawPlan): a new or deleted
+// operation, an approval (spec), a retry mark (annotation), and a new status
+// of the Approved or Executed condition.
+var convergenceOperationEvents = predicate.Or(
+	predicate.GenerationChangedPredicate{},
+	predicate.AnnotationChangedPredicate{},
+	predicate.Funcs{UpdateFunc: func(e event.UpdateEvent) bool {
+		old := e.ObjectOld.(*metalv1alpha1.HostOperation).Status.Conditions
+		cur := e.ObjectNew.(*metalv1alpha1.HostOperation).Status.Conditions
+		for _, t := range []string{metalv1alpha1.ConditionApproved, metalv1alpha1.ConditionExecuted} {
+			if conditionStatus(old, t) != conditionStatus(cur, t) {
+				return true
+			}
+		}
+		return false
+	}},
+)
+
+// conditionStatus is the status of the condition of type t, or "" when
+// there is none.
+func conditionStatus(conds []metav1.Condition, t string) metav1.ConditionStatus {
+	if c := meta.FindStatusCondition(conds, t); c != nil {
+		return c.Status
+	}
+	return ""
 }
 
 // sameName: the reconcile key IS the host name (BiosSettings share it).

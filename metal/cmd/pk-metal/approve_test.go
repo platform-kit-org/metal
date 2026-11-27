@@ -361,11 +361,17 @@ func TestNotFoundHint(t *testing.T) {
 	assert.EqualError(t, err, "no operation nope in namespace pk-metal, and in no other namespace")
 }
 
-func approvedBy(t *testing.T, cl client.Client, op *metalv1alpha1.HostOperation) string {
+// approvedBy reads back who approved obj, an operation or a rollout.
+func approvedBy(t *testing.T, cl client.Client, obj client.Object) string {
 	t.Helper()
-	got := &metalv1alpha1.HostOperation{}
-	require.NoError(t, cl.Get(context.Background(), client.ObjectKeyFromObject(op), got))
-	return got.Spec.Approval.ApprovedBy
+	switch got := fetch(t, cl, obj).(type) {
+	case *metalv1alpha1.HostOperation:
+		return got.Spec.Approval.ApprovedBy
+	case *osv1alpha1.TalosRollout:
+		return got.Spec.Approval.ApprovedBy
+	}
+	t.Fatalf("%T has no approval", obj)
+	return ""
 }
 
 func TestApprove(t *testing.T) {
@@ -505,41 +511,35 @@ func TestApproveWhatWasShown(t *testing.T) {
 		return approval{Namespace: op.Namespace, Name: op.Name, User: "alice", Interactive: true, In: in, Out: out}
 	}
 
-	t.Run("an operation created again under the name while the question was open", func(t *testing.T) {
-		op, objs := bootPlan()
-		op.UID = "first"
-		cl := fakeClient(objs...)
-		var out bytes.Buffer
-		in := &answerAfter{answer: strings.NewReader("y\n"), meanwhile: func() {
-			old := &metalv1alpha1.HostOperation{}
-			assert.NoError(t, cl.Get(ctx, client.ObjectKeyFromObject(op), old))
-			assert.NoError(t, cl.Delete(ctx, old))
-			again := op.DeepCopy()
-			again.UID, again.ResourceVersion = "second", ""
-			again.Spec.Actions = again.Spec.Actions[:1]
-			assert.NoError(t, cl.Create(ctx, again))
-		}}
-		err := approve(ctx, cl, asked(op, in, &out))
-		assert.ErrorContains(t, err, "changed since its plan was shown; nothing changed")
-		assert.Empty(t, approvedBy(t, cl, op))
-	})
-
-	t.Run("the same plan on a new object is still another object", func(t *testing.T) {
-		op, objs := bootPlan()
-		op.UID = "first"
-		cl := fakeClient(objs...)
-		var out bytes.Buffer
-		in := &answerAfter{answer: strings.NewReader("y\n"), meanwhile: func() {
-			old := &metalv1alpha1.HostOperation{}
-			assert.NoError(t, cl.Get(ctx, client.ObjectKeyFromObject(op), old))
-			assert.NoError(t, cl.Delete(ctx, old))
-			again := op.DeepCopy()
-			again.UID, again.ResourceVersion = "second", ""
-			assert.NoError(t, cl.Create(ctx, again))
-		}}
-		assert.ErrorContains(t, approve(ctx, cl, asked(op, in, &out)), "changed since its plan was shown")
-		assert.Empty(t, approvedBy(t, cl, op))
-	})
+	for _, tc := range []struct {
+		name   string
+		shrink bool // the new object has another plan
+	}{
+		{"an operation created again under the name while the question was open", true},
+		{"the same plan on a new object is still another object", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			op, objs := bootPlan()
+			op.UID = "first"
+			cl := fakeClient(objs...)
+			var out bytes.Buffer
+			// ask reads the answer on a goroutine of its own: assert, not require.
+			in := &answerAfter{answer: strings.NewReader("y\n"), meanwhile: func() {
+				old := &metalv1alpha1.HostOperation{}
+				assert.NoError(t, cl.Get(ctx, client.ObjectKeyFromObject(op), old))
+				assert.NoError(t, cl.Delete(ctx, old))
+				again := op.DeepCopy()
+				again.UID, again.ResourceVersion = "second", ""
+				if tc.shrink {
+					again.Spec.Actions = again.Spec.Actions[:1]
+				}
+				assert.NoError(t, cl.Create(ctx, again))
+			}}
+			err := approve(ctx, cl, asked(op, in, &out))
+			assert.ErrorContains(t, err, "changed since its plan was shown; nothing changed")
+			assert.Empty(t, approvedBy(t, cl, op))
+		})
+	}
 
 	t.Run("a status write while the question was open does not stop it", func(t *testing.T) {
 		op, objs := bootPlan()
@@ -555,37 +555,32 @@ func TestApproveWhatWasShown(t *testing.T) {
 		assert.Equal(t, "alice", approvedBy(t, cl, op))
 	})
 
-	t.Run("a write between the read and the patch is caught by the resourceVersion", func(t *testing.T) {
-		op, objs := bootPlan()
-		inner := fakeClient(objs...)
-		cl := &conflictOnce{Client: inner, meanwhile: func() {
-			now := &metalv1alpha1.HostOperation{}
-			require.NoError(t, inner.Get(ctx, client.ObjectKeyFromObject(op), now))
-			now.Spec.Actions = now.Spec.Actions[:1]
-			require.NoError(t, inner.Update(ctx, now))
-		}}
-		var out bytes.Buffer
-		a := asked(op, nil, &out)
-		a.Yes = true
-		assert.ErrorContains(t, approve(ctx, cl, a), "changed since its plan was shown")
-		assert.Empty(t, approvedBy(t, inner, op))
-	})
-
-	t.Run("a status write between the read and the patch is retried", func(t *testing.T) {
-		op, objs := bootPlan()
-		inner := fakeClient(objs...)
-		cl := &conflictOnce{Client: inner, meanwhile: func() {
-			now := &metalv1alpha1.HostOperation{}
-			require.NoError(t, inner.Get(ctx, client.ObjectKeyFromObject(op), now))
-			now.Status.Conditions[0].Message = "still waiting"
-			require.NoError(t, inner.Update(ctx, now))
-		}}
-		var out bytes.Buffer
-		a := asked(op, nil, &out)
-		a.Yes = true
-		require.NoError(t, approve(ctx, cl, a))
-		assert.Equal(t, "alice", approvedBy(t, inner, op))
-	})
+	for _, tc := range []struct {
+		name    string
+		change  func(*metalv1alpha1.HostOperation)
+		wantErr string
+	}{
+		{"a write between the read and the patch is caught by the resourceVersion",
+			func(now *metalv1alpha1.HostOperation) { now.Spec.Actions = now.Spec.Actions[:1] }, "changed since its plan was shown"},
+		{"a status write between the read and the patch is retried",
+			func(now *metalv1alpha1.HostOperation) { now.Status.Conditions[0].Message = "still waiting" }, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			op, objs := bootPlan()
+			inner := fakeClient(objs...)
+			cl := &conflictOnce{Client: inner, meanwhile: func() { edit(t, inner, op, tc.change) }}
+			a := asked(op, nil, &bytes.Buffer{})
+			a.Yes = true
+			err := approve(ctx, cl, a)
+			if tc.wantErr != "" {
+				assert.ErrorContains(t, err, tc.wantErr)
+				assert.Empty(t, approvedBy(t, inner, op))
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, "alice", approvedBy(t, inner, op))
+		})
+	}
 
 	t.Run("no answer within the window approves nothing", func(t *testing.T) {
 		op, objs := bootPlan()

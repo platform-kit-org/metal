@@ -74,8 +74,7 @@ func TestApproveRollout(t *testing.T) {
 		var out bytes.Buffer
 		require.NoError(t, approveRollout(ctx, cl, rolloutApproval{Name: "lab-talosupgrade-1a2b3c4d",
 			User: "alice", In: strings.NewReader("y\n"), Interactive: true, Out: &out}))
-		ro := &osv1alpha1.TalosRollout{}
-		require.NoError(t, cl.Get(ctx, client.ObjectKey{Name: "lab-talosupgrade-1a2b3c4d"}, ro))
+		ro := fetch(t, cl, planned())
 		assert.Equal(t, "alice", ro.Spec.Approval.ApprovedBy)
 		assert.Equal(t, planHash, ro.Spec.Approval.PlanHash)
 		assert.Contains(t, out.String(), "cp-1")
@@ -85,9 +84,7 @@ func TestApproveRollout(t *testing.T) {
 		err := approveRollout(ctx, cl, rolloutApproval{Name: "lab-talosupgrade-1a2b3c4d",
 			User: "alice", In: strings.NewReader("n\n"), Interactive: true, Out: &bytes.Buffer{}})
 		require.ErrorIs(t, err, errDeclined)
-		ro := &osv1alpha1.TalosRollout{}
-		require.NoError(t, cl.Get(ctx, client.ObjectKey{Name: "lab-talosupgrade-1a2b3c4d"}, ro))
-		assert.Empty(t, ro.Spec.Approval.ApprovedBy)
+		assert.Empty(t, approvedBy(t, cl, planned()))
 	})
 	t.Run("refusals", func(t *testing.T) {
 		blocked := planned()
@@ -129,17 +126,10 @@ func (p *patchRecorder) Patch(ctx context.Context, obj client.Object, patch clie
 func TestApproveRolloutWhatWasShown(t *testing.T) {
 	ctx := context.Background()
 	name := "lab-talosupgrade-1a2b3c4d"
-	approvedBy := func(t *testing.T, cl client.Client) string {
-		t.Helper()
-		ro := &osv1alpha1.TalosRollout{}
-		require.NoError(t, cl.Get(ctx, client.ObjectKey{Name: name}, ro))
-		return ro.Spec.Approval.ApprovedBy
-	}
 	for _, yes := range []bool{true, false} {
 		t.Run(fmt.Sprintf("the patch carries uid, resourceVersion and plan hash (yes=%v)", yes), func(t *testing.T) {
 			inner := fakeClient(planned())
-			read := &osv1alpha1.TalosRollout{}
-			require.NoError(t, inner.Get(ctx, client.ObjectKey{Name: name}, read))
+			read := fetch(t, inner, planned())
 			cl := &patchRecorder{Client: inner}
 			require.NoError(t, approveRollout(ctx, cl, rolloutApproval{Name: name, User: "alice", Yes: yes,
 				In: strings.NewReader("y\n"), Interactive: true, Out: &bytes.Buffer{}}))
@@ -160,44 +150,33 @@ func TestApproveRolloutWhatWasShown(t *testing.T) {
 		})
 	}
 
-	t.Run("a new plan between the read and the patch is refused with --yes", func(t *testing.T) {
-		inner := fakeClient(planned())
-		cl := &conflictOnce{Client: inner, meanwhile: func() {
-			now := &osv1alpha1.TalosRollout{}
-			require.NoError(t, inner.Get(ctx, client.ObjectKey{Name: name}, now))
+	for _, tc := range []struct {
+		name    string
+		change  func(*osv1alpha1.TalosRollout)
+		wantErr string
+	}{
+		{"a new plan between the read and the patch is refused with --yes", func(now *osv1alpha1.TalosRollout) {
 			now.Status.PlanHash = "sha256:" + strings.Repeat("b", 64)
 			now.Status.Plan = now.Status.Plan[:1]
-			require.NoError(t, inner.Update(ctx, now))
-		}}
-		err := approveRollout(ctx, cl, rolloutApproval{Name: name, User: "alice", Yes: true, Out: &bytes.Buffer{}})
-		require.ErrorContains(t, err, "changed since its plan was shown")
-		assert.Empty(t, approvedBy(t, inner))
-	})
-
-	t.Run("an abort between the read and the patch is refused with --yes", func(t *testing.T) {
-		inner := fakeClient(planned())
-		cl := &conflictOnce{Client: inner, meanwhile: func() {
-			now := &osv1alpha1.TalosRollout{}
-			require.NoError(t, inner.Get(ctx, client.ObjectKey{Name: name}, now))
-			now.Spec.Abort = true
-			require.NoError(t, inner.Update(ctx, now))
-		}}
-		err := approveRollout(ctx, cl, rolloutApproval{Name: name, User: "alice", Yes: true, Out: &bytes.Buffer{}})
-		require.ErrorContains(t, err, "changed since its plan was shown")
-		assert.Empty(t, approvedBy(t, inner))
-	})
-
-	t.Run("a status write with the same plan is read again and approved", func(t *testing.T) {
-		inner := fakeClient(planned())
-		cl := &conflictOnce{Client: inner, meanwhile: func() {
-			now := &osv1alpha1.TalosRollout{}
-			require.NoError(t, inner.Get(ctx, client.ObjectKey{Name: name}, now))
-			now.Status.Conditions[0].Message = "3 nodes, checked again"
-			require.NoError(t, inner.Update(ctx, now))
-		}}
-		require.NoError(t, approveRollout(ctx, cl, rolloutApproval{Name: name, User: "alice", Yes: true, Out: &bytes.Buffer{}}))
-		assert.Equal(t, "alice", approvedBy(t, inner))
-	})
+		}, "changed since its plan was shown"},
+		{"an abort between the read and the patch is refused with --yes",
+			func(now *osv1alpha1.TalosRollout) { now.Spec.Abort = true }, "changed since its plan was shown"},
+		{"a status write with the same plan is read again and approved",
+			func(now *osv1alpha1.TalosRollout) { now.Status.Conditions[0].Message = "3 nodes, checked again" }, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			inner := fakeClient(planned())
+			cl := &conflictOnce{Client: inner, meanwhile: func() { edit(t, inner, planned(), tc.change) }}
+			err := approveRollout(ctx, cl, rolloutApproval{Name: name, User: "alice", Yes: true, Out: &bytes.Buffer{}})
+			if tc.wantErr != "" {
+				require.ErrorContains(t, err, tc.wantErr)
+				assert.Empty(t, approvedBy(t, inner, planned()))
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, "alice", approvedBy(t, inner, planned()))
+		})
+	}
 }
 
 func TestResumePauseAbort(t *testing.T) {
@@ -206,23 +185,19 @@ func TestResumePauseAbort(t *testing.T) {
 	ro.Spec.Approval = osv1alpha1.RolloutApproval{ApprovedBy: "alice", PlanHash: planHash}
 	ro.Spec.Paused = true
 	cl := fakeClientAs("bob", ro)
-	get := func() *osv1alpha1.TalosRollout {
-		got := &osv1alpha1.TalosRollout{}
-		require.NoError(t, cl.Get(ctx, client.ObjectKey{Name: ro.Name}, got))
-		return got
-	}
 	require.NoError(t, resumeRollout(ctx, cl, ro.Name, &bytes.Buffer{}))
-	assert.False(t, get().Spec.Paused)
-	assert.Equal(t, planHash, get().Annotations[osv1alpha1.AnnotationRolloutResume], "resume names the plan it lets go on")
-	assert.Equal(t, "bob", get().Annotations[metalv1alpha1.AnnotationRequestedBy], "resume names who let the rollout go on")
+	resumed := fetch(t, cl, ro)
+	assert.False(t, resumed.Spec.Paused)
+	assert.Equal(t, planHash, resumed.Annotations[osv1alpha1.AnnotationRolloutResume], "resume names the plan it lets go on")
+	assert.Equal(t, "bob", resumed.Annotations[metalv1alpha1.AnnotationRequestedBy], "resume names who let the rollout go on")
 
 	require.NoError(t, pauseRollout(ctx, cl, ro.Name, &bytes.Buffer{}))
-	assert.True(t, get().Spec.Paused)
+	assert.True(t, fetch(t, cl, ro).Spec.Paused)
 
 	require.ErrorContains(t, abortRollout(ctx, cl, ro.Name, false, nil, false, &bytes.Buffer{}), "--yes")
-	assert.False(t, get().Spec.Abort)
+	assert.False(t, fetch(t, cl, ro).Spec.Abort)
 	require.NoError(t, abortRollout(ctx, cl, ro.Name, true, nil, false, &bytes.Buffer{}))
-	assert.True(t, get().Spec.Abort)
+	assert.True(t, fetch(t, cl, ro).Spec.Abort)
 
 	unapproved := planned()
 	unapproved.Name = "other"

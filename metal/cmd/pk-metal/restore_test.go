@@ -228,10 +228,7 @@ func TestRestoreUploadSendsOnlyTheApprovedSnapshot(t *testing.T) {
 	require.ErrorContains(t, err, "not approved yet")
 	assert.Nil(t, w.cps["cp-1"].Recovered())
 
-	got := &metalv1alpha1.HostOperation{}
-	require.NoError(t, cl.Get(ctx, client.ObjectKeyFromObject(op), got))
-	got.Spec.Approval.ApprovedBy = "bob"
-	require.NoError(t, cl.Update(ctx, got))
+	edit(t, cl, op, func(got *metalv1alpha1.HostOperation) { got.Spec.Approval.ApprovedBy = "bob" })
 
 	// Another snapshot's file is refused before anything reaches the node.
 	wrong := in
@@ -250,7 +247,7 @@ func TestRestoreUploadSendsOnlyTheApprovedSnapshot(t *testing.T) {
 
 	require.NoError(t, uploadSnapshot(ctx, cl, w.fleet.Dialer(), in, &out))
 	assert.Equal(t, plain, w.cps["cp-1"].Recovered(), "the node got exactly the snapshot")
-	require.NoError(t, cl.Get(ctx, client.ObjectKeyFromObject(op), got))
+	got := fetch(t, cl, op)
 	assert.Equal(t, "alice: "+snap.Status.SHA256, got.Annotations[metalv1alpha1.AnnotationEtcdSnapshotUploaded],
 		"the record names who uploaded, in the form admission accepts")
 	assert.Contains(t, out.String(), "the operator now starts etcd")

@@ -53,20 +53,15 @@ func TestHold(t *testing.T) {
 	ctx := context.Background()
 	claim := &metalv1alpha1.HostClaim{ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "node-1"}}
 	cl := fakeClient(claim)
-	annotations := func() map[string]string {
-		got := &metalv1alpha1.HostClaim{}
-		require.NoError(t, cl.Get(ctx, client.ObjectKeyFromObject(claim), got))
-		return got.Annotations
-	}
 
 	var out bytes.Buffer
 	require.NoError(t, hold(ctx, cl, "default", "node-1", "disk swap", true, &out))
-	assert.Equal(t, map[string]string{holdAnnotation: "disk swap"}, annotations())
+	assert.Equal(t, map[string]string{holdAnnotation: "disk swap"}, fetch(t, cl, claim).Annotations)
 	assert.Contains(t, out.String(), "pk-metal unhold default/node-1")
 
 	out.Reset()
 	require.NoError(t, hold(ctx, cl, "default", "node-1", "", false, &out))
-	assert.NotContains(t, annotations(), holdAnnotation)
+	assert.NotContains(t, fetch(t, cl, claim).Annotations, holdAnnotation)
 	assert.Contains(t, out.String(), "no longer on hold")
 
 	out.Reset()
@@ -96,8 +91,7 @@ func TestRetryMarksAConvergenceProposal(t *testing.T) {
 	var out bytes.Buffer
 	require.NoError(t, retry(ctx, cl, op.Namespace, op.Name, &out))
 
-	got := &metalv1alpha1.HostOperation{}
-	require.NoError(t, cl.Get(ctx, client.ObjectKeyFromObject(op), got), "the operator, not the CLI, replaces it")
+	got := fetch(t, cl, op) // the operator, not the CLI, replaces it
 	assert.Contains(t, got.Annotations, metalv1alpha1.AnnotationRetry)
 	assert.Contains(t, out.String(), "marked pk-metal/box-1-bios-0123abcd for retry")
 	assert.Contains(t, out.String(), "new proposal of the same plan for host box-1")

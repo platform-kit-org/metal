@@ -20,8 +20,7 @@ func TestAbort(t *testing.T) {
 	var out bytes.Buffer
 
 	require.NoError(t, abort(ctx, cl, op.Namespace, op.Name, "alice", "wrong host", &out))
-	got := &metalv1alpha1.HostOperation{}
-	require.NoError(t, cl.Get(ctx, client.ObjectKeyFromObject(op), got))
+	got := fetch(t, cl, op)
 	assert.Equal(t, "alice: wrong host", got.Annotations[metalv1alpha1.AnnotationAbort])
 	assert.Contains(t, out.String(), "has not started, so it ends now")
 
@@ -42,7 +41,6 @@ func TestAbortNeedsAReason(t *testing.T) {
 	cl := fakeClient(objs...)
 	var out bytes.Buffer
 	assert.ErrorContains(t, abort(ctx, cl, op.Namespace, op.Name, "alice", "  ", &out), "say why")
-	got := &metalv1alpha1.HostOperation{}
-	require.NoError(t, cl.Get(ctx, client.ObjectKeyFromObject(op), got))
+	got := fetch(t, cl, op)
 	assert.NotContains(t, got.Annotations, metalv1alpha1.AnnotationAbort, "nothing was written")
 }

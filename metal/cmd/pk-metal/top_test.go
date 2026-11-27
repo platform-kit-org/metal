@@ -22,7 +22,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
@@ -663,8 +662,7 @@ func TestClusterActions(t *testing.T) {
 	out, err := act.Hold(ctx, "default", "node-1", true)
 	require.NoError(t, err)
 	assert.Contains(t, out, "is on hold")
-	got := &metalv1alpha1.HostClaim{}
-	require.NoError(t, cl.Get(ctx, client.ObjectKeyFromObject(c), got))
+	got := fetch(t, cl, c)
 	assert.Equal(t, "held in pk-metal top", got.Annotations[metalv1alpha1.AnnotationHold])
 
 	out, err = act.Retry(ctx, "pk-metal", "provision-node1-1")

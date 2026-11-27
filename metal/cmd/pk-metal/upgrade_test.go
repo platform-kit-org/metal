@@ -10,7 +10,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
@@ -26,8 +25,7 @@ func TestUpgrade(t *testing.T) {
 		cl := fakeClientAs("bob", cluster(), planned())
 		var out bytes.Buffer
 		require.NoError(t, upgrade(ctx, cl, "talos", "lab", "v1.14.7", time.Second, time.Millisecond, &out))
-		c := &osv1alpha1.TalosCluster{}
-		require.NoError(t, cl.Get(ctx, client.ObjectKey{Name: "lab"}, c))
+		c := fetch(t, cl, cluster())
 		assert.Equal(t, "v1.14.7", c.Spec.TalosVersion)
 		assert.Equal(t, "bob", c.Annotations[metalv1alpha1.AnnotationRequestedBy], "the upgrade names who asked for it")
 		assert.Contains(t, out.String(), "lab-talosupgrade-1a2b3c4d")
@@ -37,8 +35,7 @@ func TestUpgrade(t *testing.T) {
 		cl := fakeClient(cluster())
 		require.ErrorContains(t, upgrade(ctx, cl, "talos", "lab", "v1.14.5", 0, time.Millisecond, &bytes.Buffer{}), "not an upgrade")
 		require.ErrorContains(t, upgrade(ctx, cl, "kubernetes", "lab", "1.36", 0, time.Millisecond, &bytes.Buffer{}), "v1.2.3")
-		c := &osv1alpha1.TalosCluster{}
-		require.NoError(t, cl.Get(ctx, client.ObjectKey{Name: "lab"}, c))
+		c := fetch(t, cl, cluster())
 		assert.Equal(t, "v1.14.6", c.Spec.TalosVersion)
 		assert.Equal(t, "v1.36.2", c.Spec.KubernetesVersion)
 	})
@@ -53,8 +50,7 @@ func TestUpgrade(t *testing.T) {
 		cl := fakeClient(cluster())
 		err := upgrade(ctx, cl, "kubernetes", "lab", "v1.38.0", 0, time.Millisecond, &bytes.Buffer{})
 		require.ErrorContains(t, err, "one minor at a time")
-		c := &osv1alpha1.TalosCluster{}
-		require.NoError(t, cl.Get(ctx, client.ObjectKey{Name: "lab"}, c))
+		c := fetch(t, cl, cluster())
 		assert.Equal(t, "v1.36.2", c.Spec.KubernetesVersion, "nothing changed")
 
 		// The spec already asks for v1.36, but the API server still runs

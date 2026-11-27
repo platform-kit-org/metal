@@ -128,8 +128,7 @@ func TestReinstallBindsTheRequestToTheInstall(t *testing.T) {
 	c.Status.HandOff = &metalv1alpha1.ClaimHandOff{Host: "h-2", Node: "cp-2", At: at}
 	cl = fakeClientAs("alice", c)
 	require.NoError(t, reinstall(ctx, cl, "default", "cp-2", "disk swap", &out), "found by its node's name")
-	got := &metalv1alpha1.HostClaim{}
-	require.NoError(t, cl.Get(ctx, client.ObjectKeyFromObject(c), got))
+	got := fetch(t, cl, c)
 	assert.Equal(t, "2026-11-02T03:04:05Z", got.Annotations[metalv1alpha1.AnnotationReinstall])
 	assert.Equal(t, "alice: disk swap", got.Annotations[metalv1alpha1.AnnotationAckEtcdRisk], "the ack names who gave it")
 	assert.Equal(t, "alice", got.Annotations[metalv1alpha1.AnnotationRequestedBy], "the request names who asked for it")

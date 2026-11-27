@@ -78,6 +78,23 @@ func fakeClientAs(user string, objs ...client.Object) client.Client {
 		}).Build()
 }
 
+// fetch reads obj back from cl by its key, into a copy.
+func fetch[T client.Object](t *testing.T, cl client.Client, obj T) T {
+	t.Helper()
+	got := obj.DeepCopyObject().(T)
+	require.NoError(t, cl.Get(context.Background(), client.ObjectKeyFromObject(obj), got))
+	return got
+}
+
+// edit reads obj back from cl, changes it, and writes it. It stops the test
+// on an error, so call it on the test's goroutine only.
+func edit[T client.Object](t *testing.T, cl client.Client, obj T, change func(T)) {
+	t.Helper()
+	got := fetch(t, cl, obj)
+	change(got)
+	require.NoError(t, cl.Update(context.Background(), got))
+}
+
 // executed is the executor's outcome condition.
 func executed(status metav1.ConditionStatus) metav1.Condition {
 	reason := metalv1alpha1.ReasonStepFailed

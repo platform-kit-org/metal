@@ -133,8 +133,6 @@ func (r *ManagementEndpointReconciler) applyStatus(ctx context.Context, ep *meta
 func (r *ManagementEndpointReconciler) snapshotAsset(ctx context.Context, ep *metalv1alpha1.ManagementEndpoint) {
 	asset := &metalv1alpha1.Asset{}
 	if err := r.Get(ctx, types.NamespacedName{Name: ep.Spec.AssetRef.Name}, asset); err != nil {
-		logf.FromContext(ctx).V(1).Info("asset not resolvable, keeping snapshot",
-			"asset", ep.Spec.AssetRef.Name, "err", err)
 		return
 	}
 	ep.Status.Asset = &metalv1alpha1.AssetSnapshot{
@@ -163,10 +161,6 @@ func (r *ManagementEndpointReconciler) observe(ctx context.Context, ep *metalv1a
 	}
 	// The pass reports through conditions and never returns an error, so an
 	// error from withSession is always the dial's.
-	start := time.Now()
-	defer func() {
-		logf.FromContext(ctx).V(1).Info("observation pass", "duration", time.Since(start).Round(time.Millisecond))
-	}()
 	err = withSession(ctx, r.Dial, cfg, func(ctx context.Context, cl bmc.Client) error {
 		setCond(metalv1alpha1.ConditionReachable, metav1.ConditionTrue, "SessionUp", "")
 		r.noteAuthentication(ctx, ep, gofishclient.Authentication(cl))

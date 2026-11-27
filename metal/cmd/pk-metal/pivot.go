@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"io"
@@ -187,7 +188,8 @@ func (p prefixed) Write(b []byte) (int, error) {
 	return len(b), nil
 }
 
-// namedRestConfig loads a kubeconfig the way restConfig does, and names the
+// namedRestConfig loads a kubeconfig by the kubectl rules ($KUBECONFIG,
+// ~/.kube/config, in-cluster, unless path names a file), and names the
 // cluster for messages by its context, or by the file.
 func namedRestConfig(path, context string) (*rest.Config, string, error) {
 	rules := clientcmd.NewDefaultClientConfigLoadingRules()
@@ -196,7 +198,7 @@ func namedRestConfig(path, context string) (*rest.Config, string, error) {
 		&clientcmd.ConfigOverrides{CurrentContext: context})
 	cfg, err := loader.ClientConfig()
 	if err != nil {
-		return nil, "", fmt.Errorf("cannot load the kubeconfig %s: %w", path, err)
+		return nil, "", fmt.Errorf("cannot load %s: %w", cmp.Or(path, "a kubeconfig"), err)
 	}
 	name := context
 	if name == "" {

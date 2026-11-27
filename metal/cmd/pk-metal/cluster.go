@@ -11,7 +11,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	pkscheme "github.com/dennisklein/platform-kit/metal/internal/scheme"
@@ -58,14 +57,8 @@ func newClient() (client.Client, error) {
 // restConfig loads the connection --kubeconfig/--context name, by the
 // kubectl rules.
 func restConfig() (*rest.Config, error) {
-	rules := clientcmd.NewDefaultClientConfigLoadingRules()
-	rules.ExplicitPath = global.kubeconfig
-	cfg, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(rules,
-		&clientcmd.ConfigOverrides{CurrentContext: global.context}).ClientConfig()
-	if err != nil {
-		return nil, fmt.Errorf("cannot load a kubeconfig: %w", err)
-	}
-	return cfg, nil
+	cfg, _, err := namedRestConfig(global.kubeconfig, global.context)
+	return cfg, err
 }
 
 // splitRef reads "name" or "namespace/name", the form pk-metal status prints.

@@ -91,4 +91,10 @@ current-context: admin@mgmt
 	assert.Equal(t, "other", name)
 	_, _, err = namedRestConfig(filepath.Join(t.TempDir(), "missing"), "")
 	require.Error(t, err)
+	// Without --kubeconfig, the message names no empty path.
+	t.Setenv("KUBECONFIG", filepath.Join(t.TempDir(), "missing"))
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("KUBERNETES_SERVICE_HOST", "")
+	_, _, err = namedRestConfig("", "")
+	require.ErrorContains(t, err, "cannot load a kubeconfig: ")
 }

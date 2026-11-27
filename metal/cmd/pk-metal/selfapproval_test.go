@@ -17,6 +17,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
+	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
 )
 
 // params is the approval policies' ConfigMap; a nil value leaves the key out.
@@ -70,17 +71,12 @@ func TestSelfApprovalSetting(t *testing.T) {
 // the site allows it, and is refused before the plan where it does not.
 func TestApproveOwnProposal(t *testing.T) {
 	ctx := context.Background()
-	own := func(extra ...client.Object) (client.Client, approval, *bytes.Buffer) {
+	own := func(extra ...client.Object) (client.Client, *metalv1alpha1.HostOperation, approval, *bytes.Buffer) {
 		op, objs := bootPlan()
 		op.Spec.ProposedBy = "alice"
 		var out bytes.Buffer
-		return fakeClient(append(objs, extra...)...),
+		return fakeClient(append(objs, extra...)...), op,
 			approval{Namespace: op.Namespace, Name: op.Name, User: "alice", Yes: true, Out: &out}, &out
-	}
-	approvedOf := func(t *testing.T, cl client.Client, a approval) string {
-		op, _ := bootPlan()
-		op.Namespace, op.Name = a.Namespace, a.Name
-		return approvedBy(t, cl, op)
 	}
 
 	for name, cm := range map[string]*corev1.ConfigMap{
@@ -93,9 +89,9 @@ func TestApproveOwnProposal(t *testing.T) {
 			if cm != nil {
 				extra = append(extra, cm)
 			}
-			cl, a, out := own(extra...)
+			cl, op, a, out := own(extra...)
 			require.NoError(t, approve(ctx, cl, a))
-			assert.Equal(t, "alice", approvedOf(t, cl, a))
+			assert.Equal(t, "alice", approvedBy(t, cl, op))
 			assert.Contains(t, out.String(), "You proposed this operation yourself.")
 			if cm != nil {
 				assert.Contains(t, out.String(), "This site allows you to approve it")
@@ -106,12 +102,12 @@ func TestApproveOwnProposal(t *testing.T) {
 	}
 
 	t.Run("forbidden: refused before the plan", func(t *testing.T) {
-		cl, a, out := own(params(str("Forbidden")))
+		cl, op, a, out := own(params(str("Forbidden")))
 		err := approve(ctx, cl, a)
 		require.EqualError(t, err, "operation pk-metal/provision-node1-1a2b3c4d was proposed by you (alice), "+
 			"and this site forbids approving your own proposal (selfApproval: Forbidden in ConfigMap "+
 			"pk-metal/hostoperation-approval); another person must approve it")
-		assert.Empty(t, approvedOf(t, cl, a))
+		assert.Empty(t, approvedBy(t, cl, op))
 		assert.NotContains(t, out.String(), "steps, in this order:")
 	})
 
@@ -124,7 +120,7 @@ func TestApproveOwnProposal(t *testing.T) {
 		a := approval{Namespace: op.Namespace, Name: op.Name, User: "bob", Yes: true, Out: &out}
 		err := approve(ctx, cl, a)
 		require.ErrorContains(t, err, "was asked for by you (bob), and this site forbids approving your own proposal")
-		assert.Empty(t, approvedOf(t, cl, a))
+		assert.Empty(t, approvedBy(t, cl, op))
 
 		a.User = "carol"
 		require.NoError(t, approve(ctx, cl, a), "a person not named approves")
@@ -132,11 +128,11 @@ func TestApproveOwnProposal(t *testing.T) {
 	})
 
 	t.Run("an unknown value counts as Forbidden", func(t *testing.T) {
-		cl, a, _ := own(params(str("yes")))
+		cl, op, a, _ := own(params(str("yes")))
 		err := approve(ctx, cl, a)
 		require.ErrorContains(t, err, `selfApproval in ConfigMap pk-metal/hostoperation-approval is "yes"`)
 		assert.ErrorContains(t, err, "counts as Forbidden; another person must approve it, or an admin sets it")
-		assert.Empty(t, approvedOf(t, cl, a))
+		assert.Empty(t, approvedBy(t, cl, op))
 	})
 
 	t.Run("another person's proposal does not read the setting", func(t *testing.T) {
@@ -192,17 +188,12 @@ func TestApproveOwnRollout(t *testing.T) {
 		ro.Spec.ProposedBy = "alice"
 		return ro
 	}
-	approvedOf := func(t *testing.T, cl client.Client) string {
-		ro := &osv1alpha1.TalosRollout{}
-		require.NoError(t, cl.Get(ctx, client.ObjectKey{Name: "lab-talosupgrade-1a2b3c4d"}, ro))
-		return ro.Spec.Approval.ApprovedBy
-	}
 
 	t.Run("allowed", func(t *testing.T) {
 		cl := fakeClient(mine(), params(str("Allowed")))
 		var out bytes.Buffer
 		require.NoError(t, approveRollout(ctx, cl, rolloutApproval{Name: "lab-talosupgrade-1a2b3c4d", User: "alice", Yes: true, Out: &out}))
-		assert.Equal(t, "alice", approvedOf(t, cl))
+		assert.Equal(t, "alice", approvedBy(t, cl, mine()))
 		assert.Contains(t, out.String(), "This site allows you to approve it")
 	})
 
@@ -211,7 +202,7 @@ func TestApproveOwnRollout(t *testing.T) {
 		var out bytes.Buffer
 		err := approveRollout(ctx, cl, rolloutApproval{Name: "lab-talosupgrade-1a2b3c4d", User: "alice", Yes: true, Out: &out})
 		require.ErrorContains(t, err, "rollout lab-talosupgrade-1a2b3c4d was proposed by you (alice), and this site forbids")
-		assert.Empty(t, approvedOf(t, cl))
+		assert.Empty(t, approvedBy(t, cl, mine()))
 		assert.Empty(t, out.String(), "no plan is shown that cannot be approved")
 	})
 }

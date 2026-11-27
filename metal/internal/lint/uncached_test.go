@@ -1,23 +1,16 @@
 package lint_test
 
 import (
-	"fmt"
 	"go/ast"
 	"go/types"
-	"os"
-	"path/filepath"
-	"regexp"
-	"slices"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"golang.org/x/tools/go/packages"
 )
 
 const (
-	module         = "github.com/dennisklein/platform-kit/metal"
 	clientPkg      = "sigs.k8s.io/controller-runtime/pkg/client"
 	cachePkg       = "sigs.k8s.io/controller-runtime/pkg/cache"
 	controllerutil = "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -52,14 +45,6 @@ var mustBeUncached = []string{
 	"TalosRolloutReconciler.otherHolder",
 }
 
-// finding is one site that breaks the rule.
-type finding struct {
-	Pos  string // file:line, relative to the module root
-	What string // cached or unmarked
-}
-
-func (f finding) String() string { return f.Pos + " " + f.What }
-
 // TestDecisionsReadTheAPIServer keeps the decisions that a later pass cannot
 // undo on fresh reads. The informer cache can be late: a pass that reads it
 // sees the world of a moment ago. Most decisions are safe on that, because
@@ -79,22 +64,19 @@ func (f finding) String() string { return f.Pos + " " + f.What }
 // The check sees one function body at a time, closures included. It does not
 // follow calls. Test files are out of scope.
 func TestDecisionsReadTheAPIServer(t *testing.T) {
-	root, err := filepath.Abs("../..")
-	require.NoError(t, err)
-	fixture := module + "/internal/lint/testdata/uncached"
-	pkgs := load(t, root, "./...", fixture)
+	root, pkgs := load(t)
 
 	t.Run("the fixture's marked lines are exactly what the check finds", func(t *testing.T) {
-		p := pkgs[slices.IndexFunc(pkgs, func(p *packages.Package) bool { return p.PkgPath == fixture })]
-		got, _ := checkUncached(root, p)
-		assert.Equal(t, strs(wanted(t, root, p)), strs(got))
+		fixture := pkg(pkgs, fixtures+"uncached")
+		got, _ := checkUncached(root, fixture)
+		assert.Equal(t, strs(wanted(t, root, fixture)), strs(got))
 	})
 
 	var marked []string
 	t.Run("the module reads the inputs of such decisions from the API server", func(t *testing.T) {
 		var bad []finding
 		for _, p := range pkgs {
-			if p.PkgPath == fixture {
+			if strings.HasPrefix(p.PkgPath, fixtures) {
 				continue
 			}
 			got, m := checkUncached(root, p)
@@ -112,39 +94,10 @@ func TestDecisionsReadTheAPIServer(t *testing.T) {
 	})
 }
 
-// load loads the patterns with types, and fails on a package that does not
-// load.
-func load(t *testing.T, root string, patterns ...string) []*packages.Package {
-	t.Helper()
-	cfg := &packages.Config{
-		Dir:  root,
-		Mode: packages.NeedName | packages.NeedFiles | packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo,
-	}
-	pkgs, err := packages.Load(cfg, patterns...)
-	require.NoError(t, err)
-	for _, p := range pkgs {
-		for _, e := range p.Errors {
-			require.Failf(t, "load", "%s: %v", p.PkgPath, e)
-		}
-		// go list reads the sources in a child process, which go test's
-		// result cache does not see. Stat them here so that editing any file
-		// of the module invalidates a cached pass.
-		for _, f := range p.GoFiles {
-			_, _ = os.Stat(f)
-			_, _ = os.ReadDir(filepath.Dir(f))
-		}
-	}
-	return pkgs
-}
-
 // checkUncached reports the sites of p's non-test files that break a rule,
 // and names each function marked //pk:uncached as Recv.Method.
 func checkUncached(root string, p *packages.Package) (out []finding, marked []string) {
-	report := func(n ast.Node, what string) {
-		pos := p.Fset.Position(n.Pos())
-		rel, _ := filepath.Rel(root, pos.Filename)
-		out = append(out, finding{Pos: fmt.Sprintf("%s:%d", rel, pos.Line), What: what})
-	}
+	report := func(n ast.Node, what string) { out = append(out, at(root, p, n, what)) }
 	for _, file := range p.Syntax {
 		if strings.HasSuffix(p.Fset.Position(file.Pos()).Filename, "_test.go") {
 			continue
@@ -242,13 +195,6 @@ func caches(t types.Type) bool {
 	return false
 }
 
-func deref(t types.Type) types.Type {
-	if p, ok := t.(*types.Pointer); ok {
-		return p.Elem()
-	}
-	return t
-}
-
 // funcName is Recv.Method for a method, the name for a function.
 func funcName(fd *ast.FuncDecl) string {
 	if fd.Recv == nil || len(fd.Recv.List) == 0 {
@@ -262,31 +208,4 @@ func funcName(fd *ast.FuncDecl) string {
 		return id.Name + "." + fd.Name.Name
 	}
 	return fd.Name.Name
-}
-
-var wantRe = regexp.MustCompile(`// want (cached|unmarked)$`)
-
-// wanted reads the "want" markers of the fixture.
-func wanted(t *testing.T, root string, p *packages.Package) []finding {
-	var out []finding
-	for _, name := range p.GoFiles {
-		data, err := os.ReadFile(name)
-		require.NoError(t, err)
-		rel, _ := filepath.Rel(root, name)
-		for i, line := range strings.Split(string(data), "\n") {
-			if m := wantRe.FindStringSubmatch(strings.TrimSpace(line)); m != nil {
-				out = append(out, finding{Pos: fmt.Sprintf("%s:%d", rel, i+1), What: m[1]})
-			}
-		}
-	}
-	return out
-}
-
-func strs(fs []finding) []string {
-	out := make([]string, 0, len(fs))
-	for _, f := range fs {
-		out = append(out, f.String())
-	}
-	slices.Sort(out)
-	return out
 }

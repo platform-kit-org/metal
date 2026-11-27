@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -85,10 +86,6 @@ func bootPlan() (*metalv1alpha1.HostOperation, []client.Object) {
 	return op, []client.Object{op, host, ep, installer, config, node}
 }
 
-func fakeClient(objs ...client.Object) client.Client {
-	return fake.NewClientBuilder().WithScheme(newScheme()).WithObjects(objs...).Build()
-}
-
 func TestRenderPlan(t *testing.T) {
 	op, objs := bootPlan()
 	cl := fakeClient(objs...)
@@ -111,6 +108,49 @@ steps, in this order:
    8. eject whatever is mounted on virtual media slot USBStick
    9. eject whatever is mounted on virtual media slot CD
 note: the BMC fetches each medium from the operator's media service over HTTPS, certificate not verified by the BMC; a grant, bound to the first address that fetches it, and the digest of each medium protect it
+boots TalosNode node-1: address 10.0.0.11, role controlplane
+  installs Talos onto the disk that matches serial=disk-0001; everything on that disk is overwritten
+`
+	assert.Equal(t, want, renderPlan(op, pc))
+}
+
+// A machine behind a one-slot BMC boots one installer that carries its
+// config. The step list alone would read like a generic install; the plan
+// says that this medium is a secret built for this node.
+func TestRenderEmbeddedInstallerPlan(t *testing.T) {
+	op, objs := bootPlan()
+	op.Spec.Actions = []metalv1alpha1.HostOperationAction{
+		{EjectMedia: &metalv1alpha1.EjectMediaAction{MediaID: "CD"}},
+		{InsertMedia: &metalv1alpha1.InsertMediaAction{MediaID: "CD",
+			BootAssetRef: &metalv1alpha1.Reference{Name: "node-1-embedded"},
+			Digest:       "sha256:fedcba9876543210fedcba9876543210"}},
+		{SetBootOverride: &metalv1alpha1.SetBootOverrideAction{Target: "Cd", Once: ptr.To(true)}},
+		{PowerCycle: &metalv1alpha1.PowerCycleAction{}},
+		{AwaitCheckIn: &metalv1alpha1.AwaitCheckInAction{NodeRef: metalv1alpha1.Reference{Name: "node-1"}, TimeoutSeconds: 1800}},
+		{EjectMedia: &metalv1alpha1.EjectMediaAction{MediaID: "CD"}},
+	}
+	embedded := &osv1alpha1.BootAsset{
+		ObjectMeta: metav1.ObjectMeta{Name: "node-1-embedded"},
+		Spec: osv1alpha1.BootAssetSpec{Strategy: osv1alpha1.StrategyEmbeddedInstaller, TalosVersion: "v1.14.6",
+			NodeRef: &osv1alpha1.Reference{Name: "node-1"}},
+	}
+	pc, err := loadPlanContext(context.Background(), fakeClient(append([]client.Object{embedded}, objs[1:]...)...), op)
+	require.NoError(t, err)
+
+	want := `operation pk-metal/provision-node1-1a2b3c4d
+  why:         Provisioning
+  proposed by: system:serviceaccount:pk-metal:pk-metal-manager
+host pk0001 (asset node-1, serial PK0001)
+  BMC: https://10.0.0.1:8441 (endpoint node-1-bmc)
+steps, in this order:
+   1. eject whatever is mounted on virtual media slot CD
+   2. mount the Talos v1.14.6 installer with the machine config of TalosNode node-1 built in (boot asset node-1-embedded) on virtual media slot CD (content sha256:fedcba987654…)
+   3. boot from Cd at the next start only
+   4. power cycle: if the machine is on, force it off (no clean shutdown) and on again; if it is off, power it on
+   5. wait up to 30m for TalosNode node-1 to report in at 10.0.0.11
+   6. eject whatever is mounted on virtual media slot CD
+note: the BMC fetches each medium from the operator's media service over HTTPS, certificate not verified by the BMC; a grant, bound to the first address that fetches it, and the digest of each medium protect it
+note: the installer on slot CD carries the machine config of TalosNode node-1, with its keys and tokens. It is built for this node only, the BMC fetches it under a grant made for this boot, and it is ejected when the node reports in
 boots TalosNode node-1: address 10.0.0.11, role controlplane
   installs Talos onto the disk that matches serial=disk-0001; everything on that disk is overwritten
 `
@@ -202,6 +242,57 @@ func TestRenderPlanSaysWhatTheApproverCannotRead(t *testing.T) {
 	assert.Contains(t, out, "boot asset installer-v1.14.6 (not readable with your rights)")
 }
 
+// TestEveryActionIsDescribed: the approver reads every step in plain words;
+// none falls back to "read it in spec.actions".
+func TestEveryActionIsDescribed(t *testing.T) {
+	node := metalv1alpha1.Reference{Name: "cp-2"}
+	digest := "sha256:" + strings.Repeat("a", 64)
+	all := metalv1alpha1.HostOperationAction{
+		PowerCycle: &metalv1alpha1.PowerCycleAction{}, PowerOff: &metalv1alpha1.PowerOffAction{},
+		SetBootOverride: &metalv1alpha1.SetBootOverrideAction{Target: "Cd"},
+		InsertMedia:     &metalv1alpha1.InsertMediaAction{MediaID: "Cd", ImageURL: "https://x/i.iso"},
+		EjectMedia:      &metalv1alpha1.EjectMediaAction{MediaID: "Cd"},
+		ApplyBios:       &metalv1alpha1.ApplyBiosAction{}, FlashFirmware: &metalv1alpha1.FlashFirmwareAction{},
+		AwaitCheckIn: &metalv1alpha1.AwaitCheckInAction{NodeRef: node},
+		Cordon:       &metalv1alpha1.CordonAction{NodeRef: node}, Drain: &metalv1alpha1.DrainAction{NodeRef: node},
+		Uncordon:      &metalv1alpha1.UncordonAction{NodeRef: node},
+		TalosReboot:   &metalv1alpha1.TalosRebootAction{NodeRef: node},
+		TalosShutdown: &metalv1alpha1.TalosShutdownAction{NodeRef: node},
+		TalosUpgrade:  &metalv1alpha1.TalosUpgradeAction{NodeRef: node, Image: "factory.talos.dev/installer/x:v1.14.7@" + digest, Version: "v1.14.7"},
+		TalosApplyConfig: &metalv1alpha1.TalosApplyConfigAction{NodeRef: node,
+			ConfigSecretRef: metalv1alpha1.Reference{Name: "machineconfig-cp-2"}, Digest: digest, Mode: "Reboot"},
+		EtcdLeave:        &metalv1alpha1.EtcdLeaveAction{NodeRef: node},
+		EtcdRemoveMember: &metalv1alpha1.EtcdRemoveMemberAction{NodeRef: node, MemberID: "8e9e05c52164694d", Hostname: "cp-2"},
+		TalosReset:       &metalv1alpha1.TalosResetAction{NodeRef: node, Graceful: ptr.To(false), UserDisks: []string{"/dev/sdb"}},
+		WaitNodeReady:    &metalv1alpha1.WaitNodeReadyAction{NodeRef: node, Version: "v1.14.7"},
+		WaitEtcdHealthy:  &metalv1alpha1.WaitEtcdHealthyAction{NodeRef: node},
+	}
+	pc := planContext{Nodes: map[string]*osv1alpha1.TalosNode{"cp-2": talosNodeObj("cp-2", osv1alpha1.RoleControlPlane)}}
+	// One action at a time: copy each set field into an otherwise empty union.
+	v := reflect.ValueOf(all)
+	for i := range v.NumField() {
+		one := metalv1alpha1.HostOperationAction{}
+		reflect.ValueOf(&one).Elem().Field(i).Set(v.Field(i))
+		got := describeAction(one, pc)
+		assert.NotContains(t, got, "not described", one.Key())
+		if talosNodeRef(one) != "" && one.AwaitCheckIn == nil {
+			assert.Contains(t, got, "node cp-2 (control plane of cluster lab)", one.Key())
+		}
+	}
+	assert.Equal(t, len(metalv1alpha1.ActionKeys()), v.NumField(), "the test sets every action")
+
+	reset := describeAction(metalv1alpha1.HostOperationAction{TalosReset: all.TalosReset}, pc)
+	assert.Contains(t, reset, "WIPE the system disk and the user disks /dev/sdb of")
+	bare := describeAction(metalv1alpha1.HostOperationAction{TalosReset: &metalv1alpha1.TalosResetAction{NodeRef: node}}, pc)
+	assert.Contains(t, bare, "WIPE the system disk and no user disk of", "a reset that names no user disk says so")
+	assert.Contains(t, reset, "not graceful")
+	upgrade := describeAction(metalv1alpha1.HostOperationAction{TalosUpgrade: all.TalosUpgrade}, pc)
+	assert.Contains(t, upgrade, "UPGRADE Talos on node cp-2 (control plane of cluster lab) to v1.14.7 from factory.talos.dev/installer/x:v1.14.7")
+	drain := describeAction(metalv1alpha1.HostOperationAction{Drain: all.Drain}, pc)
+	assert.Contains(t, drain, "wait up to 15m")
+	assert.Contains(t, drain, "a pod with emptyDir data fails the step")
+}
+
 func TestDescribeOtherActions(t *testing.T) {
 	pc := planContext{}
 	assert.Equal(t, "change 2 BIOS setting(s): BootMode=\"Uefi\", SriovGlobalEnable=true (takes effect at the next start)",
@@ -270,11 +361,17 @@ func TestNotFoundHint(t *testing.T) {
 	assert.EqualError(t, err, "no operation nope in namespace pk-metal, and in no other namespace")
 }
 
-func approvedBy(t *testing.T, cl client.Client, op *metalv1alpha1.HostOperation) string {
+// approvedBy reads back who approved obj, an operation or a rollout.
+func approvedBy(t *testing.T, cl client.Client, obj client.Object) string {
 	t.Helper()
-	got := &metalv1alpha1.HostOperation{}
-	require.NoError(t, cl.Get(context.Background(), client.ObjectKeyFromObject(op), got))
-	return got.Spec.Approval.ApprovedBy
+	switch got := fetch(t, cl, obj).(type) {
+	case *metalv1alpha1.HostOperation:
+		return got.Spec.Approval.ApprovedBy
+	case *osv1alpha1.TalosRollout:
+		return got.Spec.Approval.ApprovedBy
+	}
+	t.Fatalf("%T has no approval", obj)
+	return ""
 }
 
 func TestApprove(t *testing.T) {
@@ -414,41 +511,35 @@ func TestApproveWhatWasShown(t *testing.T) {
 		return approval{Namespace: op.Namespace, Name: op.Name, User: "alice", Interactive: true, In: in, Out: out}
 	}
 
-	t.Run("an operation created again under the name while the question was open", func(t *testing.T) {
-		op, objs := bootPlan()
-		op.UID = "first"
-		cl := fakeClient(objs...)
-		var out bytes.Buffer
-		in := &answerAfter{answer: strings.NewReader("y\n"), meanwhile: func() {
-			old := &metalv1alpha1.HostOperation{}
-			assert.NoError(t, cl.Get(ctx, client.ObjectKeyFromObject(op), old))
-			assert.NoError(t, cl.Delete(ctx, old))
-			again := op.DeepCopy()
-			again.UID, again.ResourceVersion = "second", ""
-			again.Spec.Actions = again.Spec.Actions[:1]
-			assert.NoError(t, cl.Create(ctx, again))
-		}}
-		err := approve(ctx, cl, asked(op, in, &out))
-		assert.ErrorContains(t, err, "changed since its plan was shown; nothing changed")
-		assert.Empty(t, approvedBy(t, cl, op))
-	})
-
-	t.Run("the same plan on a new object is still another object", func(t *testing.T) {
-		op, objs := bootPlan()
-		op.UID = "first"
-		cl := fakeClient(objs...)
-		var out bytes.Buffer
-		in := &answerAfter{answer: strings.NewReader("y\n"), meanwhile: func() {
-			old := &metalv1alpha1.HostOperation{}
-			assert.NoError(t, cl.Get(ctx, client.ObjectKeyFromObject(op), old))
-			assert.NoError(t, cl.Delete(ctx, old))
-			again := op.DeepCopy()
-			again.UID, again.ResourceVersion = "second", ""
-			assert.NoError(t, cl.Create(ctx, again))
-		}}
-		assert.ErrorContains(t, approve(ctx, cl, asked(op, in, &out)), "changed since its plan was shown")
-		assert.Empty(t, approvedBy(t, cl, op))
-	})
+	for _, tc := range []struct {
+		name   string
+		shrink bool // the new object has another plan
+	}{
+		{"an operation created again under the name while the question was open", true},
+		{"the same plan on a new object is still another object", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			op, objs := bootPlan()
+			op.UID = "first"
+			cl := fakeClient(objs...)
+			var out bytes.Buffer
+			// ask reads the answer on a goroutine of its own: assert, not require.
+			in := &answerAfter{answer: strings.NewReader("y\n"), meanwhile: func() {
+				old := &metalv1alpha1.HostOperation{}
+				assert.NoError(t, cl.Get(ctx, client.ObjectKeyFromObject(op), old))
+				assert.NoError(t, cl.Delete(ctx, old))
+				again := op.DeepCopy()
+				again.UID, again.ResourceVersion = "second", ""
+				if tc.shrink {
+					again.Spec.Actions = again.Spec.Actions[:1]
+				}
+				assert.NoError(t, cl.Create(ctx, again))
+			}}
+			err := approve(ctx, cl, asked(op, in, &out))
+			assert.ErrorContains(t, err, "changed since its plan was shown; nothing changed")
+			assert.Empty(t, approvedBy(t, cl, op))
+		})
+	}
 
 	t.Run("a status write while the question was open does not stop it", func(t *testing.T) {
 		op, objs := bootPlan()
@@ -464,37 +555,32 @@ func TestApproveWhatWasShown(t *testing.T) {
 		assert.Equal(t, "alice", approvedBy(t, cl, op))
 	})
 
-	t.Run("a write between the read and the patch is caught by the resourceVersion", func(t *testing.T) {
-		op, objs := bootPlan()
-		inner := fakeClient(objs...)
-		cl := &conflictOnce{Client: inner, meanwhile: func() {
-			now := &metalv1alpha1.HostOperation{}
-			require.NoError(t, inner.Get(ctx, client.ObjectKeyFromObject(op), now))
-			now.Spec.Actions = now.Spec.Actions[:1]
-			require.NoError(t, inner.Update(ctx, now))
-		}}
-		var out bytes.Buffer
-		a := asked(op, nil, &out)
-		a.Yes = true
-		assert.ErrorContains(t, approve(ctx, cl, a), "changed since its plan was shown")
-		assert.Empty(t, approvedBy(t, inner, op))
-	})
-
-	t.Run("a status write between the read and the patch is retried", func(t *testing.T) {
-		op, objs := bootPlan()
-		inner := fakeClient(objs...)
-		cl := &conflictOnce{Client: inner, meanwhile: func() {
-			now := &metalv1alpha1.HostOperation{}
-			require.NoError(t, inner.Get(ctx, client.ObjectKeyFromObject(op), now))
-			now.Status.Conditions[0].Message = "still waiting"
-			require.NoError(t, inner.Update(ctx, now))
-		}}
-		var out bytes.Buffer
-		a := asked(op, nil, &out)
-		a.Yes = true
-		require.NoError(t, approve(ctx, cl, a))
-		assert.Equal(t, "alice", approvedBy(t, inner, op))
-	})
+	for _, tc := range []struct {
+		name    string
+		change  func(*metalv1alpha1.HostOperation)
+		wantErr string
+	}{
+		{"a write between the read and the patch is caught by the resourceVersion",
+			func(now *metalv1alpha1.HostOperation) { now.Spec.Actions = now.Spec.Actions[:1] }, "changed since its plan was shown"},
+		{"a status write between the read and the patch is retried",
+			func(now *metalv1alpha1.HostOperation) { now.Status.Conditions[0].Message = "still waiting" }, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			op, objs := bootPlan()
+			inner := fakeClient(objs...)
+			cl := &conflictOnce{Client: inner, meanwhile: func() { edit(t, inner, op, tc.change) }}
+			a := asked(op, nil, &bytes.Buffer{})
+			a.Yes = true
+			err := approve(ctx, cl, a)
+			if tc.wantErr != "" {
+				assert.ErrorContains(t, err, tc.wantErr)
+				assert.Empty(t, approvedBy(t, inner, op))
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, "alice", approvedBy(t, inner, op))
+		})
+	}
 
 	t.Run("no answer within the window approves nothing", func(t *testing.T) {
 		op, objs := bootPlan()
@@ -631,13 +717,4 @@ func TestShortDuration(t *testing.T) {
 	} {
 		assert.Equal(t, want, shortDuration(d))
 	}
-}
-
-// executed is the executor's outcome condition.
-func executed(status metav1.ConditionStatus) metav1.Condition {
-	reason := metalv1alpha1.ReasonStepFailed
-	if status == metav1.ConditionTrue {
-		reason = metalv1alpha1.ReasonStepsSucceeded
-	}
-	return metav1.Condition{Type: metalv1alpha1.ConditionExecuted, Status: status, Reason: reason}
 }

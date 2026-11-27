@@ -5,8 +5,10 @@ import (
 	"errors"
 	"flag"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -127,6 +129,17 @@ func TestGolden(t *testing.T) {
 				require.NoError(t, err, "run go test ./internal/lab -update to write the golden files")
 				assert.Equal(t, string(want), string(got), path)
 			}
+			var stored []string
+			require.NoError(t, filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+				if err != nil || d.IsDir() {
+					return err
+				}
+				rel, err := filepath.Rel(dir, path)
+				stored = append(stored, filepath.ToSlash(rel))
+				return err
+			}))
+			assert.ElementsMatch(t, slices.Collect(maps.Keys(files)), stored,
+				"a golden file that Render no longer writes; run go test ./internal/lab -update")
 		})
 	}
 }

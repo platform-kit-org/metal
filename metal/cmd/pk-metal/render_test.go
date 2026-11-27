@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/siderolabs/talos/pkg/machinery/config/configloader"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"k8s.io/client-go/tools/clientcmd"
@@ -24,9 +25,11 @@ func renderInputs(t *testing.T) (dir, secrets string) {
 	return dir, filepath.Join("..", "..", "internal", "talos", "render", "testdata", "secrets.yaml")
 }
 
-// The admin credentials live as long as --credentials-ttl says, 24h by
-// default, not a year.
-func TestRenderCredentialsTTL(t *testing.T) {
+// pk-metal render writes what the day-0 path consumes: a machine config per
+// node that Talos loads, and a kubeconfig and talosconfig that parse. The
+// admin credentials live as long as --credentials-ttl says, 24h by default,
+// not a year.
+func TestRenderWritesLoadableConfigs(t *testing.T) {
 	in, secrets := renderInputs(t)
 	notAfter := func(out string) time.Time {
 		kc, err := clientcmd.LoadFromFile(filepath.Join(out, "kubeconfig"))
@@ -42,8 +45,29 @@ func TestRenderCredentialsTTL(t *testing.T) {
 		return time.Time{}
 	}
 
+	// No --register: the schematic ids are computed offline.
 	out := filepath.Join(t.TempDir(), "default")
 	renderCmd([]string{"--dir", in, "--secrets", secrets, "--out", out})
+
+	nodes, err := filepath.Glob(filepath.Join(out, "node-*.yaml"))
+	require.NoError(t, err)
+	require.NotEmpty(t, nodes)
+	for _, path := range nodes {
+		raw, err := os.ReadFile(path)
+		require.NoError(t, err)
+		cfg, err := configloader.NewFromBytes(raw)
+		require.NoError(t, err, path)
+		assert.NotEmpty(t, cfg.Machine().Type().String(), path)
+		info, err := os.Stat(path)
+		require.NoError(t, err)
+		assert.Equal(t, os.FileMode(0o600), info.Mode().Perm(), "%s holds credentials", path)
+	}
+	kc, err := clientcmd.LoadFromFile(filepath.Join(out, "kubeconfig"))
+	require.NoError(t, err)
+	assert.NotEmpty(t, kc.CurrentContext)
+	tc, err := os.ReadFile(filepath.Join(out, "talosconfig"))
+	require.NoError(t, err)
+	assert.Contains(t, string(tc), "context:")
 	assert.WithinDuration(t, time.Now().Add(24*time.Hour), notAfter(out), 5*time.Minute)
 
 	out = filepath.Join(t.TempDir(), "short")
@@ -61,14 +85,6 @@ func TestRenderNoCredentials(t *testing.T) {
 	assert.NotEmpty(t, nodes, "the node configs are written")
 	assert.NoFileExists(t, filepath.Join(out, "kubeconfig"))
 	assert.NoFileExists(t, filepath.Join(out, "talosconfig"))
-}
-
-func TestRenderRefusesLongCredentials(t *testing.T) {
-	for _, ttl := range []string{"721h", "0s"} {
-		code, stderr := runCLI(t, "render", "--dir=d", "--secrets=s", "--credentials-ttl="+ttl)
-		assert.Equal(t, 1, code, stderr)
-		assert.Contains(t, stderr, "--credentials-ttl must be more than 0 and at most 720h")
-	}
 }
 
 // A directory or file that existed with wider permissions is narrowed:

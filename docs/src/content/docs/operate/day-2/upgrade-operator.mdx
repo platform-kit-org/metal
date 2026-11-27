@@ -57,23 +57,37 @@ The Deployment has `strategy: Recreate`. The old manager stops before the new on
 
    The command lists what goes, what a manifest must now set, and new limits and rules. Each `breaking` line can refuse a manifest that worked before, or an update of a stored object. Change your manifests first.
 
-3. Read the upgrade notes below for each commit between the two.
+3. List the pull requests between the two commits. Use the commit from step 1.
 
-4. Build the image and push it to your registry.
+   ```sh
+   git log --first-parent --oneline <commit>..HEAD
+   ```
+
+   Read each row of the [upgrade notes](#upgrade-notes) whose pull request is in the list.
+
+4. Build the image. The command shows the image reference.
 
    ```sh
    PK_IMAGE_NAME=registry.example.org/platform/pk-metal mise run image
    ```
 
-5. Set the new tag in `images` of `kustomization.yaml` in your overlay.
+5. Push the image to your registry. Use the reference from step 4.
 
-6. Apply the overlay. Server-side apply is necessary for the CRDs.
+   ```sh
+   docker push registry.example.org/platform/pk-metal:<tag>
+   ```
+
+   Make sure that the registry has the tag before you apply the overlay. The old manager stops before the new manager gets the image.
+
+6. Set the new tag in `images` of `kustomization.yaml` in your overlay.
+
+7. Apply the overlay. Server-side apply is necessary for the CRDs.
 
    ```sh
    kubectl apply --server-side -k overlay
    ```
 
-7. Wait for the new manager.
+8. Wait for the new manager.
 
    ```sh
    kubectl -n pk-metal rollout status deployment/pk-metal-manager
@@ -96,12 +110,12 @@ Apply the overlay with the old tag.
 
 ## Upgrade notes
 
-| Change | What to do |
-| --- | --- |
-| The admin group gets the roles `pk-metal-admin` in place of `cluster-admin`. | The new bindings of the sample have new names. After the apply, delete the old binding: `kubectl delete clusterrolebinding pk-metal-admins`. Until then, the admin group still has `cluster-admin`. See [](ref:rbac). |
-| The component `config/name-stamp` writes your username into `requested-by` and into guard lifts. It needs Kubernetes 1.36 or later. | The sample site overlay includes it. On an older release, remove it from `components`. See [](ref:admission-policies#the-name-stamps). |
-| `status.managerType` of [](kind:ManagementEndpoint) goes. | Nothing. The operator did not read it. |
-| The CRDs of [](kind:HostOperation) and [](kind:TalosRollout) declare selectable fields. The management cluster needs Kubernetes 1.32 or later. | On 1.30 or 1.31, upgrade Kubernetes first. See [](ref:versions). |
+| Pull request | Change | What to do |
+| --- | --- | --- |
+| #34 | The admin group gets the roles `pk-metal-admin` in place of `cluster-admin`. | The new bindings of the sample have new names. After the apply, delete the old binding: `kubectl delete clusterrolebinding pk-metal-admins`. Until then, the admin group still has `cluster-admin`. See [](ref:rbac). |
+| #34 | The component `config/name-stamp` writes your username into `requested-by` and into guard lifts. It needs Kubernetes 1.36 or later. | The sample site overlay includes it. On an older release, remove it from `components`. See [](ref:admission-policies#the-name-stamps). |
+| #34 | `status.managerType` of [](kind:ManagementEndpoint) goes. | Nothing. The operator did not read it. |
+| #26 | The CRDs of [](kind:HostOperation) and [](kind:TalosRollout) declare selectable fields. The management cluster needs Kubernetes 1.32 or later. | On 1.30 or 1.31, upgrade Kubernetes first. See [](ref:versions). |
 
 <Callout type="note">
 `mise run crd:diff` runs for each pull request in CI. The result is on the summary page of the run, in the job that checks the generated files.

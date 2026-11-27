@@ -1525,20 +1525,6 @@
       "context": "Reasons of the node lifecycle."
     },
     {
-      "name": "ReasonReinstalling",
-      "value": "Reinstalling",
-      "group": "metal.platform-kit.org",
-      "source": "metal/api/v1alpha1/lifecycle_types.go",
-      "description": "a reinstall the claim asked for (AnnotationReinstall) is proposed or running.",
-      "on": [
-        {
-          "condition": "Provisioned",
-          "status": "False"
-        }
-      ],
-      "context": "Reasons of the node lifecycle."
-    },
-    {
       "name": "ReasonReplacing",
       "value": "Replacing",
       "group": "metal.platform-kit.org",
@@ -2204,15 +2190,6 @@
     {
       "name": "ReasonBundleApplied",
       "value": "BundleApplied",
-      "group": "os.platform-kit.org",
-      "source": "metal/api/os/v1alpha1/conditions_rollout.go",
-      "description": "",
-      "on": [],
-      "context": "Reasons on ConfigInSync and VersionCurrent."
-    },
-    {
-      "name": "ReasonCredentialsPublished",
-      "value": "CredentialsPublished",
       "group": "os.platform-kit.org",
       "source": "metal/api/os/v1alpha1/conditions_rollout.go",
       "description": "",

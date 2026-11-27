@@ -39,17 +39,16 @@ const (
 
 // Reasons on ConfigInSync and VersionCurrent.
 const (
-	ReasonInSync               = "InSync"
-	ReasonConfigDrift          = "ConfigDrift"
-	ReasonDriftUnknown         = "DriftUnknown"
-	ReasonVersionCurrent       = "VersionCurrent"
-	ReasonVersionSkew          = "VersionSkew"
-	ReasonUnsupportedVersion   = "UnsupportedVersionPair"
-	ReasonVersionsSupported    = "VersionsSupported"
-	ReasonVersionsBehind       = "VersionsBehind"
-	ReasonBundleChanged        = "BundleChanged"
-	ReasonBundleApplied        = "BundleApplied"
-	ReasonCredentialsPublished = "CredentialsPublished"
+	ReasonInSync             = "InSync"
+	ReasonConfigDrift        = "ConfigDrift"
+	ReasonDriftUnknown       = "DriftUnknown"
+	ReasonVersionCurrent     = "VersionCurrent"
+	ReasonVersionSkew        = "VersionSkew"
+	ReasonUnsupportedVersion = "UnsupportedVersionPair"
+	ReasonVersionsSupported  = "VersionsSupported"
+	ReasonVersionsBehind     = "VersionsBehind"
+	ReasonBundleChanged      = "BundleChanged"
+	ReasonBundleApplied      = "BundleApplied"
 )
 
 // Reasons on a TalosRollout's conditions.

@@ -102,7 +102,7 @@ spec:
             severity: critical
           annotations:
             summary: "The admission policy {{ $labels.policy }} of the approval gate is missing or does not deny"
-            description: "kubectl get validatingadmissionpolicy,validatingadmissionpolicybinding {{ $labels.policy }} shows what is wrong; the gate.degraded line of the operator audit log says it in words. Apply metal/config/policy again."
+            description: "kubectl get validatingadmissionpolicy,validatingadmissionpolicybinding {{ $labels.policy }} shows what is wrong; the gate.degraded line of the operator audit log says it in words. Apply the site overlay again."
             runbook_url: https://metal.platform-kit.org/operate/runbooks/admission-gate-degraded/
         - alert: PkMetalReconcileFailing
           # More passes of one controller fail than succeed, for half an

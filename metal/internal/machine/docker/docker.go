@@ -91,13 +91,6 @@ func (m *Machine) Running(ctx context.Context) (bool, error) {
 	return out == "true", nil
 }
 
-// IP reports the container's address on its network — what the harness writes
-// into TalosNode.spec.ipAddress. Empty until the container runs.
-func (m *Machine) IP(ctx context.Context) (string, error) {
-	format := "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}"
-	return m.docker(ctx, "inspect", "-f", format, m.name)
-}
-
 // Remove force-removes the container and its anonymous volumes — the machine
 // ceases to exist, disks and all (the next Ensure births a blank one).
 func (m *Machine) Remove(ctx context.Context) error {

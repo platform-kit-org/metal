@@ -136,7 +136,6 @@ pk_metal_rollout_condition{cluster="c",reason="WaitingForHealth",rollout="health
 `, "pk_metal_rollout_condition")
 
 	st := RolloutStateOf(objs[4].(*osv1alpha1.TalosRollout))
-	assert.True(t, st.Ended)
 	assert.False(t, st.Succeeded)
 }
 

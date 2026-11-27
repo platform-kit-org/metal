@@ -21,9 +21,6 @@ type RolloutState struct {
 	// Succeeded is true when the rollout ended well (every step succeeded,
 	// or no node needed the change).
 	Succeeded bool
-	// Ended is true when nothing more runs: succeeded, failed, aborted, or
-	// its approval does not cover the plan.
-	Ended bool
 }
 
 // RolloutStateOf picks the deciding condition. The order is the order in
@@ -39,10 +36,10 @@ func RolloutStateOf(ro *osv1alpha1.TalosRollout) RolloutState {
 		return nil
 	}
 	if c := is(osv1alpha1.ConditionComplete, metav1.ConditionTrue); c != nil {
-		return RolloutState{Reason: c.Reason, Message: c.Message, Succeeded: true, Ended: true}
+		return RolloutState{Reason: c.Reason, Message: c.Message, Succeeded: true}
 	}
 	if c := is(osv1alpha1.ConditionComplete, metav1.ConditionFalse); c != nil {
-		return RolloutState{Reason: c.Reason, Message: c.Message, Ended: true}
+		return RolloutState{Reason: c.Reason, Message: c.Message}
 	}
 	for _, t := range []string{osv1alpha1.ConditionPlanned, osv1alpha1.ConditionApproved} {
 		if c := is(t, metav1.ConditionFalse); c != nil {

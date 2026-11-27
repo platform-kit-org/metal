@@ -9,7 +9,6 @@ sources:
 ---
 
 import { Steps } from '@astrojs/starlight/components';
-import Callout from '../../../../components/Callout.astro';
 
 ## Symptoms
 
@@ -59,15 +58,7 @@ A BMC or a node that does not answer does not cause these alerts. The controller
 
 ## Fix
 
-Correct the cause from the table. The controller tries each object again with a growing delay, up to about 17 minutes. To try at once, restart the manager:
-
-```sh
-kubectl -n pk-metal rollout restart deployment/pk-metal-manager
-```
-
-<Callout type="caution">
-A restart ends the media grants of downloads that run. The manager mounts the medium again. See [](howto:upgrade-operator).
-</Callout>
+Correct the cause from the table. The controller tries each object again with a growing delay, up to about 17 minutes.
 
 ## Verify
 

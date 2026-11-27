@@ -12,11 +12,13 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
+	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
 )
 
 // params is the approval policies' ConfigMap; a nil value leaves the key out.
@@ -30,8 +32,6 @@ func params(value *string) *corev1.ConfigMap {
 	}
 	return cm
 }
-
-func str(s string) *string { return &s }
 
 // denied is the error the API server returns when an admission policy
 // refuses a request.
@@ -84,7 +84,7 @@ func TestApproveOwnProposal(t *testing.T) {
 	}
 
 	for name, cm := range map[string]*corev1.ConfigMap{
-		"the setting is Allowed":    params(str("Allowed")),
+		"the setting is Allowed":    params(ptr.To("Allowed")),
 		"the setting is missing":    params(nil),
 		"the setting is unreadable": nil,
 	} {
@@ -106,7 +106,7 @@ func TestApproveOwnProposal(t *testing.T) {
 	}
 
 	t.Run("forbidden: refused before the plan", func(t *testing.T) {
-		cl, a, out := own(params(str("Forbidden")))
+		cl, a, out := own(params(ptr.To("Forbidden")))
 		err := approve(ctx, cl, a)
 		require.EqualError(t, err, "operation pk-metal/provision-node1-1a2b3c4d was proposed by you (alice), "+
 			"and this site forbids approving your own proposal (selfApproval: Forbidden in ConfigMap "+
@@ -120,7 +120,7 @@ func TestApproveOwnProposal(t *testing.T) {
 		op.Spec.ProposedBy = "system:serviceaccount:pk-metal:pk-metal-manager"
 		op.Spec.RequestedBy = []string{"alice", "bob"}
 		var out bytes.Buffer
-		cl := fakeClient(append(objs, params(str("Forbidden")))...)
+		cl := fakeClient(append(objs, params(ptr.To("Forbidden")))...)
 		a := approval{Namespace: op.Namespace, Name: op.Name, User: "bob", Yes: true, Out: &out}
 		err := approve(ctx, cl, a)
 		require.ErrorContains(t, err, "was asked for by you (bob), and this site forbids approving your own proposal")
@@ -132,7 +132,7 @@ func TestApproveOwnProposal(t *testing.T) {
 	})
 
 	t.Run("an unknown value counts as Forbidden", func(t *testing.T) {
-		cl, a, _ := own(params(str("yes")))
+		cl, a, _ := own(params(ptr.To("yes")))
 		err := approve(ctx, cl, a)
 		require.ErrorContains(t, err, `selfApproval in ConfigMap pk-metal/hostoperation-approval is "yes"`)
 		assert.ErrorContains(t, err, "counts as Forbidden; another person must approve it, or an admin sets it")
@@ -142,7 +142,7 @@ func TestApproveOwnProposal(t *testing.T) {
 	t.Run("another person's proposal does not read the setting", func(t *testing.T) {
 		op, objs := bootPlan()
 		var out bytes.Buffer
-		cl := fakeClient(append(objs, params(str("Forbidden")))...)
+		cl := fakeClient(append(objs, params(ptr.To("Forbidden")))...)
 		require.NoError(t, approve(ctx, cl, approval{Namespace: op.Namespace, Name: op.Name, User: "alice", Yes: true, Out: &out}))
 		assert.NotContains(t, out.String(), "You proposed")
 	})
@@ -161,7 +161,7 @@ func TestApproveAdmissionRefusal(t *testing.T) {
 		op.Spec.ProposedBy = "alice"
 		cl := refusingPatches(denied("hostoperations", op.Name, msg), objs...)
 		err := approve(ctx, cl, approval{Namespace: op.Namespace, Name: op.Name, User: "alice", Yes: true, Out: &bytes.Buffer{}})
-		require.EqualError(t, err, "the cluster refused the approval of operation pk-metal/provision-node1-1a2b3c4d; "+
+		require.EqualError(t, err, "the cluster refused to approve operation pk-metal/provision-node1-1a2b3c4d; "+
 			"nothing changed: "+msg)
 	})
 
@@ -171,7 +171,7 @@ func TestApproveAdmissionRefusal(t *testing.T) {
 		cl := refusingPatches(denied("talosrollouts", ro.Name, msg), ro)
 		var out bytes.Buffer
 		err := approveRollout(ctx, cl, rolloutApproval{Name: ro.Name, User: "alice", Yes: true, Out: &out})
-		require.EqualError(t, err, "the cluster refused the approval of rollout lab-talosupgrade-1a2b3c4d; "+
+		require.EqualError(t, err, "the cluster refused to approve rollout lab-talosupgrade-1a2b3c4d; "+
 			"nothing changed: "+msg)
 		assert.Contains(t, out.String(), "You proposed this rollout yourself.")
 	})
@@ -180,7 +180,15 @@ func TestApproveAdmissionRefusal(t *testing.T) {
 		op, objs := bootPlan()
 		cl := refusingPatches(errors.New("connection refused"), objs...)
 		err := approve(ctx, cl, approval{Namespace: op.Namespace, Name: op.Name, User: "alice", Yes: true, Out: &bytes.Buffer{}})
-		require.EqualError(t, err, "approve operation pk-metal/provision-node1-1a2b3c4d: connection refused")
+		require.EqualError(t, err, "approve operation pk-metal/provision-node1-1a2b3c4d; nothing changed: connection refused")
+	})
+
+	t.Run("a write other than an approval", func(t *testing.T) {
+		const rule = "only an admin may change what a claim selects"
+		claim := &metalv1alpha1.HostClaim{ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "w-1"}}
+		cl := refusingPatches(denied("hostclaims", claim.Name, rule), claim)
+		err := hold(ctx, cl, "default", "w-1", "disk swap", true, &bytes.Buffer{})
+		require.EqualError(t, err, "the cluster refused to update claim default/w-1: "+rule)
 	})
 }
 
@@ -199,7 +207,7 @@ func TestApproveOwnRollout(t *testing.T) {
 	}
 
 	t.Run("allowed", func(t *testing.T) {
-		cl := fakeClient(mine(), params(str("Allowed")))
+		cl := fakeClient(mine(), params(ptr.To("Allowed")))
 		var out bytes.Buffer
 		require.NoError(t, approveRollout(ctx, cl, rolloutApproval{Name: "lab-talosupgrade-1a2b3c4d", User: "alice", Yes: true, Out: &out}))
 		assert.Equal(t, "alice", approvedOf(t, cl))
@@ -207,7 +215,7 @@ func TestApproveOwnRollout(t *testing.T) {
 	})
 
 	t.Run("forbidden", func(t *testing.T) {
-		cl := fakeClient(mine(), params(str("Forbidden")))
+		cl := fakeClient(mine(), params(ptr.To("Forbidden")))
 		var out bytes.Buffer
 		err := approveRollout(ctx, cl, rolloutApproval{Name: "lab-talosupgrade-1a2b3c4d", User: "alice", Yes: true, Out: &out})
 		require.ErrorContains(t, err, "rollout lab-talosupgrade-1a2b3c4d was proposed by you (alice), and this site forbids")

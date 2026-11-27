@@ -1,6 +1,6 @@
 {
   "name": "retry",
-  "summary": "delete a failed or aborted operation, so that the operator proposes it again (it then waits for approval again); a BIOS or firmware proposal is marked for retry instead",
+  "summary": "delete a failed or aborted operation, so that it is proposed again",
   "synopsis": "[-n namespace] <operation> | <namespace>/<operation>",
   "usage": [
     "pk-metal retry [-n namespace] <operation> | <namespace>/<operation>"

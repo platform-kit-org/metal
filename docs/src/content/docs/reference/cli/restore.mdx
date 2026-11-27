@@ -64,12 +64,12 @@ Replace one member at a time. Approve the next operation only after the one befo
 
 ### upload
 
-`pk-metal restore upload <operation> --identity <file> [--from-file <file.age>]`
+`pk-metal restore upload <operation> --identity <file> [--in <file.age>]`
 
 <CliFlags cmd="restore" sub="upload" />
 
 1. The command reads the operation. It refuses an operation that has no approval, or that has a result.
-2. It gets the encrypted snapshot from the sink, or from the file of `--from-file`.
+2. It gets the encrypted snapshot from the sink, or from the file of `--in`.
 3. It decrypts the snapshot with your age identity and makes sure that it is intact.
 4. It compares the SHA-256 with the value that the approver saw in the plan.
 5. It sends the snapshot to the node through the Talos API.

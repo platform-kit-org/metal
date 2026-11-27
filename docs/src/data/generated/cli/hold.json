@@ -1,6 +1,6 @@
 {
   "name": "hold",
-  "summary": "stop the operator from proposing new operations for a claim; nothing on the machine changes",
+  "summary": "stop new operations for a claim; nothing on the machine changes",
   "synopsis": "[-n namespace] [--reason text] <claim> | <namespace>/<claim>",
   "usage": [
     "pk-metal hold [-n namespace] [--reason text] <claim> | <namespace>/<claim>"

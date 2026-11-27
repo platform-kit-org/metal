@@ -39,8 +39,23 @@ func TestUsageHasNoInternalJargon(t *testing.T) {
 	}
 	for _, c := range commands {
 		assert.Contains(t, out.String(), "  "+c.name+" ", "every command is listed")
+		assert.LessOrEqual(t, len(c.summary), 67, "%s: the line of the command fits in 80 columns", c.name)
 	}
 	assert.Contains(t, out.String(), "REBOOT", "the boot line says it reboots the machine")
+	assert.Contains(t, out.String(), "--kubeconfig file           "+kubeconfigUsage, "the text of the flag itself")
+}
+
+// A verb without flags ends its help without an empty "flags:" heading.
+func TestHelpShowsFlagsOnlyWhenThereAreSome(t *testing.T) {
+	var out bytes.Buffer
+	fs := newFlags("version")
+	fs.SetOutput(&out)
+	fs.Usage()
+	assert.NotContains(t, out.String(), "flags:")
+	fs.Bool("x", false, "a flag")
+	out.Reset()
+	fs.Usage()
+	assert.Contains(t, out.String(), "\nflags:\n  -x\ta flag\n")
 }
 
 // TestParseFlagsAfterArguments: every verb takes its flags before or after

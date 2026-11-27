@@ -2,10 +2,9 @@ package main
 
 import (
 	"bufio"
+	"cmp"
 	"context"
-	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"maps"
@@ -75,31 +74,21 @@ func approveCmd(args []string) {
 	if err != nil {
 		badUsage(fs, err.Error())
 	}
-	cl, err := newClient()
-	if err != nil {
-		die(err)
-	}
-	ctx, stop := signalContext()
-	defer stop()
-
-	if len(refs) == 0 {
-		if err := listPending(ctx, cl, os.Stdout, time.Now()); err != nil {
-			die(err)
+	onCluster(func(ctx context.Context, cl client.Client) error {
+		if len(refs) == 0 {
+			return listPending(ctx, cl, os.Stdout, time.Now())
 		}
-		return
-	}
-	user, err := whoAmI(ctx, cl)
-	if err != nil {
-		die(err)
-	}
-	// One reader for all the questions: each answer is one line, and a line
-	// meant for the next operation must not be read with this one.
-	in := oneByteAtATime{os.Stdin}
-	if err := approveAll(ctx, cl, refs, approval{
-		User: user, Yes: *yes, In: in, Interactive: isTerminal(os.Stdin), Out: os.Stdout,
-	}); err != nil {
-		die(err)
-	}
+		user, err := whoAmI(ctx, cl)
+		if err != nil {
+			return err
+		}
+		// One reader for all the questions: each answer is one line, and a
+		// line meant for the next operation must not be read with this one.
+		in := oneByteAtATime{os.Stdin}
+		return approveAll(ctx, cl, refs, approval{
+			User: user, Yes: *yes, In: in, Interactive: isTerminal(os.Stdin), Out: os.Stdout,
+		})
+	})
 }
 
 // approveRefs reads the operations the command line names, in order, each
@@ -166,23 +155,19 @@ func (o oneByteAtATime) Read(p []byte) (int, error) {
 	return o.r.Read(p)
 }
 
-// flagGiven reports whether the flag was set on the command line.
-func flagGiven(fs *flag.FlagSet, name string) bool {
-	given := false
-	fs.Visit(func(f *flag.Flag) { given = given || f.Name == name })
-	return given
-}
-
 // isTerminal: stdin is a character device, so a person can answer a prompt.
 func isTerminal(f *os.File) bool {
 	fi, err := f.Stat()
 	return err == nil && fi.Mode()&os.ModeCharDevice != 0
 }
 
+// whoAmI is the caller's username, as the API server says it
+// (SelfSubjectReview), so that each record names who the cluster says the
+// caller is.
 func whoAmI(ctx context.Context, cl client.Client) (string, error) {
 	ssr := &authenticationv1.SelfSubjectReview{}
 	if err := cl.Create(ctx, ssr); err != nil {
-		return "", fmt.Errorf("cannot ask the cluster who you are: %w", err)
+		return "", fmt.Errorf("cannot ask the cluster who you are (pk-metal records your name on each change): %w", err)
 	}
 	if ssr.Status.UserInfo.Username == "" {
 		return "", fmt.Errorf("the cluster did not say who you are; check your kubeconfig user")
@@ -209,24 +194,97 @@ type approval struct {
 	// operation of the same name.
 	Expect    string
 	ExpectUID types.UID
-	// Window bounds the wait for the person's answer; zero is approvalWindow.
-	Window time.Duration
+	Window    time.Duration // see prompt
 }
 
-// errDeclined: the person answered no. Nothing changed.
-var errDeclined = errors.New("not approved; nothing changed")
+// prompt is how a verb asks its one y/N question: on In and Out, only on a
+// terminal (Interactive), and within Window (zero: approvalWindow). Yes
+// skips the question.
+type prompt struct {
+	Yes, Interactive bool
+	In               io.Reader
+	Out              io.Writer
+	Window           time.Duration
+}
 
-// errNoAnswer: the person did not answer within the window.
-var errNoAnswer = errors.New("no answer")
+// The outcomes of a question other than yes. Each one changes nothing.
+var (
+	errCannotAsk   = errors.New("stdin is not a terminal, so pk-metal cannot ask; rerun with --yes")
+	errNoAnswer    = errors.New("no answer")
+	errInterrupted = errors.New("interrupted; nothing changed")
+)
 
-// errCannotAsk: there is no terminal to ask on, and --yes was not given.
-var errCannotAsk = errors.New("stdin is not a terminal, so pk-metal cannot ask; " +
-	"read the plan above and rerun with --yes to approve it")
+// declined is the answer no to the question whether to do what it names
+// ("approved", "aborted", "moved").
+type declined string
+
+func (d declined) Error() string { return "not " + string(d) + "; nothing changed" }
+
+// errDeclined: the person did not approve.
+const errDeclined = declined("approved")
+
+// confirm asks the question and returns nil for y or yes, and at once for
+// Yes. Every other outcome changes nothing: errCannotAsk without a terminal,
+// errInterrupted on Ctrl-C, errNoAnswer when the window ends first, and
+// declined(done) for any other answer.
+func (p prompt) confirm(ctx context.Context, question, done string) error {
+	if p.Yes {
+		return nil
+	}
+	if !p.Interactive {
+		return errCannotAsk
+	}
+	window := cmp.Or(p.Window, approvalWindow)
+	fmt.Fprintf(p.Out, "%s [y/N] ", question)
+	line, err := ask(ctx, p.In, window)
+	switch {
+	case ctx.Err() != nil:
+		fmt.Fprintln(p.Out)
+		return errInterrupted
+	case err != nil:
+		fmt.Fprintln(p.Out)
+		return fmt.Errorf("%w within %s; nothing changed", errNoAnswer, shortDuration(window))
+	}
+	if s := strings.ToLower(strings.TrimSpace(line)); s != "y" && s != "yes" {
+		return declined(done)
+	}
+	return nil
+}
 
 // patchAttempts bounds how often an approval is sent again after the
-// operation changed under it in a way that does not touch the plan (the
+// object changed under it in a way that does not touch the plan (the
 // operator writing its status).
 const patchAttempts = 3
+
+// approveAsShown sets the approval spec on exactly the object that was
+// shown: the uid and resourceVersion make the API server refuse the patch
+// (409 Conflict) when the object was made again under the same name or
+// changed in any way since it was read. The operator writes status often, so
+// after a conflict, and first when the answer took a while (reread), it
+// reads the object again with read. read returns changed, or the reason the
+// object cannot be approved now, unless it is the same object with the same
+// plan.
+func approveAsShown(ctx context.Context, cl client.Client, obj client.Object, reread bool,
+	read func() (client.Object, error), approval map[string]any, what string, changed error) error {
+	for attempt := 0; ; attempt++ {
+		if reread {
+			var err error
+			if obj, err = read(); err != nil {
+				return err
+			}
+		}
+		err := mergePatch(ctx, cl, obj, mergeSpec{UID: obj.GetUID(), ResourceVersion: obj.GetResourceVersion(), Spec: approval})
+		switch {
+		case err == nil:
+			return nil
+		case !apierrors.IsConflict(err):
+			return refused("approve "+what+"; nothing changed", err)
+		case attempt+1 >= patchAttempts:
+			return changed
+		}
+		reread = true
+	}
+}
 
 func approve(ctx context.Context, cl client.Client, a approval) error {
 	op, plan, err := approvalPlan(ctx, cl, a.Namespace, a.Name, a.User)
@@ -247,79 +305,30 @@ func approve(ctx context.Context, cl client.Client, a approval) error {
 		fmt.Fprint(a.Out, "\n"+readSelfApproval(ctx, cl).note("operation", role))
 	}
 
-	shown := op.UID
-	reread := false
-	if !a.Yes {
-		if !a.Interactive {
-			return errCannotAsk
+	p := prompt{Yes: a.Yes, Interactive: a.Interactive, In: a.In, Out: a.Out, Window: a.Window}
+	if err := p.confirm(ctx, "\nApprove as "+a.User+"?", "approved"); err != nil {
+		if errors.Is(err, errDeclined) {
+			// A no leaves the proposal waiting; abort is how to refuse it.
+			return fmt.Errorf("%w. It still waits; to refuse it: pk-metal abort --reason \"<why>\" %s", err, ref)
 		}
-		window := a.Window
-		if window <= 0 {
-			window = approvalWindow
-		}
-		fmt.Fprintf(a.Out, "\nApprove as %s? [y/N] ", a.User)
-		line, err := ask(ctx, a.In, window)
-		switch {
-		case ctx.Err() != nil:
-			fmt.Fprintln(a.Out)
-			return fmt.Errorf("interrupted; nothing changed")
-		case errors.Is(err, errNoAnswer):
-			fmt.Fprintln(a.Out)
-			return fmt.Errorf("%w within %s; nothing changed. Run approve again to see the plan as it is now",
-				errNoAnswer, shortDuration(window))
-		}
-		switch strings.ToLower(strings.TrimSpace(line)) {
-		case "y", "yes":
-		default:
-			return errDeclined
-		}
-		// The person took a while to answer. Whatever they agreed to was
-		// read before that, so it is read again and must still be the same
-		// operation with the same plan.
-		reread = true
+		return err
 	}
-
-	for attempt := 0; ; attempt++ {
-		if reread {
-			now, nowPlan, err := approvalPlan(ctx, cl, a.Namespace, a.Name, a.User)
-			if err != nil {
-				return err
-			}
-			if now.UID != shown || nowPlan != plan {
-				return changed
-			}
-			op = now
+	read := func() (client.Object, error) {
+		now, nowPlan, err := approvalPlan(ctx, cl, a.Namespace, a.Name, a.User)
+		if err != nil {
+			return nil, err
 		}
-		err := cl.Patch(ctx, op, client.RawPatch(types.MergePatchType, approvalPatch(op, a.User)))
-		if err == nil {
-			break
+		if now.UID != op.UID || nowPlan != plan {
+			return nil, changed
 		}
-		if !apierrors.IsConflict(err) || attempt+1 >= patchAttempts {
-			if apierrors.IsConflict(err) {
-				return changed
-			}
-			return approvalRefused("operation "+ref, err)
-		}
-		// The operation changed after it was read; read it again, and
-		// approve it only if the plan is still the one shown.
-		reread = true
+		return now, nil
+	}
+	approval := map[string]any{"approval": map[string]any{"approvedBy": a.User}}
+	if err := approveAsShown(ctx, cl, op, !a.Yes, read, approval, "operation "+ref, changed); err != nil {
+		return err
 	}
 	fmt.Fprintf(a.Out, "approved %s as %s; the operator starts it now. Follow it with: pk-metal status\n", ref, a.User)
 	return nil
-}
-
-// approvalPatch stamps the approval on exactly the object that was read: the
-// uid and resourceVersion make the API server refuse it (409 Conflict) when
-// the operation was deleted and created again under the same name, or
-// changed in any way since. Marshalled, not formatted: Go's %q escapes are
-// not JSON's, and a user name comes from whatever the identity provider
-// allows.
-func approvalPatch(op *metalv1alpha1.HostOperation, user string) []byte {
-	patch, _ := json.Marshal(map[string]any{
-		"metadata": map[string]any{"uid": op.UID, "resourceVersion": op.ResourceVersion},
-		"spec":     map[string]any{"approval": map[string]any{"approvedBy": user}},
-	})
-	return patch
 }
 
 // ask reads one answer line, giving up after window. A reader that cannot be
@@ -355,7 +364,7 @@ func approvalPlan(ctx context.Context, cl client.Client, namespace, name, user s
 	case op.Spec.Approval.ApprovedBy != "":
 		return nil, "", fmt.Errorf("operation %s is already approved by %s (an approval cannot be changed)",
 			ref, op.Spec.Approval.ApprovedBy)
-	case finished(op):
+	case op.Finished():
 		return nil, "", fmt.Errorf("operation %s has finished (%s); there is nothing to approve", ref, opPhase(op))
 	case !op.ApprovalRequired():
 		return nil, "", fmt.Errorf("operation %s does not need approval; the operator runs it on its own", ref)
@@ -383,19 +392,13 @@ func opPhase(op *metalv1alpha1.HostOperation) metalv1alpha1.OperationPhase {
 	return p
 }
 
-// finished: the executor recorded an outcome: success, failure or abort.
-func finished(op *metalv1alpha1.HostOperation) bool { return op.Finished() }
-
-// waitsForApproval: the operation needs a person and nobody has approved it.
-func waitsForApproval(op *metalv1alpha1.HostOperation) bool { return op.AwaitsApproval() }
-
 // listPending prints one line for each operation that waits for approval.
 func listPending(ctx context.Context, cl client.Client, w io.Writer, now time.Time) error {
 	ops := &metalv1alpha1.HostOperationList{}
 	if err := cl.List(ctx, ops); err != nil {
 		return fmt.Errorf("list operations: %w", err)
 	}
-	pending := slices.DeleteFunc(ops.Items, func(op metalv1alpha1.HostOperation) bool { return !waitsForApproval(&op) })
+	pending := slices.DeleteFunc(ops.Items, func(op metalv1alpha1.HostOperation) bool { return !op.AwaitsApproval() })
 	if len(pending) == 0 {
 		fmt.Fprintln(w, "no operation waits for approval")
 		return nil

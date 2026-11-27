@@ -167,7 +167,7 @@ pk-metal approve --yes provision-simhw2288v5000397-1a2b3c4d
 | Message | Cause | What to do |
 | --- | --- | --- |
 | `was proposed by you`, `this site forbids approving your own proposal` | You proposed the operation, for example with [](cli:reboot), and your site sets `selfApproval: Forbidden`. | Ask a different person to approve it. |
-| `the cluster refused the approval` | An admission policy refused the approval. The rest of the message is the rule. | Do what the message says. See [](ref:admission-policies). |
+| `the cluster refused to approve` | An admission policy refused the approval. The rest of the message is the rule. | Do what the message says. See [](ref:admission-policies). |
 | `the operator approves nothing` | You run the command as the operator service account. | Approve as a person with `pk-metal-approver`. |
 | `is already approved by` | A person approved it before. | Follow it with [](cli:status). |
 | `changed since its plan was shown` | The object or its plan changed while you read. | Run the command again and read the new plan. |
@@ -194,6 +194,7 @@ If you have no permission to read one of the last four kinds, the plan says that
 <CliExit cmd="approve" />
 
 An answer other than `y` or `yes` gives code 1 and the message `not approved; nothing changed`.
+The operation then still waits for approval. To refuse it, use [](cli:abort).
 With several names, the code is 1 if the command did not approve one or more of the operations.
 
 ## Related
@@ -203,4 +204,4 @@ With several names, the code is 1 if the command did not approve one or more of 
 - [](howto:approve-hold-retry) is the procedure.
 - [](cli:rollout) approves a [](kind:TalosRollout), which covers the operations of all its nodes.
 - [](cli:top) approves with the key `a`.
-- [](cli:abort) stops an approved operation.
+- [](cli:abort) stops an operation, or refuses an operation that waits for approval.

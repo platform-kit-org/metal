@@ -11,6 +11,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+
+	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
 )
 
 // fakeClientAs is a fake API that answers a SelfSubjectReview with user, as
@@ -28,26 +30,27 @@ func fakeClientAs(user string, objs ...client.Object) client.Client {
 		}).Build()
 }
 
-func TestNamedLift(t *testing.T) {
+func TestRequestedBy(t *testing.T) {
+	assert.Equal(t, map[string]any{metalv1alpha1.AnnotationRequestedBy: "alice"}, requestedBy("alice", "  "),
+		"no reason, no lift")
+	for _, ack := range []string{" disk swap ", "alice: disk swap"} {
+		assert.Equal(t, map[string]any{metalv1alpha1.AnnotationRequestedBy: "alice",
+			metalv1alpha1.AnnotationAckEtcdRisk: "alice: disk swap"}, requestedBy("alice", ack),
+			"the caller's username, then the reason, and not twice")
+	}
+}
+
+func TestWhoAmI(t *testing.T) {
 	ctx := context.Background()
-	cl := fakeClientAs("alice")
-	got, err := namedLift(ctx, cl, " disk swap ")
+	user, err := whoAmI(ctx, fakeClientAs("alice"))
 	require.NoError(t, err)
-	assert.Equal(t, "alice: disk swap", got, "the caller's username, then the reason")
-
-	got, err = namedLift(ctx, cl, "alice: disk swap")
-	require.NoError(t, err)
-	assert.Equal(t, "alice: disk swap", got, "a value that names the caller already is not named twice")
-
-	got, err = namedLift(ctx, cl, "  ")
-	require.NoError(t, err)
-	assert.Empty(t, got, "no reason, no lift")
+	assert.Equal(t, "alice", user)
 
 	broken := fake.NewClientBuilder().WithScheme(newScheme()).WithInterceptorFuncs(interceptor.Funcs{
 		Create: func(context.Context, client.WithWatch, client.Object, ...client.CreateOption) error {
 			return errors.New("forbidden")
 		},
 	}).Build()
-	_, err = namedLift(ctx, broken, "disk swap")
-	assert.ErrorContains(t, err, "the guard lift must name you")
+	_, err = whoAmI(ctx, broken)
+	assert.ErrorContains(t, err, "cannot ask the cluster who you are (pk-metal records your name on each change): forbidden")
 }

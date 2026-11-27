@@ -1,6 +1,6 @@
 {
   "name": "render",
-  "summary": "write Talos machine configs, talosconfig and kubeconfig from TalosCluster and TalosNode files (touches no machine)",
+  "summary": "write Talos machine configs, talosconfig and kubeconfig from files",
   "synopsis": "--dir <manifests> --secrets <secrets.yaml|-> [flags]",
   "usage": [
     "pk-metal render --dir <manifests> --secrets <secrets.yaml|-> [flags]"
@@ -55,9 +55,9 @@
     },
     {
       "name": "secrets",
-      "type": "talosctl gen secrets",
+      "type": "file",
       "default": "",
-      "usage": "secrets bundle from talosctl gen secrets, or - for stdin (required)",
+      "usage": "secrets bundle file from talosctl gen secrets, or - for stdin (required)",
       "global": false
     }
   ],

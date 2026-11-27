@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -10,6 +11,8 @@ import (
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
@@ -123,11 +126,11 @@ func TestReinstallBindsTheRequestToTheInstall(t *testing.T) {
 	c.Spec.OS = &metalv1alpha1.ClaimOS{NodeRef: metalv1alpha1.Reference{Name: "cp-2"}}
 	cl := fakeClient(c)
 	var out bytes.Buffer
-	assert.ErrorContains(t, reinstall(ctx, cl, "default", "cp-2", "", &out), "records no install")
+	assert.ErrorContains(t, reinstall(ctx, cl, "default", false, "cp-2", "", &out), "records no install")
 
 	c.Status.HandOff = &metalv1alpha1.ClaimHandOff{Host: "h-2", Node: "cp-2", At: at}
 	cl = fakeClientAs("alice", c)
-	require.NoError(t, reinstall(ctx, cl, "default", "cp-2", "disk swap", &out), "found by its node's name")
+	require.NoError(t, reinstall(ctx, cl, "default", false, "cp-2", "disk swap", &out), "found by its node's name")
 	got := &metalv1alpha1.HostClaim{}
 	require.NoError(t, cl.Get(ctx, client.ObjectKeyFromObject(c), got))
 	assert.Equal(t, "2026-11-02T03:04:05Z", got.Annotations[metalv1alpha1.AnnotationReinstall])
@@ -135,19 +138,58 @@ func TestReinstallBindsTheRequestToTheInstall(t *testing.T) {
 	assert.Equal(t, "alice", got.Annotations[metalv1alpha1.AnnotationRequestedBy], "the request names who asked for it")
 }
 
+func TestGetCluster(t *testing.T) {
+	ctx := context.Background()
+	cl := fakeClient(&osv1alpha1.TalosCluster{ObjectMeta: metav1.ObjectMeta{Name: "lab"}})
+	require.NoError(t, getCluster(ctx, cl, "TalosCluster", &osv1alpha1.TalosCluster{}, "lab", listClusters))
+	assert.EqualError(t, getCluster(ctx, cl, "TalosCluster", &osv1alpha1.TalosCluster{}, "lbe", listClusters),
+		"no TalosCluster lbe; kubectl get talosclusters lists them")
+	broken := fake.NewClientBuilder().WithScheme(newScheme()).WithInterceptorFuncs(interceptor.Funcs{
+		Get: func(context.Context, client.WithWatch, client.ObjectKey, client.Object, ...client.GetOption) error {
+			return errors.New("connection refused")
+		},
+	}).Build()
+	assert.EqualError(t, getCluster(ctx, broken, "TalosCluster", &osv1alpha1.TalosCluster{}, "lab", listClusters),
+		"read TalosCluster lab: connection refused")
+}
+
+func TestFindClaim(t *testing.T) {
+	ctx := context.Background()
+	c := &metalv1alpha1.HostClaim{ObjectMeta: metav1.ObjectMeta{Namespace: "staging", Name: "w-1"}}
+	c.Spec.OS = &metalv1alpha1.ClaimOS{NodeRef: metalv1alpha1.Reference{Name: "w-1"}}
+	t.Run("a namespace in the name and another in -n is refused", func(t *testing.T) {
+		_, err := findClaim(ctx, fakeClient(c), "prod", true, "staging/w-1")
+		assert.ErrorContains(t, err, "names namespace staging, but -n says prod")
+		got, err := findClaim(ctx, fakeClient(c), "default", false, "staging/w-1")
+		require.NoError(t, err)
+		assert.Equal(t, "staging", got.Namespace, "the default of -n gives way to the name")
+	})
+	t.Run("a failed read is not a missing claim", func(t *testing.T) {
+		cl := fake.NewClientBuilder().WithScheme(newScheme()).WithObjects(c).WithInterceptorFuncs(interceptor.Funcs{
+			Get: func(context.Context, client.WithWatch, client.ObjectKey, client.Object, ...client.GetOption) error {
+				return errors.New("connection refused")
+			},
+		}).Build()
+		_, err := findClaim(ctx, cl, "staging", false, "w-1")
+		assert.ErrorContains(t, err, "read claim staging/w-1: connection refused")
+	})
+}
+
 func TestWipeAndReplace(t *testing.T) {
 	ctx := context.Background()
 	cl := fakeClientAs("alice", scaleFleet()...)
 	var out bytes.Buffer
 	assert.ErrorContains(t, wipe(ctx, cl, "h-8", "", &out), "not marked")
+	assert.ErrorContains(t, wipe(ctx, cl, "asset-h-7", "", &out), "no Host asset-h-7; a Host has the name of its serial",
+		"a wrong name says which name the verb wants")
 	require.NoError(t, wipe(ctx, cl, "h-7", "", &out))
 	h := &metalv1alpha1.Host{}
 	require.NoError(t, cl.Get(ctx, client.ObjectKey{Name: "h-7"}, h))
 	assert.Equal(t, "v1.14.6", h.Annotations[metalv1alpha1.AnnotationWipe], "the version of the node's cluster")
 	assert.Equal(t, "alice", h.Annotations[metalv1alpha1.AnnotationRequestedBy], "the wipe names who asked for it")
 
-	assert.ErrorContains(t, replace(ctx, cl, "default", "cp-2", "h-7", "", &out), "not wiped")
-	require.NoError(t, replace(ctx, cl, "default", "cp-2", "h-9", "failed PSU", &out))
+	assert.ErrorContains(t, replace(ctx, cl, "default", false, "cp-2", "h-7", "", &out), "not wiped")
+	require.NoError(t, replace(ctx, cl, "default", false, "cp-2", "h-9", "failed PSU", &out))
 	c := &metalv1alpha1.HostClaim{}
 	require.NoError(t, cl.Get(ctx, client.ObjectKey{Namespace: "default", Name: "cp-2"}, c))
 	assert.Equal(t, "asset-h-9", c.Spec.AssetRef.Name)

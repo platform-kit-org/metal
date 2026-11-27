@@ -76,7 +76,7 @@ func labRack() topInput {
 		o.Spec.Approval.ApprovedBy = approvedBy
 		o.Status = metalv1alpha1.HostOperationStatus{Conditions: conds}
 		for i := 0; i < steps; i++ {
-			o.Status.Steps = append(o.Status.Steps, metalv1alpha1.OperationStep{Action: actionKey(o.Spec.Actions[i]), Phase: "Succeeded"})
+			o.Status.Steps = append(o.Status.Steps, metalv1alpha1.OperationStep{Action: o.Spec.Actions[i].Key(), Phase: "Succeeded"})
 		}
 		return o
 	}
@@ -305,7 +305,7 @@ func TestBuildTop(t *testing.T) {
 		"fleet order first, matched by serial or by BMC address; other hosts after")
 
 	assert.Nil(t, d.Tiles[0].Op, "a succeeded operation is history")
-	assert.Equal(t, &opLine{Namespace: "pk-metal", Name: "provision-node2-1a2b3c4d", Phase: "Running",
+	assert.Equal(t, &opLine{Namespace: "pk-metal", Name: "provision-node2-1a2b3c4d",
 		Step: "7/9 awaitCheckIn", Approval: "approved by alice"}, d.Tiles[1].Op)
 	assert.True(t, d.Tiles[2].Op.Waits)
 	assert.Equal(t, "1/9 ejectMedia", d.Tiles[2].Op.Step)

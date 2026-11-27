@@ -1,6 +1,6 @@
 {
   "name": "rollout",
-  "summary": "see the rollouts that change a Talos cluster node by node (config, upgrade, reboot), approve one, resume it after its pause, or abort it",
+  "summary": "list, show, approve, resume, pause or abort cluster rollouts",
   "synopsis": "list | show <rollout> | approve [--yes] <rollout> | resume <rollout> | pause <rollout> | abort [--yes] <rollout>",
   "usage": [
     "pk-metal rollout list | show <rollout> | approve [--yes] <rollout> | resume <rollout> | pause <rollout> | abort [--yes] <rollout>"

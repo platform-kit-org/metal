@@ -2,15 +2,12 @@ package main
 
 import (
 	"context"
-	"encoding/json"
-	"flag"
 	"fmt"
 	"io"
 	"os"
 	"strings"
 	"time"
 
-	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
@@ -49,22 +46,10 @@ func retryCmd(args []string) {
 	ns := fs.String("n", operatorNamespace, "namespace of the operation")
 	addGlobalFlags(fs)
 	parseFlags(fs, args)
-	if fs.NArg() != 1 {
-		badUsage(fs, "give exactly one operation")
-	}
-	namespace, name, err := splitRef(fs.Arg(0), *ns, flagGiven(fs, "n"))
-	if err != nil {
-		badUsage(fs, err.Error())
-	}
-	cl, err := newClient()
-	if err != nil {
-		die(err)
-	}
-	ctx, stop := signalContext()
-	defer stop()
-	if err := retry(ctx, cl, namespace, name, os.Stdout); err != nil {
-		die(err)
-	}
+	namespace, name := oneRef(fs, *ns, "operation")
+	onCluster(func(ctx context.Context, cl client.Client) error {
+		return retry(ctx, cl, namespace, name, os.Stdout)
+	})
 }
 
 // convergenceProposal reports an operation the convergence lane proposed for
@@ -101,13 +86,9 @@ func retry(ctx context.Context, cl client.Client, namespace, name string, w io.W
 		// Deleting a convergence proposal reads as refusing it, so the
 		// operator would never propose it again. The mark asks for the
 		// retry; the operator deletes this operation and proposes anew.
-		patch := client.MergeFrom(op.DeepCopy())
-		if op.Annotations == nil {
-			op.Annotations = map[string]string{}
-		}
-		op.Annotations[metalv1alpha1.AnnotationRetry] = time.Now().UTC().Format(time.RFC3339)
-		if err := cl.Patch(ctx, op, patch); err != nil {
-			return fmt.Errorf("mark %s for retry: %w", ref, err)
+		set := map[string]any{metalv1alpha1.AnnotationRetry: time.Now().UTC().Format(time.RFC3339)}
+		if err := mergePatch(ctx, cl, op, mergeSpec{Annotations: set}); err != nil {
+			return refused("mark "+ref+" for retry", err)
 		}
 		fmt.Fprintf(w, "marked %s for retry.\n", ref)
 		fmt.Fprintf(w, "The operator replaces it with a new proposal of the same plan for host %s in a few seconds; "+
@@ -119,7 +100,7 @@ func retry(ctx context.Context, cl client.Client, namespace, name string, w io.W
 		claim = op.Labels[labelClaimNamespace] + "/" + n
 	}
 	if err := cl.Delete(ctx, op); client.IgnoreNotFound(err) != nil {
-		return fmt.Errorf("delete %s: %w", ref, err)
+		return refused("delete "+ref, err)
 	}
 	fmt.Fprintf(w, "deleted %s.\n", ref)
 	if claim == "" {
@@ -130,7 +111,7 @@ func retry(ctx context.Context, cl client.Client, namespace, name string, w io.W
 		"it then waits for approval: pk-metal approve\n", claim)
 	c := &metalv1alpha1.HostClaim{}
 	if err := cl.Get(ctx, client.ObjectKey{Namespace: op.Labels[labelClaimNamespace], Name: op.Labels[labelClaimName]}, c); err == nil {
-		if _, held := c.Annotations[holdAnnotation]; held {
+		if _, held := c.Annotations[metalv1alpha1.AnnotationHold]; held {
 			fmt.Fprintf(w, "Claim %s is on hold, so nothing is proposed until: pk-metal unhold %s\n", claim, claim)
 		}
 	}
@@ -196,7 +177,10 @@ func holdCmd(args []string) {
 	reason := fs.String("reason", "", "why, for the people who see the hold (stored on the claim)")
 	addGlobalFlags(fs)
 	parseFlags(fs, args)
-	setHold(fs, ns, *reason, true)
+	namespace, name := oneRef(fs, *ns, "claim")
+	onCluster(func(ctx context.Context, cl client.Client) error {
+		return hold(ctx, cl, namespace, name, *reason, true, os.Stdout)
+	})
 }
 
 func unholdCmd(args []string) {
@@ -204,27 +188,10 @@ func unholdCmd(args []string) {
 	ns := fs.String("n", claimNamespace, "namespace of the claim")
 	addGlobalFlags(fs)
 	parseFlags(fs, args)
-	setHold(fs, ns, "", false)
-}
-
-// setHold runs hold or unhold for the one claim the command line names.
-func setHold(fs *flag.FlagSet, ns *string, reason string, on bool) {
-	if fs.NArg() != 1 {
-		badUsage(fs, "give exactly one claim")
-	}
-	namespace, name, err := splitRef(fs.Arg(0), *ns, flagGiven(fs, "n"))
-	if err != nil {
-		badUsage(fs, err.Error())
-	}
-	cl, err := newClient()
-	if err != nil {
-		die(err)
-	}
-	ctx, stop := signalContext()
-	defer stop()
-	if err := hold(ctx, cl, namespace, name, reason, on, os.Stdout); err != nil {
-		die(err)
-	}
+	namespace, name := oneRef(fs, *ns, "claim")
+	onCluster(func(ctx context.Context, cl client.Client) error {
+		return hold(ctx, cl, namespace, name, "", false, os.Stdout)
+	})
 }
 
 // hold sets (on) or removes the hold annotation on a claim.
@@ -237,16 +204,12 @@ func hold(ctx context.Context, cl client.Client, namespace, name, reason string,
 	var value any // JSON null removes the annotation in a merge patch
 	if on {
 		value = reason
-	} else if _, held := c.Annotations[holdAnnotation]; !held {
+	} else if _, held := c.Annotations[metalv1alpha1.AnnotationHold]; !held {
 		fmt.Fprintf(w, "claim %s is not on hold; nothing changed\n", ref)
 		return nil
 	}
-	patch, err := json.Marshal(map[string]any{"metadata": map[string]any{"annotations": map[string]any{holdAnnotation: value}}})
-	if err != nil {
-		return err
-	}
-	if err := cl.Patch(ctx, c, client.RawPatch(types.MergePatchType, patch)); err != nil {
-		return fmt.Errorf("update claim %s: %w", ref, err)
+	if err := mergePatch(ctx, cl, c, mergeSpec{Annotations: map[string]any{metalv1alpha1.AnnotationHold: value}}); err != nil {
+		return refused("update claim "+ref, err)
 	}
 	if on {
 		fmt.Fprintf(w, "claim %s is on hold: the operator proposes no new operation for it.\n"+

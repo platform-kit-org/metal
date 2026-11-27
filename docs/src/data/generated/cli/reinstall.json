@@ -1,6 +1,6 @@
 {
   "name": "reinstall",
-  "summary": "ask for the node a claim runs to be wiped and installed again on the same machine (the operator proposes it)",
+  "summary": "ask for a new install of a node on the same machine",
   "synopsis": "[-n namespace] [--ack-etcd-risk reason] <claim> | <node>",
   "usage": [
     "pk-metal reinstall [-n namespace] [--ack-etcd-risk reason] <claim> | <node>"

@@ -1,6 +1,6 @@
 {
   "name": "completion",
-  "summary": "print the shell completion script: TAB then completes commands, flags, and the names of objects in the cluster",
+  "summary": "print the shell completion script for bash, zsh or fish",
   "synopsis": "bash|zsh|fish",
   "usage": [
     "pk-metal completion bash|zsh|fish"

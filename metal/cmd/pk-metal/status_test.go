@@ -93,7 +93,7 @@ func rack() ([]metalv1alpha1.Host, []metalv1alpha1.ManagementEndpoint, []metalv1
 		},
 		{
 			ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "fleet-b",
-				Annotations: map[string]string{holdAnnotation: "disk swap"}},
+				Annotations: map[string]string{metalv1alpha1.AnnotationHold: "disk swap"}},
 			Spec: metalv1alpha1.HostClaimSpec{AssetRef: metalv1alpha1.Reference{Name: "rack1-u12"}},
 			Status: metalv1alpha1.HostClaimStatus{
 				Phase: metalv1alpha1.ClaimPending, BlockedOn: metalv1alpha1.ReasonHostAlreadyClaimed,

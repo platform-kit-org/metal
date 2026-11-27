@@ -1,6 +1,6 @@
 {
   "name": "boot",
-  "summary": "mount a machine config ISO through a BMC and REBOOT the machine into it, without the operator",
+  "summary": "mount a config ISO through a BMC and REBOOT the machine into it",
   "synopsis": "--config <rendered.yaml> --node <name> (--listen addr | --relay addr) [flags] <bmc-url>",
   "usage": [
     "pk-metal boot --config <rendered.yaml> --node <name> (--listen addr | --relay addr) [flags] <bmc-url>"

@@ -286,9 +286,14 @@ func (l *Logger) Proposed(o Object, proposedBy string, requestedBy []string, tar
 // when the approver proposed the change or asked for it (a name in
 // requestedBy).
 func (l *Logger) Approved(o Object, proposedBy string, requestedBy []string, approvedBy, planHash string) {
+	l.approved(o, proposedBy, requestedBy, approvedBy, planHash, func(*Line) {})
+}
+
+func (l *Logger) approved(o Object, proposedBy string, requestedBy []string, approvedBy, planHash string, fill func(*Line)) {
 	self := approvedBy == proposedBy || slices.Contains(requestedBy, approvedBy)
 	l.write(o, EventApproved, approvedBy, func(x *Line) {
 		x.ProposedBy, x.RequestedBy, x.ApprovedBy, x.SelfApproved, x.PlanHash = proposedBy, requestedBy, approvedBy, &self, planHash
+		fill(x)
 	})
 }
 
@@ -423,12 +428,8 @@ func (l *Logger) BMCKeyPinned(o Object, key, reason string) {
 // target cluster, as the approver: a copy of a decision, not a new one. The
 // Logger's operator is the user who ran the move.
 func (l *Logger) ApprovalReplayed(o Object, proposedBy string, requestedBy []string, approvedBy, planHash string) {
-	self := approvedBy == proposedBy || slices.Contains(requestedBy, approvedBy)
 	replayed := true
-	l.write(o, EventApproved, approvedBy, func(x *Line) {
-		x.ProposedBy, x.RequestedBy, x.ApprovedBy, x.SelfApproved, x.PlanHash = proposedBy, requestedBy, approvedBy, &self, planHash
-		x.Replayed, x.ReplayedBy = &replayed, l.Operator()
-	})
+	l.approved(o, proposedBy, requestedBy, approvedBy, planHash, func(x *Line) { x.Replayed, x.ReplayedBy = &replayed, l.Operator() })
 }
 
 // GuardLiftReplayed records that pk-metal pivot set a guard lift again on

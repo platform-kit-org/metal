@@ -3,9 +3,6 @@ package main
 import (
 	"context"
 	"log"
-	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
@@ -26,7 +23,7 @@ const bootstrapCertTTL = time.Hour
 func bootstrapCmd(args []string) {
 	fs := newFlags("bootstrap")
 	dir := fs.String("dir", "", "directory with TalosCluster/TalosNode manifests (required)")
-	secretsFile := fs.String("secrets", "", "secrets bundle from `talosctl gen secrets`, or - for stdin (required)")
+	secretsFile := fs.String("secrets", "", "secrets bundle `file` from talosctl gen secrets, or - for stdin (required)")
 	nodeName := fs.String("node", "", "drive only this TalosNode (default: every node in --dir)")
 	endpoint := fs.String("endpoint", "", "address of --node (default: its spec.address or first static address)")
 	timeout := fs.Duration("timeout", 15*time.Minute, "overall deadline: bootstrap retries, readiness")
@@ -64,7 +61,7 @@ func bootstrapCmd(args []string) {
 		die(err)
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, stop := signalContext()
 	defer stop()
 	ctx, cancel := context.WithTimeout(ctx, *timeout)
 	defer cancel()

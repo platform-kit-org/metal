@@ -1,6 +1,6 @@
 {
   "name": "top",
-  "summary": "live view of every machine: BMC, phase, operation, node; keys approve, hold and retry like the commands below",
+  "summary": "live view of every machine; approve, hold and retry from it",
   "synopsis": "[--fleet url] [--workload-kubeconfig file]",
   "usage": [
     "pk-metal top [--fleet url] [--workload-kubeconfig file]"

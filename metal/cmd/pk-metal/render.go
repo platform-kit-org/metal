@@ -22,7 +22,7 @@ import (
 func renderCmd(args []string) {
 	fs := newFlags("render")
 	dir := fs.String("dir", "", "directory with TalosCluster/TalosNode (and patch ConfigMap) manifests (required)")
-	secretsFile := fs.String("secrets", "", "secrets bundle from `talosctl gen secrets`, or - for stdin (required)")
+	secretsFile := fs.String("secrets", "", "secrets bundle `file` from talosctl gen secrets, or - for stdin (required)")
 	out := fs.String("out", "clusterconfig", "output directory: <node>.yaml per node, talosconfig, kubeconfig")
 	factoryHost := fs.String("image-factory", render.PublicFactory, "image factory host the installer image is named on")
 	register := fs.Bool("register", false, "tell the image factory about each schematic (needs network); off computes ids offline")

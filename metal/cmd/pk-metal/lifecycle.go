@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -10,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -86,22 +86,16 @@ func wipeCmd(args []string) {
 	if fs.NArg() != 1 {
 		badUsage(fs, "give exactly one host")
 	}
-	cl, err := newClient()
-	if err != nil {
-		die(err)
-	}
-	ctx, stop := signalContext()
-	defer stop()
-	if err := wipe(ctx, cl, fs.Arg(0), *version, os.Stdout); err != nil {
-		die(err)
-	}
+	onCluster(func(ctx context.Context, cl client.Client) error {
+		return wipe(ctx, cl, fs.Arg(0), *version, os.Stdout)
+	})
 }
 
 // wipe marks a not-wiped host for a wipe.
 func wipe(ctx context.Context, cl client.Client, name, version string, w io.Writer) error {
 	host := &metalv1alpha1.Host{}
-	if err := cl.Get(ctx, client.ObjectKey{Name: name}, host); err != nil {
-		return fmt.Errorf("host %s: %w", name, err)
+	if err := getCluster(ctx, cl, "Host", host, name, listHosts); err != nil {
+		return err
 	}
 	mark, ok := host.Annotations[metalv1alpha1.AnnotationDiskNotWiped]
 	if !ok {
@@ -117,13 +111,14 @@ func wipe(ctx context.Context, cl client.Client, name, version string, w io.Writ
 		}
 		version = cluster.Spec.TalosVersion
 	}
-	user, err := requester(ctx, cl)
+	user, err := whoAmI(ctx, cl)
 	if err != nil {
 		return err
 	}
-	if err := patchAnnotations(ctx, cl, host, map[string]any{
-		metalv1alpha1.AnnotationWipe: version, metalv1alpha1.AnnotationRequestedBy: user}); err != nil {
-		return fmt.Errorf("update host %s: %w", name, err)
+	set := requestedBy(user, "")
+	set[metalv1alpha1.AnnotationWipe] = version
+	if err := mergePatch(ctx, cl, host, mergeSpec{Annotations: set}); err != nil {
+		return refused("update host "+name, err)
 	}
 	fmt.Fprintf(w, "host %s: wipe asked for (it may still hold node %s).\n", name, mark)
 	fmt.Fprintf(w, "The operator proposes an operation that boots a Talos %s image which erases the system disk; approve it with: pk-metal approve\n", version)
@@ -139,27 +134,23 @@ func reinstallCmd(args []string) {
 	if fs.NArg() != 1 {
 		badUsage(fs, "give exactly one claim or node")
 	}
-	cl, err := newClient()
-	if err != nil {
-		die(err)
-	}
-	ctx, stop := signalContext()
-	defer stop()
-	if err := reinstall(ctx, cl, *ns, fs.Arg(0), *ack, os.Stdout); err != nil {
-		die(err)
-	}
+	onCluster(func(ctx context.Context, cl client.Client) error {
+		return reinstall(ctx, cl, *ns, flagGiven(fs, "n"), fs.Arg(0), *ack, os.Stdout)
+	})
 }
 
 // findClaim reads a claim by namespace/name or name, or else the claim whose
 // OS intent names the node.
-func findClaim(ctx context.Context, cl client.Client, namespace, ref string) (*metalv1alpha1.HostClaim, error) {
-	ns, name, err := splitRef(ref, namespace, false)
+func findClaim(ctx context.Context, cl client.Client, namespace string, nsGiven bool, ref string) (*metalv1alpha1.HostClaim, error) {
+	ns, name, err := splitRef(ref, namespace, nsGiven)
 	if err != nil {
 		return nil, err
 	}
 	c := &metalv1alpha1.HostClaim{}
 	if err := cl.Get(ctx, types.NamespacedName{Namespace: ns, Name: name}, c); err == nil {
 		return c, nil
+	} else if !apierrors.IsNotFound(err) {
+		return nil, fmt.Errorf("read claim %s/%s: %w", ns, name, err)
 	}
 	claims := &metalv1alpha1.HostClaimList{}
 	if err := cl.List(ctx, claims); err != nil {
@@ -174,8 +165,8 @@ func findClaim(ctx context.Context, cl client.Client, namespace, ref string) (*m
 }
 
 // reinstall asks for the claim's node to be installed again.
-func reinstall(ctx context.Context, cl client.Client, namespace, ref, ack string, w io.Writer) error {
-	c, err := findClaim(ctx, cl, namespace, ref)
+func reinstall(ctx context.Context, cl client.Client, namespace string, nsGiven bool, ref, ack string, w io.Writer) error {
+	c, err := findClaim(ctx, cl, namespace, nsGiven, ref)
 	if err != nil {
 		return err
 	}
@@ -184,18 +175,14 @@ func reinstall(ctx context.Context, cl client.Client, namespace, ref, ack string
 	if h == nil {
 		return fmt.Errorf("claim %s records no install to replace; a claim that never handed off installs on its own", cref)
 	}
-	set := map[string]any{metalv1alpha1.AnnotationReinstall: h.At.UTC().Format(time.RFC3339)}
-	if ack, err = namedLift(ctx, cl, ack); err != nil {
+	user, err := whoAmI(ctx, cl)
+	if err != nil {
 		return err
 	}
-	if ack != "" {
-		set[metalv1alpha1.AnnotationAckEtcdRisk] = ack
-	}
-	if set[metalv1alpha1.AnnotationRequestedBy], err = requester(ctx, cl); err != nil {
-		return err
-	}
-	if err := patchAnnotations(ctx, cl, c, set); err != nil {
-		return fmt.Errorf("update claim %s: %w", cref, err)
+	set := requestedBy(user, ack)
+	set[metalv1alpha1.AnnotationReinstall] = h.At.UTC().Format(time.RFC3339)
+	if err := mergePatch(ctx, cl, c, mergeSpec{Annotations: set}); err != nil {
+		return refused("update claim "+cref, err)
 	}
 	fmt.Fprintf(w, "claim %s: reinstall of node %s on host %s asked for (the install of %s).\n",
 		cref, h.Node, h.Host, h.At.UTC().Format(time.RFC3339))
@@ -214,15 +201,9 @@ func replaceCmd(args []string) {
 	if fs.NArg() != 1 || *hostName == "" {
 		badUsage(fs, "give one claim or node, and --host")
 	}
-	cl, err := newClient()
-	if err != nil {
-		die(err)
-	}
-	ctx, stop := signalContext()
-	defer stop()
-	if err := replace(ctx, cl, *ns, fs.Arg(0), *hostName, *ack, os.Stdout); err != nil {
-		die(err)
-	}
+	onCluster(func(ctx context.Context, cl client.Client) error {
+		return replace(ctx, cl, *ns, flagGiven(fs, "n"), fs.Arg(0), *hostName, *ack, os.Stdout)
+	})
 }
 
 // hostAsset is the Asset and the system id a claim selects to bind host. A
@@ -250,15 +231,15 @@ func freeHost(host *metalv1alpha1.Host) string {
 }
 
 // replace points the claim at another machine.
-func replace(ctx context.Context, cl client.Client, namespace, ref, hostName, ack string, w io.Writer) error {
-	c, err := findClaim(ctx, cl, namespace, ref)
+func replace(ctx context.Context, cl client.Client, namespace string, nsGiven bool, ref, hostName, ack string, w io.Writer) error {
+	c, err := findClaim(ctx, cl, namespace, nsGiven, ref)
 	if err != nil {
 		return err
 	}
 	cref := c.Namespace + "/" + c.Name
 	host := &metalv1alpha1.Host{}
-	if err := cl.Get(ctx, client.ObjectKey{Name: hostName}, host); err != nil {
-		return fmt.Errorf("host %s: %w", hostName, err)
+	if err := getCluster(ctx, cl, "Host", host, hostName, listHosts); err != nil {
+		return err
 	}
 	if why := freeHost(host); why != "" {
 		return fmt.Errorf("host %s cannot take the node: %s", hostName, why)
@@ -271,29 +252,13 @@ func replace(ctx context.Context, cl client.Client, namespace, ref, hostName, ac
 	if system != "" {
 		spec["systemRef"] = map[string]any{"name": system}
 	}
-	patch := map[string]any{"spec": spec}
-	if ack, err = namedLift(ctx, cl, ack); err != nil {
-		return err
-	}
-	user, err := requester(ctx, cl)
+	user, err := whoAmI(ctx, cl)
 	if err != nil {
 		return err
 	}
-	annotations := map[string]any{metalv1alpha1.AnnotationRequestedBy: user}
-	if ack != "" {
-		annotations[metalv1alpha1.AnnotationAckEtcdRisk] = ack
-	}
-	patch["metadata"] = map[string]any{"annotations": annotations}
-	raw, err := json.Marshal(patch)
-	if err != nil {
-		return err
-	}
-	if err := cl.Patch(ctx, c, client.RawPatch(types.MergePatchType, raw)); err != nil {
-		return fmt.Errorf("update claim %s: %w", cref, err)
-	}
-	old := "(none)"
-	if c.Status.HostRef != nil {
-		old = c.Status.HostRef.Name
+	old := hostOf(c)
+	if err := mergePatch(ctx, cl, c, mergeSpec{Annotations: requestedBy(user, ack), Spec: spec}); err != nil {
+		return refused("update claim "+cref, err)
 	}
 	fmt.Fprintf(w, "claim %s now selects host %s (asset %s); it ran on host %s.\n", cref, hostName, asset, old)
 	fmt.Fprintln(w, "The operator first releases the old machine (its node leaves the cluster; a machine that does not answer is powered off and marked for a wipe),")
@@ -301,45 +266,30 @@ func replace(ctx context.Context, cl client.Client, namespace, ref, hostName, ac
 	return nil
 }
 
-// patchAnnotations sets (or, with a nil value, removes) annotations.
-func patchAnnotations(ctx context.Context, cl client.Client, obj client.Object, set map[string]any) error {
-	raw, err := json.Marshal(map[string]any{"metadata": map[string]any{"annotations": set}})
-	if err != nil {
-		return err
-	}
-	return cl.Patch(ctx, obj, client.RawPatch(types.MergePatchType, raw))
-}
-
 func scaleCmd(args []string) {
 	fs := newFlags("scale")
 	ns := fs.String("n", claimNamespace, "namespace for the claims of new nodes")
-	cps := fs.Int("control-planes", -1, "control planes wanted (required)")
-	workers := fs.Int("workers", -1, "workers wanted (required)")
+	cps := fs.Int("control-planes", 0, "control planes wanted (required)")
+	workers := fs.Int("workers", 0, "workers wanted (required)")
 	apply := fs.Bool("apply", false, "create and delete the claims of the plan")
 	ack := fs.String("ack-etcd-risk", "", "reason to accept passing through an even number of control planes; stored on the claim as \"<your username>: <reason>\"")
 	addGlobalFlags(fs)
 	parseFlags(fs, args)
-	if fs.NArg() != 1 || *cps < 0 || *workers < 0 {
+	if fs.NArg() != 1 || !flagGiven(fs, "control-planes") || !flagGiven(fs, "workers") || *cps < 0 || *workers < 0 {
 		badUsage(fs, "give one cluster, --control-planes and --workers")
 	}
-	cl, err := newClient()
-	if err != nil {
-		die(err)
-	}
-	ctx, stop := signalContext()
-	defer stop()
-	plan, err := planScale(ctx, cl, fs.Arg(0), *cps, *workers, *ns)
-	if err != nil {
-		die(err)
-	}
-	plan.print(os.Stdout)
-	if !*apply {
-		fmt.Println("\nNothing changed. To do it: add --apply")
-		return
-	}
-	if err := plan.apply(ctx, cl, *ack, os.Stdout); err != nil {
-		die(err)
-	}
+	onCluster(func(ctx context.Context, cl client.Client) error {
+		plan, err := planScale(ctx, cl, fs.Arg(0), *cps, *workers, *ns)
+		if err != nil {
+			return err
+		}
+		plan.print(os.Stdout)
+		if !*apply {
+			fmt.Println("\nNothing changed. To do it: add --apply")
+			return nil
+		}
+		return plan.apply(ctx, cl, *ack, os.Stdout)
+	})
 }
 
 // scalePlan is what scale does: claims to create and claims to delete, in
@@ -364,8 +314,8 @@ type scaleAdd struct {
 
 // planScale reads the cluster and pairs nodes with hosts.
 func planScale(ctx context.Context, cl client.Client, cluster string, wantCP, wantW int, namespace string) (*scalePlan, error) {
-	if err := cl.Get(ctx, client.ObjectKey{Name: cluster}, &osv1alpha1.TalosCluster{}); err != nil {
-		return nil, fmt.Errorf("cluster %s: %w", cluster, err)
+	if err := getCluster(ctx, cl, "TalosCluster", &osv1alpha1.TalosCluster{}, cluster, listClusters); err != nil {
+		return nil, err
 	}
 	if wantCP == 0 {
 		return nil, fmt.Errorf("a cluster needs at least one control plane; to remove the cluster, delete its claims and its TalosCluster")
@@ -539,33 +489,25 @@ func (p *scalePlan) apply(ctx context.Context, cl client.Client, ack string, w i
 	if p.evenStep && strings.TrimSpace(ack) == "" {
 		return fmt.Errorf("the plan passes through an even number of control planes; give --ack-etcd-risk \"<reason>\" to accept it")
 	}
-	ack, err := namedLift(ctx, cl, ack)
-	if err != nil {
-		return err
-	}
-	user, err := requester(ctx, cl)
+	user, err := whoAmI(ctx, cl)
 	if err != nil {
 		return err
 	}
 	for _, a := range p.add {
 		metav1.SetMetaDataAnnotation(&a.claim.ObjectMeta, metalv1alpha1.AnnotationRequestedBy, user)
 		if err := cl.Create(ctx, a.claim); err != nil {
-			return fmt.Errorf("create claim %s/%s: %w", a.claim.Namespace, a.claim.Name, err)
+			return refused("create claim "+a.claim.Namespace+"/"+a.claim.Name, err)
 		}
 		fmt.Fprintf(w, "created claim %s/%s\n", a.claim.Namespace, a.claim.Name)
 	}
 	for _, c := range p.remove {
 		// The release is the caller's request: the name goes on the claim
 		// before the delete (the requested-by policy).
-		set := map[string]any{metalv1alpha1.AnnotationRequestedBy: user}
-		if ack != "" {
-			set[metalv1alpha1.AnnotationAckEtcdRisk] = ack
-		}
-		if err := patchAnnotations(ctx, cl, c, set); err != nil {
-			return fmt.Errorf("name the request on claim %s/%s: %w", c.Namespace, c.Name, err)
+		if err := mergePatch(ctx, cl, c, mergeSpec{Annotations: requestedBy(user, ack)}); err != nil {
+			return refused("name the request on claim "+c.Namespace+"/"+c.Name, err)
 		}
 		if err := cl.Delete(ctx, c); client.IgnoreNotFound(err) != nil {
-			return fmt.Errorf("delete claim %s/%s: %w", c.Namespace, c.Name, err)
+			return refused("delete claim "+c.Namespace+"/"+c.Name, err)
 		}
 		fmt.Fprintf(w, "deleted claim %s/%s\n", c.Namespace, c.Name)
 	}

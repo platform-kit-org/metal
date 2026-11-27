@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -355,7 +356,7 @@ func buildReport(hosts []metalv1alpha1.Host, eps []metalv1alpha1.ManagementEndpo
 		if c.Status.HostRef != nil {
 			row.Host = c.Status.HostRef.Name
 		}
-		_, row.OnHold = c.Annotations[holdAnnotation]
+		_, row.OnHold = c.Annotations[metalv1alpha1.AnnotationHold]
 		row.Message = explain(c.Status.Conditions, c.Status.BlockedOn)
 		row.NeedsAttention = row.BlockedOn != "" || c.Status.Phase == metalv1alpha1.ClaimAmbiguous
 		rep.Claims = append(rep.Claims, row)
@@ -364,10 +365,10 @@ func buildReport(hosts []metalv1alpha1.Host, eps []metalv1alpha1.ManagementEndpo
 	slices.SortFunc(rep.Hosts, func(a, b hostStatus) int { return strings.Compare(a.Name, b.Name) })
 	slices.SortFunc(rep.Endpoints, func(a, b epStatus) int { return strings.Compare(a.Name, b.Name) })
 	slices.SortFunc(rep.Operations, func(a, b opStatus) int {
-		return strings.Compare(nsName(a.Namespace, a.Name), nsName(b.Namespace, b.Name))
+		return cmp.Or(strings.Compare(a.Namespace, b.Namespace), strings.Compare(a.Name, b.Name))
 	})
 	slices.SortFunc(rep.Claims, func(a, b claimStatus) int {
-		return strings.Compare(nsName(a.Namespace, a.Name), nsName(b.Namespace, b.Name))
+		return cmp.Or(strings.Compare(a.Namespace, b.Namespace), strings.Compare(a.Name, b.Name))
 	})
 
 	attention := func(yes bool) { rep.NeedsAttention = rep.NeedsAttention || yes }

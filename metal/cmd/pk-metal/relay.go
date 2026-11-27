@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"log"
 	"net"
@@ -42,7 +41,12 @@ example:
 // BMC network, to the targets --allow names only, and its REGISTER verb takes
 // over the BMCs' media fetches.
 func relayCmd(args []string) {
-	fs, front, tunnel, advertise, secretFile, allowFlag := relayFlags()
+	fs := newFlags("relay")
+	front := fs.String("front", "127.0.0.1:8443", "BMC-facing listen address (media fetches arrive here)")
+	tunnel := fs.String("tunnel", "127.0.0.1:9443", "operator-facing listen address (keep on loopback, reach over ssh -L)")
+	advertise := fs.String("advertise", "", "front address as BMCs reach it (default: the bound address)")
+	secretFile := fs.String("secret-file", "", "file with the shared secret; written with a new one when missing (or set $"+relay.SecretEnv+")")
+	allowFlag := fs.String("allow", relay.DefaultAllow, "targets boot may dial through the relay, as <CIDR, IP or *>:<port or *>, comma-separated")
 	parseFlags(fs, args)
 	if fs.NArg() != 0 {
 		badUsage(fs, "relay takes no arguments, only flags")
@@ -95,16 +99,4 @@ func relaySecret(file string, create bool) ([]byte, error) {
 		log.Printf("relay: wrote a new secret to %s; give the same secret to pk-metal boot", file)
 	}
 	return secret, nil
-}
-
-// relayFlags declares the relay's flags; split out so a test can check the
-// defaults without starting listeners.
-func relayFlags() (fs *flag.FlagSet, front, tunnel, advertise, secretFile, allow *string) {
-	fs = newFlags("relay")
-	front = fs.String("front", "127.0.0.1:8443", "BMC-facing listen address (media fetches arrive here)")
-	tunnel = fs.String("tunnel", "127.0.0.1:9443", "operator-facing listen address (keep on loopback, reach over ssh -L)")
-	advertise = fs.String("advertise", "", "front address as BMCs reach it (default: the bound address)")
-	secretFile = fs.String("secret-file", "", "file with the shared secret; written with a new one when missing (or set $"+relay.SecretEnv+")")
-	allow = fs.String("allow", relay.DefaultAllow, "targets boot may dial through the relay, as <CIDR, IP or *>:<port or *>, comma-separated")
-	return fs, front, tunnel, advertise, secretFile, allow
 }

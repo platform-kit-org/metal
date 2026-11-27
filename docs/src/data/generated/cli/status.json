@@ -1,6 +1,6 @@
 {
   "name": "status",
-  "summary": "show machines, BMCs, claims and operations, with the reason when something is stuck (reads only)",
+  "summary": "show machines, BMCs, claims and operations, and why one is stuck",
   "synopsis": "[-o table|json]",
   "usage": [
     "pk-metal status [-o table|json]"

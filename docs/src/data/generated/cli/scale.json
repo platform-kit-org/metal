@@ -1,6 +1,6 @@
 {
   "name": "scale",
-  "summary": "show which machines a cluster gains or gives back to reach a size, and in which order; --apply makes the claims say so",
+  "summary": "show the machines a cluster gains or gives back; --apply does it",
   "synopsis": "[-n namespace] --control-planes N --workers M [--apply] [--ack-etcd-risk reason] <cluster>",
   "usage": [
     "pk-metal scale [-n namespace] --control-planes N --workers M [--apply] [--ack-etcd-risk reason] <cluster>"
@@ -35,7 +35,7 @@
     {
       "name": "control-planes",
       "type": "int",
-      "default": "-1",
+      "default": "",
       "usage": "control planes wanted (required)",
       "global": false
     },
@@ -56,7 +56,7 @@
     {
       "name": "workers",
       "type": "int",
-      "default": "-1",
+      "default": "",
       "usage": "workers wanted (required)",
       "global": false
     }

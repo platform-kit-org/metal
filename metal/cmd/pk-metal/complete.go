@@ -89,31 +89,13 @@ func isBoolFlag(f *flag.Flag) bool {
 	return ok && b.IsBoolFlag()
 }
 
-// flagName is how help writes a flag: -n for one letter, --name otherwise.
+// flagName is how synopses and the site write a flag: -n for one letter,
+// --name otherwise.
 func flagName(name string) string {
 	if len(name) == 1 {
 		return "-" + name
 	}
 	return "--" + name
-}
-
-// verbSubcommands are the subcommands of a verb, read from its synopsis
-// ("list | show <rollout> | ..."): the first word of each alternative, when
-// every alternative starts with a plain word.
-func verbSubcommands(c *command) []string {
-	alts := strings.Split(c.synopsis, " | ")
-	if len(alts) < 2 {
-		return nil
-	}
-	var subs []string
-	for _, alt := range alts {
-		word, _, _ := strings.Cut(strings.TrimSpace(alt), " ")
-		if word == "" || strings.ContainsAny(word, "-[<|") {
-			return nil
-		}
-		subs = append(subs, word)
-	}
-	return subs
 }
 
 // --- what each argument and flag value is ------------------------------------
@@ -214,7 +196,6 @@ var flagKinds = map[string]kindSpec{
 	"talosconfig":         {kind: kindFile},
 	"identity":            {kind: kindFile},
 	"in":                  {kind: kindFile},
-	"from-file":           {kind: kindFile},
 	"secret-file":         {kind: kindFile},
 	"secrets":             {kind: kindFile},
 	"bmc-ca":              {kind: kindFile},
@@ -224,7 +205,6 @@ var flagKinds = map[string]kindSpec{
 	"fixture":             {kind: kindFixture},
 	"relay-secret-file":   {kind: kindFile},
 	// Names that are not objects of the cluster.
-	"inventory:node": {}, // the name for the fact file
 	"bootstrap:node": {}, // a TalosNode of --dir
 	"endpoint":       {}, // the address of the bootstrap --node
 	// Free text: durations, numbers, versions, addresses, names and reasons.

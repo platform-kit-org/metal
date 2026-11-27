@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"fmt"
 	"net/url"
 	"slices"
@@ -90,7 +91,6 @@ type clusterLine struct {
 	Why                     string // the reason of a condition that is not True
 	ControlPlanes, CPReady  int32
 	Workers, WorkersReady   int32
-	KubernetesVersion       string
 }
 
 // tile is one machine.
@@ -138,7 +138,6 @@ type tile struct {
 // opLine is the operation that matters for a machine now.
 type opLine struct {
 	Namespace, Name string
-	Phase           string
 	Step            string // "5/9 setBootOverride"
 	Approval        string
 	Waits           bool // waits for a person's approval
@@ -168,7 +167,7 @@ func buildTop(in topInput) topData {
 	// The header: each cluster's health and the nodes.
 	for _, c := range in.Clusters {
 		cl := clusterLine{Name: c.Name, ControlPlanes: c.Status.ControlPlanes, CPReady: c.Status.ReadyControlPlanes,
-			Workers: c.Status.Workers, WorkersReady: c.Status.ReadyWorkers, KubernetesVersion: c.Status.KubernetesVersion}
+			Workers: c.Status.Workers, WorkersReady: c.Status.ReadyWorkers}
 		cl.Bootstrapped, cl.Why = condState(c.Status.Conditions, osv1alpha1.ConditionBootstrapped, "")
 		cl.Available, cl.Why = condState(c.Status.Conditions, osv1alpha1.ConditionAvailable, cl.Why)
 		d.Clusters = append(d.Clusters, cl)
@@ -423,14 +422,11 @@ func currentOp(ops []metalv1alpha1.HostOperation, host string) *opLine {
 		}
 	}
 	slices.SortFunc(mine, func(a, b metalv1alpha1.HostOperation) int {
-		if c := a.CreationTimestamp.Compare(b.CreationTimestamp.Time); c != 0 {
-			return c
-		}
-		return strings.Compare(a.Name, b.Name)
+		return cmp.Or(a.CreationTimestamp.Compare(b.CreationTimestamp.Time), strings.Compare(a.Name, b.Name))
 	})
 	var pick *metalv1alpha1.HostOperation
 	for i := range mine {
-		if !finished(&mine[i]) {
+		if !mine[i].Finished() {
 			pick = &mine[i]
 			break
 		}
@@ -442,14 +438,14 @@ func currentOp(ops []metalv1alpha1.HostOperation, host string) *opLine {
 		return nil
 	}
 	op := pick
-	l := &opLine{Namespace: op.Namespace, Name: op.Name, Phase: orDash(string(opPhase(op))),
-		Waits: waitsForApproval(op), Failed: opPhase(op) == metalv1alpha1.OperationFailed}
+	l := &opLine{Namespace: op.Namespace, Name: op.Name,
+		Waits: op.AwaitsApproval(), Failed: opPhase(op) == metalv1alpha1.OperationFailed}
 	done, total := len(op.Status.Steps), len(op.Spec.Actions)
 	switch {
 	case l.Failed && done > 0:
 		l.Step = fmt.Sprintf("%d/%d %s failed", done, total, op.Status.Steps[done-1].Action)
 	case done < total:
-		l.Step = fmt.Sprintf("%d/%d %s", done+1, total, actionKey(op.Spec.Actions[done]))
+		l.Step = fmt.Sprintf("%d/%d %s", done+1, total, op.Spec.Actions[done].Key())
 	default:
 		l.Step = fmt.Sprintf("%d/%d done", done, total)
 	}
@@ -465,12 +461,6 @@ func currentOp(ops []metalv1alpha1.HostOperation, host string) *opLine {
 	}
 	l.Message = explain(op.Status.Conditions, op.Status.BlockedOn, metalv1alpha1.ConditionExecuted)
 	return l
-}
-
-// actionKey is the union key of an action, the name the operator records
-// its steps under.
-func actionKey(a metalv1alpha1.HostOperationAction) string {
-	return a.Key()
 }
 
 // hostState is how the Host reads: bad when it, or its operation, failed or

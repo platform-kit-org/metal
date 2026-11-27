@@ -29,10 +29,7 @@ var update = flag.Bool("update", false, "rewrite golden files")
 // The cross-check against fact files from real BMCs happens on real hardware.
 func TestGolden(t *testing.T) {
 	ts := time.Date(2026, 7, 18, 0, 0, 0, 0, time.UTC)
-	for name, node := range map[string]string{
-		"huawei-2288h-v5": "node-infra",
-		"supermicro-x12":  "node-x12",
-	} {
+	for _, name := range []string{"huawei-2288h-v5", "supermicro-x12"} {
 		f, err := sim.LoadFixture(name)
 		require.NoError(t, err)
 
@@ -53,7 +50,7 @@ func TestGolden(t *testing.T) {
 				require.NoError(t, err)
 
 				var buf bytes.Buffer
-				inventory.Write(&buf, node, "sim", ts, facts)
+				inventory.Write(&buf, "sim", ts, facts)
 
 				// Whatever the format, it must stay parseable YAML.
 				var parsed map[string]any
@@ -92,7 +89,7 @@ func TestRoundTrip(t *testing.T) {
 		}},
 	}
 	var buf bytes.Buffer
-	inventory.Write(&buf, "node-01", "192.0.2.10", time.Unix(0, 0), facts)
+	inventory.Write(&buf, "192.0.2.10", time.Unix(0, 0), facts)
 
 	var got struct {
 		BMC struct {

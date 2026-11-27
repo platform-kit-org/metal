@@ -1,6 +1,6 @@
 {
   "name": "bootstrap",
-  "summary": "start a new Talos cluster on booted machines and wait until every node is ready, without the operator",
+  "summary": "start a new Talos cluster on booted machines, without the operator",
   "synopsis": "--dir <manifests> --secrets <secrets.yaml|-> [flags]",
   "usage": [
     "pk-metal bootstrap --dir <manifests> --secrets <secrets.yaml|-> [flags]"
@@ -34,9 +34,9 @@
     },
     {
       "name": "secrets",
-      "type": "talosctl gen secrets",
+      "type": "file",
       "default": "",
-      "usage": "secrets bundle from talosctl gen secrets, or - for stdin (required)",
+      "usage": "secrets bundle file from talosctl gen secrets, or - for stdin (required)",
       "global": false
     },
     {

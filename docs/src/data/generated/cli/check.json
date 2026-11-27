@@ -1,6 +1,6 @@
 {
   "name": "check",
-  "summary": "test that a BMC answers and list its virtual media and systems (reads only)",
+  "summary": "test that a BMC answers; list its virtual media and systems",
   "synopsis": "[flags] <bmc-url>",
   "usage": [
     "pk-metal check [flags] <bmc-url>"

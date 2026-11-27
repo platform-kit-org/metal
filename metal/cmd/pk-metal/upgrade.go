@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -10,11 +9,9 @@ import (
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/meta"
-	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
-	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
 	"github.com/dennisklein/platform-kit/metal/internal/talos/render"
 )
 
@@ -55,14 +52,9 @@ func upgradeCmd(args []string) {
 	if what != "talos" && what != "kubernetes" {
 		badUsage(fs, "upgrade talos or kubernetes, not "+what)
 	}
-	cl, err := newClient()
-	if err != nil {
-		die(err)
-	}
-	ctx := context.Background()
-	if err := upgrade(ctx, cl, what, cluster, version, *wait, time.Second*2, os.Stdout); err != nil {
-		die(err)
-	}
+	onCluster(func(ctx context.Context, cl client.Client) error {
+		return upgrade(ctx, cl, what, cluster, version, *wait, time.Second*2, os.Stdout)
+	})
 }
 
 // upgradeCheck refuses a version step Talos does not support, before the
@@ -102,8 +94,8 @@ func upgradeCheck(c *osv1alpha1.TalosCluster, what, version string) error {
 
 func upgrade(ctx context.Context, cl client.Client, what, name, version string, wait, poll time.Duration, w io.Writer) error {
 	c := &osv1alpha1.TalosCluster{}
-	if err := cl.Get(ctx, client.ObjectKey{Name: name}, c); err != nil {
-		return fmt.Errorf("read cluster %s: %w", name, err)
+	if err := getCluster(ctx, cl, "TalosCluster", c, name, listClusters); err != nil {
+		return err
 	}
 	field, current, kind := "talosVersion", c.Spec.TalosVersion, osv1alpha1.RolloutTalosUpgrade
 	if what == "kubernetes" {
@@ -115,19 +107,16 @@ func upgrade(ctx context.Context, cl client.Client, what, name, version string, 
 		if err := upgradeCheck(c, what, version); err != nil {
 			return fmt.Errorf("nothing changed: %w", err)
 		}
-		user, err := requester(ctx, cl)
+		user, err := whoAmI(ctx, cl)
 		if err != nil {
 			return fmt.Errorf("nothing changed: %w", err)
 		}
 		// resourceVersion: refuse when someone changed the cluster since it
 		// was read and checked.
-		patch, _ := json.Marshal(map[string]any{
-			"metadata": map[string]any{"uid": c.UID, "resourceVersion": c.ResourceVersion,
-				"annotations": map[string]any{metalv1alpha1.AnnotationRequestedBy: user}},
-			"spec": map[string]any{field: version},
-		})
-		if err := cl.Patch(ctx, c, client.RawPatch(types.MergePatchType, patch)); err != nil {
-			return fmt.Errorf("set %s of cluster %s: %w", field, name, err)
+		if err := mergePatch(ctx, cl, c, mergeSpec{UID: c.UID, ResourceVersion: c.ResourceVersion,
+			Annotations: requestedBy(user, ""),
+			Spec:        map[string]any{field: version}}); err != nil {
+			return refused("set "+field+" of cluster "+name, err)
 		}
 		fmt.Fprintf(w, "cluster %s now asks for %s %s (was %s); nothing on a machine changed yet\n", name, what, version, current)
 	}
@@ -163,7 +152,8 @@ func upgrade(ctx context.Context, cl client.Client, what, name, version string, 
 		}
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return fmt.Errorf("interrupted; cluster %s still asks for %s %s; see the rollout later with: pk-metal rollout list",
+				name, what, version)
 		case <-time.After(poll):
 		}
 	}

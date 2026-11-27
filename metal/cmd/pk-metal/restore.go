@@ -44,7 +44,7 @@ subcommands:
       restore one control plane from a snapshot (etcdRecover); the others
       join it. The newest verified snapshot is used unless --snapshot names
       one.
-  upload <operation> --identity <file> [--from-file <file.age>]
+  upload <operation> --identity <file> [--in <file.age>]
       For an approved etcdRecover operation: decrypt the snapshot on this
       machine with your age identity, check it against the snapshot record,
       and stream it to the node over the Talos API with your talosconfig.
@@ -69,27 +69,23 @@ const restoreReason = "EtcdRestore"
 const labelRestoreCluster = "os.platform-kit.org/etcd-restore"
 
 func restoreCmd(args []string) {
-	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
-		fs := newFlags("restore")
-		parseFlags(fs, args)
-		badUsage(fs, "name a subcommand: plan or upload")
-	}
-	sub, rest := args[0], args[1:]
+	sub, rest := subcommand("restore", args)
 	fs := newFlags("restore " + sub)
 	addGlobalFlags(fs)
 	talosconfigFile := fs.String("talosconfig", "", "talosconfig file (default: the cluster's published Secret)")
-	ctx := context.Background()
+	ctx, stop := signalContext()
+	defer stop()
 	switch sub {
 	case "plan":
 		snapshot := fs.String("snapshot", "", "EtcdSnapshot to restore (default: the cluster's newest verified one)")
 		node := fs.String("node", "", "control plane to restore on (default: the first by name that answers)")
 		propose := fs.Bool("propose", false, "create the plan's operations (each waits for approval)")
-		pos := parseAnywhere(fs, rest)
-		if len(pos) != 1 {
+		parseFlags(fs, rest)
+		if fs.NArg() != 1 {
 			badUsage(fs, "give exactly one TalosCluster")
 		}
 		cl := mustClient()
-		tc, err := talosconfigFor(ctx, cl, argAt(pos, 0), *talosconfigFile)
+		tc, err := talosconfigFor(ctx, cl, fs.Arg(0), *talosconfigFile)
 		if err != nil {
 			die(err)
 		}
@@ -100,7 +96,7 @@ func restoreCmd(args []string) {
 			}
 		}
 		p, err := planRestore(ctx, cl, machineapi.Dial, tc, restoreInput{
-			Cluster: argAt(pos, 0), Snapshot: *snapshot, Node: *node, User: user, Now: time.Now()})
+			Cluster: fs.Arg(0), Snapshot: *snapshot, Node: *node, User: user, Now: time.Now()})
 		if err != nil {
 			die(err)
 		}
@@ -111,17 +107,17 @@ func restoreCmd(args []string) {
 			}
 		} else if len(p.Ops) > 0 {
 			fmt.Printf("\nnothing was created; to propose these operations: pk-metal restore plan %s --propose%s\n",
-				argAt(pos, 0), p.flags())
+				fs.Arg(0), p.flags())
 		}
 	case "upload":
 		ns := fs.String("n", operatorNamespace, "namespace of the operation")
 		identity := fs.String("identity", "", "age identity file (required)")
-		fromFile := fs.String("from-file", "", "the encrypted snapshot as a file (needed for a pvc sink)")
-		pos := parseAnywhere(fs, rest)
-		if len(pos) != 1 || *identity == "" {
+		inFile := fs.String("in", "", "the encrypted snapshot as a file (needed for a pvc sink)")
+		parseFlags(fs, rest)
+		if fs.NArg() != 1 || *identity == "" {
 			badUsage(fs, "give one operation and --identity")
 		}
-		namespace, name, err := splitRef(argAt(pos, 0), *ns, flagGiven(fs, "n"))
+		namespace, name, err := splitRef(fs.Arg(0), *ns, flagGiven(fs, "n"))
 		if err != nil {
 			badUsage(fs, err.Error())
 		}
@@ -131,13 +127,11 @@ func restoreCmd(args []string) {
 			die(err)
 		}
 		if err := uploadSnapshot(ctx, cl, machineapi.Dial, uploadInput{
-			Namespace: namespace, Name: name, User: user, Identity: *identity, FromFile: *fromFile,
+			Namespace: namespace, Name: name, User: user, Identity: *identity, FromFile: *inFile,
 			TalosconfigFile: *talosconfigFile,
 		}, os.Stdout); err != nil {
 			die(err)
 		}
-	default:
-		badUsage(fs, fmt.Sprintf("unknown subcommand %q: plan or upload", sub))
 	}
 }
 
@@ -148,8 +142,8 @@ func talosconfigFor(ctx context.Context, cl client.Client, cluster, file string)
 		return os.ReadFile(file)
 	}
 	c := &osv1alpha1.TalosCluster{}
-	if err := cl.Get(ctx, client.ObjectKey{Name: cluster}, c); err != nil {
-		return nil, fmt.Errorf("TalosCluster %s: %w", cluster, err)
+	if err := getCluster(ctx, cl, "TalosCluster", c, cluster, listClusters); err != nil {
+		return nil, err
 	}
 	ref := c.Status.TalosconfigSecretRef
 	if ref == nil {
@@ -241,8 +235,8 @@ type restorePlan struct {
 
 func planRestore(ctx context.Context, cl client.Client, dial talos.Dialer, tc []byte, in restoreInput) (*restorePlan, error) {
 	cluster := &osv1alpha1.TalosCluster{}
-	if err := cl.Get(ctx, client.ObjectKey{Name: in.Cluster}, cluster); err != nil {
-		return nil, fmt.Errorf("TalosCluster %s: %w", in.Cluster, err)
+	if err := getCluster(ctx, cl, "TalosCluster", cluster, in.Cluster, listClusters); err != nil {
+		return nil, err
 	}
 	nodes := &osv1alpha1.TalosNodeList{}
 	if err := cl.List(ctx, nodes); err != nil {
@@ -681,15 +675,11 @@ func uploadSnapshot(ctx context.Context, cl client.Client, dial talos.Dialer, in
 	}
 	fmt.Fprintf(w, "uploaded to %s (%s)\n", node.Name, endpoint)
 
-	patch := client.MergeFrom(op.DeepCopy())
-	if op.Annotations == nil {
-		op.Annotations = map[string]string{}
-	}
 	// The statement names who uploaded: admission accepts it only in the
 	// form "<username>: <reason>", with the caller's own username.
 	stated := metalv1alpha1.GuardLiftValue(in.User, a.SHA256)
-	op.Annotations[metalv1alpha1.AnnotationEtcdSnapshotUploaded] = stated
-	if err := cl.Patch(ctx, op, patch); err != nil {
+	set := map[string]any{metalv1alpha1.AnnotationEtcdSnapshotUploaded: stated}
+	if err := mergePatch(ctx, cl, op, mergeSpec{Annotations: set}); err != nil {
 		return fmt.Errorf("record the upload on %s/%s (the snapshot is on the node; set annotation %s=%q by hand): %w",
 			op.Namespace, op.Name, metalv1alpha1.AnnotationEtcdSnapshotUploaded, stated, err)
 	}

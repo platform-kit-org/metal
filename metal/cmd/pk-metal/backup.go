@@ -4,7 +4,6 @@ import (
 	"cmp"
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -31,7 +30,7 @@ holds no private key: it can store a snapshot but not read one. Decrypting
 needs one of the matching age identities, on your own machine.
 
 subcommands:
-  now <cluster>              take a snapshot now (it waits until stored; --wait=false returns at once)
+  now <cluster>              take a snapshot now (it waits until stored; --wait 0 returns at once)
   list [<cluster>]           list the snapshots, newest first; RECIPIENTS shows the
                              last 8 characters of each age public key a snapshot is
                              encrypted to (compare with: age-keygen -y <identity file>)
@@ -50,78 +49,63 @@ Restoring is pk-metal restore; https://metal.platform-kit.org/operate/day-2/rest
 }
 
 func backupCmd(args []string) {
-	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
-		fs := newFlags("backup")
-		parseFlags(fs, args)
-		badUsage(fs, "name a subcommand: now, list, get or decrypt")
-	}
-	sub, rest := args[0], args[1:]
+	sub, rest := subcommand("backup", args)
 	fs := newFlags("backup " + sub)
 	addGlobalFlags(fs)
-	ctx := context.Background()
+	ctx, stop := signalContext()
+	defer stop()
 	switch sub {
 	case "now":
-		wait := fs.Bool("wait", true, "wait until the snapshot is stored and verified")
-		timeout := fs.Duration("timeout", 35*time.Minute, "how long --wait waits")
-		pos := parseAnywhere(fs, rest)
-		if len(pos) != 1 {
+		wait := fs.Duration("wait", 35*time.Minute, "how long to wait until the snapshot is stored and verified (0: do not wait)")
+		parseFlags(fs, rest)
+		if fs.NArg() != 1 {
 			badUsage(fs, "give exactly one TalosCluster or EtcdBackupPolicy")
 		}
 		cl := mustClient()
-		name, err := backupNow(ctx, cl, argAt(pos, 0), time.Now(), os.Stdout)
+		name, err := backupNow(ctx, cl, fs.Arg(0), time.Now(), os.Stdout)
 		if err != nil {
 			die(err)
 		}
-		if *wait {
-			wctx, cancel := context.WithTimeout(ctx, *timeout)
+		if *wait > 0 {
+			wctx, cancel := context.WithTimeout(ctx, *wait)
 			defer cancel()
 			if err := waitSnapshot(wctx, cl, name, time.Second, os.Stdout); err != nil {
 				die(err)
 			}
 		}
 	case "list":
-		pos := parseAnywhere(fs, rest)
-		if len(pos) > 1 {
+		parseFlags(fs, rest)
+		if fs.NArg() > 1 {
 			badUsage(fs, "give at most one TalosCluster")
 		}
-		if err := listSnapshots(ctx, mustClient(), argAt(pos, 0), time.Now(), os.Stdout); err != nil {
+		if err := listSnapshots(ctx, mustClient(), fs.Arg(0), time.Now(), os.Stdout); err != nil {
 			die(err)
 		}
 	case "get":
 		out := fs.String("o", "", "file to write the encrypted snapshot to (required; it must not exist)")
-		pos := parseAnywhere(fs, rest)
-		if len(pos) != 1 || *out == "" {
+		parseFlags(fs, rest)
+		if fs.NArg() != 1 || *out == "" {
 			badUsage(fs, "give one snapshot and -o <file>")
 		}
-		if err := getCiphertext(ctx, mustClient(), argAt(pos, 0), *out, os.Stdout); err != nil {
+		if err := getCiphertext(ctx, mustClient(), fs.Arg(0), *out, os.Stdout); err != nil {
 			die(err)
 		}
 	case "decrypt":
 		in := fs.String("in", "", "decrypt this file instead of downloading the snapshot")
 		identity := fs.String("identity", "", "age identity file (required): the secret key, as age-keygen writes it")
 		out := fs.String("o", "", "also write the plaintext snapshot here (mode 0600; it must not exist)")
-		pos := parseAnywhere(fs, rest)
-		if *identity == "" || (len(pos) == 1) == (*in != "") || len(pos) > 1 {
+		parseFlags(fs, rest)
+		if *identity == "" || (fs.NArg() == 1) == (*in != "") || fs.NArg() > 1 {
 			badUsage(fs, "give --identity and either one snapshot or --in <file>")
 		}
 		var cl client.Client
-		if len(pos) == 1 {
+		if fs.NArg() == 1 {
 			cl = mustClient()
 		}
-		if err := decryptSnapshot(ctx, cl, argAt(pos, 0), *in, *identity, *out, os.Stdout); err != nil {
+		if err := decryptSnapshot(ctx, cl, fs.Arg(0), *in, *identity, *out, os.Stdout); err != nil {
 			die(err)
 		}
-	default:
-		badUsage(fs, fmt.Sprintf("unknown subcommand %q: now, list, get or decrypt", sub))
 	}
-}
-
-func mustClient() client.Client {
-	cl, err := newClient()
-	if err != nil {
-		die(err)
-	}
-	return cl
 }
 
 // policyFor finds the backup policy a name means: a policy of that name, or
@@ -210,6 +194,9 @@ func waitSnapshot(ctx context.Context, cl client.Client, name string, every time
 		}
 		select {
 		case <-ctx.Done():
+			if errors.Is(ctx.Err(), context.Canceled) {
+				return fmt.Errorf("interrupted; snapshot %s continues; see it with: pk-metal backup list", name)
+			}
 			return fmt.Errorf("snapshot %s did not end in time; see: kubectl get etcdsnapshot %s -o yaml", name, name)
 		case <-time.After(every):
 		}
@@ -320,7 +307,7 @@ func openSnapshot(ctx context.Context, cl client.Client, s *osv1alpha1.EtcdSnaps
 	}
 	if p.Spec.Sink.S3 == nil {
 		return nil, fmt.Errorf("snapshot %s is on the operator's backup volume (%s), which pk-metal cannot read from "+
-			"here. Copy it off the volume first, then pass the file with --in or --from-file; "+
+			"here. Copy it off the volume first, then pass the file with --in; "+
 			"https://metal.platform-kit.org/operate/day-2/restore-etcd/#copy-a-snapshot-from-a-pvc-sink has the commands", s.Name, s.Status.Location)
 	}
 	s3 := p.Spec.Sink.S3
@@ -354,8 +341,8 @@ func openSnapshot(ctx context.Context, cl client.Client, s *osv1alpha1.EtcdSnaps
 
 func getSnapshot(ctx context.Context, cl client.Client, name string) (*osv1alpha1.EtcdSnapshot, error) {
 	s := &osv1alpha1.EtcdSnapshot{}
-	if err := cl.Get(ctx, client.ObjectKey{Name: name}, s); err != nil {
-		return nil, fmt.Errorf("EtcdSnapshot %s: %w", name, err)
+	if err := getCluster(ctx, cl, "EtcdSnapshot", s, name, "pk-metal backup list lists them"); err != nil {
+		return nil, err
 	}
 	return s, nil
 }
@@ -465,20 +452,4 @@ func decryptSnapshot(ctx context.Context, cl client.Client, name, in, identity, 
 		fmt.Fprintf(w, "wrote the plaintext to %s; it holds every Secret of the cluster: delete it when done\n", out)
 	}
 	return nil
-}
-
-// parseAnywhere parses a subcommand's flags wherever they stand, before or
-// after its arguments (pk-metal restore plan lab --propose), and returns the
-// arguments. Everything after "--" is an argument.
-func parseAnywhere(fs *flag.FlagSet, args []string) []string {
-	parseFlags(fs, args)
-	return fs.Args()
-}
-
-// argAt is the i-th argument, or "" when there are fewer.
-func argAt(pos []string, i int) string {
-	if i < len(pos) {
-		return pos[i]
-	}
-	return ""
 }

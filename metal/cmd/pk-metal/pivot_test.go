@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,31 +18,44 @@ import (
 func TestConfirmPivot(t *testing.T) {
 	plan := &pivot.Plan{Reachable: []string{"the BMCs, over HTTPS, from every node of mgmt: 192.0.2.101:443"}}
 
+	ctx := context.Background()
 	var out bytes.Buffer
-	require.NoError(t, confirmPivot(&out, strings.NewReader("y\n"), plan, "kind", "mgmt", false, true))
+	asked := func(in io.Reader, interactive, yes bool) prompt {
+		return prompt{Yes: yes, Interactive: interactive, In: in, Out: &out}
+	}
+	require.NoError(t, confirmPivot(ctx, asked(strings.NewReader("y\n"), true, false), plan, "kind", "mgmt"))
 	assert.Contains(t, out.String(), "192.0.2.101:443")
 	assert.Contains(t, out.String(), "Move? [y/N]")
 
 	out.Reset()
 	withStore := *plan
 	withStore.Claims = []pivot.ClaimMove{{Volume: "media-store", Name: "pk-metal-media-store", Action: pivot.ClaimEphemeral}}
-	require.NoError(t, confirmPivot(&out, strings.NewReader(""), &withStore, "kind", "mgmt", true, false))
+	require.NoError(t, confirmPivot(ctx, asked(nil, false, true), &withStore, "kind", "mgmt"))
 	assert.Contains(t, out.String(), "The volumes the operator mounts, on mgmt:")
 	assert.Contains(t, out.String(), "PersistentVolumeClaim pk-metal-media-store is replaced by an emptyDir")
 
 	out.Reset()
-	require.ErrorIs(t, confirmPivot(&out, strings.NewReader("\n"), plan, "kind", "mgmt", false, true), errDeclined)
+	require.ErrorIs(t, confirmPivot(ctx, asked(strings.NewReader("\n"), true, false), plan, "kind", "mgmt"), declined("moved"))
 
-	err := confirmPivot(&out, strings.NewReader(""), plan, "kind", "mgmt", false, false)
+	err := confirmPivot(ctx, asked(nil, false, false), plan, "kind", "mgmt")
 	require.ErrorContains(t, err, "--yes", "without a terminal it refuses to ask")
 
 	out.Reset()
-	require.NoError(t, confirmPivot(&out, strings.NewReader(""), plan, "kind", "mgmt", true, false))
+	require.NoError(t, confirmPivot(ctx, asked(nil, false, true), plan, "kind", "mgmt"))
 	assert.NotContains(t, out.String(), "Move?")
 
 	out.Reset()
-	require.NoError(t, confirmPivot(&out, strings.NewReader(""), &pivot.Plan{Resume: true}, "kind", "mgmt", false, false))
+	require.NoError(t, confirmPivot(ctx, asked(nil, false, false), &pivot.Plan{Resume: true}, "kind", "mgmt"))
 	assert.Contains(t, out.String(), "checking it again", "a resumed move only verifies")
+
+	// Ctrl-C at the question ends it at once, as at every other question.
+	// The question read its answer without the context: Ctrl-C did nothing
+	// until Enter.
+	cancelled, cancel := context.WithCancel(ctx)
+	cancel()
+	never, w := io.Pipe()
+	defer w.Close()
+	require.ErrorIs(t, confirmPivot(cancelled, asked(never, true, false), plan, "kind", "mgmt"), errInterrupted)
 }
 
 func TestPivotDoneSaysHowToGoBack(t *testing.T) {
@@ -76,4 +91,10 @@ current-context: admin@mgmt
 	assert.Equal(t, "other", name)
 	_, _, err = namedRestConfig(filepath.Join(t.TempDir(), "missing"), "")
 	require.Error(t, err)
+	// Without --kubeconfig, the message names no empty path.
+	t.Setenv("KUBECONFIG", filepath.Join(t.TempDir(), "missing"))
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("KUBERNETES_SERVICE_HOST", "")
+	_, _, err = namedRestConfig("", "")
+	require.ErrorContains(t, err, "cannot load a kubeconfig: ")
 }

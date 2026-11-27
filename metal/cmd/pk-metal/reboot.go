@@ -7,7 +7,6 @@ import (
 	"os"
 	"time"
 
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -69,18 +68,13 @@ func rebootCmd(args []string) {
 	if *drainTimeout < 30*time.Second || *drainTimeout > 24*time.Hour {
 		badUsage(fs, "--drain-timeout is between 30s and 24h")
 	}
-	cl, err := newClient()
-	if err != nil {
-		die(err)
-	}
-	ctx, stop := signalContext()
-	defer stop()
-	if opts.User, err = whoAmI(ctx, cl); err != nil {
-		die(err)
-	}
-	if _, err := proposeReboot(ctx, cl, opts, os.Stdout); err != nil {
-		die(err)
-	}
+	onCluster(func(ctx context.Context, cl client.Client) (err error) {
+		if opts.User, err = whoAmI(ctx, cl); err != nil {
+			return err
+		}
+		_, err = proposeReboot(ctx, cl, opts, os.Stdout)
+		return err
+	})
 }
 
 // rebootOptions is one reboot proposal.
@@ -119,10 +113,7 @@ func rebootPlan(node string, role osv1alpha1.NodeRole, o rebootOptions) []metalv
 // node, waiting for a person's approval.
 func proposeReboot(ctx context.Context, cl client.Client, o rebootOptions, w io.Writer) (*metalv1alpha1.HostOperation, error) {
 	node := &osv1alpha1.TalosNode{}
-	if err := cl.Get(ctx, client.ObjectKey{Name: o.Node}, node); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil, fmt.Errorf("no TalosNode %s (kubectl get talosnodes lists them)", o.Node)
-		}
+	if err := getCluster(ctx, cl, "TalosNode", node, o.Node, "kubectl get talosnodes lists them"); err != nil {
 		return nil, err
 	}
 	hosts := &metalv1alpha1.HostList{}
@@ -152,7 +143,7 @@ func proposeReboot(ctx context.Context, cl client.Client, o rebootOptions, w io.
 		},
 	}
 	if err := cl.Create(ctx, op); err != nil {
-		return nil, fmt.Errorf("propose the reboot of %s: %w", o.Node, err)
+		return nil, refused("propose the reboot of "+o.Node, err)
 	}
 	ref := op.Namespace + "/" + op.Name
 	fmt.Fprintf(w, "proposed %s: a clean reboot of TalosNode %s on host %s (%d steps).\n", ref, o.Node, host.Name, len(op.Spec.Actions))

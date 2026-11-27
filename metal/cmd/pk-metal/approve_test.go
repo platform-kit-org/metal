@@ -234,6 +234,8 @@ func TestSplitRef(t *testing.T) {
 		{arg: "pk-metal/op", ns: "default", wantNS: "pk-metal", wantName: "op"},
 		{arg: "pk-metal/op", ns: "pk-metal", nsSet: true, wantNS: "pk-metal", wantName: "op"},
 		{arg: "pk-metal/op", ns: "default", nsSet: true, wantErr: "-n says default"},
+		{arg: "hostoperation.metal.platform-kit.org/op", ns: "pk-metal", wantNS: "pk-metal", wantName: "op"},
+		{arg: "hostoperation.metal.platform-kit.org/op", ns: "other", nsSet: true, wantNS: "other", wantName: "op"},
 		{arg: "/op", wantErr: "not a name"},
 		{arg: "ns/", wantErr: "not a name"},
 		{arg: "a/b/c", wantErr: "not a name"},
@@ -534,7 +536,8 @@ func TestApproveSeveral(t *testing.T) {
 		assert.EqualError(t, err, "1 of 3 operations not approved: pk-metal/op-b")
 		assert.Equal(t, 3, strings.Count(out.String(), "Approve as alice? [y/N] "))
 		assert.Equal(t, 3, strings.Count(out.String(), "steps, in this order:"))
-		assert.Contains(t, out.String(), "pk-metal/op-b: not approved; nothing changed\n")
+		assert.Contains(t, out.String(), "pk-metal/op-b: not approved; nothing changed. "+
+			"It still waits; to refuse it: pk-metal abort --reason \"<why>\" pk-metal/op-b\n", "a no says how to refuse")
 		assert.Equal(t, "alice", approvedBy(t, cl, ops[0]))
 		assert.Empty(t, approvedBy(t, cl, ops[1]))
 		assert.Equal(t, "alice", approvedBy(t, cl, ops[2]))

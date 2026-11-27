@@ -129,7 +129,7 @@ Repair one member at a time. With three control planes, a second lost member is 
    pk-metal approve pk-metal/prod-etcd-recover-cp-1
    ```
 
-5. Upload the snapshot. For a `pvc` sink, [copy the snapshot](#copy-a-snapshot-from-a-pvc-sink) first. Then add `--from-file <file.age>`.
+5. Upload the snapshot. For a `pvc` sink, [copy the snapshot](#copy-a-snapshot-from-a-pvc-sink) first. Then add `--in <file.age>`.
 
    ```sh
    pk-metal restore upload pk-metal/prod-etcd-recover-cp-1 --identity ~/.config/age/keys.txt
@@ -210,7 +210,7 @@ It meets the `restricted` Pod Security level of the namespace.
 
 </Steps>
 
-Give the file to `pk-metal restore upload --from-file`, or decrypt it with `pk-metal backup decrypt --in prod.db.age`.
+Give the file with `--in` to `pk-metal restore upload` or to `pk-metal backup decrypt`.
 
 ## Verify
 

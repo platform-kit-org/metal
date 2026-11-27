@@ -1,9 +1,8 @@
 package main
 
 import (
+	"cmp"
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -14,11 +13,9 @@ import (
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
-	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
-	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
 )
 
 func init() {
@@ -55,12 +52,7 @@ examples:
 }
 
 func rolloutCmd(args []string) {
-	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
-		fs := newFlags("rollout")
-		parseFlags(fs, args)
-		badUsage(fs, "give a subcommand: list, show, approve, resume, pause or abort")
-	}
-	sub, rest := args[0], args[1:]
+	sub, rest := subcommand("rollout", args)
 	fs := newFlags("rollout " + sub)
 	// Only approve and abort ask, so only they take --yes: on the others it
 	// would be accepted and mean nothing.
@@ -73,20 +65,19 @@ func rolloutCmd(args []string) {
 	}
 	addGlobalFlags(fs)
 	parseFlags(fs, rest)
-	ctx := context.Background()
 	need := func(n int) {
 		if fs.NArg() != n {
 			badUsage(fs, fmt.Sprintf("rollout %s takes %d argument(s)", sub, n))
 		}
 	}
-	var run func(cl client.Client) error
+	var run func(ctx context.Context, cl client.Client) error
 	switch sub {
 	case "list":
 		need(0)
-		run = func(cl client.Client) error { return listRollouts(ctx, cl, os.Stdout, time.Now()) }
+		run = func(ctx context.Context, cl client.Client) error { return listRollouts(ctx, cl, os.Stdout, time.Now()) }
 	case "show":
 		need(1)
-		run = func(cl client.Client) error {
+		run = func(ctx context.Context, cl client.Client) error {
 			ro, err := getRollout(ctx, cl, fs.Arg(0))
 			if err != nil {
 				return err
@@ -96,7 +87,7 @@ func rolloutCmd(args []string) {
 		}
 	case "approve":
 		need(1)
-		run = func(cl client.Client) error {
+		run = func(ctx context.Context, cl client.Client) error {
 			user, err := whoAmI(ctx, cl)
 			if err != nil {
 				return err
@@ -106,25 +97,17 @@ func rolloutCmd(args []string) {
 		}
 	case "resume":
 		need(1)
-		run = func(cl client.Client) error { return resumeRollout(ctx, cl, fs.Arg(0), os.Stdout) }
+		run = func(ctx context.Context, cl client.Client) error { return resumeRollout(ctx, cl, fs.Arg(0), os.Stdout) }
 	case "pause":
 		need(1)
-		run = func(cl client.Client) error { return pauseRollout(ctx, cl, fs.Arg(0), os.Stdout) }
+		run = func(ctx context.Context, cl client.Client) error { return pauseRollout(ctx, cl, fs.Arg(0), os.Stdout) }
 	case "abort":
 		need(1)
-		run = func(cl client.Client) error {
-			return abortRollout(ctx, cl, fs.Arg(0), *yes, os.Stdin, isTerminal(os.Stdin), os.Stdout)
+		run = func(ctx context.Context, cl client.Client) error {
+			return abortRollout(ctx, cl, fs.Arg(0), prompt{Yes: *yes, Interactive: isTerminal(os.Stdin), In: os.Stdin, Out: os.Stdout})
 		}
-	default:
-		badUsage(fs, "unknown subcommand "+sub+": give list, show, approve, resume, pause or abort")
 	}
-	cl, err := newClient()
-	if err != nil {
-		die(err)
-	}
-	if err := run(cl); err != nil {
-		die(err)
-	}
+	onCluster(run)
 }
 
 func getRollout(ctx context.Context, cl client.Client, name string) (*osv1alpha1.TalosRollout, error) {
@@ -175,10 +158,7 @@ func listRollouts(ctx context.Context, cl client.Client, w io.Writer, now time.T
 		return nil
 	}
 	slices.SortFunc(list.Items, func(a, b osv1alpha1.TalosRollout) int {
-		if c := a.CreationTimestamp.Compare(b.CreationTimestamp.Time); c != 0 {
-			return c
-		}
-		return strings.Compare(a.Name, b.Name)
+		return cmp.Or(a.CreationTimestamp.Compare(b.CreationTimestamp.Time), strings.Compare(a.Name, b.Name))
 	})
 	tw := tabwriter.NewWriter(w, 2, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ROLLOUT\tCLUSTER\tKIND\tTARGET\tNODES\tSTATE\tAPPROVED BY\tAGE")
@@ -287,7 +267,6 @@ type rolloutApproval struct {
 	In          io.Reader
 	Interactive bool
 	Out         io.Writer
-	Window      time.Duration
 }
 
 // approvableRollout refuses a rollout that nobody can approve now. Whether
@@ -334,74 +313,33 @@ func approveRollout(ctx context.Context, cl client.Client, a rolloutApproval) er
 	if role != "" {
 		fmt.Fprint(a.Out, "\n"+self.note("rollout", role))
 	}
-	if !a.Yes {
-		if !a.Interactive {
-			return fmt.Errorf("stdin is not a terminal, so pk-metal cannot ask; " +
-				"read the plan above and rerun with --yes to approve it")
-		}
-		window := a.Window
-		if window <= 0 {
-			window = approvalWindow
-		}
-		fmt.Fprintf(a.Out, "\nApprove plan %s as %s? [y/N] ", shortDigest(ro.Status.PlanHash), a.User)
-		line, err := ask(ctx, a.In, window)
-		if errors.Is(err, errNoAnswer) {
-			fmt.Fprintln(a.Out)
-			return fmt.Errorf("no answer within %s; nothing changed. Run approve again to see the plan as it is now",
-				shortDuration(window))
-		}
-		if s := strings.ToLower(strings.TrimSpace(line)); s != "y" && s != "yes" {
-			return errDeclined
-		}
+	p := prompt{Yes: a.Yes, Interactive: a.Interactive, In: a.In, Out: a.Out}
+	if err := p.confirm(ctx, "\nApprove plan "+shortDigest(ro.Status.PlanHash)+" as "+a.User+"?", "approved"); err != nil {
+		return err
 	}
 	// The approval lands on exactly the rollout whose plan was shown, with
-	// or without the question: the uid and resourceVersion make the API
-	// server refuse it (409 Conflict) when the rollout was made again under
-	// the same name or changed in any way since it was read, and the plan
-	// hash in the approval makes the operator refuse to run another plan
-	// (PlanChanged). The operator writes the rollout's status often, so a
-	// conflict reads it again and approves only if it is the same rollout,
-	// still approvable, with the same plan. --yes skips the question only.
+	// or without the question, and the plan hash in it makes the operator
+	// refuse to run another plan (PlanChanged). --yes skips the question
+	// only.
 	changed := fmt.Errorf("rollout %s changed since its plan was shown; nothing changed. "+
 		"Look at the plan as it is now and approve again", ro.Name)
-	shownUID, shownPlan := ro.UID, ro.Status.PlanHash
-	reread := !a.Yes // the answer took a while
-	for attempt := 0; ; attempt++ {
-		if reread {
-			now, err := getRollout(ctx, cl, a.Name)
-			if err != nil {
-				return err
-			}
-			if now.UID != shownUID || now.Status.PlanHash != shownPlan || approvableRollout(now) != nil {
-				return changed
-			}
-			ro = now
+	read := func() (client.Object, error) {
+		now, err := getRollout(ctx, cl, a.Name)
+		if err != nil {
+			return nil, err
 		}
-		err := cl.Patch(ctx, ro, client.RawPatch(types.MergePatchType, rolloutApprovalPatch(ro, a.User)))
-		if err == nil {
-			break
+		if now.UID != ro.UID || now.Status.PlanHash != ro.Status.PlanHash {
+			return nil, changed
 		}
-		if !apierrors.IsConflict(err) {
-			return approvalRefused("rollout "+ro.Name, err)
-		}
-		if attempt+1 >= patchAttempts {
-			return changed
-		}
-		reread = true
+		return now, approvableRollout(now)
+	}
+	approval := map[string]any{"approval": map[string]any{"approvedBy": a.User, "planHash": ro.Status.PlanHash}}
+	if err := approveAsShown(ctx, cl, ro, !a.Yes, read, approval, "rollout "+ro.Name, changed); err != nil {
+		return err
 	}
 	fmt.Fprintf(a.Out, "approved rollout %s (plan %s) as %s; the first node starts now and the rollout pauses after it. "+
 		"Follow it with: pk-metal rollout show %s\n", ro.Name, shortDigest(ro.Status.PlanHash), a.User, ro.Name)
 	return nil
-}
-
-// rolloutApprovalPatch stamps the approval, with the plan hash that was
-// shown, on exactly the rollout object that was read.
-func rolloutApprovalPatch(ro *osv1alpha1.TalosRollout, user string) []byte {
-	patch, _ := json.Marshal(map[string]any{
-		"metadata": map[string]any{"uid": ro.UID, "resourceVersion": ro.ResourceVersion},
-		"spec":     map[string]any{"approval": map[string]any{"approvedBy": user, "planHash": ro.Status.PlanHash}},
-	})
-	return patch
 }
 
 // resumeRollout clears spec.paused and lets the rollout past the pause after
@@ -417,18 +355,14 @@ func resumeRollout(ctx context.Context, cl client.Client, name string, w io.Writ
 	if ro.Status.PlanHash == "" {
 		return fmt.Errorf("rollout %s has no plan", name)
 	}
-	user, err := requester(ctx, cl)
+	user, err := whoAmI(ctx, cl)
 	if err != nil {
 		return err
 	}
-	patch, _ := json.Marshal(map[string]any{
-		"metadata": map[string]any{"uid": ro.UID,
-			"annotations": map[string]any{osv1alpha1.AnnotationRolloutResume: ro.Status.PlanHash,
-				metalv1alpha1.AnnotationRequestedBy: user}},
-		"spec": map[string]any{"paused": nil},
-	})
-	if err := cl.Patch(ctx, ro, client.RawPatch(types.MergePatchType, patch)); err != nil {
-		return fmt.Errorf("resume rollout %s: %w", name, err)
+	set := requestedBy(user, "")
+	set[osv1alpha1.AnnotationRolloutResume] = ro.Status.PlanHash
+	if err := mergePatch(ctx, cl, ro, mergeSpec{UID: ro.UID, Annotations: set, Spec: map[string]any{"paused": nil}}); err != nil {
+		return refused("resume rollout "+name, err)
 	}
 	fmt.Fprintf(w, "resumed rollout %s; the next node starts once the cluster is healthy\n", name)
 	return nil
@@ -439,24 +373,21 @@ func pauseRollout(ctx context.Context, cl client.Client, name string, w io.Write
 	if err != nil {
 		return err
 	}
-	user, err := requester(ctx, cl)
+	user, err := whoAmI(ctx, cl)
 	if err != nil {
 		return err
 	}
-	patch, _ := json.Marshal(map[string]any{
-		"metadata": map[string]any{"uid": ro.UID,
-			"annotations": map[string]any{metalv1alpha1.AnnotationRequestedBy: user}},
-		"spec": map[string]any{"paused": true},
-	})
-	if err := cl.Patch(ctx, ro, client.RawPatch(types.MergePatchType, patch)); err != nil {
-		return fmt.Errorf("pause rollout %s: %w", name, err)
+	if err := mergePatch(ctx, cl, ro, mergeSpec{UID: ro.UID, Spec: map[string]any{"paused": true},
+		Annotations: requestedBy(user, "")}); err != nil {
+		return refused("pause rollout "+name, err)
 	}
 	fmt.Fprintf(w, "paused rollout %s; a node that runs now finishes, no further node starts. Go on with: pk-metal rollout resume %s\n",
 		name, name)
 	return nil
 }
 
-func abortRollout(ctx context.Context, cl client.Client, name string, yes bool, in io.Reader, interactive bool, w io.Writer) error {
+func abortRollout(ctx context.Context, cl client.Client, name string, p prompt) error {
+	w := p.Out
 	ro, err := getRollout(ctx, cl, name)
 	if err != nil {
 		return err
@@ -465,30 +396,17 @@ func abortRollout(ctx context.Context, cl client.Client, name string, yes bool, 
 		fmt.Fprintf(w, "rollout %s is already aborted\n", name)
 		return nil
 	}
-	if !yes {
-		if !interactive {
-			return fmt.Errorf("stdin is not a terminal, so pk-metal cannot ask; rerun with --yes to abort")
-		}
-		fmt.Fprintf(w, "Abort rollout %s for good? A node that runs now finishes; no further node starts. [y/N] ", name)
-		line, err := ask(ctx, in, approvalWindow)
-		if err != nil {
-			return err
-		}
-		if s := strings.ToLower(strings.TrimSpace(line)); s != "y" && s != "yes" {
-			return errors.New("not aborted; nothing changed")
-		}
+	if err := p.confirm(ctx, "Abort rollout "+name+" for good? A node that runs now finishes; no further node starts.",
+		"aborted"); err != nil {
+		return err
 	}
-	user, err := requester(ctx, cl)
+	user, err := whoAmI(ctx, cl)
 	if err != nil {
 		return err
 	}
-	patch, _ := json.Marshal(map[string]any{
-		"metadata": map[string]any{"uid": ro.UID,
-			"annotations": map[string]any{metalv1alpha1.AnnotationRequestedBy: user}},
-		"spec": map[string]any{"abort": true},
-	})
-	if err := cl.Patch(ctx, ro, client.RawPatch(types.MergePatchType, patch)); err != nil {
-		return fmt.Errorf("abort rollout %s: %w", name, err)
+	if err := mergePatch(ctx, cl, ro, mergeSpec{UID: ro.UID, Spec: map[string]any{"abort": true},
+		Annotations: requestedBy(user, "")}); err != nil {
+		return refused("abort rollout "+name, err)
 	}
 	fmt.Fprintf(w, "aborted rollout %s. Delete it when you want the operator to propose the change again\n", name)
 	return nil

@@ -8,27 +8,7 @@ interface Props {
 }
 const c = command(Astro.props.cmd);
 
-// Split "now <cluster> | list [<cluster>] | ..." at the top level only: a `|`
-// inside brackets or parentheses is a choice of one argument.
-function forms(s: string): string[] {
-  const out: string[] = [];
-  let depth = 0;
-  let cur = '';
-  for (let i = 0; i < s.length; i++) {
-    const ch = s[i];
-    if ('[(<'.includes(ch)) depth++;
-    if ('])>'.includes(ch)) depth--;
-    if (ch === '|' && depth === 0 && s[i - 1] === ' ' && s[i + 1] === ' ') {
-      out.push(cur.trim());
-      cur = '';
-    } else cur += ch;
-  }
-  out.push(cur.trim());
-  return out;
-}
-
-const hasSubs = c.subcommands.length > 0 || c.name === 'sim';
-const lines = (hasSubs ? forms(c.synopsis) : [c.synopsis]).map((f) => f.replace(/^pk-metal\s+\S+\s*/, ''));
+const lines = c.subcommands.length > 0 ? c.subcommands.map((s) => s.synopsis) : [c.synopsis];
 
 // Tokens: flags, <placeholders>, punctuation and words.
 function tokens(line: string) {

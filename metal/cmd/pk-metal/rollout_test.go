@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -183,7 +184,7 @@ func TestApproveRolloutWhatWasShown(t *testing.T) {
 			require.NoError(t, inner.Update(ctx, now))
 		}}
 		err := approveRollout(ctx, cl, rolloutApproval{Name: name, User: "alice", Yes: true, Out: &bytes.Buffer{}})
-		require.ErrorContains(t, err, "changed since its plan was shown")
+		require.ErrorContains(t, err, "was aborted; there is nothing to approve")
 		assert.Empty(t, approvedBy(t, inner))
 	})
 
@@ -219,9 +220,13 @@ func TestResumePauseAbort(t *testing.T) {
 	require.NoError(t, pauseRollout(ctx, cl, ro.Name, &bytes.Buffer{}))
 	assert.True(t, get().Spec.Paused)
 
-	require.ErrorContains(t, abortRollout(ctx, cl, ro.Name, false, nil, false, &bytes.Buffer{}), "--yes")
+	require.ErrorContains(t, abortRollout(ctx, cl, ro.Name, prompt{Out: &bytes.Buffer{}}), "--yes")
+	never, wr := io.Pipe()
+	defer wr.Close()
+	slow := prompt{Interactive: true, In: never, Out: &bytes.Buffer{}, Window: 20 * time.Millisecond}
+	require.ErrorContains(t, abortRollout(ctx, cl, ro.Name, slow), "no answer within 0s; nothing changed")
 	assert.False(t, get().Spec.Abort)
-	require.NoError(t, abortRollout(ctx, cl, ro.Name, true, nil, false, &bytes.Buffer{}))
+	require.NoError(t, abortRollout(ctx, cl, ro.Name, prompt{Yes: true, Out: &bytes.Buffer{}}))
 	assert.True(t, get().Spec.Abort)
 
 	unapproved := planned()
@@ -262,5 +267,15 @@ func TestUpgrade(t *testing.T) {
 		err := upgrade(ctx, cl, "kubernetes", "lab", "v1.36.3", 5*time.Millisecond, time.Millisecond, &out)
 		require.ErrorContains(t, err, "no rollout planned")
 		assert.Equal(t, 1, strings.Count(out.String(), "waiting up to"), "the wait is said once, so it does not look like a hang")
+	})
+	t.Run("an interrupt stops only the wait", func(t *testing.T) {
+		cl := fakeClientAs("bob", cluster())
+		interrupted, stop := context.WithCancel(ctx)
+		stop()
+		err := upgrade(interrupted, cl, "kubernetes", "lab", "v1.36.3", time.Minute, time.Millisecond, &bytes.Buffer{})
+		require.ErrorContains(t, err, "interrupted; cluster lab still asks for kubernetes v1.36.3")
+		c := &osv1alpha1.TalosCluster{}
+		require.NoError(t, cl.Get(ctx, client.ObjectKey{Name: "lab"}, c))
+		assert.Equal(t, "v1.36.3", c.Spec.KubernetesVersion)
 	})
 }

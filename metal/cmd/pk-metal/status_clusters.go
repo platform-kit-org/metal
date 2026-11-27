@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"fmt"
 	"slices"
 	"strings"
@@ -163,7 +164,7 @@ func addClusters(rep *statusReport, clusters []osv1alpha1.TalosCluster, nodes []
 
 	slices.SortFunc(rep.Clusters, func(a, b clusterStatus) int { return strings.Compare(a.Name, b.Name) })
 	slices.SortFunc(rep.Nodes, func(a, b talosNodeStatus) int {
-		return cmpJoin(a.Cluster, a.Name, b.Cluster, b.Name)
+		return cmp.Or(strings.Compare(a.Cluster, b.Cluster), strings.Compare(a.Name, b.Name))
 	})
 	for _, r := range rep.Clusters {
 		rep.NeedsAttention = rep.NeedsAttention || r.NeedsAttention
@@ -171,13 +172,6 @@ func addClusters(rep *statusReport, clusters []osv1alpha1.TalosCluster, nodes []
 	for _, r := range rep.Nodes {
 		rep.NeedsAttention = rep.NeedsAttention || r.NeedsAttention
 	}
-}
-
-func cmpJoin(a1, a2, b1, b2 string) int {
-	if c := strings.Compare(a1, b1); c != 0 {
-		return c
-	}
-	return strings.Compare(a2, b2)
 }
 
 // renderClusters prints the CLUSTER and NODE tables, or nothing when there

@@ -1,6 +1,6 @@
 {
   "name": "inventory",
-  "summary": "read the hardware inventory from a BMC and print it as YAML (reads only)",
+  "summary": "read the hardware inventory of a BMC and print it as YAML",
   "synopsis": "[flags] <bmc-url>",
   "usage": [
     "pk-metal inventory [flags] <bmc-url>"
@@ -30,13 +30,6 @@
       "type": "bool",
       "default": "",
       "usage": "skip TLS verification of the BMC (prefer --bmc-ca)",
-      "global": false
-    },
-    {
-      "name": "node",
-      "type": "string",
-      "default": "",
-      "usage": "node name for the fact file (default: derived from the endpoint host)",
       "global": false
     },
     {

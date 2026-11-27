@@ -99,7 +99,6 @@ func mustConnect(ctx context.Context, endpoint string, f bmcFlags, readOnly bool
 
 func inventoryCmd(args []string) {
 	fs := newFlags("inventory")
-	node := fs.String("node", "", "node name for the fact file (default: derived from the endpoint host)")
 	address := fs.String("address", "", "address label for the fact file (default: endpoint host)")
 	system := fs.String("system", "", "system id to describe (default: the BMC's only system)")
 	bf := connectFlags(fs)
@@ -108,12 +107,8 @@ func inventoryCmd(args []string) {
 		badUsage(fs, "give exactly one BMC URL, for example https://10.0.0.5")
 	}
 	endpoint := fs.Arg(0)
-	host := endpointHost(endpoint)
 	if *address == "" {
-		*address = host
-	}
-	if *node == "" {
-		*node = host
+		*address = endpointHost(endpoint)
 	}
 
 	ctx, stop := signalContext()
@@ -127,7 +122,7 @@ func inventoryCmd(args []string) {
 	if facts, err = facts.Pick(*system); err != nil {
 		die(err)
 	}
-	inventory.Write(os.Stdout, *node, *address, time.Now(), facts)
+	inventory.Write(os.Stdout, *address, time.Now(), facts)
 }
 
 func checkCmd(args []string) {
@@ -180,22 +175,10 @@ func orDash(s string) string {
 }
 
 func simCmd(args []string) {
-	if len(args) > 0 && args[0] == "fleet" {
-		simFleetCmd(args[1:])
+	sub, rest := subcommand("sim", args)
+	if sub == "fleet" {
+		simFleetCmd(rest)
 		return
-	}
-	if len(args) < 1 || args[0] != "serve" {
-		w, code := os.Stderr, 1
-		if len(args) > 0 && (args[0] == "-h" || args[0] == "-help" || args[0] == "--help") {
-			w, code = os.Stdout, 0
-		}
-		fmt.Fprintln(w, `pk-metal sim: run simulated BMCs (Redfish) for tests and demos
-
-usage: pk-metal sim serve [--fixture <name|path>] [--listen addr] [--tls] [--verbose]
-       pk-metal sim fleet --config <file> [--verbose] [--state-listen addr]
-
-run: pk-metal sim serve -h, or pk-metal sim fleet -h, for the flags`)
-		os.Exit(code)
 	}
 	fs := newFlags("sim serve")
 	fixture := fs.String("fixture", "generic",
@@ -203,7 +186,7 @@ run: pk-metal sim serve -h, or pk-metal sim fleet -h, for the flags`)
 	listen := fs.String("listen", "127.0.0.1:8000", "listen address")
 	serveTLS := fs.Bool("tls", false, "serve HTTPS with an ephemeral self-signed certificate (what spec.address requires)")
 	verbose := fs.Bool("verbose", false, "log every request (default: only state-changing ones)")
-	parseFlags(fs, args[1:])
+	parseFlags(fs, rest)
 
 	f, err := sim.LoadFixture(*fixture)
 	if err != nil {

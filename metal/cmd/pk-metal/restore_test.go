@@ -293,6 +293,12 @@ func TestBackupNowAndList(t *testing.T) {
 	assert.Contains(t, lines[1], "Taking")
 	assert.Contains(t, lines[2], "Verified")
 	assert.Contains(t, lines[2], "6h ago")
+
+	interrupted, stop := context.WithCancel(ctx)
+	stop()
+	err = waitSnapshot(interrupted, cl, name, time.Millisecond, &out)
+	require.ErrorContains(t, err, "interrupted; snapshot "+name+" continues",
+		"Ctrl-C stops the wait, not the snapshot; the message must not say it timed out")
 }
 
 func TestBackupDecryptChecksTheSnapshot(t *testing.T) {
@@ -324,29 +330,6 @@ func TestBackupDecryptChecksTheSnapshot(t *testing.T) {
 	require.Error(t, decryptSnapshot(ctx, nil, "", bad, identityFile(t, id), dst2, &out))
 	_, err = os.Stat(dst2)
 	assert.True(t, os.IsNotExist(err))
-}
-
-// The help and the hints print flags after the cluster (pk-metal restore
-// plan lab --propose); that must parse like flags in front.
-func TestParseAnywhere(t *testing.T) {
-	for _, args := range [][]string{
-		{"lab", "--snapshot", "s1", "--propose"},
-		{"--snapshot", "s1", "lab", "--propose"},
-		{"--propose", "--snapshot=s1", "lab"},
-	} {
-		fs := newFlags("restore plan")
-		snapshot := fs.String("snapshot", "", "")
-		propose := fs.Bool("propose", false, "")
-		pos := parseAnywhere(fs, args)
-		assert.Equal(t, []string{"lab"}, pos, args)
-		assert.Equal(t, "s1", *snapshot, args)
-		assert.True(t, *propose, args)
-	}
-	fs := newFlags("backup decrypt")
-	in := fs.String("in", "", "")
-	assert.Equal(t, []string{"-weird", "x"}, parseAnywhere(fs, []string{"--in", "f", "--", "-weird", "x"}))
-	assert.Equal(t, "f", *in)
-	assert.Empty(t, argAt(nil, 0))
 }
 
 // hangingEtcd is a node whose etcd calls hang until their deadline, as a

@@ -30,7 +30,7 @@ It maps what you know to the objects of pk-metal.
 | `%include`, `group_vars` | [](kind:TalosCluster): versions, endpoint, patches |
 | Foreman "Build" flag | [](kind:HostClaim) with `spec.os` |
 | `ipmitool chassis bootdev cdrom` and `power cycle` | One [](kind:HostOperation) with virtual media |
-| Change ticket approval | [](cli:approve) |
+| Change ticket approval | [](cli:approve). Refuse with [](cli:abort). |
 | Foreman or xCAT node state | Host phase and conditions. See [](concept:phases-and-conditions). |
 | SOL, iKVM, serial console | The serial console of the BMC, as before |
 | `ssh root@node` | `talosctl -n <address>` |

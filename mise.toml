@@ -149,7 +149,7 @@ description = "Only internal/phase writes .Status.Phase/.Status.BlockedOn, and r
 dir = "metal"
 # The check is a Go test: it loads the module with go/types, so it also sees writes
 # through an alias, a pointer or a composite literal, in every package.
-run = "go test -count=1 -run TestPhaseWriteSites ./internal/phase/"
+run = "go test -count=1 -run TestPhaseWriteSites ./internal/lint/"
 
 [tasks.generate]
 description = "Regenerate everything derived from the Go sources: deepcopy code, CRDs, RBAC, the docs site data"

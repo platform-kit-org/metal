@@ -1,23 +1,17 @@
-package phase_test
+package lint_test
 
 import (
-	"fmt"
 	"go/ast"
 	"go/token"
 	"go/types"
-	"os"
-	"path/filepath"
-	"regexp"
+	"maps"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"golang.org/x/tools/go/packages"
 )
-
-const module = "github.com/dennisklein/platform-kit/metal"
 
 // guardedOwners are the status types whose Phase and BlockedOn summarise the
 // conditions. OperationStep also has a Phase, but that one is the outcome of one
@@ -25,19 +19,6 @@ const module = "github.com/dennisklein/platform-kit/metal"
 var guardedOwners = map[string]bool{
 	"HostStatus": true, "HostClaimStatus": true, "HostOperationStatus": true,
 	"ManagementEndpointStatus": true,
-}
-
-// finding is one touch of a guarded field: where, and whether it writes.
-type finding struct {
-	Pos   string // file:line, relative to the module root
-	Write bool
-}
-
-func (f finding) String() string {
-	if f.Write {
-		return f.Pos + " write"
-	}
-	return f.Pos + " read"
 }
 
 // TestPhaseWriteSites keeps "conditions are the truth" true as the code grows.
@@ -49,44 +30,22 @@ func (f finding) String() string {
 // pointer to the field, and in a composite literal. A text search sees none of
 // these. Test files are out of scope: they build stale fixtures on purpose.
 func TestPhaseWriteSites(t *testing.T) {
-	root, err := filepath.Abs("../..")
-	require.NoError(t, err)
-	fixture := module + "/internal/phase/testdata/writesites"
-	cfg := &packages.Config{
-		Dir:  root,
-		Mode: packages.NeedName | packages.NeedFiles | packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo,
-	}
-	pkgs, err := packages.Load(cfg, "./...", fixture)
-	require.NoError(t, err)
-	for _, p := range pkgs {
-		for _, e := range p.Errors {
-			require.Failf(t, "load", "%s: %v", p.PkgPath, e)
-		}
-		// go list reads the sources in a child process, which go test's result
-		// cache does not see. Stat them here so that editing any file of the
-		// module, or adding one to a package, invalidates a cached pass.
-		for _, f := range p.GoFiles {
-			_, _ = os.Stat(f)
-			_, _ = os.ReadDir(filepath.Dir(f))
-		}
-	}
+	root, pkgs := load(t)
 
 	t.Run("the fixture's marked lines are exactly what the check finds", func(t *testing.T) {
-		p := pkgs[slices.IndexFunc(pkgs, func(p *packages.Package) bool { return p.PkgPath == fixture })]
-		got := check(root, p, false, true)
-		want := wanted(t, root, p)
-		assert.Equal(t, strs(want), strs(got))
+		fixture := pkg(pkgs, fixtures+"writesites")
+		assert.Equal(t, strs(wanted(t, root, fixture)), strs(checkPhase(root, fixture, false, true)))
 	})
 
 	t.Run("the module writes phase only in internal/phase and reconcilers never read it", func(t *testing.T) {
 		var bad []finding
 		for _, p := range pkgs {
-			if p.PkgPath == fixture {
+			if strings.HasPrefix(p.PkgPath, fixtures) {
 				continue
 			}
 			allowWrite := p.PkgPath == module+"/internal/phase"
 			forbidRead := strings.HasPrefix(p.PkgPath, module+"/internal/controller")
-			bad = append(bad, check(root, p, allowWrite, forbidRead)...)
+			bad = append(bad, checkPhase(root, p, allowWrite, forbidRead)...)
 		}
 		assert.Empty(t, strs(bad), "write Phase and BlockedOn only through internal/phase (Stamp*), "+
 			"and decide on conditions, not on the phase")
@@ -95,7 +54,7 @@ func TestPhaseWriteSites(t *testing.T) {
 	t.Run("the guard knows every summary status type", func(t *testing.T) {
 		// A new top-level status with a Phase field must join guardedOwners, or
 		// the check silently ignores it.
-		api := pkgs[slices.IndexFunc(pkgs, func(p *packages.Package) bool { return p.PkgPath == module+"/api/v1alpha1" })]
+		api := pkg(pkgs, module+"/api/v1alpha1")
 		var owners []string
 		for _, name := range api.Types.Scope().Names() {
 			st, ok := api.Types.Scope().Lookup(name).Type().Underlying().(*types.Struct)
@@ -108,21 +67,22 @@ func TestPhaseWriteSites(t *testing.T) {
 				}
 			}
 		}
-		assert.ElementsMatch(t, keys(guardedOwners), owners)
+		assert.ElementsMatch(t, slices.Collect(maps.Keys(guardedOwners)), owners)
 	})
 }
 
-// check reports every touch of a guarded field in p's non-test files that the
-// policy forbids: any write unless allowWrite, and any read if forbidRead.
-func check(root string, p *packages.Package, allowWrite, forbidRead bool) []finding {
+// checkPhase reports every touch of a guarded field in p's non-test files
+// that the policy forbids: any write unless allowWrite, and any read if
+// forbidRead. A finding is a "write" or a "read".
+func checkPhase(root string, p *packages.Package, allowWrite, forbidRead bool) []finding {
 	var out []finding
 	report := func(n ast.Node, write bool) {
-		if (write && allowWrite) || (!write && !forbidRead) {
-			return
+		switch {
+		case write && !allowWrite:
+			out = append(out, at(root, p, n, "write"))
+		case !write && forbidRead:
+			out = append(out, at(root, p, n, "read"))
 		}
-		pos := p.Fset.Position(n.Pos())
-		rel, _ := filepath.Rel(root, pos.Filename)
-		out = append(out, finding{Pos: fmt.Sprintf("%s:%d", rel, pos.Line), Write: write})
 	}
 	for _, file := range p.Syntax {
 		if strings.HasSuffix(p.Fset.Position(file.Pos()).Filename, "_test.go") {
@@ -183,47 +143,9 @@ func guarded(t types.Type, field string) bool {
 	if field != "Phase" && field != "BlockedOn" {
 		return false
 	}
-	if ptr, ok := t.(*types.Pointer); ok {
-		t = ptr.Elem()
-	}
-	named, ok := types.Unalias(t).(*types.Named)
+	named, ok := types.Unalias(deref(t)).(*types.Named)
 	if !ok || named.Obj().Pkg() == nil {
 		return false
 	}
 	return strings.HasPrefix(named.Obj().Pkg().Path(), module+"/api/") && guardedOwners[named.Obj().Name()]
-}
-
-var wantRe = regexp.MustCompile(`// want (write|read)$`)
-
-// wanted reads the "want" markers of the fixture package.
-func wanted(t *testing.T, root string, p *packages.Package) []finding {
-	var out []finding
-	for _, name := range p.GoFiles {
-		data, err := os.ReadFile(name)
-		require.NoError(t, err)
-		rel, _ := filepath.Rel(root, name)
-		for i, line := range strings.Split(string(data), "\n") {
-			if m := wantRe.FindStringSubmatch(strings.TrimSpace(line)); m != nil {
-				out = append(out, finding{Pos: fmt.Sprintf("%s:%d", rel, i+1), Write: m[1] == "write"})
-			}
-		}
-	}
-	return out
-}
-
-func strs(fs []finding) []string {
-	out := make([]string, 0, len(fs))
-	for _, f := range fs {
-		out = append(out, f.String())
-	}
-	slices.Sort(out)
-	return out
-}
-
-func keys(m map[string]bool) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	return out
 }

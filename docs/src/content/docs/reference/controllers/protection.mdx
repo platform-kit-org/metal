@@ -15,7 +15,6 @@ import RbacRows from '../../../../components/controllers/RbacRows.astro';
 import Figure from '../../../../components/diagram/Figure.astro';
 import Box from '../../../../components/diagram/Box.astro';
 import Edge from '../../../../components/diagram/Edge.astro';
-import Callout from '../../../../components/Callout.astro';
 
 The protection controller stops garbage collection from deleting a machine that a claim holds.
 This page also describes the two guards that keep the operator from rebooting itself or breaking etcd.
@@ -113,19 +112,7 @@ The [](ctrl:hostclaim), [](ctrl:hostoperation) and [](ctrl:convergence) ask the 
 
 The cluster guard keeps etcd healthy in every Talos cluster that the operator built, not only its own.
 The [](ctrl:hostoperation) asks it before an operation starts and again before each step that takes a control plane down.
-
-A step that takes a control plane down waits while one of these is true:
-
-1. Another control plane of the same cluster is in an operation that started and did not finish.
-2. Etcd is not fully healthy without the member of this node. These cases count: a member does not answer, has an error, has no leader or is a learner. An alarm is raised, or the rest is not a majority.
-
-The guard counts from the etcd member list that it reads live from the members. It does not count TalosNodes.
-
-The guard does not hold a worker, a control plane that is not an etcd member, or a cluster that was never bootstrapped.
-
-<Callout type="caution">
-Do not set `metal.platform-kit.org/override-cluster-guard` on an operation unless etcd is broken already and the operation is the repair, or the cluster has one control plane. The annotation lifts rule 2 only. Rule 1 stays.
-</Callout>
+The rules and the override are in [](concept:cluster-guard).
 
 ## Writes
 

@@ -107,17 +107,15 @@ These are the places to change. The compiler finds only some of them.
 | --- | --- | --- | --- |
 | 1 | `metal/api/v1alpha1/hostoperation_types.go` | Add the field to `HostOperationAction` and its type, with validation markers and a comment. The comment is the text on the reference page. | |
 | 2 | `mise run generate` | Commit the CRD, the deepcopy code and the site data. | `generate:check` |
-| 3 | `implementedActions` in `hostoperation_controller.go` | Add the key. Without it, the executor refuses the operation. | A unit test over all keys |
+| 3 | `actionTraits` in `hostoperation_steps.go` | Add a row for the key. Set `bmc` if the BMC does the action: the operation then takes a baseline of the BMC. Set `disrupts` if it stops the node or removes its etcd member: the cluster guard, the self guard and the windows then hold it. Set `awaits` if its budget counts from the end of the previous step. Set `pass` if one pass needs more time. | A unit test over all keys finds a missing row. |
 | 4 | The executor (`hostoperation_steps.go`, or `hostoperation_talos_steps.go` for a Talos action) | Write the step: start, observe, done. A step must be safe to run again. | Your tests |
-| 5 | `actionUsesBMC` in `hostoperation_controller.go` | Add the action if the BMC does it. Without it, the operation takes no baseline of the BMC. | Nothing. Check by hand. |
-| 6 | `disruptsAction` in `selfprotect.go` | Add the action if it stops the node or removes its etcd member. Without it, the cluster guard, the self guard and the windows do not hold it. | Nothing. Check by hand. |
-| 7 | `passTimeout` in `hostoperation_controller.go`, `waitStart` and `stepBudget` in `hostoperation_steps.go` | Give the step a time budget if it waits. | Nothing. Check by hand. |
-| 8 | `describeAction` in `cmd/pk-metal/approve.go` | Write the line that the approver reads in the plan. | A unit test over all keys |
-| 9 | The simulated BMC (`metal/internal/bmc/sim`) and the conformance checks (`bmctest`) | For a BMC action: add the behavior of each fixture and a check. | Your tests |
-| 10 | `docs/src/content/docs/reference/actions.mdx` | Add the row and the section. | `docs:check` for the links only |
-| 11 | The proposer | Add the action to the plan that uses it (install, release, rollout, convergence). | Your tests |
+| 5 | `stepBudget` in `hostoperation_steps.go`, or `talosStepBudget` in `hostoperation_talos_steps.go` for a Talos action | Give the step a time budget if it waits. | Nothing. Check by hand. |
+| 6 | `describeAction` in `cmd/pk-metal/approve.go` | Write the line that the approver reads in the plan. | A unit test over all keys |
+| 7 | The simulated BMC (`metal/internal/bmc/sim`) and the conformance checks (`bmctest`) | For a BMC action: add the behavior of each fixture and a check. | Your tests |
+| 8 | `docs/src/content/docs/reference/actions.mdx` | Add the row and the section. | `docs:check` for the links only |
+| 9 | The proposer | Add the action to the plan that uses it (install, release, rollout, convergence). | Your tests |
 
-Rows 5, 6 and 7 fail without a message. A wrong answer in row 6 lets an action stop a control plane with no guard.
+Row 5 fails without a message. The test of row 3 finds a missing row, but not a wrong value. A wrong `disrupts` lets an action stop a control plane with no guard.
 
 ## Add a BMC model
 

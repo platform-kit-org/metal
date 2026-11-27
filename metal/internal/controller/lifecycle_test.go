@@ -174,7 +174,6 @@ func newLifecycleLab(t *testing.T, cps, workers []string, extra ...client.Object
 	lab.r = &HostClaimReconciler{
 		Client: cl, OperationsNamespace: "pk-metal", Proposer: "operator",
 		Dial: lab.fleet.Dialer(), CredentialsNamespace: "pk-metal",
-		SupportsAction: func(string) bool { return true },
 	}
 	return lab
 }
@@ -312,22 +311,6 @@ func TestOneControlPlaneLeavesAtATime(t *testing.T) {
 	c := provisionedCond(t, claim)
 	assert.Equal(t, metalv1alpha1.ReasonRemovalWaiting, c.Reason)
 	assert.Contains(t, c.Message, "release-host-b")
-}
-
-func TestReleaseOfAWorkerWithoutTalosStepsMarksTheHost(t *testing.T) {
-	claim, host := claimOn("w-1")
-	lab := newLifecycleLab(t, []string{"cp-1"}, []string{"w-1"}, host)
-	lab.r.SupportsAction = nil // the executor's own list: no Talos steps yet
-	require.False(t, releasePass(t, lab.r, claim))
-	rel := releaseOps(t, lab.r, claim)
-	require.Len(t, rel, 1)
-	if implementedActions["talosReset"] {
-		t.Skip("the executor runs the Talos steps: covered by the tests above")
-	}
-	assert.Equal(t, []string{"powerOff"}, opActionKeys(&rel[0]))
-	got := &metalv1alpha1.Host{}
-	require.NoError(t, lab.r.Get(t.Context(), client.ObjectKey{Name: "host-a"}, got))
-	assert.Equal(t, "lab/w-1", got.Annotations[metalv1alpha1.AnnotationDiskNotWiped])
 }
 
 // ---- a deleted TalosNode --------------------------------------------------

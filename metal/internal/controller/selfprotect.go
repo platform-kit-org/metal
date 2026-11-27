@@ -293,21 +293,14 @@ func disrupts(op *metalv1alpha1.HostOperation) bool {
 	return slices.ContainsFunc(op.Spec.Actions, disruptsAction)
 }
 
-// disruptsAction: the action takes the node down, or its etcd member away.
-// A config applied without a reboot, staged for the next one, or tried with
-// a rollback does not; Auto may reboot, so it counts. Handing etcd
-// leadership on keeps every member (etcd elects among the healthy ones), and
-// deleting the Kubernetes Node or staging firmware leaves the machine
-// running, so none of them is held by a guard.
+// disruptsAction: the action takes the node down, or its etcd member away
+// (actionTraits). A config applied without a reboot, staged for the next
+// one, or tried with a rollback does not; Auto may reboot, so it counts.
 func disruptsAction(a metalv1alpha1.HostOperationAction) bool {
-	switch {
-	case a.PowerCycle != nil, a.PowerOff != nil, a.TalosReboot != nil, a.TalosShutdown != nil,
-		a.TalosUpgrade != nil, a.TalosReset != nil, a.EtcdLeave != nil:
-		return true
-	case a.TalosApplyConfig != nil:
-		return a.TalosApplyConfig.Mode == "Reboot" || a.TalosApplyConfig.Mode == "Auto"
+	if c := a.TalosApplyConfig; c != nil {
+		return c.Mode == "Reboot" || c.Mode == "Auto"
 	}
-	return false
+	return actionTraits[a.Key()].disrupts
 }
 
 // Check reads what the verdict needs and returns "" when a step that reboots

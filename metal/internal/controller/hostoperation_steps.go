@@ -79,6 +79,52 @@ func (x *exec) step(ctx context.Context, i int) (stepState, error) {
 	return stepState{}, fmt.Errorf("action carries no known key")
 }
 
+// actionTraits is what the executor and the guards know about each action,
+// by key. TestEveryActionHasTraits fails for an action of the API that has
+// no row, so the author of a new action decides each column.
+var actionTraits = map[string]struct {
+	// bmc: the BMC carries the action out, so the operation takes the BMC's
+	// baseline before it starts (usesBMC).
+	bmc bool
+	// disrupts: the action takes the node down, or its etcd member away, so
+	// the cluster guard, the self guard and the windows hold it
+	// (disruptsAction). Handing etcd leadership on keeps every member, and
+	// deleting the Kubernetes Node or staging firmware leaves the machine
+	// running. talosApplyConfig disrupts by its mode.
+	disrupts bool
+	// awaits: the step's budget counts from the end of the previous step,
+	// not from the first look (waitStart).
+	awaits bool
+	// pass: the budget of an executor pass that runs the action, when it
+	// needs more than executeTimeout (passTimeout).
+	pass time.Duration
+}{
+	"powerCycle":            {bmc: true, disrupts: true},
+	"powerOff":              {bmc: true, disrupts: true},
+	"setBootOverride":       {bmc: true},
+	"insertMedia":           {bmc: true},
+	"ejectMedia":            {bmc: true},
+	"applyBios":             {bmc: true},
+	"flashFirmware":         {bmc: true, pass: flashTimeout},
+	"stageFirmware":         {bmc: true, pass: flashTimeout},
+	"awaitCheckIn":          {awaits: true},
+	"cordon":                {},
+	"drain":                 {},
+	"uncordon":              {},
+	"talosReboot":           {disrupts: true},
+	"talosShutdown":         {disrupts: true},
+	"talosUpgrade":          {disrupts: true, pass: talosUpgradePass},
+	"talosApplyConfig":      {},
+	"etcdLeave":             {disrupts: true},
+	"etcdRemoveMember":      {},
+	"etcdForfeitLeadership": {},
+	"talosReset":            {disrupts: true},
+	"waitNodeReady":         {awaits: true},
+	"waitEtcdHealthy":       {awaits: true},
+	"etcdRecover":           {awaits: true},
+	"deleteKubernetesNode":  {},
+}
+
 // waitStart is where a waiting step's budget counts from.
 //
 // A step that acts (a power transition) counts from the moment this process
@@ -88,11 +134,14 @@ func (x *exec) step(ctx context.Context, i int) (stepState, error) {
 // window did not show would fail for good after a single look. A restart
 // starts the count again, which can only make a step fail later.
 //
-// awaitCheckIn, waitNodeReady and waitEtcdHealthy act on nothing: the
+// The actions marked awaits in actionTraits wait for the machine:
+// awaitCheckIn, waitNodeReady and waitEtcdHealthy act on nothing, and the
 // machine has been booting since the previous step ended, whether or not
-// anyone looked, so their budget counts from there.
+// anyone looked. etcdRecover first waits for the snapshot upload, which a
+// person starts after the approval. So their budget counts from the end of
+// the previous step.
 func (x *exec) waitStart(i int, entered time.Time) time.Time {
-	if a := x.op.Spec.Actions[i]; a.AwaitCheckIn != nil || a.WaitNodeReady != nil || a.WaitEtcdHealthy != nil || a.EtcdRecover != nil {
+	if actionTraits[x.op.Spec.Actions[i].Key()].awaits {
 		return x.stepStart(i)
 	}
 	key := types.NamespacedName{Namespace: x.op.Namespace, Name: x.op.Name}

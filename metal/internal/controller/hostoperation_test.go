@@ -3,9 +3,11 @@ package controller
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 	"time"
 
@@ -783,34 +785,38 @@ func TestBootOfAReleasedClaimDoesNotStart(t *testing.T) {
 	}
 }
 
-// An operation that names an action the executor does not run yet fails
-// before it starts: no baseline, no call to the BMC, even for the BMC
-// actions in front of it, and the step message says why.
-func TestEveryActionIsImplemented(t *testing.T) {
-	for _, key := range metalv1alpha1.ActionKeys() {
-		assert.True(t, implementedActions[key], "the executor does not run %s", key)
+// Every action of the API has its row in actionTraits: the author of a new
+// action decides whether it uses the BMC, disrupts, and how its budget
+// counts.
+func TestEveryActionHasTraits(t *testing.T) {
+	assert.ElementsMatch(t, metalv1alpha1.ActionKeys(), slices.Collect(maps.Keys(actionTraits)))
+	apply := func(mode string) metalv1alpha1.HostOperationAction {
+		return metalv1alpha1.HostOperationAction{TalosApplyConfig: &metalv1alpha1.TalosApplyConfigAction{Mode: mode}}
 	}
+	assert.True(t, disruptsAction(apply("Reboot")))
+	assert.True(t, disruptsAction(apply("Auto")))
+	assert.False(t, disruptsAction(apply("NoReboot")))
 }
 
+// An operation that names an action this operator version does not know
+// (an older operator reads a newer key as an empty union) fails before it
+// starts: no baseline, no call to the BMC, even for the BMC actions in front
+// of it, and the step message says why.
 func TestUnimplementedActionFailsBeforeAnythingRuns(t *testing.T) {
 	op := preClearedOp(
 		metalv1alpha1.HostOperationAction{PowerCycle: &metalv1alpha1.PowerCycleAction{}},
-		metalv1alpha1.HostOperationAction{TalosReboot: &metalv1alpha1.TalosRebootAction{NodeRef: metalv1alpha1.Reference{Name: "node-a"}}},
+		metalv1alpha1.HostOperationAction{},
 	)
 	r, _, rec := executorFor(t, "huawei-2288h-v5", op)
-	// Every action the API defines today runs; the refusal stays for the
-	// next one the API gains before its executor does.
-	delete(implementedActions, "talosReboot")
-	t.Cleanup(func() { implementedActions["talosReboot"] = true })
 
 	got := runOp(t, r)
 	ex := meta.FindStatusCondition(got.Status.Conditions, metalv1alpha1.ConditionExecuted)
 	require.NotNil(t, ex)
 	assert.Equal(t, metav1.ConditionFalse, ex.Status)
 	assert.Equal(t, metalv1alpha1.ReasonStepFailed, ex.Reason)
-	assert.Contains(t, ex.Message, "step 2/2 talosReboot")
+	assert.Contains(t, ex.Message, "step 2/2 unknown")
 	require.Len(t, got.Status.Steps, 1)
-	assert.Equal(t, "talosReboot", got.Status.Steps[0].Action)
+	assert.Equal(t, "unknown", got.Status.Steps[0].Action)
 	assert.Equal(t, "Failed", got.Status.Steps[0].Phase)
 	assert.Contains(t, got.Status.Steps[0].Message, "not implemented by this operator version yet")
 	assert.Nil(t, got.Status.Baseline, "the operation never started")

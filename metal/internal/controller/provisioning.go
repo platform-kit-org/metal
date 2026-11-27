@@ -1352,8 +1352,7 @@ func (r *HostClaimReconciler) releaseOp(ctx context.Context, claim *metalv1alpha
 // nodeExit decides the steps that take the node the host runs out of its
 // cluster, before any power action: the TalosNode the host's hand-off (or
 // the claim's record) names. It returns no steps, and wipes false, when that
-// node is gone or the executor runs none of its steps; the caller then marks
-// the host as not wiped. reason is set when a control plane may not leave
+// node is gone; the caller then marks the host as not wiped. reason is set when a control plane may not leave
 // etcd now. resetMode is the Talos reset's mode ("" wipes every disk).
 func (r *HostClaimReconciler) nodeExit(ctx context.Context, claim *metalv1alpha1.HostClaim, host *metalv1alpha1.Host, opName, resetMode string) (
 	steps []metalv1alpha1.HostOperationAction, wipes bool, nodeName, cluster, reason, msg string, err error) {
@@ -1376,9 +1375,7 @@ func (r *HostClaimReconciler) nodeExit(ctx context.Context, claim *metalv1alpha1
 	if err != nil || reason != "" {
 		return nil, false, nodeName, cluster, reason, msg, err
 	}
-	if s, w, ok := r.exitSteps(node, member, last, resetMode); ok {
-		steps, wipes = s, w
-	}
+	steps, wipes = exitSteps(node, member, last, resetMode)
 	return steps, wipes, nodeName, cluster, "", "", nil
 }
 

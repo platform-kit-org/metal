@@ -54,23 +54,6 @@ const (
 	drainTimeoutSeconds = int32(900)
 )
 
-// supports reports whether the executor runs every one of these actions. An
-// operation naming one it does not run is refused as a whole, so a plan is
-// built only from actions it runs; the rest fall back to what the BMC alone
-// can do.
-func (r *HostClaimReconciler) supports(keys ...string) bool {
-	f := r.SupportsAction
-	if f == nil {
-		f = func(k string) bool { return implementedActions[k] }
-	}
-	for _, k := range keys {
-		if !f(k) {
-			return false
-		}
-	}
-	return true
-}
-
 // nodeAnswers: the node's authenticated Talos API answered at its last
 // check-in, so the node can be drained, leave etcd and be reset by Talos.
 func nodeAnswers(node *osv1alpha1.TalosNode) bool {
@@ -82,52 +65,38 @@ func nodeAnswers(node *osv1alpha1.TalosNode) bool {
 // power action. member is its etcd member (nil when it has none or it is a
 // worker). last says the node is the only etcd member: the cluster ends with
 // it, and no Kubernetes API is left to delete its Node through. resetMode is
-// the Talos reset's wipe mode. wipes says whether the
-// steps reset the machine through Talos; ok is false when the executor runs
-// none of the steps this node needs, and the caller falls back to the BMC.
-func (r *HostClaimReconciler) exitSteps(node *osv1alpha1.TalosNode, member *talos.EtcdMember, last bool, resetMode string) (
-	steps []metalv1alpha1.HostOperationAction, wipes, ok bool) {
+// the Talos reset's wipe mode. wipes says whether the steps reset the
+// machine through Talos.
+func exitSteps(node *osv1alpha1.TalosNode, member *talos.EtcdMember, last bool, resetMode string) (
+	steps []metalv1alpha1.HostOperationAction, wipes bool) {
 	ref := metalv1alpha1.Reference{Name: node.Name}
 	cp := node.Spec.Role == osv1alpha1.RoleControlPlane && member != nil
 	if nodeAnswers(node) {
-		keys := []string{"cordon", "drain", "talosReset", "deleteKubernetesNode"}
+		steps = []metalv1alpha1.HostOperationAction{
+			{Cordon: &metalv1alpha1.CordonAction{NodeRef: ref}},
+			// The node is wiped next: data in emptyDir volumes is lost
+			// either way, and a drain that refused such pods would only
+			// stop the removal.
+			{Drain: &metalv1alpha1.DrainAction{NodeRef: ref, TimeoutSeconds: drainTimeoutSeconds, DeleteEmptyDirData: true}},
+		}
 		if cp {
-			keys = append(keys, "etcdForfeitLeadership", "etcdLeave")
-		}
-		if r.supports(keys...) {
-			steps = []metalv1alpha1.HostOperationAction{
-				{Cordon: &metalv1alpha1.CordonAction{NodeRef: ref}},
-				// The node is wiped next: data in emptyDir volumes is lost
-				// either way, and a drain that refused such pods would only
-				// stop the removal.
-				{Drain: &metalv1alpha1.DrainAction{NodeRef: ref, TimeoutSeconds: drainTimeoutSeconds, DeleteEmptyDirData: true}},
-			}
-			if cp {
-				steps = append(steps,
-					metalv1alpha1.HostOperationAction{EtcdForfeitLeadership: &metalv1alpha1.EtcdForfeitLeadershipAction{NodeRef: ref}},
-					metalv1alpha1.HostOperationAction{EtcdLeave: &metalv1alpha1.EtcdLeaveAction{NodeRef: ref}},
-				)
-			}
-			// Not graceful: the steps above already drained the node and
-			// took it out of etcd, each with its own record, and a graceful
-			// reset would try to leave etcd a second time.
 			steps = append(steps,
-				metalv1alpha1.HostOperationAction{TalosReset: &metalv1alpha1.TalosResetAction{
-					NodeRef: ref, Graceful: ptr.To(false), Reboot: false, Mode: resetMode,
-				}},
+				metalv1alpha1.HostOperationAction{EtcdForfeitLeadership: &metalv1alpha1.EtcdForfeitLeadershipAction{NodeRef: ref}},
+				metalv1alpha1.HostOperationAction{EtcdLeave: &metalv1alpha1.EtcdLeaveAction{NodeRef: ref}},
 			)
-			if !last {
-				steps = append(steps, metalv1alpha1.HostOperationAction{DeleteKubernetesNode: &metalv1alpha1.DeleteKubernetesNodeAction{NodeRef: ref}})
-			}
-			return steps, true, true
 		}
-	}
-	keys := []string{"deleteKubernetesNode"}
-	if cp {
-		keys = append(keys, "etcdRemoveMember")
-	}
-	if !r.supports(keys...) {
-		return nil, false, false
+		// Not graceful: the steps above already drained the node and
+		// took it out of etcd, each with its own record, and a graceful
+		// reset would try to leave etcd a second time.
+		steps = append(steps,
+			metalv1alpha1.HostOperationAction{TalosReset: &metalv1alpha1.TalosResetAction{
+				NodeRef: ref, Graceful: ptr.To(false), Reboot: false, Mode: resetMode,
+			}},
+		)
+		if !last {
+			steps = append(steps, metalv1alpha1.HostOperationAction{DeleteKubernetesNode: &metalv1alpha1.DeleteKubernetesNodeAction{NodeRef: ref}})
+		}
+		return steps, true
 	}
 	if cp {
 		steps = append(steps, metalv1alpha1.HostOperationAction{EtcdRemoveMember: &metalv1alpha1.EtcdRemoveMemberAction{
@@ -137,7 +106,7 @@ func (r *HostClaimReconciler) exitSteps(node *osv1alpha1.TalosNode, member *talo
 	if !last {
 		steps = append(steps, metalv1alpha1.HostOperationAction{DeleteKubernetesNode: &metalv1alpha1.DeleteKubernetesNodeAction{NodeRef: ref}})
 	}
-	return steps, false, true
+	return steps, false
 }
 
 // wipesDisk: the operation resets the machine's disks through Talos.

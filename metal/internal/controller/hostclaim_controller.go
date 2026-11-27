@@ -74,9 +74,6 @@ type HostClaimReconciler struct {
 	// CredentialsNamespace is where the clusters' secrets bundles are read
 	// (the operator's own namespace).
 	CredentialsNamespace string
-	// SupportsAction says whether the executor runs an action key; nil
-	// asks the executor's own list. Plans use only actions it runs.
-	SupportsAction func(key string) bool
 }
 
 // reader is the uncached reader when one is wired, the client otherwise.

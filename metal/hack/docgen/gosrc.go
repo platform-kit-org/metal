@@ -7,6 +7,7 @@ import (
 	"go/token"
 	"go/types"
 	"io/fs"
+	"maps"
 	"path/filepath"
 	"reflect"
 	"regexp"
@@ -353,7 +354,7 @@ type unionField struct{ owner, path string }
 // unionPath finds the spec field that holds the action list
 // ("spec.actions"), so each action links to its rows on the kind's page.
 func unionPath(p goPackage, union string) (unionField, error) {
-	for _, name := range sortedKeys(p.types) {
+	for _, name := range slices.Sorted(maps.Keys(p.types)) {
 		t := p.types[name]
 		if t.st == nil || !strings.HasSuffix(name, "Spec") {
 			continue
@@ -385,7 +386,7 @@ func buildEnums(pkgs []goPackage) (enums enumsDoc, phases phasesDoc) {
 			}
 			e.Values = append(e.Values, enumValue{Name: c.name, Value: c.value, Description: c.doc})
 		}
-		for _, name := range sortedKeys(p.types) {
+		for _, name := range slices.Sorted(maps.Keys(p.types)) {
 			t := p.types[name]
 			if t.st == nil {
 				continue
@@ -518,7 +519,7 @@ func scanKeys(cfg config) (keysDoc, error) {
 		}
 	}
 	doc := keysDoc{Keys: []keyDoc{}}
-	for _, key := range sortedKeys(byKey) {
+	for _, key := range slices.Sorted(maps.Keys(byKey)) {
 		doc.Keys = append(doc.Keys, *byKey[key])
 	}
 	return doc, nil

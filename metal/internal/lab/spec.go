@@ -12,6 +12,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"maps"
 	"net/netip"
 	"os"
 	"regexp"
@@ -310,7 +311,7 @@ func (s *Spec) Validate() error {
 	}
 	checkMachine("controlPlane", s.ControlPlane, false)
 	checkMachine("worker", s.Worker, false)
-	for _, name := range sortedKeys(s.Nodes) {
+	for _, name := range slices.Sorted(maps.Keys(s.Nodes)) {
 		if !nodeName.MatchString(name) {
 			bad("nodes: %q is not a machine name; machines are named node-1, node-2, ...", name)
 			continue
@@ -329,13 +330,4 @@ func (s *Spec) Validate() error {
 		bad("accel %q is not one of %s, %s", s.Accel, qemu.AccelKVM, qemu.AccelTCG)
 	}
 	return errors.Join(errs...)
-}
-
-func sortedKeys[V any](m map[string]V) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	slices.Sort(keys)
-	return keys
 }

@@ -1,7 +1,8 @@
 package controller
 
 import (
-	"sort"
+	"maps"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -98,12 +99,7 @@ func stampManagedLabels(obj metav1.Object, desired map[string]string) bool {
 		}
 	}
 
-	keys := make([]string, 0, len(desired))
-	for k := range desired {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	switch want := strings.Join(keys, ","); {
+	switch want := strings.Join(slices.Sorted(maps.Keys(desired)), ","); {
 	case want == "" && annotations[managedLabelsAnnotation] != "":
 		delete(annotations, managedLabelsAnnotation)
 		changed = true

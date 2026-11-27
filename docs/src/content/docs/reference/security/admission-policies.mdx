@@ -120,7 +120,7 @@ The CRD schemas freeze what the object changes, and the names in it. The policie
 
 <dl>
   <dt>Why rule 3</dt>
-  <dd>Anybody else could skip the gate. The operator itself creates such operations in three cases. These are the node steps of an approved rollout, an install of a claim with `provisioning.approval: Automatic`, and a release that needs no person.</dd>
+  <dd>Anybody else could skip the gate. See [Operator work without approval](ref:threat-model#known-limits).</dd>
   <dt>Why rule 6 names the operator</dt>
   <dd>The operator proposes most operations. A person must approve them. RBAC also stops the operator: it has no `patch` on operations. See [](ref:rbac). Rule 6 is the second lock. No setting changes it.</dd>
   <dt>Why rule 7 is a setting</dt>

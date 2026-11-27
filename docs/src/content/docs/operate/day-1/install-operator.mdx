@@ -26,7 +26,7 @@ Run the operator in a management cluster, with the values of your site.
 
 - You have a clone of the repository, and [mise](https://mise.jdx.dev/getting-started.html) with the pinned tools (`mise trust`, then `mise install`).
 - You have Docker Engine on the workstation. The image build uses it.
-- You have a Kubernetes cluster for the operator, or you make one with kind in step 3. The operator is tested on Kubernetes 1.36. See [](ref:versions).
+- You have a Kubernetes cluster for the operator, or you make one with kind in step 3. The operator needs Kubernetes 1.32 or later. Only 1.36 is tested. See [](ref:versions).
 - You know the address at which the BMCs reach the cluster. See row 2 of [](howto:network-checklist).
 
 <Callout type="note">

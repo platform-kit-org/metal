@@ -77,7 +77,8 @@ type TalosRolloutReconciler struct {
 	Audit *audit.Logger
 	// APIReader reads straight from the API server, bypassing the informer
 	// cache, for the check that no other rollout holds the cluster before a
-	// step starts. Defaults to the manager's API reader in SetupWithManager.
+	// step starts, and for a step's operation that the cache does not show.
+	// Defaults to the manager's API reader in SetupWithManager.
 	APIReader client.Reader
 
 	// resolved caches pinned images by reference for a while, so that an
@@ -556,17 +557,18 @@ func (r *TalosRolloutReconciler) observeStep(ctx context.Context, ro *osv1alpha1
 		st.Operation = ns + "/" + name
 	}
 	op := &metalv1alpha1.HostOperation{}
-	if err := r.Get(ctx, types.NamespacedName{Namespace: ns, Name: name}, op); err != nil {
-		if client.IgnoreNotFound(err) != nil {
-			return err
-		}
-		// The cache may not show an operation created moments ago: only a
-		// step that started a while back has lost its operation.
-		if st.StartedAt != nil && time.Since(st.StartedAt.Time) > time.Minute {
-			st.State, st.FinishedAt = osv1alpha1.RolloutNodeFailed, ptr.To(metav1.Now())
-			st.Message = "operation " + st.Operation + " was deleted before it finished"
-		}
+	key := types.NamespacedName{Namespace: ns, Name: name}
+	err := r.Get(ctx, key, op)
+	if apierrors.IsNotFound(err) {
+		err = r.liveOperation(ctx, key, op)
+	}
+	if apierrors.IsNotFound(err) {
+		st.State, st.FinishedAt = osv1alpha1.RolloutNodeFailed, ptr.To(metav1.Now())
+		st.Message = "operation " + st.Operation + " was deleted before it finished"
 		return nil
+	}
+	if err != nil {
+		return err
 	}
 	c := meta.FindStatusCondition(op.Status.Conditions, metalv1alpha1.ConditionExecuted)
 	switch {
@@ -583,6 +585,15 @@ func (r *TalosRolloutReconciler) observeStep(ctx context.Context, ro *osv1alpha1
 		logf.FromContext(ctx).Info("rollout step failed", "rollout", ro.Name, "node", step.Node, "message", c.Message)
 	}
 	return nil
+}
+
+// liveOperation reads a step's operation from the API server. A step whose
+// operation is gone fails for good, and the cache may not show an operation
+// created moments ago.
+//
+//pk:uncached
+func (r *TalosRolloutReconciler) liveOperation(ctx context.Context, key client.ObjectKey, op *metalv1alpha1.HostOperation) error {
+	return r.reader().Get(ctx, key, op)
 }
 
 // observeKubeProxy moves the kube-proxy DaemonSet and reads its rollout.

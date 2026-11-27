@@ -94,7 +94,7 @@ The TalosRollout lane changes a running cluster one node at a time: a Talos upgr
 
 1. Read the rollout. If nobody approved it, plan it. List the nodes that need the change, pin each installer image by digest, and write the plan and its hash. Plan again each minute.
 2. Check that the approval names the current `planHash`. The approval is write-once, so a plan that moved after approval ends the rollout. Nothing ran.
-3. Observe each running step through its operation, or the kube-proxy DaemonSet.
+3. Observe each running step through its operation, or the kube-proxy DaemonSet. If the cache does not show the operation, read it from the API server. A step whose operation is gone fails.
 4. If a step failed or a person aborted, mark the pending steps Skipped. Wait for running steps to finish. Nodes that changed stay changed.
 5. Pick the next steps: control planes and kube-proxy one at a time, workers up to `maxUnavailableWorkers`.
 6. Pause if `spec.paused` is set, or after the first node until a person resumes it with the plan hash.

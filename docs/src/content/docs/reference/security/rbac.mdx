@@ -28,7 +28,7 @@ Kubernetes RBAC does the split. The [admission policies](ref:admission-policies)
 
 <Figure
   title="The operator service account may create HostOperations and TalosRollouts but not patch them. A person with pk-metal-approver may patch them. The admission policies stand between both and the API."
-  caption="Create is propose. Patch is approve. No identity holds both by default."
+  caption="Create is propose. Patch is approve. pk-metal-manager has create only. pk-metal-admin has both."
   width={720}
   height={200}
 >
@@ -47,7 +47,7 @@ Kubernetes RBAC does the split. The [admission policies](ref:admission-policies)
 </Figure>
 
 1. The manager creates a [](kind:HostOperation) or a [](kind:TalosRollout) with `spec.proposedBy` set to its own name.
-2. The CRD schema freezes what the object changes. So the only field that a patch can still change is the approval.
+2. The CRD schema freezes the target, the actions, the reason and the names. A patch can still set the approval, and the annotations that abort, retry or lift a guard. On a rollout, a patch can also set `spec.paused` and `spec.abort`.
 3. A person who holds `patch` sets `approvedBy` to their own name. Permission to patch is permission to approve.
 4. The admission policies refuse an approval in another name, a second approval, and an approval by the operator. They refuse an approval of your own proposal only if the site sets `selfApproval: Forbidden`.
 

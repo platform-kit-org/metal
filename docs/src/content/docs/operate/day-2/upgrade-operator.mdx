@@ -101,6 +101,7 @@ Apply the overlay with the old tag.
 | The admin group gets the roles `pk-metal-admin` in place of `cluster-admin`. | The new bindings of the sample have new names. After the apply, delete the old binding: `kubectl delete clusterrolebinding pk-metal-admins`. Until then, the admin group still has `cluster-admin`. See [](ref:rbac). |
 | The component `config/name-stamp` writes your username into `requested-by` and into guard lifts. It needs Kubernetes 1.36 or later. | The sample site overlay includes it. On an older release, remove it from `components`. See [](ref:admission-policies#the-name-stamps). |
 | `status.managerType` of [](kind:ManagementEndpoint) goes. | Nothing. The operator did not read it. |
+| `spec.reason` of a [](kind:HostOperation) is frozen after creation. | Nothing. The operator does not change it. A patch that changes it gets `reason is frozen after creation`. |
 | The CRDs of [](kind:HostOperation) and [](kind:TalosRollout) declare selectable fields. The management cluster needs Kubernetes 1.32 or later. | On 1.30 or 1.31, upgrade Kubernetes first. See [](ref:versions). |
 
 <Callout type="note">

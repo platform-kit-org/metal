@@ -36,7 +36,7 @@ The operator never approves. A site setting tells if a person can approve their 
   <dt>Plan</dt>
   <dd>The list of actions, fixed when the operator proposes. A changed plan is a new proposal with a new name.</dd>
   <dt>Approver</dt>
-  <dd>A person with the ClusterRole `pk-metal-approver`. If the site sets `selfApproval: Forbidden`, the approver is not the proposer.</dd>
+  <dd>A person with `patch` on operations or rollouts: `pk-metal-approver` or `pk-metal-admin`.</dd>
   <dt>Self-approval</dt>
   <dd>An approval by the person who proposed. The ConfigMap `hostoperation-approval` sets it: `Allowed` (the default) or `Forbidden`. See [](howto:approval-permissions).</dd>
   <dt>Hold</dt>

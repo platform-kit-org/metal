@@ -629,6 +629,14 @@ func TestReconcile(t *testing.T) {
 		err = cl.Patch(ctx, &op, ttl)
 		require.Error(t, err, "a TTL added after creation is refused")
 		assert.Contains(t, err.Error(), "ttlSecondsAfterFinished is frozen after creation")
+
+		// The reason is frozen too: Provisioning skips every maintenance
+		// window, so a patch must not give it to an approved reboot.
+		op = opByName("cycle-smc")
+		reason := client.RawPatch(types.MergePatchType, []byte(`{"spec":{"reason":"Provisioning"}}`))
+		err = cl.Patch(ctx, &op, reason)
+		require.Error(t, err, "a reason set after creation is refused")
+		assert.Contains(t, err.Error(), "reason is frozen after creation")
 	})
 
 	st.run(t, "an image by URL needs https and a digest", func(t *testing.T) {

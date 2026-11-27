@@ -965,22 +965,26 @@ status() {
 
 # Prints "<namespace> <name>" for every operation that waits for a person: the
 # approval is required, nobody has given it, and the operation has not finished.
+# With a host, only the operations of that Host.
 pending_operations() {
-  kubectl get hostoperations --all-namespaces --output json | jq -r '
+  local host=${1:-}
+  kubectl get hostoperations --all-namespaces --output json | jq -r --arg host "$host" '
     .items[]
+    | select($host == "" or .spec.hostRef.name == $host)
     | select(.spec.approval.required != false)
     | select((.spec.approval.approvedBy // "") == "")
     | select((.status.phase // "") as $p | ["Succeeded", "Failed", "Aborted"] | index($p) | not)
     | "\(.metadata.namespace) \(.metadata.name)"'
 }
 
-# Approves every pending operation as the kubeconfig's user and prints how many
-# that were. An approval that fails is reported by pk-metal and not counted.
+# Approves every pending operation (of the host, if one is given) as the
+# kubeconfig's user and prints how many that were. An approval that fails is
+# reported by pk-metal and not counted.
 approve_pending() {
-  local root=$1 lab_dir=$2
+  local root=$1 host=${2:-}
   local namespace name pending count=0
   # A cluster that does not answer has nothing to approve; the callers poll.
-  pending=$(pending_operations) || pending=""
+  pending=$(pending_operations "$host") || pending=""
   [[ -n $pending ]] || { echo 0; return 0; }
   while read -r namespace name; do
     [[ -n $name ]] || continue
@@ -996,7 +1000,7 @@ approve() {
   local root=$1 lab_dir=$2
   local count
   require_cluster "$lab_dir"
-  count=$(approve_pending "$root" "$lab_dir")
+  count=$(approve_pending "$root")
   if (( count == 0 )); then
     echo "no operation waits for approval" >&2
   else
@@ -1132,7 +1136,7 @@ wait_converged() {
   cluster_name=$(lab_value "$gen" TALOS_CLUSTER)
   step "waiting up to ${timeout}s for $want Provisioned hosts and $want Ready nodes (from $(date '+%F %T %Z'))"
   while true; do
-    approve_pending "$root" "$lab_dir" >/dev/null || true
+    approve_pending "$root" >/dev/null || true
     kubeconfig_fetch "$cluster_name" "$lab_dir/workload.kubeconfig" "$lab_dir/talosconfig" || true
     if converged "$lab_dir" "$want"; then
       echo "converged after $((SECONDS - (deadline - timeout)))s: $(progress "$lab_dir")" >&2
@@ -1191,7 +1195,7 @@ release() {
     metal.platform-kit.org/requested-by=lab-admin >&2
   kubectl -n "$namespace" delete hostclaim "$name" --wait=false "${ADMIN_AS[@]}" >&2
   while true; do
-    approve_pending "$root" "$lab_dir" >/dev/null || true
+    approve_pending "$root" >/dev/null || true
     phase=$(host_phase "$host") || phase=""
     if claim_gone "$namespace" "$name" && [[ $phase == Available ]]; then
       echo "released after $((SECONDS - (deadline - timeout)))s: Host $host is Available, $claim is gone" >&2
@@ -1280,7 +1284,7 @@ day2_reboot_node() {
   fi
 
   while true; do
-    approve_pending "$root" "$lab_dir" >/dev/null || true
+    approve_pending "$root" >/dev/null || true
     phase=$(kubectl -n "$namespace" get hostoperation "$name" --output jsonpath='{.status.phase}' 2>/dev/null) || phase=""
     case "$phase" in
       Succeeded)
@@ -1366,7 +1370,7 @@ day2_until() {
   local members learners have total ready failed line last="" deadline=$((SECONDS + timeout))
   step "$what: waiting up to ${timeout}s for $voters etcd voter(s) and $nodes Ready node(s)"
   while true; do
-    approve_pending "$root" "$lab_dir" >/dev/null || true
+    approve_pending "$root" >/dev/null || true
     members=$(etcd_members "$lab_dir") || members=""
     if [[ -n $members ]]; then
       learners=$(awk '$2 == "true"' <<<"$members" | wc -l)
@@ -1416,18 +1420,10 @@ hosts_returned() {
 # release of a machine whose claim moved elsewhere.
 release_host() {
   local root=$1 host=$2 timeout=$3 what=$4
-  local namespace name deadline=$((SECONDS + timeout))
+  local deadline=$((SECONDS + timeout))
   step "$what: releasing Host $host"
   until [[ $(host_phase "$host" || true) == Available ]]; do
-    while read -r namespace name; do
-      [[ -n $name ]] || continue
-      "$root/metal/bin/pk-metal" approve --yes -n "$namespace" "$name" >&2 || true
-    done < <(kubectl get hostoperations --all-namespaces --output json | jq -r --arg host "$host" '
-      .items[]
-      | select(.spec.hostRef.name == $host and .spec.approval.required != false)
-      | select((.spec.approval.approvedBy // "") == "")
-      | select((.status.phase // "") != "Succeeded" and (.status.phase // "") != "Failed")
-      | "\(.metadata.namespace) \(.metadata.name)"')
+    approve_pending "$root" "$host" >/dev/null || true
     (( SECONDS < deadline )) || die "$what: Host $host was not released within ${timeout}s.
   Look at it: mise run lab:status; collect the evidence: mise run lab:collect"
     sleep 10
@@ -1958,7 +1954,7 @@ pivot() {
   want_hosts=$(($(lab_value "$gen" NODES) + $(lab_value "$gen" WORKLOAD_NODES)))
   want_nodes=$(lab_value "$gen" WORKLOAD_NODES)
   while true; do
-    approve_pending "$root" "$lab_dir" >/dev/null || true
+    approve_pending "$root" >/dev/null || true
     kubeconfig_fetch "$second" "$lab_dir/second.kubeconfig" "$lab_dir/second.talosconfig" || true
     if cluster_converged "$want_hosts" "$lab_dir/second.kubeconfig" "$want_nodes"; then
       echo "converged after $((SECONDS - (deadline - timeout)))s: $want_hosts Provisioned hosts, $want_nodes Ready nodes in $second" >&2
@@ -2161,16 +2157,16 @@ EOF
     sleep 15
   done
   # The lab's admin approves what lab-restorer proposed: two people.
-  approve_pending "$root" "$lab_dir" >/dev/null
+  approve_pending "$root" >/dev/null
   until "$cli" restore upload "$namespace/$op" --identity "$dir/identity.txt" --from-file "$dir/snapshot.db.age" >&2; do
     (( SECONDS < deadline )) || die "the snapshot upload to $op did not succeed within ${timeout}s; its output above says why"
-    approve_pending "$root" "$lab_dir" >/dev/null || true
+    approve_pending "$root" >/dev/null || true
     sleep 15
   done
 
   step "waiting for $op and for etcd"
   while true; do
-    approve_pending "$root" "$lab_dir" >/dev/null || true
+    approve_pending "$root" >/dev/null || true
     line="$(kubectl -n "$namespace" get hostoperation "$op" --output jsonpath='{.status.phase}' 2>/dev/null): $(
       kubectl -n "$namespace" get hostoperation "$op" \
         --output jsonpath='{.status.conditions[?(@.type=="Executed")].message}' 2>/dev/null)"

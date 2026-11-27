@@ -6,7 +6,6 @@ import (
 
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -175,15 +174,7 @@ func (r *ProtectionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&metalv1alpha1.Host{}).
-		Watches(&metalv1alpha1.ManagementEndpoint{}, handler.EnqueueRequestsFromMapFunc(
-			func(_ context.Context, obj client.Object) []ctrl.Request {
-				names := hostNames(obj.(*metalv1alpha1.ManagementEndpoint))
-				reqs := make([]ctrl.Request, 0, len(names))
-				for _, n := range names {
-					reqs = append(reqs, ctrl.Request{NamespacedName: types.NamespacedName{Name: n}})
-				}
-				return reqs
-			})).
+		Watches(&metalv1alpha1.ManagementEndpoint{}, handler.EnqueueRequestsFromMapFunc(hostsOfEndpoint)).
 		Named("protection").
 		Complete(r)
 }

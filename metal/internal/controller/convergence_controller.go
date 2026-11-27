@@ -666,7 +666,8 @@ func (r *ConvergenceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&metalv1alpha1.Host{}, handler.EnqueueRequestsFromMapFunc(sameName)).
 		Watches(&metalv1alpha1.BiosProfile{}, handler.EnqueueRequestsFromMapFunc(r.allHosts)).
 		Watches(&metalv1alpha1.FirmwareProfile{}, handler.EnqueueRequestsFromMapFunc(r.allHosts)).
-		Watches(&metalv1alpha1.ManagementEndpoint{}, handler.EnqueueRequestsFromMapFunc(r.hostsBehindEndpoint)).
+		// The firmware version after a flash arrives through the endpoint poll.
+		Watches(&metalv1alpha1.ManagementEndpoint{}, handler.EnqueueRequestsFromMapFunc(hostsOfEndpoint)).
 		Watches(&metalv1alpha1.HostOperation{}, handler.EnqueueRequestsFromMapFunc(hostForOperation)).
 		Watches(&metalv1alpha1.HostClaim{}, handler.EnqueueRequestsFromMapFunc(hostOfClaim)).
 		// Only a node's coming, going and spec matter to the plan; its status
@@ -680,29 +681,10 @@ func (r *ConvergenceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 // sameName: the reconcile key IS the host name (BiosSettings share it).
 func sameName(_ context.Context, obj client.Object) []ctrl.Request {
-	return []ctrl.Request{{NamespacedName: types.NamespacedName{Name: obj.GetName()}}}
+	return []ctrl.Request{requestFor(obj.GetName())}
 }
 
 // allHosts fans a profile event out to every host — matching is per-host.
 func (r *ConvergenceReconciler) allHosts(ctx context.Context, _ client.Object) []ctrl.Request {
-	hosts := &metalv1alpha1.HostList{}
-	if err := r.List(ctx, hosts); err != nil {
-		return nil
-	}
-	reqs := make([]ctrl.Request, 0, len(hosts.Items))
-	for i := range hosts.Items {
-		reqs = append(reqs, ctrl.Request{NamespacedName: types.NamespacedName{Name: hosts.Items[i].Name}})
-	}
-	return reqs
-}
-
-// hostsBehindEndpoint re-converges when an endpoint's observations move — the
-// firmware version after a flash arrives through the endpoint poll.
-func (r *ConvergenceReconciler) hostsBehindEndpoint(_ context.Context, obj client.Object) []ctrl.Request {
-	names := hostNames(obj.(*metalv1alpha1.ManagementEndpoint))
-	reqs := make([]ctrl.Request, 0, len(names))
-	for _, n := range names {
-		reqs = append(reqs, ctrl.Request{NamespacedName: types.NamespacedName{Name: n}})
-	}
-	return reqs
+	return hostsWhere(ctx, r.Client, nil)
 }

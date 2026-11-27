@@ -1082,12 +1082,7 @@ func (r *TalosRolloutReconciler) rolloutsForNode(ctx context.Context, obj client
 	if err := r.List(ctx, rollouts); err != nil {
 		return nil
 	}
-	var reqs []ctrl.Request
-	for i := range rollouts.Items {
-		ro := &rollouts.Items[i]
-		if ro.Spec.ClusterRef.Name == cluster && ro.Spec.Approval.ApprovedBy == "" && !rolloutFinished(ro) {
-			reqs = append(reqs, requestFor(ro.Name))
-		}
-	}
-	return reqs
+	return requestsOf(rollouts.Items, func(ro *osv1alpha1.TalosRollout) bool {
+		return ro.Spec.ClusterRef.Name == cluster && ro.Spec.Approval.ApprovedBy == "" && !rolloutFinished(ro)
+	})
 }

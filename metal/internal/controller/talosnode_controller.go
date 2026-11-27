@@ -372,11 +372,7 @@ func (r *TalosNodeReconciler) nodesForCluster(ctx context.Context, obj client.Ob
 	if err != nil {
 		return nil
 	}
-	reqs := make([]ctrl.Request, 0, len(nodes))
-	for _, n := range nodes {
-		reqs = append(reqs, requestFor(n.Name))
-	}
-	return reqs
+	return requestsOf(nodes, nil)
 }
 
 // nodesForBundle re-renders a cluster's members when its secrets bundle
@@ -401,11 +397,7 @@ func (r *TalosNodeReconciler) nodesForConfigMap(ctx context.Context, obj client.
 	for _, c := range clusters.Items {
 		affected[c.Name] = patchesUse(c.Spec.Patches, obj)
 	}
-	var reqs []ctrl.Request
-	for _, n := range nodes.Items {
-		if affected[n.Spec.ClusterRef.Name] || patchesUse(n.Spec.Patches, obj) {
-			reqs = append(reqs, requestFor(n.Name))
-		}
-	}
-	return reqs
+	return requestsOf(nodes.Items, func(n *osv1alpha1.TalosNode) bool {
+		return affected[n.Spec.ClusterRef.Name] || patchesUse(n.Spec.Patches, obj)
+	})
 }

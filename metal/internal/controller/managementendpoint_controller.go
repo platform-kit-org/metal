@@ -466,9 +466,5 @@ func (r *ManagementEndpointReconciler) endpointsForAsset(ctx context.Context, ob
 		logf.FromContext(ctx).Error(err, "list endpoints for asset", "asset", obj.GetName())
 		return nil
 	}
-	reqs := make([]ctrl.Request, 0, len(eps.Items))
-	for _, ep := range eps.Items {
-		reqs = append(reqs, ctrl.Request{NamespacedName: types.NamespacedName{Name: ep.Name}})
-	}
-	return reqs
+	return requestsOf(eps.Items, nil)
 }

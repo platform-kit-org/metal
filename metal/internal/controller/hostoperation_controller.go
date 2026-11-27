@@ -1254,13 +1254,7 @@ func (r *HostOperationReconciler) opsFor(ctx context.Context, hostName string, s
 		logf.FromContext(ctx).Error(err, "list operations for host", "host", hostName)
 		return nil
 	}
-	var reqs []ctrl.Request
-	for i := range ops.Items {
-		if op := &ops.Items[i]; op.UID != skip && !op.Finished() {
-			reqs = append(reqs, ctrl.Request{NamespacedName: types.NamespacedName{
-				Namespace: op.Namespace, Name: op.Name,
-			}})
-		}
-	}
-	return reqs
+	return requestsOf(ops.Items, func(op *metalv1alpha1.HostOperation) bool {
+		return op.UID != skip && !op.Finished()
+	})
 }

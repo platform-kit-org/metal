@@ -275,11 +275,7 @@ func (r *BootAssetReconciler) assetsForNode(ctx context.Context, obj client.Obje
 	if err := r.List(ctx, assets); err != nil {
 		return nil
 	}
-	var reqs []ctrl.Request
-	for i := range assets.Items {
-		if ref := assets.Items[i].Spec.NodeRef; ref != nil && ref.Name == obj.GetName() {
-			reqs = append(reqs, ctrl.Request{NamespacedName: types.NamespacedName{Name: assets.Items[i].Name}})
-		}
-	}
-	return reqs
+	return requestsOf(assets.Items, func(a *osv1alpha1.BootAsset) bool {
+		return a.Spec.NodeRef != nil && a.Spec.NodeRef.Name == obj.GetName()
+	})
 }

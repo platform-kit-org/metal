@@ -18,7 +18,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -806,9 +805,5 @@ func (r *EndpointConvergenceReconciler) allEndpoints(ctx context.Context, _ clie
 	if err := r.List(ctx, eps); err != nil {
 		return nil
 	}
-	reqs := make([]ctrl.Request, 0, len(eps.Items))
-	for i := range eps.Items {
-		reqs = append(reqs, ctrl.Request{NamespacedName: types.NamespacedName{Name: eps.Items[i].Name}})
-	}
-	return reqs
+	return requestsOf(eps.Items, nil)
 }

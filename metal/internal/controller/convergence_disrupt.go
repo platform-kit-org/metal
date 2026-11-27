@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -162,10 +161,10 @@ func hostOfClaim(_ context.Context, obj client.Object) []ctrl.Request {
 	claim := obj.(*metalv1alpha1.HostClaim)
 	var reqs []ctrl.Request
 	if claim.Status.HostRef != nil {
-		reqs = append(reqs, ctrl.Request{NamespacedName: types.NamespacedName{Name: claim.Status.HostRef.Name}})
+		reqs = append(reqs, requestFor(claim.Status.HostRef.Name))
 	}
 	if h := claim.Status.HandOff; h != nil && (claim.Status.HostRef == nil || h.Host != claim.Status.HostRef.Name) {
-		reqs = append(reqs, ctrl.Request{NamespacedName: types.NamespacedName{Name: h.Host}})
+		reqs = append(reqs, requestFor(h.Host))
 	}
 	return reqs
 }
@@ -181,7 +180,7 @@ func (r *ConvergenceReconciler) hostsRunningNode(ctx context.Context, obj client
 	var reqs []ctrl.Request
 	for _, c := range claims.Items {
 		if h := c.Status.HandOff; h != nil && h.Node == obj.GetName() {
-			reqs = append(reqs, ctrl.Request{NamespacedName: types.NamespacedName{Name: h.Host}})
+			reqs = append(reqs, requestFor(h.Host))
 		}
 	}
 	return reqs

@@ -8,7 +8,6 @@ import (
 	"github.com/siderolabs/talos/pkg/machinery/config/generate/secrets"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
-	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
@@ -155,8 +154,4 @@ func patchesUse(patches []osv1alpha1.Patch, obj client.Object) bool {
 		}
 	}
 	return false
-}
-
-func requestFor(name string) ctrl.Request {
-	return ctrl.Request{NamespacedName: types.NamespacedName{Name: name}}
 }

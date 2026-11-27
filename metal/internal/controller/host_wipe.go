@@ -212,15 +212,8 @@ func (r *hostWipeReconciler) hostsWaitingForWipe(ctx context.Context, obj client
 	if !strings.HasPrefix(obj.GetName(), "wipe-") {
 		return nil
 	}
-	hosts := &metalv1alpha1.HostList{}
-	if err := r.List(ctx, hosts); err != nil {
-		return nil
-	}
-	var reqs []ctrl.Request
-	for i := range hosts.Items {
-		if _, ok := hosts.Items[i].Annotations[metalv1alpha1.AnnotationWipe]; ok {
-			reqs = append(reqs, requestFor(hosts.Items[i].Name))
-		}
-	}
-	return reqs
+	return hostsWhere(ctx, r.Client, func(h *metalv1alpha1.Host) bool {
+		_, ok := h.Annotations[metalv1alpha1.AnnotationWipe]
+		return ok
+	})
 }

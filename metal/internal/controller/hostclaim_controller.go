@@ -457,13 +457,9 @@ func (r *HostClaimReconciler) claimsNaming(ctx context.Context, node string) []c
 	if err := r.List(ctx, claims); err != nil {
 		return nil
 	}
-	var reqs []ctrl.Request
-	for i := range claims.Items {
-		if os := claims.Items[i].Spec.OS; os != nil && (node == "" || os.NodeRef.Name == node) {
-			reqs = append(reqs, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(&claims.Items[i])})
-		}
-	}
-	return reqs
+	return requestsOf(claims.Items, func(c *metalv1alpha1.HostClaim) bool {
+		return c.Spec.OS != nil && (node == "" || c.Spec.OS.NodeRef.Name == node)
+	})
 }
 
 // claimsForEndpoint re-runs the claims selecting the endpoint's asset — its
@@ -484,11 +480,7 @@ func (r *HostClaimReconciler) claimsSelecting(ctx context.Context, asset string)
 	if err := r.List(ctx, claims, client.MatchingFields{claimAssetIndex: asset}); err != nil {
 		return nil
 	}
-	reqs := make([]ctrl.Request, 0, len(claims.Items))
-	for i := range claims.Items {
-		reqs = append(reqs, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(&claims.Items[i])})
-	}
-	return reqs
+	return requestsOf(claims.Items, nil)
 }
 
 // claimsForHost fans a host event out to its holder (release/re-check) and to every

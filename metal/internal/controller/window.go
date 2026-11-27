@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -293,10 +292,8 @@ func (r *MaintenanceWindowReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		setCondition(&w.Status.Conditions, w.Generation, metalv1alpha1.ConditionValid, metav1.ConditionTrue,
 			metalv1alpha1.ReasonWindowValid, "")
 	}
-	if !equality.Semantic.DeepEqual(orig, &w.Status) {
-		if err := r.Status().Update(ctx, w); err != nil {
-			return ctrl.Result{}, client.IgnoreNotFound(err)
-		}
+	if err := updateStatusIfChanged(ctx, r.Client, w, orig, &w.Status); err != nil {
+		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 	if next.IsZero() {
 		return ctrl.Result{}, nil

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -88,10 +87,8 @@ func (r *TalosNodeMemberReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	if reason != "" {
 		orig := node.Status.DeepCopy()
 		setCondition(&node.Status.Conditions, node.Generation, osv1alpha1.ConditionRemovalBlocked, metav1.ConditionTrue, reason, msg)
-		if !equality.Semantic.DeepEqual(orig, &node.Status) {
-			if err := r.Status().Update(ctx, node); err != nil {
-				return ctrl.Result{}, client.IgnoreNotFound(err)
-			}
+		if err := updateStatusIfChanged(ctx, r.Client, node, orig, &node.Status); err != nil {
+			return ctrl.Result{}, client.IgnoreNotFound(err)
 		}
 		return ctrl.Result{RequeueAfter: removalRecheck}, nil
 	}

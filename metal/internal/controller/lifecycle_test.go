@@ -220,9 +220,9 @@ func TestReleaseOfAnsweringControlPlaneLeavesEtcdAndWipes(t *testing.T) {
 	require.False(t, releasePass(t, lab.r, claim))
 	rel := releaseOps(t, lab.r, claim)
 	require.Len(t, rel, 1)
-	assert.Equal(t, []string{"cordon", "drain", "etcdForfeitLeadership", "etcdLeave", "talosReset", "deleteKubernetesNode", "powerOff"},
+	assert.Equal(t, []string{"cordon", "drain", "etcdLeave", "talosReset", "deleteKubernetesNode", "powerOff"},
 		opActionKeys(&rel[0]), "leave etcd, wipe, then power off; no slot to eject behind this endpoint")
-	reset := rel[0].Spec.Actions[4].TalosReset
+	reset := rel[0].Spec.Actions[3].TalosReset
 	assert.False(t, *reset.Graceful, "the steps before did what a graceful reset does")
 	assert.Empty(t, reset.Mode, "a release wipes every disk")
 	assert.Empty(t, rel[0].Annotations[metalv1alpha1.AnnotationDiskNotWiped])
@@ -487,8 +487,8 @@ func TestReinstallLeavesEtcdBeforeTheBoot(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, reason, msg)
 	op := &metalv1alpha1.HostOperation{Spec: metalv1alpha1.HostOperationSpec{Actions: steps}}
-	assert.Equal(t, []string{"cordon", "drain", "etcdForfeitLeadership", "etcdLeave", "talosReset", "deleteKubernetesNode"}, opActionKeys(op))
-	assert.Equal(t, "SystemDisk", steps[4].TalosReset.Mode, "a reinstall keeps the user disks")
+	assert.Equal(t, []string{"cordon", "drain", "etcdLeave", "talosReset", "deleteKubernetesNode"}, opActionKeys(op))
+	assert.Equal(t, "SystemDisk", steps[3].TalosReset.Mode, "a reinstall keeps the user disks")
 }
 
 // ---- wipe ------------------------------------------------------------------

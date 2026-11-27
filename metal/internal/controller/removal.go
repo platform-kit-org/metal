@@ -80,10 +80,8 @@ func exitSteps(node *osv1alpha1.TalosNode, member *talos.EtcdMember, last bool, 
 			{Drain: &metalv1alpha1.DrainAction{NodeRef: ref, TimeoutSeconds: drainTimeoutSeconds, DeleteEmptyDirData: true}},
 		}
 		if cp {
-			steps = append(steps,
-				metalv1alpha1.HostOperationAction{EtcdForfeitLeadership: &metalv1alpha1.EtcdForfeitLeadershipAction{NodeRef: ref}},
-				metalv1alpha1.HostOperationAction{EtcdLeave: &metalv1alpha1.EtcdLeaveAction{NodeRef: ref}},
-			)
+			// etcdLeave hands the leadership on before it leaves.
+			steps = append(steps, metalv1alpha1.HostOperationAction{EtcdLeave: &metalv1alpha1.EtcdLeaveAction{NodeRef: ref}})
 		}
 		// Not graceful: the steps above already drained the node and
 		// took it out of etcd, each with its own record, and a graceful

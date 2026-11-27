@@ -4,7 +4,7 @@
       "type": "HostPhase",
       "group": "metal.platform-kit.org",
       "source": "metal/api/v1alpha1/host_types.go",
-      "description": "HostPhase summarizes a machine's conditions together with whether it is claimed. Enrolling and Inspecting mean the cluster is still finding out what the machine is; Available means it is understood and free; Assigned means something claimed it; Provisioning means work is happening to it right now and Provisioned that the work finished; Releasing means it is being handed back. Failed and Maintenance are the two stops: Failed when an install did not work, Maintenance while a person has set the metal.platform-kit.org/maintenance annotation.\n\nAssigned and Provisioning are deliberately separate. A machine can be spoken for without anything disruptive happening to it, and conflating the two leaves no way to say so.",
+      "description": "HostPhase summarizes a machine's conditions together with whether it is claimed. Inspecting means the cluster is still finding out what the machine is; Available means it is understood and free; Assigned means something claimed it; Provisioning means work is happening to it right now and Provisioned that the work finished; Releasing means it is being handed back. Maintenance is the stop: a person has set the metal.platform-kit.org/maintenance annotation.\n\nAssigned and Provisioning are deliberately separate. A machine can be spoken for without anything disruptive happening to it, and conflating the two leaves no way to say so.",
       "kinds": [
         "Host"
       ],
@@ -12,11 +12,6 @@
         "HostStatus.phase"
       ],
       "values": [
-        {
-          "name": "HostEnrolling",
-          "value": "Enrolling",
-          "description": ""
-        },
         {
           "name": "HostInspecting",
           "value": "Inspecting",
@@ -45,11 +40,6 @@
         {
           "name": "HostReleasing",
           "value": "Releasing",
-          "description": ""
-        },
-        {
-          "name": "HostFailed",
-          "value": "Failed",
           "description": ""
         },
         {
@@ -136,7 +126,7 @@
       "type": "EndpointPhase",
       "group": "metal.platform-kit.org",
       "source": "metal/api/v1alpha1/managementendpoint_types.go",
-      "description": "EndpointPhase summarizes an endpoint's conditions, in the order an endpoint normally moves through them: Pending until it is reachable, then Connecting, Inventorying and Verifying as the cluster learns what is there, Configuring while settings are applied, and Ready. Unreachable and Mismatch are the two stops — the first means nobody answered, the second that what answered was not the machine the Asset described.",
+      "description": "EndpointPhase summarizes an endpoint's conditions, in the order an endpoint normally moves through them: Inventorying and Verifying as the cluster learns what is there, Configuring while settings are applied, and Ready. Unreachable and Mismatch are the two stops — the first means nobody answered, the second that what answered was not the machine the Asset described.",
       "kinds": [
         "ManagementEndpoint"
       ],
@@ -144,16 +134,6 @@
         "ManagementEndpointStatus.phase"
       ],
       "values": [
-        {
-          "name": "EndpointPending",
-          "value": "Pending",
-          "description": ""
-        },
-        {
-          "name": "EndpointConnecting",
-          "value": "Connecting",
-          "description": ""
-        },
         {
           "name": "EndpointInventorying",
           "value": "Inventorying",

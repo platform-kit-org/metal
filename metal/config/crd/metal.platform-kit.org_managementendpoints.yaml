@@ -231,8 +231,6 @@ spec:
                 phase:
                   description: 'Phase summarizes the conditions below for people and for kubectl columns. It is a summary, not the contract: automation should read conditions.'
                   enum:
-                    - Pending
-                    - Connecting
                     - Inventorying
                     - Verifying
                     - Configuring

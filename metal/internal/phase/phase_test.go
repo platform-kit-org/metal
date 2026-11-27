@@ -21,10 +21,6 @@ func TestForEndpoint(t *testing.T) {
 		phase   metalv1alpha1.EndpointPhase
 		blocked string
 	}{
-		{name: "no observations", phase: metalv1alpha1.EndpointPending},
-		{name: "connect in flight",
-			conds: []metav1.Condition{c(metalv1alpha1.ConditionReachable, metav1.ConditionUnknown, "Connecting")},
-			phase: metalv1alpha1.EndpointConnecting},
 		{name: "unreachable",
 			conds: []metav1.Condition{c(metalv1alpha1.ConditionReachable, metav1.ConditionFalse, "DialTimeout")},
 			phase: metalv1alpha1.EndpointUnreachable},
@@ -50,6 +46,22 @@ func TestForEndpoint(t *testing.T) {
 				c(metalv1alpha1.ConditionInventoried, metav1.ConditionTrue, "FactsGathered"),
 				c(metalv1alpha1.ConditionVerified, metav1.ConditionTrue, "SerialMatch"),
 				c(metalv1alpha1.ConditionConfigured, metav1.ConditionFalse, "RotatingCredentials"),
+			},
+			phase: metalv1alpha1.EndpointConfiguring},
+		{name: "a configuration failure shows in blockedOn",
+			conds: []metav1.Condition{
+				c(metalv1alpha1.ConditionReachable, metav1.ConditionTrue, "SessionUp"),
+				c(metalv1alpha1.ConditionInventoried, metav1.ConditionTrue, "FactsGathered"),
+				c(metalv1alpha1.ConditionVerified, metav1.ConditionTrue, "SerialMatch"),
+				c(metalv1alpha1.ConditionConfigured, metav1.ConditionFalse, metalv1alpha1.ReasonAccountRetireFailed),
+			},
+			phase: metalv1alpha1.EndpointConfiguring, blocked: metalv1alpha1.ReasonAccountRetireFailed},
+		{name: "a certificate that waits for its signature is not blocked",
+			conds: []metav1.Condition{
+				c(metalv1alpha1.ConditionReachable, metav1.ConditionTrue, "SessionUp"),
+				c(metalv1alpha1.ConditionInventoried, metav1.ConditionTrue, "FactsGathered"),
+				c(metalv1alpha1.ConditionVerified, metav1.ConditionTrue, "SerialMatch"),
+				c(metalv1alpha1.ConditionConfigured, metav1.ConditionFalse, metalv1alpha1.ReasonAwaitingIssuance),
 			},
 			phase: metalv1alpha1.EndpointConfiguring},
 		{name: "ready without any profile matched (Configured absent)",
@@ -95,12 +107,8 @@ func TestForHost(t *testing.T) {
 		phase   metalv1alpha1.HostPhase
 		blocked string
 	}{
-		{name: "no observations", phase: metalv1alpha1.HostEnrolling},
-		{name: "reachable starts inspection",
-			conds: []metav1.Condition{c(metalv1alpha1.ConditionReachable, metav1.ConditionTrue, "SessionUp")},
-			phase: metalv1alpha1.HostInspecting},
-		{name: "inspection in flight",
-			conds: []metav1.Condition{c(metalv1alpha1.ConditionInspected, metav1.ConditionUnknown, "Gathering")},
+		{name: "inspected, not verified",
+			conds: []metav1.Condition{c(metalv1alpha1.ConditionInspected, metav1.ConditionTrue, "RedfishFacts")},
 			phase: metalv1alpha1.HostInspecting},
 		{name: "inspected + verified = available", conds: inspected, phase: metalv1alpha1.HostAvailable},
 		{name: "verification failed holds availability",
@@ -117,30 +125,21 @@ func TestForHost(t *testing.T) {
 				c(metalv1alpha1.ConditionApprovalPending, metav1.ConditionTrue, "Bios")),
 			facts: phase.HostFacts{Claimed: true},
 			phase: metalv1alpha1.HostAssigned, blocked: "Approval(Bios)"},
-		{name: "boot underway",
+		{name: "install underway",
 			conds: append(append([]metav1.Condition{}, inspected...),
-				c(metalv1alpha1.ConditionBooted, metav1.ConditionUnknown, "MediaInserted")),
+				c(metalv1alpha1.ConditionOSReady, metav1.ConditionUnknown, metalv1alpha1.ReasonAwaitingContact)),
 			facts: phase.HostFacts{Claimed: true},
 			phase: metalv1alpha1.HostProvisioning},
 		{name: "os ready = provisioned",
 			conds: append(append([]metav1.Condition{}, inspected...),
-				c(metalv1alpha1.ConditionBooted, metav1.ConditionTrue, "BootProgressOK"),
-				c(metalv1alpha1.ConditionOSReady, metav1.ConditionTrue, "MachineReady")),
+				c(metalv1alpha1.ConditionBooted, metav1.ConditionTrue, "MachineAPI"),
+				c(metalv1alpha1.ConditionOSReady, metav1.ConditionTrue, "NodeReady")),
 			facts: phase.HostFacts{Claimed: true},
 			phase: metalv1alpha1.HostProvisioned},
-		{name: "boot attempted and failed",
-			conds: append(append([]metav1.Condition{}, inspected...),
-				c(metalv1alpha1.ConditionBooted, metav1.ConditionFalse, "BootTimeout")),
-			facts: phase.HostFacts{Claimed: true},
-			phase: metalv1alpha1.HostFailed},
 		{name: "a free host with a stale ready OS is available",
 			conds: append(append([]metav1.Condition{}, inspected...),
-				c(metalv1alpha1.ConditionBooted, metav1.ConditionTrue, "BootProgressOK"),
-				c(metalv1alpha1.ConditionOSReady, metav1.ConditionTrue, "MachineReady")),
-			phase: metalv1alpha1.HostAvailable},
-		{name: "a free host with a stale failed OS is available",
-			conds: append(append([]metav1.Condition{}, inspected...),
-				c(metalv1alpha1.ConditionOSReady, metav1.ConditionFalse, "NodeNotReady")),
+				c(metalv1alpha1.ConditionBooted, metav1.ConditionTrue, "MachineAPI"),
+				c(metalv1alpha1.ConditionOSReady, metav1.ConditionTrue, "NodeReady")),
 			phase: metalv1alpha1.HostAvailable},
 		{name: "releasing outranks the ladder",
 			conds: inspected, facts: phase.HostFacts{Releasing: true},
@@ -209,6 +208,21 @@ func TestForClaim(t *testing.T) {
 				c(metalv1alpha1.ConditionProvisioned, metav1.ConditionFalse, metalv1alpha1.ReasonAwaitingApproval),
 			},
 			phase: metalv1alpha1.ClaimBound, blocked: "Approval(Provisioning)"},
+	}
+	// Each stop a runbook names under the claim's BLOCKED column shows there.
+	for _, reason := range []string{metalv1alpha1.ReasonDiskNotWiped, metalv1alpha1.ReasonEtcdRiskRefused,
+		metalv1alpha1.ReasonEtcdJoinWaiting, metalv1alpha1.ReasonRemovalWaiting} {
+		tests = append(tests, struct {
+			name    string
+			conds   []metav1.Condition
+			phase   metalv1alpha1.ClaimPhase
+			blocked string
+		}{name: reason + " shows in blockedOn",
+			conds: []metav1.Condition{
+				c(metalv1alpha1.ConditionBound, metav1.ConditionTrue, metalv1alpha1.ReasonHostBound),
+				c(metalv1alpha1.ConditionProvisioned, metav1.ConditionFalse, reason),
+			},
+			phase: metalv1alpha1.ClaimBound, blocked: reason})
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

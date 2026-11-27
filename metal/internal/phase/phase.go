@@ -26,17 +26,11 @@ import (
 
 // ForEndpoint derives the ManagementEndpoint phase. Precedence: hard stops first
 // (Unreachable, Mismatch), then the pipeline position in observation order
-// (Pending → Connecting → Inventorying → Verifying → Configuring → Ready).
+// (Inventorying → Verifying → Configuring → Ready). Each observing pass sets
+// Reachable before the phase is stamped.
 func ForEndpoint(conds []metav1.Condition) (metalv1alpha1.EndpointPhase, string) {
 	blocked := blockedOn(conds)
-
-	reach := meta.FindStatusCondition(conds, metalv1alpha1.ConditionReachable)
-	switch {
-	case reach == nil && len(conds) == 0:
-		return metalv1alpha1.EndpointPending, blocked
-	case reach == nil || reach.Status == metav1.ConditionUnknown:
-		return metalv1alpha1.EndpointConnecting, blocked
-	case reach.Status == metav1.ConditionFalse:
+	if !meta.IsStatusConditionTrue(conds, metalv1alpha1.ConditionReachable) {
 		return metalv1alpha1.EndpointUnreachable, blocked
 	}
 
@@ -52,9 +46,24 @@ func ForEndpoint(conds []metav1.Condition) (metalv1alpha1.EndpointPhase, string)
 	// Configured is profile-driven: absent means no EndpointProfile matched — that is
 	// Ready, not an eternal Configuring.
 	if c := meta.FindStatusCondition(conds, metalv1alpha1.ConditionConfigured); c != nil && c.Status != metav1.ConditionTrue {
+		if blocked == "" && c.Status == metav1.ConditionFalse && configFailures[c.Reason] {
+			blocked = c.Reason
+		}
 		return metalv1alpha1.EndpointConfiguring, blocked
 	}
 	return metalv1alpha1.EndpointReady, blocked
+}
+
+// configFailures are the Configured=False reasons that the operator cannot
+// clear alone. The other False reasons are work in flight.
+var configFailures = map[string]bool{
+	metalv1alpha1.ReasonRotationFailed:      true,
+	metalv1alpha1.ReasonAccountRetireFailed: true,
+	metalv1alpha1.ReasonNTPFailed:           true,
+	metalv1alpha1.ReasonProfileConflict:     true,
+	metalv1alpha1.ReasonIdentityPushFailed:  true,
+	metalv1alpha1.ReasonNoIdentityTransport: true,
+	metalv1alpha1.ReasonTLSNotVerified:      true,
 }
 
 // HostFacts are the spec-derived inputs to the Host derivation — booleans the owning
@@ -73,10 +82,10 @@ type HostFacts struct {
 }
 
 // ForHost derives the Host phase. Precedence: parked states first (Maintenance,
-// Releasing), then, for a claimed host only, a failed OS-ladder observation (Status=False means attempted and
-// failed; Unknown means in flight; absent means not attempted), then the ladder
-// downwards (Provisioned → Provisioning → Assigned → Available → Inspecting →
-// Enrolling).
+// Releasing), then the ladder downwards (Provisioned → Provisioning → Assigned
+// → Available → Inspecting). The OS rungs read OSReady, which the host
+// reconciler sets while the Host has a hand-off: True when the node is ready,
+// Unknown otherwise. Each pass sets Inspected before the phase is stamped.
 func ForHost(conds []metav1.Condition, f HostFacts) (metalv1alpha1.HostPhase, string) {
 	blocked := blockedOn(conds)
 
@@ -93,19 +102,14 @@ func ForHost(conds []metav1.Condition, f HostFacts) (metalv1alpha1.HostPhase, st
 	}
 
 	// The OS ladder describes the claim's install, so a free host has none.
-	// The host reconciler drops Booted and OSReady with the hand-off, but a
-	// read from before that pass still has them.
+	// The host reconciler drops OSReady with the hand-off, but a read from
+	// before that pass still has it.
 	if f.Claimed {
-		for _, t := range []string{metalv1alpha1.ConditionBooted, metalv1alpha1.ConditionOSReady} {
-			if c := meta.FindStatusCondition(conds, t); c != nil && c.Status == metav1.ConditionFalse {
-				return metalv1alpha1.HostFailed, blocked
-			}
-		}
 		osReady := meta.FindStatusCondition(conds, metalv1alpha1.ConditionOSReady)
 		switch {
 		case osReady != nil && osReady.Status == metav1.ConditionTrue:
 			return metalv1alpha1.HostProvisioned, blocked
-		case osReady != nil || meta.FindStatusCondition(conds, metalv1alpha1.ConditionBooted) != nil:
+		case osReady != nil:
 			return metalv1alpha1.HostProvisioning, blocked
 		}
 		return metalv1alpha1.HostAssigned, blocked
@@ -115,11 +119,7 @@ func ForHost(conds []metav1.Condition, f HostFacts) (metalv1alpha1.HostPhase, st
 		meta.IsStatusConditionTrue(conds, metalv1alpha1.ConditionVerified) {
 		return metalv1alpha1.HostAvailable, blocked
 	}
-	if meta.FindStatusCondition(conds, metalv1alpha1.ConditionInspected) != nil ||
-		meta.IsStatusConditionTrue(conds, metalv1alpha1.ConditionReachable) {
-		return metalv1alpha1.HostInspecting, blocked
-	}
-	return metalv1alpha1.HostEnrolling, blocked
+	return metalv1alpha1.HostInspecting, blocked
 }
 
 // ForClaim derives the HostClaim phase from its Bound condition. Reference
@@ -151,8 +151,9 @@ func ForClaim(conds []metav1.Condition) (metalv1alpha1.ClaimPhase, string) {
 	return metalv1alpha1.ClaimPending, b.Reason
 }
 
-// provisioningHolds are the Provisioned=False reasons that need a person —
-// the rest are in-flight waits, not blocks.
+// provisioningHolds are the Provisioned=False reasons that show in
+// blockedOn: a stop that a person resolves, or a wait for an etcd turn
+// (EtcdJoinWaiting, RemovalWaiting). The rest are in-flight waits.
 var provisioningHolds = map[string]bool{
 	metalv1alpha1.ReasonSingleMediumUnsupported: true,
 	metalv1alpha1.ReasonNoBootableMedia:         true,
@@ -161,6 +162,10 @@ var provisioningHolds = map[string]bool{
 	metalv1alpha1.ReasonHeldByUser:              true,
 	metalv1alpha1.ReasonHostInMaintenance:       true,
 	metalv1alpha1.ReasonSelfDisruption:          true,
+	metalv1alpha1.ReasonDiskNotWiped:            true,
+	metalv1alpha1.ReasonEtcdRiskRefused:         true,
+	metalv1alpha1.ReasonEtcdJoinWaiting:         true,
+	metalv1alpha1.ReasonRemovalWaiting:          true,
 }
 
 // ForOperation derives the HostOperation phase from Approved + Executed. A
@@ -216,26 +221,9 @@ func StampEndpoint(ep *metalv1alpha1.ManagementEndpoint) {
 	ep.Status.Phase, ep.Status.BlockedOn = ForEndpoint(ep.Status.Conditions)
 }
 
-// StampEndpointOnto derives from src's conditions and writes the result onto
-// dst. It exists for server-side apply: an apply object carries only the
-// fields its field manager means to own, so it holds a partial condition set —
-// but the phase is a summary of ALL of them. Only the endpoint reconciler calls
-// it; the convergence lane's apply carries no phase.
-func StampEndpointOnto(dst, src *metalv1alpha1.ManagementEndpoint) {
-	dst.Status.Phase, dst.Status.BlockedOn = ForEndpoint(src.Status.Conditions)
-}
-
 // StampHost derives and writes phase + blockedOn — the single host write site.
 func StampHost(h *metalv1alpha1.Host, f HostFacts) {
 	h.Status.Phase, h.Status.BlockedOn = ForHost(h.Status.Conditions, f)
-}
-
-// StampHostOnto derives from src's conditions and writes onto dst, for the same
-// reason StampEndpointOnto exists: an apply object holds only its owner's share
-// of the conditions, and the phase summarizes all of them. Only the host
-// reconciler calls it; the convergence lane's apply carries no phase.
-func StampHostOnto(dst, src *metalv1alpha1.Host, f HostFacts) {
-	dst.Status.Phase, dst.Status.BlockedOn = ForHost(src.Status.Conditions, f)
 }
 
 // StampClaim derives and writes phase + blockedOn — the single claim write site.

@@ -43,7 +43,7 @@ The command takes no arguments.
 
 | Table | Rows | Columns |
 | --- | --- | --- |
-| `HOST` | Each [](kind:Host) | Asset, vendor, phase, claim, node and address, BMC paths that answer, block |
+| `HOST` | Each [](kind:Host) | Asset, vendor, phase, claim, node and address, BMC paths that answer, block. A hold of the claim shows as `(on hold)`. |
 | `OPERATION` | Each [](kind:HostOperation) that did not succeed | Host, phase, approver, block |
 | `ENDPOINT` | Each [](kind:ManagementEndpoint) | Asset, vendor, phase, address, block |
 | `CLAIM` | Each [](kind:HostClaim) that has no machine | Asset, phase, block. A hold shows as `(on hold)`. |
@@ -57,7 +57,7 @@ A failed operation stays in the table until you run [](cli:retry).
 
 <dl>
   <dt>Host</dt>
-  <dd>The Host or its claim has a block, or the phase is Failed.</dd>
+  <dd>The Host or its claim has a block.</dd>
   <dt>Operation</dt>
   <dd>The phase is Failed or Aborted, or the operation has a block. This includes an operation that waits for approval.</dd>
   <dt>Endpoint</dt>
@@ -71,6 +71,7 @@ A failed operation stays in the table until you run [](cli:retry).
 </dl>
 
 Two blocks of an operation need no person: `OperationQueued` and `OutsideMaintenanceWindow`. The operator continues by itself.
+Two blocks of a claim need no person: `EtcdJoinWaiting` and `RemovalWaiting`. A control plane waits for its turn in etcd.
 
 ## Examples
 

@@ -37,6 +37,7 @@ Each alert links to one runbook in its `runbook_url` annotation.
 | --- | --- | --- |
 | `Mismatch`, `SerialMismatch`, `MACMismatch`, `IdentityDiverged` | Endpoint phase, `Verified=False` | [](rb:host-mismatch) |
 | `Unreachable`, `Reachable=False`, `NoReachablePath` | Endpoint phase, operation | [](rb:bmc-unreachable) |
+| `RotationFailed`, `AccountRetireFailed`, `NTPFailed`, `ProfileConflict`, `IdentityPushFailed`, `NoIdentityTransport`, `TLSNotVerified` | Endpoint `Configured=False`, `BLOCKED` | [Reasons of Configured](kind:EndpointProfile#reasons-of-configured) |
 | `NoLedgerEntry`, `NoBMCMac`, `LedgerEntryInvalid` | Asset `Materialized=False` | [](rb:bmc-unreachable) |
 | `Ambiguous`, `AmbiguousSystem`, `HostAlreadyClaimed` | Claim phase, `BLOCKED` | [](rb:claim-ambiguous) |
 | `InstalledNodeRemains`, `DiskNotWiped` | Host `DiskWiped=False`, claim | [](rb:disk-not-wiped) |

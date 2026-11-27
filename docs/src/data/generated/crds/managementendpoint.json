@@ -464,8 +464,6 @@
       "type": "string",
       "required": false,
       "enum": [
-        "Pending",
-        "Connecting",
         "Inventorying",
         "Verifying",
         "Configuring",

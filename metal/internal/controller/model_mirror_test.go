@@ -27,10 +27,11 @@ import (
 // decide that the change does not touch the protocol. Run TestProtocolModel,
 // and write the new hash here.
 var mirrored = map[string]string{
-	"HostClaimReconciler.Reconcile":     "f483186c1bc670bd",
+	"HostClaimReconciler.Reconcile":     "fba19fb46be14563",
 	"HostClaimReconciler.finishRelease": "0988f8ac95640f6b",
-	"HostClaimReconciler.provision":     "dafeb879b2f7f748",
-	"HostClaimReconciler.release":       "35999f23f29cd2ca",
+	"HostClaimReconciler.handedOff":     "fb248396eee96748",
+	"HostClaimReconciler.provision":     "0f523fc3a14f7f4b",
+	"HostClaimReconciler.release":       "1a276ff648be969f",
 	"HostOperationReconciler.Reconcile": "2e6a1caf224249ef",
 }
 

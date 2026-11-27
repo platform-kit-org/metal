@@ -29,13 +29,17 @@ Only what the operator proposed comes back by itself. For an operation that a
 person made (pk-metal reboot, pk-metal restore) or a step of a rollout, retry
 deletes it and names the command that makes it again.
 
-To stop the operator from proposing it again instead, hold the claim:
-  pk-metal hold default/<claim>`
+To stop an install or a release from coming back instead, hold the claim:
+  pk-metal hold default/<claim>
+For a BIOS or firmware proposal, put the Host in maintenance.`
 	verbHelp["hold"] = `
-A hold tells the operator to propose no new operation for the claim (no
-install, no reinstall, no BIOS or firmware change). It changes nothing on the
-machine, and operations that already exist are not changed: approve or delete
-those yourself. The reason is stored on the claim, so that others can see why.
+A hold tells the operator to propose no install, reinstall, release or node
+removal for the claim. It withdraws the install and release proposals of the
+claim that wait for approval. A node removal that waits for approval stays
+until you approve it, and an approved operation keeps running. A hold changes
+nothing on the machine, and it does not stop BIOS or firmware proposals: put
+the Host in maintenance for those. The reason is stored on the claim, so that
+others can see why.
 
 Claims usually live in namespace default, so that is the default here.
 
@@ -249,8 +253,8 @@ func hold(ctx context.Context, cl client.Client, namespace, name, reason string,
 		return fmt.Errorf("update claim %s: %w", ref, err)
 	}
 	if on {
-		fmt.Fprintf(w, "claim %s is on hold: the operator proposes no new operation for it.\n"+
-			"Existing operations are not changed. Remove the hold with: pk-metal unhold %s\n", ref, ref)
+		fmt.Fprintf(w, "claim %s is on hold: the operator proposes no install, reinstall, release or node removal for it,\n"+
+			"and withdraws its install and release proposals that wait for approval. Remove the hold with: pk-metal unhold %s\n", ref, ref)
 	} else {
 		fmt.Fprintf(w, "claim %s is no longer on hold: the operator proposes operations for it again\n", ref)
 	}

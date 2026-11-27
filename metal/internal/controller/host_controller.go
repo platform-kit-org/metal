@@ -140,10 +140,9 @@ func (r *HostReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	projectHost(host, paths, ops.Items, node)
 	projectDeletionHold(host)
 	projectDiskWiped(host)
-	facts := factsFor(host, claim)
-	phase.StampHost(host, facts)
+	phase.StampHost(host, factsFor(host, claim))
 	if !equality.Semantic.DeepEqual(orig.Status, host.Status) {
-		if err := r.applyStatus(ctx, host, facts); err != nil {
+		if err := r.applyStatus(ctx, host); err != nil {
 			return ctrl.Result{}, client.IgnoreNotFound(err)
 		}
 	}
@@ -164,8 +163,8 @@ func projectDiskWiped(host *metalv1alpha1.Host) {
 		"Nothing is installed on it and no BIOS change powers it on until it is wiped: pk-metal wipe %s", node, host.Name)
 	if v, asked := host.Annotations[metalv1alpha1.AnnotationWipe]; asked {
 		reason = metalv1alpha1.ReasonWipeRequested
-		msg = fmt.Sprintf("a wipe with Talos %s was asked for; it waits for its operation (pk-metal approve). The disk may still hold node %s",
-			v, node)
+		msg = fmt.Sprintf("a wipe with Talos %s was asked for: approve its operation (pk-metal approve). "+
+			"When none is proposed, the manager log says why (wipe not proposed). The disk may still hold node %s", v, node)
 	}
 	setCondition(&host.Status.Conditions, host.Generation, metalv1alpha1.ConditionDiskWiped, metav1.ConditionFalse, reason, msg)
 }
@@ -246,10 +245,8 @@ func projectDeletionHold(host *metalv1alpha1.Host) {
 // observation the drift check compares against. The convergence lane's plan
 // memory and its two conditions are stripped rather than restated — naming
 // them here would claim them.
-func (r *HostReconciler) applyStatus(ctx context.Context, host *metalv1alpha1.Host, facts phase.HostFacts) error {
-	apply := hostProjectedShare(host)
-	phase.StampHostOnto(apply, host, facts)
-	return applyOwnedStatus(ctx, r.Client, apply, fieldOwnerHost)
+func (r *HostReconciler) applyStatus(ctx context.Context, host *metalv1alpha1.Host) error {
+	return applyOwnedStatus(ctx, r.Client, hostProjectedShare(host), fieldOwnerHost)
 }
 
 // projectHost rewrites the host's identity, paths, and conditions from what the

@@ -313,15 +313,6 @@ func joinVerdict(v etcdView, why, node, cluster string, joining []string) string
 	return ""
 }
 
-// clusterOf reads the node's TalosCluster; nil when it is gone.
-func (r *HostClaimReconciler) clusterOf(ctx context.Context, node *osv1alpha1.TalosNode) (*osv1alpha1.TalosCluster, error) {
-	cluster := &osv1alpha1.TalosCluster{}
-	if err := r.Get(ctx, client.ObjectKey{Name: node.Spec.ClusterRef.Name}, cluster); err != nil {
-		return nil, client.IgnoreNotFound(err)
-	}
-	return cluster, nil
-}
-
 // etcdOf reads the cluster's etcd membership. The reason is empty when it
 // was read.
 func (r *HostClaimReconciler) etcdOf(ctx context.Context, cluster *osv1alpha1.TalosCluster) (etcdView, string, error) {
@@ -406,9 +397,9 @@ func (r *HostClaimReconciler) etcdExitGuard(ctx context.Context, claim *metalv1a
 	if node.Spec.Role != osv1alpha1.RoleControlPlane || r.Dial == nil {
 		return nil, false, "", "", nil
 	}
-	cluster, err := r.clusterOf(ctx, node)
-	if err != nil || cluster == nil || !cluster.DeletionTimestamp.IsZero() {
-		return nil, false, "", "", err
+	cluster := &osv1alpha1.TalosCluster{}
+	if err := r.Get(ctx, client.ObjectKey{Name: node.Spec.ClusterRef.Name}, cluster); err != nil || !cluster.DeletionTimestamp.IsZero() {
+		return nil, false, "", "", client.IgnoreNotFound(err)
 	}
 	if busy, err := r.etcdChangeInFlight(ctx, cluster.Name, skipOp); err != nil {
 		return nil, false, "", "", err

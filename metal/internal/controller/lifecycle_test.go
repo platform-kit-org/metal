@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-logr/logr/funcr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
@@ -19,6 +20,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
@@ -372,6 +374,30 @@ func TestDeletedTalosNodeIsRemovedWhileTheClaimKeepsTheMachine(t *testing.T) {
 	assert.True(t, client.IgnoreNotFound(err) == nil && err != nil, "the finalizer let the node go")
 }
 
+// TestRemovalReadsPastAStaleCache: a removal that finds no boot of the node
+// lets the TalosNode go, which cannot be taken back. A boot that has just
+// captured its baseline, which the cache does not show yet, is seen through
+// the API server, and the machine gets its removal.
+func TestRemovalReadsPastAStaleCache(t *testing.T) {
+	claim, host := claimOn("w-1")
+	claim.Status.HandOff = nil // a first install: no hand-off yet
+	lab := newLifecycleLab(t, []string{"cp-1"}, []string{"w-1"}, host, claim, bootOp("boot", "w-1", false, true))
+	node := &osv1alpha1.TalosNode{}
+	require.NoError(t, lab.r.Get(t.Context(), client.ObjectKey{Name: "w-1"}, node))
+	node.Finalizers = []string{talosNodeMemberFinalizer}
+	require.NoError(t, lab.r.Update(t.Context(), node))
+	require.NoError(t, lab.r.Delete(t.Context(), node))
+	store := lab.r.Client
+	lab.r.APIReader = store
+	lab.r.Client = &staleLists{Client: store, cache: claimReconcilerFor(t, bootOp("boot", "w-1", false, false)).Client}
+
+	require.NoError(t, lab.r.provision(t.Context(), claim, "host-a"))
+	assert.Equal(t, metalv1alpha1.ReasonRemovingNode, provisionedCond(t, claim).Reason)
+	ops := &metalv1alpha1.HostOperationList{}
+	require.NoError(t, store.List(t.Context(), ops, client.MatchingLabels{labelPurpose: purposeRemove}))
+	assert.Len(t, ops.Items, 1, "the boot ran: the machine gets a removal")
+}
+
 func TestFinalizerWaitsForTheEtcdMember(t *testing.T) {
 	lab := newLifecycleLab(t, []string{"cp-1", "cp-2"}, nil)
 	node := &osv1alpha1.TalosNode{}
@@ -489,35 +515,42 @@ func TestReinstallLeavesEtcdBeforeTheBoot(t *testing.T) {
 
 // ---- wipe ------------------------------------------------------------------
 
-func TestWipeIsProposedOnRequestAndClearsTheMark(t *testing.T) {
-	host := onPath(&metalv1alpha1.Host{ObjectMeta: metav1.ObjectMeta{Name: "host-a", Annotations: map[string]string{
-		metalv1alpha1.AnnotationDiskNotWiped: "lab/w-1", metalv1alpha1.AnnotationWipe: "v1.14.6",
-		metalv1alpha1.AnnotationRequestedBy: "alice",
-	}}})
+// wipeLab is a host that asks for a wipe, behind a BMC with a CD slot, a
+// wipe reconciler, and the wipe image, ready.
+func wipeLab(t *testing.T, host *metalv1alpha1.Host, objs ...client.Object) (*hostWipeReconciler, client.Client, *osv1alpha1.BootAsset) {
+	t.Helper()
 	ep := &metalv1alpha1.ManagementEndpoint{ObjectMeta: metav1.ObjectMeta{Name: "bmc"}}
 	ep.Status.Conditions = []metav1.Condition{{Type: metalv1alpha1.ConditionInventoried, Status: metav1.ConditionTrue, Reason: "x", LastTransitionTime: metav1.Now()}}
 	ep.Status.VirtualMedia = []metalv1alpha1.DiscoveredMedia{{ID: "CD", MediaTypes: []string{"CD", "DVD"}}}
 	ep.Status.Capabilities = &metalv1alpha1.EndpointCapabilities{MediaDialects: map[string]string{"CD": "insert-media"}}
 	ep.Status.Systems = []metalv1alpha1.DiscoveredSystem{{ID: "1", BootTargets: []string{"Cd", "Pxe"}}}
 	cl := fake.NewClientBuilder().WithScheme(testScheme(t)).
-		WithStatusSubresource(&metalv1alpha1.HostOperation{}, &osv1alpha1.BootAsset{}).
-		WithObjects(host, ep).Build()
+		WithStatusSubresource(&metalv1alpha1.HostOperation{}, &osv1alpha1.BootAsset{}, &metalv1alpha1.HostClaim{}).
+		WithObjects(append(objs, onPath(host), ep)...).Build()
 	w := &hostWipeReconciler{&HostClaimReconciler{Client: cl, OperationsNamespace: "pk-metal", Proposer: "operator"}}
-	req := ctrl.Request{NamespacedName: client.ObjectKey{Name: "host-a"}}
-
-	_, err := w.Reconcile(t.Context(), req)
+	a, err := w.ensureWipeAsset(t.Context(), host.Annotations[metalv1alpha1.AnnotationWipe])
 	require.NoError(t, err)
-	assets := &osv1alpha1.BootAssetList{}
-	require.NoError(t, cl.List(t.Context(), assets))
-	require.Len(t, assets.Items, 1)
-	a := &assets.Items[0]
-	assert.Contains(t, a.Spec.Schematic.Customization.ExtraKernelArgs, wipeKernelArg)
 	a.Status.URL = "https://factory.example/image.iso"
 	a.Status.Digest, a.Status.BuildKey = "sha256:"+strings.Repeat("ab", 32), "k"
 	a.Status.Conditions = []metav1.Condition{{Type: osv1alpha1.ConditionReady, Status: metav1.ConditionTrue, Reason: "x", LastTransitionTime: metav1.Now()}}
 	require.NoError(t, cl.Status().Update(t.Context(), a))
+	return w, cl, a
+}
 
-	_, err = w.Reconcile(t.Context(), req)
+// wipeAsked is host-a marked as not wiped, with a wipe asked for.
+func wipeAsked() *metalv1alpha1.Host {
+	return &metalv1alpha1.Host{ObjectMeta: metav1.ObjectMeta{Name: "host-a", Annotations: map[string]string{
+		metalv1alpha1.AnnotationDiskNotWiped: "lab/w-1", metalv1alpha1.AnnotationWipe: "v1.14.6",
+		metalv1alpha1.AnnotationRequestedBy: "alice",
+	}}}
+}
+
+func TestWipeIsProposedOnRequestAndClearsTheMark(t *testing.T) {
+	w, cl, a := wipeLab(t, wipeAsked())
+	req := ctrl.Request{NamespacedName: client.ObjectKey{Name: "host-a"}}
+	assert.Contains(t, a.Spec.Schematic.Customization.ExtraKernelArgs, wipeKernelArg)
+
+	_, err := w.Reconcile(t.Context(), req)
 	require.NoError(t, err)
 	ops := &metalv1alpha1.HostOperationList{}
 	require.NoError(t, cl.List(t.Context(), ops))
@@ -539,6 +572,66 @@ func TestWipeIsProposedOnRequestAndClearsTheMark(t *testing.T) {
 	assert.NotContains(t, got.Annotations, metalv1alpha1.AnnotationWipe)
 }
 
+// TestWipeAfterReplaceIsProposed: after pk-metal replace, the claim's
+// hand-off still names the old machine until the new install succeeds. The
+// old machine is free, so its wipe goes ahead; a machine that a claim holds
+// and runs is not wiped.
+func TestWipeAfterReplaceIsProposed(t *testing.T) {
+	moved := testClaim("w-1")
+	moved.Status.HandOff = &metalv1alpha1.ClaimHandOff{Host: "host-a", Node: "w-1", At: metav1.Now()}
+	w, cl, _ := wipeLab(t, wipeAsked(), moved)
+	_, err := w.Reconcile(t.Context(), ctrl.Request{NamespacedName: client.ObjectKey{Name: "host-a"}})
+	require.NoError(t, err)
+	ops := &metalv1alpha1.HostOperationList{}
+	require.NoError(t, cl.List(t.Context(), ops))
+	assert.Len(t, ops.Items, 1, "the old machine of a moved claim is wiped")
+
+	held := wipeAsked()
+	held.Spec.ClaimRef = &metalv1alpha1.ClaimReference{Namespace: moved.Namespace, Name: moved.Name, UID: moved.UID}
+	w, cl, _ = wipeLab(t, held, moved.DeepCopy())
+	_, err = w.Reconcile(t.Context(), ctrl.Request{NamespacedName: client.ObjectKey{Name: "host-a"}})
+	require.NoError(t, err)
+	require.NoError(t, cl.List(t.Context(), ops))
+	assert.Empty(t, ops.Items, "a machine that runs its claim's node is not wiped")
+}
+
+// TestWipeNotProposedSaysWhy: each pass that proposes no wipe says why in
+// the manager log, which the DiskWiped condition points to.
+func TestWipeNotProposedSaysWhy(t *testing.T) {
+	for name, tc := range map[string]struct {
+		change func(*metalv1alpha1.Host, *osv1alpha1.BootAsset, *metalv1alpha1.ManagementEndpoint)
+		why    string
+	}{
+		"maintenance": {func(h *metalv1alpha1.Host, _ *osv1alpha1.BootAsset, _ *metalv1alpha1.ManagementEndpoint) {
+			h.Annotations[metalv1alpha1.AnnotationMaintenance] = "disk swap"
+		}, "maintenance"},
+		"failed image": {func(_ *metalv1alpha1.Host, a *osv1alpha1.BootAsset, _ *metalv1alpha1.ManagementEndpoint) {
+			a.Status.Conditions[0].Status, a.Status.Conditions[0].Message = metav1.ConditionFalse, "no such version"
+		}, "no such version"},
+		"slots not read": {func(_ *metalv1alpha1.Host, _ *osv1alpha1.BootAsset, ep *metalv1alpha1.ManagementEndpoint) {
+			ep.Status.Conditions[0].Status = metav1.ConditionFalse
+		}, "media slots"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			w, cl, a := wipeLab(t, wipeAsked())
+			host, ep := &metalv1alpha1.Host{}, &metalv1alpha1.ManagementEndpoint{}
+			require.NoError(t, cl.Get(t.Context(), client.ObjectKey{Name: "host-a"}, host))
+			require.NoError(t, cl.Get(t.Context(), client.ObjectKey{Name: "bmc"}, ep))
+			tc.change(host, a, ep)
+			require.NoError(t, cl.Update(t.Context(), host))
+			require.NoError(t, cl.Update(t.Context(), ep))
+			require.NoError(t, cl.Status().Update(t.Context(), a))
+			var lines []string
+			ctx := logf.IntoContext(t.Context(), funcr.New(func(_, args string) { lines = append(lines, args) }, funcr.Options{}))
+			_, err := w.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKey{Name: "host-a"}})
+			require.NoError(t, err)
+			require.Len(t, lines, 1)
+			assert.Contains(t, lines[0], "wipe not proposed")
+			assert.Contains(t, lines[0], tc.why)
+		})
+	}
+}
+
 func TestNotWipedHostTakesNoOtherInstall(t *testing.T) {
 	host := &metalv1alpha1.Host{ObjectMeta: metav1.ObjectMeta{Name: "host-a",
 		Annotations: map[string]string{metalv1alpha1.AnnotationDiskNotWiped: "lab/w-1"}}}
@@ -549,6 +642,10 @@ func TestNotWipedHostTakesNoOtherInstall(t *testing.T) {
 	c := meta.FindStatusCondition(host.Status.Conditions, metalv1alpha1.ConditionDiskWiped)
 	require.NotNil(t, c)
 	assert.Equal(t, metalv1alpha1.ReasonInstalledNodeRemains, c.Reason)
+	host.Annotations[metalv1alpha1.AnnotationWipe] = "v1.14.6"
+	projectDiskWiped(host)
+	c = meta.FindStatusCondition(host.Status.Conditions, metalv1alpha1.ConditionDiskWiped)
+	assert.Contains(t, c.Message, "manager log", "a wipe that no operation carries yet says where to look")
 }
 
 // TestClaimHeldForEtcdLooksAgain: what a claim held for etcd waits for (a

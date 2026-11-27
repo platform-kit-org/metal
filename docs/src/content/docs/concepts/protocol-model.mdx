@@ -94,7 +94,7 @@ TLC, the TLA+ model checker, checks these rules in each state:
 2. The claim finalizer goes only after no Host carries the claim.
 3. No claim takes the Host from a claim that still exists.
 4. A machine that a boot started is unbound only after the release turned it off.
-5. No controller writes `Assigned`, `Provisioning`, `Provisioned` or `Failed` from a bind that the API server already ended.
+5. No controller writes `Assigned`, `Provisioning` or `Provisioned` from a bind that the API server already ended.
 
 Rule 5 is the race of a release. The claim cache shows no claim.
 But the Host cache still shows the old `claimRef`, the OS and `OSReady=True`.

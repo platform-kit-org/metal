@@ -49,6 +49,8 @@ The message names the node that the disk may hold.
 
 </Steps>
 
+If no operation comes, the manager log says why. Search it for `wipe not proposed`.
+
 If you know that the disk is empty, remove the mark yourself. In the same request, set `metal.platform-kit.org/wipe-waived` to the reason. The API server writes your username in front of the reason. See [`guard-lift-stamp`](ref:admission-policies#guard-lift-stamp). The [admission policy](ref:admission-policies#guard-lift) `guard-lift` refuses a removal without it. The audit log names the waiver when an install starts on the machine.
 
 ```sh
@@ -62,7 +64,7 @@ Do not remove the mark if you are not sure. An old node with valid credentials c
 
 ## Verify
 
-`DiskWiped=True`. A waiting claim proposes its install.
+The Host has no `DiskWiped` condition. A waiting claim proposes its install.
 
 ## Related
 

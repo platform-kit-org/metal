@@ -4,11 +4,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// AnnotationHold on a HostClaim stops the operator from proposing anything
-// for it: no install, no release. Proposals still waiting for approval are
-// withdrawn. The value is an optional reason, shown in the claim's
-// Provisioned condition. An operation already approved and running is not
-// stopped by it. Remove the annotation to go on.
+// AnnotationHold on a HostClaim stops the operator from proposing an
+// install, a reinstall, a release or a node removal for it. Install and
+// release proposals still waiting for approval are withdrawn; a node removal
+// waiting for approval stays until a person approves it. An operation already
+// approved runs on. BIOS and firmware proposals are not held: the Host's
+// maintenance annotation stops those. The value is an optional reason, shown
+// in the claim's Provisioned condition. Remove the annotation to go on.
 const AnnotationHold = "metal.platform-kit.org/hold"
 
 // ClaimPhase says how many machines the claim's selection resolved to: none yet

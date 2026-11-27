@@ -40,7 +40,7 @@
 (* Rule selects the derivation of the Host phase facts:                    *)
 (*   "pointer" - main: a claimRef to a claim that the cache does not hold  *)
 (*               under that UID, or holds in deletion, is Releasing; the   *)
-(*               OS ladder (Failed, Provisioning, Provisioned) needs a     *)
+(*               OS ladder (Provisioning, Provisioned) needs a             *)
 (*               claimRef.                                                 *)
 (*   "cache"   - the derivation before the fix of the release race:        *)
 (*               Releasing only while the cached claim exists and is in    *)
@@ -87,18 +87,18 @@ Snap    == [claims |-> claim, hosts |-> host, nodes |-> node, ops |-> op]
 Gens    == 1..MaxGen
 Refs    == Claims \X Gens            \* <<name, generation>>: a claim UID
 Ref     == {Nil} \cup Refs
-Phases  == {"Available", "Assigned", "Provisioning", "Provisioned", "Failed", "Releasing"}
+Phases  == {"Available", "Assigned", "Provisioning", "Provisioned", "Releasing"}
 \* The phases that say a claim holds the Host.
-BoundPhases == {"Assigned", "Provisioning", "Provisioned", "Failed"}
+BoundPhases == {"Assigned", "Provisioning", "Provisioned"}
 
 ClaimRec == [exists: BOOLEAN, gen: 0..MaxGen, deleting: BOOLEAN, fin: BOOLEAN, bound: BOOLEAN]
 HostRec  == [ref: Ref, os: {Nil} \cup Claims, powerOff: BOOLEAN,
-             phase: Phases, osReady: {"absent", "Unknown", "True", "False"}]
+             phase: Phases, osReady: {"absent", "Unknown", "True"}]
 
 TypeOK ==
     /\ claim \in [Claims -> ClaimRec]
     /\ host \in HostRec
-    /\ node \in [Claims -> {"absent", "True", "False"}]
+    /\ node \in [Claims -> {"absent", "True", "Unknown"}]
     /\ op \in [Refs -> {"none", "pending", "done"}]
     /\ machine \in [on: BOOLEAN, bootedFor: Ref]
     /\ phaseFor \in Ref
@@ -120,12 +120,11 @@ Unbound(h) == [h EXCEPT !.ref = Nil, !.os = Nil, !.powerOff = FALSE]
 -----------------------------------------------------------------------------
 (* The Host phase: phase.ForHost and factsFor, restricted to the inputs    *)
 (* that the hand-off moves. Inspected and Verified are True; Maintenance   *)
-(* and Booted are not modelled.                                            *)
+(* is not modelled.                                                        *)
 
-\* go: phase.ForHost dc136979b851
+\* go: phase.ForHost 38d8997aa096
 ForHost(osReady, claimed, releasing) ==
     IF releasing THEN "Releasing"
-    ELSE IF osReady = "False" /\ (Rule = "cache" \/ claimed) THEN "Failed"
     ELSE IF osReady = "True" /\ (Rule = "cache" \/ claimed) THEN "Provisioned"
     ELSE IF claimed /\ osReady # "absent" THEN "Provisioning"
     ELSE IF claimed THEN "Assigned"
@@ -141,13 +140,13 @@ Facts(h, cc) ==
           IF Rule = "cache" THEN held /\ cc[h.ref[1]].deleting
                             ELSE claimed /\ (~held \/ cc[h.ref[1]].deleting)>>
 
-\* projectOS: OSReady mirrors the Ready condition of the hand-off's node.
+\* projectOS: OSReady mirrors the Ready condition of the hand-off's node,
+\* which is True or Unknown; Unknown also while the node has none.
 \* go: controller.projectOS cea7f4b857c8
 OSReadyOf(h, nodes) ==
     IF h.os = Nil THEN "absent"
-    ELSE CASE nodes[h.os] = "absent" -> "Unknown"
-           [] nodes[h.os] = "True"   -> "True"
-           [] nodes[h.os] = "False"  -> "False"
+    ELSE IF nodes[h.os] = "True" THEN "True"
+    ELSE "Unknown"
 
 -----------------------------------------------------------------------------
 (* A person *)
@@ -173,7 +172,7 @@ DeleteClaim(c) ==
 
 \* The cached claim exists and is not being deleted: AddFinalizer, bind,
 \* writeStatus. Each write is an Update; the first conflict ends the pass.
-\* go: controller.HostClaimReconciler.Reconcile 51a5a5343ca6
+\* go: controller.HostClaimReconciler.Reconcile bd25bd29591d
 \* go: controller.HostClaimReconciler.bind df7b6b5fb51d
 \* go: controller.HostClaimReconciler.writeStatus eaf9514465d0
 ClaimBind(c) ==
@@ -203,9 +202,9 @@ ClaimBind(c) ==
 \* (liveBoundHosts); the release operations from the cache.
 \* go: controller.HostClaimReconciler.finishRelease 0988f8ac9564
 \* go: controller.HostClaimReconciler.liveBoundHosts d4c505783ee8
-\* go: controller.HostClaimReconciler.release cf6dcf39fdc7
+\* go: controller.HostClaimReconciler.release b91aadc46bf9
 \* go: controller.HostClaimReconciler.recordPowerOff c0f1bdd325c8
-\* go: controller.HostClaimReconciler.releaseAll 38f0c45990cc
+\* go: controller.HostClaimReconciler.releaseAll 8a801d51daa2
 \* go: controller.runsNode 0029e5e5ef0d
 \* go: controller.powerOffDecided 025b2a319b02
 ClaimRelease(c) ==
@@ -245,7 +244,7 @@ ClaimRelease(c) ==
 
 \* The cache holds no claim of that name: unbind what the cached index
 \* still lists under the name, with an Update of the cached Host.
-\* go: controller.HostClaimReconciler.releaseAll 38f0c45990cc
+\* go: controller.HostClaimReconciler.releaseAll 8a801d51daa2
 ClaimGone(c) ==
     LET h == cache.hosts
     IN  /\ ~cache.claims[c].exists
@@ -261,8 +260,8 @@ ClaimGone(c) ==
 \* HostReconciler.Reconcile: projectOS from the cached node, factsFor with
 \* the cached claim, StampHost, and a status apply when the result differs
 \* from the cached status.
-\* go: controller.HostReconciler.Reconcile fc50c1c8de21
-\* go: controller.HostReconciler.applyStatus 1f380381ef89
+\* go: controller.HostReconciler.Reconcile 1175b5c84bca
+\* go: controller.HostReconciler.applyStatus fa6d4ae428f6
 HostReconcile ==
     LET h  == cache.hosts
         f  == Facts(h, cache.claims)
@@ -299,11 +298,12 @@ NodeUp(c) ==
     /\ UNCHANGED <<claim, host, op, machine, cache, phaseFor>>
     /\ Publish
 
-\* A node whose machine is off, or runs another claim's node, reads not ready.
+\* A node whose machine is off, or runs another claim's node, reads not
+\* ready: the TalosNode controller sets its Ready condition Unknown.
 NodeDown(c) ==
     /\ node[c] = "True"
     /\ ~(machine.on /\ machine.bootedFor # Nil /\ machine.bootedFor[1] = c)
-    /\ node' = [node EXCEPT ![c] = "False"]
+    /\ node' = [node EXCEPT ![c] = "Unknown"]
     /\ UNCHANGED <<claim, host, op, machine, cache, phaseFor>>
     /\ Publish
 

@@ -284,3 +284,40 @@ func TestStatusWithoutOSKinds(t *testing.T) {
 	assert.Equal(t, exitOK, code)
 	assert.Contains(t, out.String(), "simx12b000001")
 }
+
+// TestStatusEtcdTurnNeedsNoPerson: a claim that waits for its turn in etcd
+// shows the reason, but only a refused removal needs a person.
+func TestStatusEtcdTurnNeedsNoPerson(t *testing.T) {
+	hosts, eps, claims, _, nodes := rack()
+	for _, tc := range []struct {
+		reason    string
+		attention bool
+	}{
+		{metalv1alpha1.ReasonEtcdRiskRefused, true},
+		{metalv1alpha1.ReasonRemovalWaiting, false},
+		{metalv1alpha1.ReasonEtcdJoinWaiting, false},
+	} {
+		claim := claims[0].DeepCopy()
+		claim.Status.BlockedOn = tc.reason
+		claim.Status.Conditions[1].Reason = tc.reason
+		rep := buildReport(hosts[1:2], eps, []metalv1alpha1.HostClaim{*claim}, nil, nodes)
+		assert.Equal(t, tc.reason, rep.Claims[0].BlockedOn)
+		assert.Equal(t, tc.reason, rep.Hosts[0].BlockedOn, "the host row shows its claim's reason")
+		assert.Equal(t, tc.attention, rep.Claims[0].NeedsAttention, tc.reason)
+		assert.Equal(t, tc.attention, rep.Hosts[0].NeedsAttention, tc.reason)
+	}
+}
+
+// TestStatusShowsAHeldBoundClaim: a bound claim shows on its host row only,
+// so the hold shows there.
+func TestStatusShowsAHeldBoundClaim(t *testing.T) {
+	hosts, eps, claims, _, nodes := rack()
+	claim := claims[0].DeepCopy()
+	claim.Annotations = map[string]string{holdAnnotation: "disk swap"}
+	out := renderReport(buildReport(hosts, eps, []metalv1alpha1.HostClaim{*claim}, nil, nodes))
+	assert.Regexp(t, `(?m)^simhw2288v5000391\s.*\sOperationFailed \(on hold\)$`, out)
+
+	claim.Status.BlockedOn = ""
+	out = renderReport(buildReport(hosts, eps, []metalv1alpha1.HostClaim{*claim}, nil, nodes))
+	assert.Regexp(t, `(?m)^simhw2288v5000391\s.*\s1/2\s+\(on hold\)$`, out, "a handed-off claim on hold")
+}

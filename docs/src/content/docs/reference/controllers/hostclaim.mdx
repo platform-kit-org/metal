@@ -111,16 +111,20 @@ When you delete the claim, the finalizer holds it until the machine is back.
 
 A held claim, or a Host in maintenance, stops the release before approval. If the node does not answer, nothing can wipe the disk. The Host then gets the annotation `metal.platform-kit.org/disk-not-wiped`. See [](howto:release-a-host).
 
+When you delete the TalosNode of a claim, the claim keeps the machine. The controller proposes a removal operation with the same steps, if the machine ran the node. If no record shows that, the controller first confirms against the API server that no boot of the node ran. Then the TalosNode can go.
+
 ## The host-wipe helper
 
 The lane also runs the controller `host-wipe`, `For` [](kind:Host).
 It acts only on a Host with the annotation `metal.platform-kit.org/wipe`, which [](cli:wipe) sets.
 
 1. If the Host has no `metal.platform-kit.org/disk-not-wiped`, remove the wipe request.
-2. If a claim records an install on the Host, or the Host is in maintenance, do nothing.
+2. If the claim that holds the Host records an install on it, or the Host is in maintenance, do nothing.
 3. Make a factory [](kind:BootAsset) whose kernel argument `talos.experimental.wipe=system` wipes the system disk.
 4. Propose a wipe operation: eject all slots, insert the image, set a one-time boot override, power cycle. It always needs approval.
 5. When the operation succeeded, remove both annotations.
+
+Each pass that proposes no wipe writes `wipe not proposed` and the reason to the log.
 
 ## Guards and decisions
 

@@ -117,7 +117,7 @@ func (r *HostClaimReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			// The claim is gone without passing through release (created
 			// before the finalizer existed, or the finalizer was removed by
 			// hand) — unbind what it still holds.
-			return ctrl.Result{}, r.releaseAll(ctx, bound, "")
+			return ctrl.Result{}, r.releaseAll(ctx, bound)
 		}
 		return ctrl.Result{}, err
 	}
@@ -388,13 +388,10 @@ func hostOSFrom(claim *metalv1alpha1.HostClaim) *metalv1alpha1.HostOS {
 }
 
 // releaseAll clears the bind pointer, the OS hand-off and the release's
-// power-off record from every listed host except keep.
-func (r *HostClaimReconciler) releaseAll(ctx context.Context, bound []metalv1alpha1.Host, keep string) error {
+// power-off record from every listed host.
+func (r *HostClaimReconciler) releaseAll(ctx context.Context, bound []metalv1alpha1.Host) error {
 	for i := range bound {
 		host := &bound[i]
-		if host.Name == keep {
-			continue
-		}
 		host.Spec.ClaimRef = nil
 		host.Spec.OS = nil
 		delete(host.Annotations, annotationReleasePowerOff)
@@ -519,12 +516,8 @@ func (r *HostClaimReconciler) claimsForHost(ctx context.Context, obj client.Obje
 		if err := r.Get(ctx, client.ObjectKey{Name: path.EndpointRef.Name}, ep); err != nil {
 			continue
 		}
-		claims := &metalv1alpha1.HostClaimList{}
-		if err := r.List(ctx, claims, client.MatchingFields{claimAssetIndex: ep.Spec.AssetRef.Name}); err != nil {
-			continue
-		}
-		for i := range claims.Items {
-			add(types.NamespacedName{Namespace: claims.Items[i].Namespace, Name: claims.Items[i].Name})
+		for _, req := range r.claimsSelecting(ctx, ep.Spec.AssetRef.Name) {
+			add(req.NamespacedName)
 		}
 	}
 	return reqs

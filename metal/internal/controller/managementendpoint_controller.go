@@ -123,9 +123,7 @@ func (r *ManagementEndpointReconciler) Reconcile(ctx context.Context, req ctrl.R
 // convergence lane's fields are stripped rather than restated: naming them
 // here would claim them, which is the erasure this is meant to end.
 func (r *ManagementEndpointReconciler) applyStatus(ctx context.Context, ep *metalv1alpha1.ManagementEndpoint) error {
-	apply := endpointObservedShare(ep)
-	phase.StampEndpointOnto(apply, ep)
-	return applyOwnedStatus(ctx, r.Client, apply, fieldOwnerEndpoint)
+	return applyOwnedStatus(ctx, r.Client, endpointObservedShare(ep), fieldOwnerEndpoint)
 }
 
 // snapshotAsset refreshes status.asset from the referenced Asset. A missing Asset

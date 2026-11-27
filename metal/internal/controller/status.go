@@ -53,11 +53,13 @@ func isConvergenceHostCondition(c metav1.Condition) bool {
 }
 
 // The shares below are what each field manager names when it applies its
-// part of a status. The reconcilers stamp the phase onto their share before
-// they apply it; ApplyStatusShares writes a whole status at once.
+// part of a status. A share is a copy of a status that its reconciler
+// stamped, so the phase and blockedOn go with it; ApplyStatusShares writes a
+// whole status at once.
 
 // hostProjectedShare is the host reconciler's part of a host's status: all of
-// it but the convergence lane's conditions and plan memory.
+// it but the convergence lane's conditions and plan memory. It carries the
+// phase that the host reconciler stamped.
 func hostProjectedShare(host *metalv1alpha1.Host) *metalv1alpha1.Host {
 	apply := &metalv1alpha1.Host{
 		ObjectMeta: metav1.ObjectMeta{Name: host.Name},

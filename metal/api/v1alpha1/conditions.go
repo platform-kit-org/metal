@@ -217,12 +217,10 @@ const (
 	ReasonResetExplained = "ResetExplained"
 )
 
-// Reasons on the claim's Provisioned condition. All but HandedOff are False:
-// in-flight waits (AwaitingRender, AwaitingBootAsset, AwaitingOperation,
-// Releasing), the install operation's gate (AwaitingApproval, shown as
-// blockedOn Approval(Provisioning)), or alert-and-hold stops
-// (SingleMediumUnsupported, NoBootableMedia, OperationFailed, ReleaseFailed)
-// that a person resolves.
+// Reasons on the claim's Provisioned condition. All but HandedOff are False.
+// A stop that a person resolves, or a wait for an etcd turn, shows in
+// blockedOn (phase.provisioningHolds lists them); AwaitingApproval shows as
+// Approval(Provisioning); the other reasons are in-flight waits.
 const (
 	// ReasonHandedOff on Provisioned=True: the machine checked in with the
 	// node's config.

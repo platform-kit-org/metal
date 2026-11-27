@@ -6,17 +6,14 @@ import (
 )
 
 // EndpointPhase summarizes an endpoint's conditions, in the order an endpoint
-// normally moves through them: Pending until it is reachable, then Connecting,
-// Inventorying and Verifying as the cluster learns what is there, Configuring
-// while settings are applied, and Ready. Unreachable and Mismatch are the two
-// stops — the first means nobody answered, the second that what answered was not
-// the machine the Asset described.
-// +kubebuilder:validation:Enum=Pending;Connecting;Inventorying;Verifying;Configuring;Ready;Unreachable;Mismatch
+// normally moves through them: Inventorying and Verifying as the cluster learns
+// what is there, Configuring while settings are applied, and Ready. Unreachable
+// and Mismatch are the two stops — the first means nobody answered, the second
+// that what answered was not the machine the Asset described.
+// +kubebuilder:validation:Enum=Inventorying;Verifying;Configuring;Ready;Unreachable;Mismatch
 type EndpointPhase string
 
 const (
-	EndpointPending      EndpointPhase = "Pending"
-	EndpointConnecting   EndpointPhase = "Connecting"
 	EndpointInventorying EndpointPhase = "Inventorying"
 	EndpointVerifying    EndpointPhase = "Verifying"
 	EndpointConfiguring  EndpointPhase = "Configuring"

@@ -3,14 +3,12 @@ package controller
 import (
 	"context"
 	"fmt"
-	"slices"
 	"strings"
 	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -163,18 +161,6 @@ func (r *HostClaimReconciler) removeNode(ctx context.Context, claim *metalv1alph
 			boots = append(boots, ops[i])
 		}
 	}
-	// No boot of a node on its way out goes on: one waiting for approval is
-	// withdrawn, one running stops between steps.
-	for i := range boots {
-		if boots[i].Finished() || !boots[i].DeletionTimestamp.IsZero() {
-			continue
-		}
-		logf.FromContext(ctx).Info("stopped boot operation of a deleted node", "operation", boots[i].Namespace+"/"+boots[i].Name)
-		if err := deleteOp(ctx, r.Client, r.Audit, &boots[i], audit.DeleteStopped,
-			"TalosNode "+node.Name+" is being deleted"); client.IgnoreNotFound(err) != nil {
-			return err
-		}
-	}
 	h := claim.Status.HandOff
 	touched := (h != nil && h.Host == host.Name && h.Node == node.Name) || bootRan(boots, host.Name)
 	removals, err := r.claimOps(ctx, claim, purposeRemove)
@@ -182,17 +168,27 @@ func (r *HostClaimReconciler) removeNode(ctx context.Context, claim *metalv1alph
 		return err
 	}
 	name := fmt.Sprintf("remove-%s-%s", host.Name, hash8(planHash([]string{string(claim.UID), string(node.UID)})))
-	var op *metalv1alpha1.HostOperation
-	for i := range removals {
-		if removals[i].Name == name {
-			op = &removals[i]
+	op := findOp(removals, name)
+	if !touched && op == nil {
+		// Nothing to remove lets the TalosNode go, which cannot be taken
+		// back: confirm against the API server that no boot of the node
+		// ran. That also stops, fenced, the boots that did not start.
+		ran, err := r.bootRanUncached(ctx, claim, host.Name, node.Name,
+			"TalosNode "+node.Name+" is being deleted before this boot started")
+		if err != nil {
+			return err
+		}
+		if !ran {
+			set(metalv1alpha1.ReasonNodeRemoved, fmt.Sprintf(
+				"TalosNode %s is being deleted, and host %s never ran it: nothing to remove. The claim keeps the machine for the node it names next",
+				node.Name, host.Name))
+			return nil
 		}
 	}
-	if !touched && op == nil {
-		set(metalv1alpha1.ReasonNodeRemoved, fmt.Sprintf(
-			"TalosNode %s is being deleted, and host %s never ran it: nothing to remove. The claim keeps the machine for the node it names next",
-			node.Name, host.Name))
-		return nil
+	// No boot of a node on its way out goes on: one waiting for approval is
+	// withdrawn, one running stops between steps.
+	if err := r.deleteOps(ctx, boots, unfinished, audit.DeleteStopped, "TalosNode "+node.Name+" is being deleted"); err != nil {
+		return err
 	}
 	if op == nil {
 		if why, held := heldBy(claim); held {
@@ -236,9 +232,8 @@ func (r *HostClaimReconciler) removeNode(ctx context.Context, claim *metalv1alph
 	ex := meta.FindStatusCondition(op.Status.Conditions, metalv1alpha1.ConditionExecuted)
 	switch {
 	case op.AwaitsApproval():
-		set(metalv1alpha1.ReasonRemovingNode, fmt.Sprintf(
-			"TalosNode %s is being deleted: its removal %s. To go ahead: pk-metal approve %s. To keep it for now: pk-metal hold %s/%s",
-			node.Name, r.describeRelease(op), ref, claim.Namespace, claim.Name))
+		set(metalv1alpha1.ReasonRemovingNode, fmt.Sprintf("TalosNode %s is being deleted: its removal %s. To go ahead: pk-metal approve %s",
+			node.Name, describeRelease(op), ref))
 	case ex != nil && ex.Status == metav1.ConditionFalse:
 		set(metalv1alpha1.ReasonOperationFailed, fmt.Sprintf("removal operation %s of TalosNode %s failed: %s. To try again: pk-metal retry %s",
 			ref, node.Name, ex.Message, ref))
@@ -260,14 +255,9 @@ func (r *HostClaimReconciler) removeNode(ctx context.Context, claim *metalv1alph
 		if h != nil && h.Host == host.Name && h.Node == node.Name {
 			claim.Status.HandOff = nil
 		}
-		for i := range boots {
-			if !boots[i].DeletionTimestamp.IsZero() {
-				continue
-			}
-			if err := deleteOp(ctx, r.Client, r.Audit, &boots[i], audit.DeleteRecordOfRemoved,
-				"TalosNode "+node.Name+" was removed from host "+host.Name+" by operation "+ref); client.IgnoreNotFound(err) != nil {
-				return err
-			}
+		if err := r.deleteOps(ctx, boots, nil, audit.DeleteRecordOfRemoved,
+			"TalosNode "+node.Name+" was removed from host "+host.Name+" by operation "+ref); err != nil {
+			return err
 		}
 		msg := fmt.Sprintf("TalosNode %s was removed from its cluster by operation %s; the claim keeps host %s for the node it names next", node.Name, ref, host.Name)
 		if !wipesDisk(op) {
@@ -279,8 +269,8 @@ func (r *HostClaimReconciler) removeNode(ctx context.Context, claim *metalv1alph
 }
 
 // removalOp builds the operation that removes node from host while the claim
-// keeps it: the node's exit steps, then a power-off and empty media slots.
-// It returns nil with a reason while the removal must wait.
+// keeps it: the exit operation (exitOp) of the node. It returns nil with a
+// reason while the removal must wait.
 func (r *HostClaimReconciler) removalOp(ctx context.Context, claim *metalv1alpha1.HostClaim, host *metalv1alpha1.Host,
 	node *osv1alpha1.TalosNode, name string, ops []metalv1alpha1.HostOperation) (*metalv1alpha1.HostOperation, string, string, error) {
 	shape, err := r.endpointShape(ctx, host)
@@ -291,36 +281,11 @@ func (r *HostClaimReconciler) removalOp(ctx context.Context, claim *metalv1alpha
 		return nil, metalv1alpha1.ReasonRemovingNode, fmt.Sprintf("removing TalosNode %s waits until a reachable management path of host %s has read its media slots",
 			node.Name, host.Name), nil
 	}
-	member, last, reason, msg, err := r.etcdExitGuard(ctx, claim, node, name)
-	if err != nil || reason != "" {
-		return nil, reason, "TalosNode " + node.Name + " is being deleted, but " + msg, err
+	// The node's deletion asked for this removal.
+	op, reason, msg, err := r.exitOp(ctx, claim, host, node, node.Name, name, purposeRemove,
+		metalv1alpha1.RequestedBy(node.Annotations, claim.Annotations), shape.insertable, ops)
+	if reason != "" {
+		msg = "TalosNode " + node.Name + " is being deleted, but " + msg
 	}
-	steps, wipes, _ := r.exitSteps(node, member, last, "")
-	graceful := int32(r.releaseShutdownTimeout().Seconds())
-	if wipes {
-		graceful = 0
-	}
-	actions := append(slices.Clone(steps), metalv1alpha1.HostOperationAction{PowerOff: &metalv1alpha1.PowerOffAction{GracefulTimeoutSeconds: graceful}})
-	for _, s := range shape.insertable {
-		actions = append(actions, metalv1alpha1.HostOperationAction{EjectMedia: &metalv1alpha1.EjectMediaAction{MediaID: s}})
-	}
-	labels := claimLabels(claim, purposeRemove)
-	labels[labelNode] = node.Name
-	var annotations map[string]string
-	if !wipes {
-		annotations = map[string]string{metalv1alpha1.AnnotationDiskNotWiped: node.Spec.ClusterRef.Name + "/" + node.Name}
-	}
-	return &metalv1alpha1.HostOperation{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: r.OperationsNamespace, Labels: labels, Annotations: annotations},
-		Spec: metalv1alpha1.HostOperationSpec{
-			HostRef:    metalv1alpha1.Reference{Name: host.Name},
-			ProposedBy: r.Proposer,
-			// The node's deletion asked for this removal.
-			RequestedBy:             metalv1alpha1.RequestedBy(node.Annotations, claim.Annotations),
-			Reason:                  reasonRelease,
-			Actions:                 actions,
-			Approval:                metalv1alpha1.OperationApproval{Required: ptr.To(releaseNeedsPerson(claim, host, ops))},
-			TTLSecondsAfterFinished: ptr.To(releaseTTL),
-		},
-	}, "", "", nil
+	return op, reason, msg, err
 }

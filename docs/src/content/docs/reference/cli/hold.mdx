@@ -38,10 +38,12 @@ It changes nothing on the machine.
 
 1. The command reads the claim.
 2. It sets the annotation `metal.platform-kit.org/hold` on the claim. The value is the reason.
-3. The operator proposes no new operation for the claim: no install, no reinstall, no BIOS change and no firmware change.
+3. The operator proposes no install, no reinstall, no release and no node removal for the claim.
+4. The operator withdraws the install and release proposals of the claim that wait for approval.
 
-A hold does not change the operations that are there. Approve them, abort them or delete them yourself.
-[](cli:status) shows the claim with the mark `(on hold)`.
+A node removal that waits for approval stays until you approve it. An approved operation continues to its end.
+A hold does not stop BIOS or firmware proposals. For those, use [](howto:maintenance-mode).
+[](cli:status) shows the claim with the mark `(on hold)`, on its Host row when the claim holds a machine.
 
 ## Examples
 
@@ -49,8 +51,8 @@ A hold does not change the operations that are there. Approve them, abort them o
 title="pk-metal hold"
 text={`
     $ pk-metal hold --reason "disk swap, ticket 123" default/cp-2
-    claim default/cp-2 is on hold: the operator proposes no new operation for it.
-    Existing operations are not changed. Remove the hold with: pk-metal unhold default/cp-2
+    claim default/cp-2 is on hold: the operator proposes no install, reinstall, release or node removal for it,
+    and withdraws its install and release proposals that wait for approval. Remove the hold with: pk-metal unhold default/cp-2
 `}
 />
 

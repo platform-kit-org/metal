@@ -37,29 +37,26 @@ const AnnotationMaintenance = "metal.platform-kit.org/maintenance"
 const AnnotationAllowSelfDisruption = "metal.platform-kit.org/allow-self-disruption"
 
 // HostPhase summarizes a machine's conditions together with whether it is
-// claimed. Enrolling and Inspecting mean the cluster is still finding out what
-// the machine is; Available means it is understood and free; Assigned means
-// something claimed it; Provisioning means work is happening to it right now and
+// claimed. Inspecting means the cluster is still finding out what the machine
+// is; Available means it is understood and free; Assigned means something
+// claimed it; Provisioning means work is happening to it right now and
 // Provisioned that the work finished; Releasing means it is being handed back.
-// Failed and Maintenance are the two stops: Failed when an install did not
-// work, Maintenance while a person has set the metal.platform-kit.org/maintenance
-// annotation.
+// Maintenance is the stop: a person has set the
+// metal.platform-kit.org/maintenance annotation.
 //
 // Assigned and Provisioning are deliberately separate. A machine can be spoken
 // for without anything disruptive happening to it, and conflating the two leaves
 // no way to say so.
-// +kubebuilder:validation:Enum=Enrolling;Inspecting;Available;Assigned;Provisioning;Provisioned;Releasing;Failed;Maintenance
+// +kubebuilder:validation:Enum=Inspecting;Available;Assigned;Provisioning;Provisioned;Releasing;Maintenance
 type HostPhase string
 
 const (
-	HostEnrolling    HostPhase = "Enrolling"
 	HostInspecting   HostPhase = "Inspecting"
 	HostAvailable    HostPhase = "Available"
 	HostAssigned     HostPhase = "Assigned"
 	HostProvisioning HostPhase = "Provisioning"
 	HostProvisioned  HostPhase = "Provisioned"
 	HostReleasing    HostPhase = "Releasing"
-	HostFailed       HostPhase = "Failed"
 	HostMaintenance  HostPhase = "Maintenance"
 )
 

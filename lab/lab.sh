@@ -916,9 +916,8 @@ status() {
   # follows is still wanted then.
   "$root/metal/bin/pk-metal" status || true
   echo
-  kubectl get assets,managementendpoints,hosts,talosclusters,talosnodes,bootassets
-  echo
-  kubectl get hostclaims,hostoperations --all-namespaces
+  # The category metal names every kind of the operator.
+  kubectl get metal --all-namespaces
 }
 
 # Prints "<namespace> <name>" for every operation that waits for a person: the
@@ -2204,10 +2203,8 @@ collect() {
 
   if [[ -s $lab_dir/kubeconfig ]]; then
     "$root/metal/bin/pk-metal" status >"$out/status.txt" 2>&1 || true
-    kubectl get assets,managementendpoints,hosts,talosclusters,talosnodes,bootassets,etcdbackuppolicies,etcdsnapshots --output wide >"$out/get.txt" 2>&1 || true
-    kubectl get hostclaims,hostoperations --all-namespaces --output wide >>"$out/get.txt" 2>&1 || true
-    kubectl get assets,managementendpoints,hosts,talosclusters,talosnodes,bootassets,etcdbackuppolicies,etcdsnapshots --output yaml >"$out/objects.yaml" 2>&1 || true
-    kubectl get hostclaims,hostoperations --all-namespaces --output yaml >>"$out/objects.yaml" 2>&1 || true
+    kubectl get metal --all-namespaces --output wide >"$out/get.txt" 2>&1 || true
+    kubectl get metal --all-namespaces --output yaml >"$out/objects.yaml" 2>&1 || true
     kubectl get events --all-namespaces --sort-by=.lastTimestamp >"$out/events.txt" 2>&1 || true
     kubectl -n "$NAMESPACE" describe deployment,pod,service,configmap,job,persistentvolumeclaim >"$out/operator-describe.txt" 2>&1 || true
     # Names and types only: a describe of a Secret shows sizes, never values.

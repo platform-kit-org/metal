@@ -12,7 +12,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -86,7 +85,8 @@ var movedKinds = []movedKind{
 	{gvk: metalGV.WithKind("MaintenanceWindow")},
 }
 
-// movedKindOf finds the moved kind an owner reference names.
+// movedKindOf reports whether an owner reference names a kind the move
+// copies.
 func movedKindOf(apiVersion, kind string) bool {
 	gv, err := schema.ParseGroupVersion(apiVersion)
 	if err != nil {
@@ -268,37 +268,22 @@ func (m *Mover) readSource(ctx context.Context) ([]sourceObject, error) {
 	var out []sourceObject
 	for _, k := range m.movedKinds() {
 		var items []unstructured.Unstructured
-		namespaces := []string{""}
+		namespaces := []string{""} // all of them
 		if k.core {
 			namespaces = m.coreNamespaces()
 		}
-		missing := false
 		for _, ns := range namespaces {
-			list := &unstructured.UnstructuredList{}
-			list.SetGroupVersionKind(k.gvk.GroupVersion().WithKind(k.gvk.Kind + "List"))
-			var opts []client.ListOption
-			if k.core {
-				opts = append(opts, client.InNamespace(ns))
+			got, err := listServed(ctx, m.Source, k.gvk, client.InNamespace(ns))
+			if err != nil {
+				return nil, err
 			}
-			if err := m.Source.Client.List(ctx, list, opts...); err != nil {
-				if !k.core && meta.IsNoMatchError(err) {
-					missing = true // an operator version without this kind: none of it to move
-					break
-				}
-				return nil, fmt.Errorf("list %s on %s: %w", k.gvk.Kind, m.Source.Name, err)
-			}
-			items = append(items, list.Items...)
-		}
-		if missing {
-			continue
+			items = append(items, got...)
 		}
 		sort.Slice(items, func(i, j int) bool { return objectRef(&items[i]) < objectRef(&items[j]) })
 		for i := range items {
-			if k.skip != nil && k.skip(&items[i]) {
-				continue
+			if k.skip == nil || !k.skip(&items[i]) {
+				out = append(out, sourceObject{kind: k, obj: &items[i]})
 			}
-			items[i].SetGroupVersionKind(k.gvk)
-			out = append(out, sourceObject{kind: k, obj: &items[i]})
 		}
 	}
 	return out, nil
@@ -627,16 +612,12 @@ func (m *Mover) prune(ctx context.Context, objs []sourceObject) ([]string, error
 		if k.core {
 			continue
 		}
-		list := &unstructured.UnstructuredList{}
-		list.SetGroupVersionKind(k.gvk.GroupVersion().WithKind(k.gvk.Kind + "List"))
-		if err := m.Target.Client.List(ctx, list); err != nil {
-			if meta.IsNoMatchError(err) {
-				continue // the target does not serve the kind: nothing of it to prune
-			}
+		items, err := listServed(ctx, m.Target, k.gvk)
+		if err != nil {
 			return nil, err
 		}
-		for j := range list.Items {
-			u := &list.Items[j]
+		for j := range items {
+			u := &items[j]
 			key := k.gvk.Kind + " " + objectRef(u)
 			if keep[key] {
 				continue

@@ -164,8 +164,7 @@ func (m *Mover) installCRDs(ctx context.Context) error {
 // installPolicies copies the admission policies of kind (validating or
 // mutating) that guard the operator's objects, and their bindings, and adds
 // the parameters the bindings name to params. It returns how many policies
-// it copied. A source that does not serve the kind (a mutating one before
-// Kubernetes 1.36) has none to copy.
+// it copied.
 func (m *Mover) installPolicies(ctx context.Context, kind string, params map[types.NamespacedName]bool) (int, error) {
 	gv := admissionregistrationv1.SchemeGroupVersion
 	policies, err := m.copyKind(ctx, copyStep{gvk: gv.WithKind(kind), keep: func(u *unstructured.Unstructured) bool {
@@ -173,9 +172,7 @@ func (m *Mover) installPolicies(ctx context.Context, kind string, params map[typ
 		match := &admissionregistrationv1.MatchResources{}
 		return runtime.DefaultUnstructuredConverter.FromUnstructured(raw, match) == nil && guardsOperator(match)
 	}})
-	if meta.IsNoMatchError(err) || apierrors.IsNotFound(err) {
-		return 0, nil
-	} else if err != nil {
+	if err != nil {
 		return 0, err
 	}
 	bindings, err := m.copyKind(ctx, copyStep{gvk: gv.WithKind(kind + "Binding"), keep: func(u *unstructured.Unstructured) bool {
@@ -237,7 +234,7 @@ func (m *Mover) copyKind(ctx context.Context, s copyStep) ([]unstructured.Unstru
 	if s.namespaced {
 		opts = append(opts, client.InNamespace(m.Options.Namespace))
 	}
-	items, err := listKind(ctx, m.Source, s.gvk, opts...)
+	items, err := listServed(ctx, m.Source, s.gvk, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -359,6 +356,17 @@ func listKind(ctx context.Context, c *Cluster, gvk schema.GroupVersionKind, opts
 		list.Items[i].SetGroupVersionKind(gvk)
 	}
 	return list.Items, nil
+}
+
+// listServed is listKind for a kind that c may not serve (an operator
+// version without it, a cluster without the CRDs, a mutating admission
+// policy before Kubernetes 1.36): c holds none of it, then.
+func listServed(ctx context.Context, c *Cluster, gvk schema.GroupVersionKind, opts ...client.ListOption) ([]unstructured.Unstructured, error) {
+	items, err := listKind(ctx, c, gvk, opts...)
+	if meta.IsNoMatchError(err) || apierrors.IsNotFound(err) {
+		return nil, nil
+	}
+	return items, err
 }
 
 // applyTyped applies a client-go object read from the source.

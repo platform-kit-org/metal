@@ -7,13 +7,11 @@ import (
 	"strings"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/rest"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // movedGroups are the API groups whose every kind is the operator's state.
@@ -97,23 +95,24 @@ func (m *Mover) movedKinds() []movedKind {
 var inFlightConditions = []string{"Progressing", "Paused"}
 
 // inFlight names the objects of the moved kinds whose controller is in the
-// middle of a multi-step change.
-func inFlight(ctx context.Context, c client.Client, kinds []movedKind) ([]string, error) {
+// middle of work: an object being deleted (its finalizer's work, a release,
+// is the source manager's, and it must finish there), or one in a
+// multi-step change.
+func inFlight(ctx context.Context, c *Cluster, kinds []movedKind) ([]string, error) {
 	var out []string
 	for _, k := range kinds {
 		if k.core {
 			continue
 		}
-		list := &unstructured.UnstructuredList{}
-		list.SetGroupVersionKind(k.gvk.GroupVersion().WithKind(k.gvk.Kind + "List"))
-		if err := c.List(ctx, list); err != nil {
-			if meta.IsNoMatchError(err) || apierrors.IsNotFound(err) {
-				continue
-			}
+		items, err := listServed(ctx, c, k.gvk)
+		if err != nil {
 			return nil, err
 		}
-		for i := range list.Items {
-			u := &list.Items[i]
+		for i := range items {
+			u := &items[i]
+			if u.GetDeletionTimestamp() != nil {
+				out = append(out, fmt.Sprintf("%s %s is being deleted: let the operator finish that first", k.gvk.Kind, objectRef(u)))
+			}
 			if k.gvk == osGV.WithKind("TalosRollout") && rolloutRuns(u) {
 				out = append(out, fmt.Sprintf("TalosRollout %s is approved and not complete: let it finish, or abort it "+
 					"(pk-metal rollout abort %s), before moving the operator", u.GetName(), u.GetName()))

@@ -15,13 +15,14 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
-// runAsCLI is set in the child process that runCLI starts: the verbs exit
-// the process on bad usage, so the test runs them in one of their own.
+// runAsCLI is set in a child process of the test binary: the child runs as
+// pk-metal, with its own arguments. The verbs exit the process on bad usage,
+// so the test runs them in one of their own.
 const runAsCLI = "PK_METAL_TEST_RUN_CLI"
 
 func TestMain(m *testing.M) {
-	if args, ok := os.LookupEnv(runAsCLI); ok {
-		os.Args = append([]string{"pk-metal"}, strings.Fields(args)...)
+	if os.Getenv(runAsCLI) != "" {
+		os.Args[0] = "pk-metal"
 		main()
 		os.Exit(0)
 	}
@@ -32,8 +33,8 @@ func TestMain(m *testing.M) {
 // code and stderr.
 func runCLI(t *testing.T, args ...string) (int, string) {
 	t.Helper()
-	cmd := exec.Command(os.Args[0], "-test.run=^$")
-	cmd.Env = append(os.Environ(), runAsCLI+"="+strings.Join(args, " "))
+	cmd := exec.Command(os.Args[0], args...)
+	cmd.Env = append(os.Environ(), runAsCLI+"=1")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	err := cmd.Run()
@@ -59,6 +60,9 @@ func TestVerbsNameWhatIsMissing(t *testing.T) {
 		{[]string{"render"}, "--dir and --secrets are required"},
 		{[]string{"render", "--dir=d", "--secrets=s", "extra"}, "render takes no other arguments"},
 		{[]string{"relay", "extra"}, "relay takes no arguments"},
+		// An argument reaches the verb as it is: with its space, and empty.
+		{[]string{"completion", "korn shell"}, `unknown shell "korn shell"`},
+		{[]string{"render", "--dir=d", "--secrets=s", ""}, "render takes no other arguments"},
 	} {
 		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
 			code, stderr := runCLI(t, tc.args...)

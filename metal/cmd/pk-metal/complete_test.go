@@ -278,13 +278,18 @@ func TestCompletionScripts(t *testing.T) {
 	}
 }
 
-// buildPkMetal builds the program into a temporary directory once per test.
-func buildPkMetal(t *testing.T) (dir, bin string) {
+// pkMetalOnPath links pk-metal in a temporary directory to the test binary,
+// which runs as pk-metal with runAsCLI set (see TestMain).
+func pkMetalOnPath(t *testing.T) (dir, bin string) {
 	t.Helper()
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
 	dir = t.TempDir()
 	bin = filepath.Join(dir, "pk-metal")
-	if out, err := exec.Command("go", "build", "-o", bin, ".").CombinedOutput(); err != nil {
-		t.Fatalf("build: %v\n%s", err, out)
+	if err := os.Symlink(self, bin); err != nil {
+		t.Fatal(err)
 	}
 	return dir, bin
 }
@@ -293,13 +298,13 @@ func TestCompletionScriptBash(t *testing.T) {
 	if _, err := exec.LookPath("bash"); err != nil {
 		t.Skip("bash is not installed")
 	}
-	dir, bin := buildPkMetal(t)
+	dir, bin := pkMetalOnPath(t)
 	script := completionScripts["bash"] + `
 COMP_WORDS=(` + bin + ` rollout ap); COMP_CWORD=2; _pk_metal; printf '%s\n' "${COMPREPLY[@]}"
 COMP_WORDS=(` + bin + ` reboot --mode po); COMP_CWORD=3; _pk_metal; printf '%s\n' "${COMPREPLY[@]}"
 `
 	cmd := exec.Command("bash", "--norc", "--noprofile", "-c", script)
-	cmd.Env = append(os.Environ(), "KUBECONFIG="+filepath.Join(dir, "none"))
+	cmd.Env = append(os.Environ(), runAsCLI+"=1", "KUBECONFIG="+filepath.Join(dir, "none"))
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("bash: %v\n%s", err, out)
@@ -313,13 +318,13 @@ func TestCompletionScriptFish(t *testing.T) {
 	if _, err := exec.LookPath("fish"); err != nil {
 		t.Skip("fish is not installed")
 	}
-	dir, _ := buildPkMetal(t)
+	dir, _ := pkMetalOnPath(t)
 	script := completionScripts["fish"] + `
 complete -C "pk-metal rollout ap"
 complete -C "pk-metal status -o j"
 `
 	cmd := exec.Command("fish", "--no-config", "-c", script)
-	cmd.Env = append(os.Environ(), "PATH="+dir+":"+os.Getenv("PATH"), "KUBECONFIG="+filepath.Join(dir, "none"))
+	cmd.Env = append(os.Environ(), runAsCLI+"=1", "PATH="+dir+":"+os.Getenv("PATH"), "KUBECONFIG="+filepath.Join(dir, "none"))
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("fish: %v\n%s", err, out)

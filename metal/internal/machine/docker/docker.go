@@ -1,9 +1,9 @@
 // Package docker runs a Talos container as the machine behind a simulated BMC —
-// the e2e tier's machine backend. The container shape is the spike-proven one:
-// no config injected, so the machine boots blank into maintenance mode and the
-// provisioning ladder delivers the config exactly as it would reach metal
-// (modulo the media channel — a container has none, which is this tier's stated
-// fidelity boundary).
+// the e2e tier's machine backend. The container gets no config injected, so
+// the machine boots blank into maintenance mode and the provisioning ladder
+// delivers the config exactly as it would reach metal (modulo the media
+// channel — a container has none, which is this tier's stated fidelity
+// boundary).
 //
 // Talos ≥1.13 offers no talosctl path to a blank node (`cluster create` injects
 // its own config at creation), so the harness runs the container itself, via
@@ -37,8 +37,8 @@ func New(name, image, network, ip string) *Machine {
 }
 
 // Ensure creates the container, stopped and blank, if it does not exist. The
-// mounts and flags mirror hack/talos-docker-spike.sh — the recorded experiment
-// this driver encodes.
+// flags and mounts are the ones talosctl gives a Talos container: a read-only
+// root, and tmpfs and volumes for what Talos writes.
 func (m *Machine) Ensure(ctx context.Context) error {
 	if _, err := m.docker(ctx, "container", "inspect", m.name); err == nil {
 		return nil

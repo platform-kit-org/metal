@@ -72,10 +72,10 @@ Each line has these fields:
 | `seq` | The number of the line in the manager process, from 1. A gap or a repeated number shows a missing or a repeated line. A new process starts again at 1. |
 | `pod` | The name of the manager pod that wrote the line. |
 | `event` | One of the events below. |
-| `kind` | `HostOperation`, `TalosRollout`, `HostClaim`, `TalosNode`, `Host`, `ConfigMap` (the site settings) or `ValidatingAdmissionPolicy`. |
+| `kind` | The kind of the object, for example `HostOperation`, `TalosRollout` or `ManagementEndpoint` (the BMC, on `bmc.*` lines). `ConfigMap` is the site settings. `ValidatingAdmissionPolicy` is a policy of the gate. A line of [](cli:pivot) can name each kind that it moves. |
 | `namespace` | The namespace of the object. It is empty for a cluster-scoped kind. |
 | `name` | The name of the object. |
-| `uid` | The UID of the object. A new object with the same name has a different UID. |
+| `uid` | The UID of the object. A new object with the same name has a different UID. It is empty on `gate.*` and `media.*` lines. |
 | `actor` | Who made the decision: a person, or the service account of the operator. It is empty if a guard lift names nobody. |
 | `requestedBy` | On `proposed` and `approved`: the persons whose edit made the operator propose the change (`spec.requestedBy`). Not there if the list is empty. |
 | `old`, `new` | On `settings.read` and `settings.changed`: the settings before and after, by key. A key that the ConfigMap does not have is not there. |

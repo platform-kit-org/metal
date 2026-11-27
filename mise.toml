@@ -15,15 +15,15 @@ talosctl = "1.14"
 # Kubernetes 1.36 — the k8s.io/* modules in metal/go.mod and the kind node image.
 kubectl = "1.36"
 kind = "0.32"
-golangci-lint = "2"
-jq = "1"
-yq = "4"
+golangci-lint = "2.15"
+jq = "1.8"
+yq = "4.54"
 # Node 24 LTS for the documentation site in docs/ (Astro + Starlight).
 node = "24.22"
 # Vale lints the documentation site against the STE style in docs/styles.
 vale = "3.28"
 # promtool checks and unit-tests the alerting rules (mise run metrics:rules).
-promtool = "3"
+promtool = "3.16"
 # Skyhook Radar, a read-mostly Kubernetes UI (mise run lab:radar). The release ships one
 # binary, kubectl-radar, so it also runs as the kubectl plugin `kubectl radar`. Unlike the
 # rest, it floats on the latest release: it is a viewer, and nothing must match it.

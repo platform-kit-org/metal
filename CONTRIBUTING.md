@@ -17,7 +17,8 @@ has the long one.
 2. Run `mise trust` and then `mise install` in the repository root.
 3. Run `mise tasks` to see every task.
 
-mise pins Go, kubectl, kind, talosctl, golangci-lint, Node and Vale.
+mise pins Go, kubectl, kind, talosctl, golangci-lint, jq, yq, promtool, Node
+and Vale, each to its minor version.
 Docker, QEMU, OVMF and shellcheck are system packages.
 
 Development happens on the `main` branch. Start your branch from it.

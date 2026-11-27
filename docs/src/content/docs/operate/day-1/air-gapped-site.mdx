@@ -52,9 +52,42 @@ Install and run clusters at a site that has no internet access.
    --image-factory=factory.example.org
    ```
 
-4. If your registry has a certificate from an internal CA, give the CA to the manager with `--registry-ca`.
+4. If your registry has a certificate from an internal CA, give the CA to the nodes. Add one `RegistryTLSConfig` patch to the [](kind:TalosCluster) for each registry host.
 
-5. Add one mirror for each upstream registry to the [](kind:TalosCluster).
+   ```yaml
+   spec:
+     patches:
+       - inline: |
+           apiVersion: v1alpha1
+           kind: RegistryTLSConfig
+           name: registry.example.org
+           ca: |-
+             -----BEGIN CERTIFICATE-----
+             ...
+             -----END CERTIFICATE-----
+   ```
+
+5. If your registry or your image factory has a certificate from an internal CA, put the CA into a Secret.
+
+   ```sh
+   kubectl -n pk-metal create secret generic site-ca --from-file=ca.crt=site-ca.pem
+   ```
+
+6. Add these operations to `manager_args.yaml` of your overlay. The manager then trusts the CA for the image factory and for firmware images, together with the system CAs.
+
+   ```yaml title="manager_args.yaml"
+   - op: add
+     path: /spec/template/spec/volumes/-
+     value: {name: site-ca, secret: {secretName: site-ca}}
+   - op: add
+     path: /spec/template/spec/containers/0/volumeMounts/-
+     value: {name: site-ca, mountPath: /etc/site-ca, readOnly: true}
+   - op: add
+     path: /spec/template/spec/containers/0/env/-
+     value: {name: SSL_CERT_DIR, value: /etc/site-ca}
+   ```
+
+7. Add one mirror for each upstream registry to the [](kind:TalosCluster).
 
    ```yaml
    spec:
@@ -70,31 +103,18 @@ Install and run clusters at a site that has no internet access.
    The operator writes the mirrors into the config of each node, before the first node installs.
    The nodes ask the mirror for the same paths as upstream.
 
-6. Point the nodes at your DNS and NTP servers with patches.
+8. Point the nodes at your DNS and NTP servers. Add the patches of [DNS and time servers](howto:define-a-cluster#dns-and-time-servers) to the TalosCluster.
 
-   ```yaml
-   spec:
-     patches:
-       - inline: |
-           apiVersion: v1alpha1
-           kind: ResolverConfig
-           nameservers:
-             - address: 192.0.2.53
-       - inline: |
-           apiVersion: v1alpha1
-           kind: TimeSyncConfig
-           ntp:
-             servers:
-               - ntp.example.org
-   ```
+9. Build the operator image with the name of your registry, and push it. Step 4 of [](howto:install-operator) has the commands.
 
-7. Build the operator image and push it to your registry.
+10. For one-slot BMCs, copy the imager of your Talos release. The copy must keep the index and its digest.
 
-   ```sh
-   mise run image
-   ```
+    ```sh
+    skopeo copy --all --preserve-digests docker://ghcr.io/siderolabs/imager:v1.14.6 \
+      docker://registry.example.org/siderolabs/imager:v1.14.6
+    ```
 
-8. For one-slot BMCs, copy `ghcr.io/siderolabs/imager` at the pinned digest. Give the copy to the manager with `--imager-repository`.
+11. Give the copy to the manager with `--imager-repository=registry.example.org/siderolabs/imager`.
 
 </Steps>
 
@@ -113,7 +133,7 @@ If your mirror keeps each upstream under its own path prefix, the nodes need the
 
 | What you see | Go to |
 | --- | --- |
-| `Rendered=False`, `SchematicUnavailable` | The manager cannot reach your image factory. Check `--image-factory`. |
+| `Rendered=False`, `SchematicUnavailable` | The manager cannot reach your image factory. Check `--image-factory` and the CA of step 6. |
 | BootAsset `Ready=False`, `BuilderUnavailable` | The message names the imager flag to set. See [](rb:media-slot-busy). |
 | The node does not become `Ready` | [](rb:node-not-ready) |
 

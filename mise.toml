@@ -110,8 +110,8 @@ CGO_ENABLED=1 KUBEBUILDER_ASSETS="$assets" go test -race ./...
 '''
 
 [tasks.lint]
-description = "golangci-lint, the phase invariant, the uncached reads, shellcheck and the known vulnerabilities"
-depends = ["lint:go", "lint:phase", "lint:reads", "lint:shell", "lint:vuln"]
+description = "golangci-lint, the phase invariant, the uncached reads, shellcheck, the known vulnerabilities and the alert rules: the steps of the CI lint job"
+depends = ["lint:go", "lint:phase", "lint:reads", "lint:shell", "lint:vuln", "metrics:rules"]
 
 [tasks."lint:shell"]
 description = "bash -n and shellcheck over the lab, hack and agent hook scripts"

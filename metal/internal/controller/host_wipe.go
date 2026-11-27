@@ -119,7 +119,6 @@ func (r *hostWipeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	if err := r.Create(ctx, op); err != nil && !apierrors.IsAlreadyExists(err) {
 		return ctrl.Result{}, err
 	}
-	logf.FromContext(ctx).Info("proposed wipe", "operation", op.Namespace+"/"+op.Name, "host", host.Name)
 	return ctrl.Result{}, nil
 }
 

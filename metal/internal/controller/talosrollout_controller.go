@@ -357,7 +357,6 @@ func (r *TalosRolloutReconciler) runPass(ctx context.Context, ro *osv1alpha1.Tal
 		}
 		r.set(ro, osv1alpha1.ConditionProgressing, metav1.ConditionFalse, reason, what+"; nodes already changed stay as they are")
 		r.set(ro, osv1alpha1.ConditionComplete, metav1.ConditionFalse, reason, r.summary(ro))
-		logf.FromContext(ctx).Info("rollout ended", "rollout", ro.Name, "reason", reason)
 		return ctrl.Result{}, nil
 	}
 
@@ -367,7 +366,6 @@ func (r *TalosRolloutReconciler) runPass(ctx context.Context, ro *osv1alpha1.Tal
 			r.set(ro, osv1alpha1.ConditionProgressing, metav1.ConditionFalse, osv1alpha1.ReasonRolloutSucceeded, r.summary(ro))
 			r.set(ro, osv1alpha1.ConditionPaused, metav1.ConditionFalse, osv1alpha1.ReasonNotPaused, "")
 			r.set(ro, osv1alpha1.ConditionComplete, metav1.ConditionTrue, osv1alpha1.ReasonRolloutSucceeded, r.summary(ro))
-			logf.FromContext(ctx).Info("rollout complete", "rollout", ro.Name)
 			return ctrl.Result{}, nil
 		}
 		r.set(ro, osv1alpha1.ConditionProgressing, metav1.ConditionTrue, osv1alpha1.ReasonNodeRunning, r.summary(ro))
@@ -534,7 +532,6 @@ func (r *TalosRolloutReconciler) startStep(ctx context.Context, ro *osv1alpha1.T
 		return fmt.Errorf("create operation for %s: %w", step.Node, err)
 	}
 	st.Operation = op.Namespace + "/" + op.Name
-	logf.FromContext(ctx).Info("rollout step started", "rollout", ro.Name, "node", step.Node, "operation", st.Operation)
 	return nil
 }
 
@@ -571,11 +568,9 @@ func (r *TalosRolloutReconciler) observeStep(ctx context.Context, ro *osv1alpha1
 		}
 	case c.Status == metav1.ConditionTrue:
 		st.State, st.FinishedAt, st.Message = osv1alpha1.RolloutNodeSucceeded, ptr.To(metav1.Now()), ""
-		logf.FromContext(ctx).Info("rollout step succeeded", "rollout", ro.Name, "node", step.Node)
 	default:
 		st.State, st.FinishedAt = osv1alpha1.RolloutNodeFailed, ptr.To(metav1.Now())
 		st.Message = "operation " + st.Operation + " failed: " + c.Message
-		logf.FromContext(ctx).Info("rollout step failed", "rollout", ro.Name, "node", step.Node, "message", c.Message)
 	}
 	return nil
 }

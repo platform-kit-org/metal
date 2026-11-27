@@ -167,7 +167,6 @@ func (r *HostClaimReconciler) provision(ctx context.Context, claim *metalv1alpha
 			if ops[i].Finished() || !ops[i].DeletionTimestamp.IsZero() {
 				continue
 			}
-			logf.FromContext(ctx).Info("stopped boot operation of a dropped OS intent", "operation", ops[i].Namespace+"/"+ops[i].Name)
 			if err := deleteOp(ctx, r.Client, r.Audit, &ops[i], audit.DeleteStopped,
 				"claim "+claim.Namespace+"/"+claim.Name+" no longer names an OS"); client.IgnoreNotFound(err) != nil {
 				return err
@@ -357,8 +356,6 @@ func (r *HostClaimReconciler) provision(ctx context.Context, claim *metalv1alpha
 		if err := r.Create(ctx, op); err != nil && !apierrors.IsAlreadyExists(err) {
 			return err
 		}
-		logf.FromContext(ctx).Info("proposed boot operation", "operation", op.Namespace+"/"+op.Name,
-			"host", hostName, "node", node.Name, "approvalRequired", *op.Spec.Approval.Required)
 		if *op.Spec.Approval.Required {
 			return hold(metalv1alpha1.ReasonAwaitingApproval, awaitsApprovalMessage(claim, op, "boot", "install"))
 		}
@@ -709,7 +706,6 @@ func (r *HostClaimReconciler) withdraw(ctx context.Context, ops []metalv1alpha1.
 		if ops[i].Name == keep || !ops[i].AwaitsApproval() {
 			continue
 		}
-		logf.FromContext(ctx).Info("withdrew obsolete boot proposal", "operation", ops[i].Namespace+"/"+ops[i].Name)
 		if err := deleteOp(ctx, r.Client, r.Audit, &ops[i], audit.DeleteWithdrawn,
 			"a newer boot plan replaces it before anyone approved it"); client.IgnoreNotFound(err) != nil {
 			return err
@@ -1080,7 +1076,6 @@ func (r *HostClaimReconciler) release(ctx context.Context, claim *metalv1alpha1.
 			// taken back, and none is made. One already running finishes.
 			if held && (op == nil || op.AwaitsApproval()) {
 				if op != nil {
-					logf.FromContext(ctx).Info("withdrew release proposal of a held claim", "operation", op.Namespace+"/"+op.Name)
 					if err := deleteOp(ctx, r.Client, r.Audit, op, audit.DeleteWithdrawn,
 						"claim "+claim.Namespace+"/"+claim.Name+" is held before anyone approved its release"); client.IgnoreNotFound(err) != nil {
 						return false, err
@@ -1139,8 +1134,6 @@ func (r *HostClaimReconciler) release(ctx context.Context, claim *metalv1alpha1.
 				if err := r.Create(ctx, op); err != nil && !apierrors.IsAlreadyExists(err) {
 					return false, err
 				}
-				logf.FromContext(ctx).Info("proposed release operation", "operation", op.Namespace+"/"+op.Name,
-					"host", host.Name, "approvalRequired", *op.Spec.Approval.Required)
 			}
 			ex := meta.FindStatusCondition(op.Status.Conditions, metalv1alpha1.ConditionExecuted)
 			switch {

@@ -423,7 +423,6 @@ func (r *EndpointConvergenceReconciler) keep(ctx context.Context, ep *metalv1alp
 		return metav1.ConditionFalse, metalv1alpha1.ReasonRotationFailed,
 			"account " + cur.user + " reset but login still fails: " + err.Error(), nil
 	}
-	logf.FromContext(ctx).Info("repaired managed account", "endpoint", ep.Name, "account", cur.user)
 	r.Audit.BMCAccountSet(endpointObject(ep), cur.user, "Repaired")
 	return metav1.ConditionTrue, metalv1alpha1.ReasonInSync, "account " + cur.user + " managed", nil
 }
@@ -491,7 +490,6 @@ func (r *EndpointConvergenceReconciler) promote(ctx context.Context, ep *metalv1
 	if err := r.Update(ctx, sec); err != nil {
 		return "", "", "", fmt.Errorf("managed credentials %s: %w", sec.Name, err)
 	}
-	logf.FromContext(ctx).Info("rotated managed credentials", "endpoint", ep.Name, "account", next.user)
 	r.Audit.BMCAccountSet(endpointObject(ep), next.user, why)
 	return metav1.ConditionTrue, metalv1alpha1.ReasonInSync, "account " + next.user + " managed", nil
 }
@@ -516,7 +514,6 @@ func (r *EndpointConvergenceReconciler) retire(ctx context.Context, ep *metalv1a
 	if err := r.Update(ctx, sec); err != nil {
 		return "", "", "", fmt.Errorf("managed credentials %s: %w", sec.Name, err)
 	}
-	logf.FromContext(ctx).Info("disabled the replaced managed account", "endpoint", ep.Name, "account", old)
 	r.Audit.BMCAccountDisabled(endpointObject(ep), old, "Replaced")
 	return metav1.ConditionTrue, metalv1alpha1.ReasonInSync,
 		"account " + cur.user + " managed; the replaced account " + old + " is disabled", nil

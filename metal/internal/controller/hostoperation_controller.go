@@ -885,9 +885,7 @@ func (r *HostOperationReconciler) revokeGrants(key types.NamespacedName) {
 	if r.Media == nil {
 		return
 	}
-	if n := r.Media.Grants.RevokeAsset(grantHandle(key)); n > 0 {
-		logf.Log.WithName("hostoperation").Info("revoked media grants", "operation", key.String(), "grants", n)
-	}
+	r.Media.Grants.RevokeAsset(grantHandle(key))
 }
 
 // opSucceeded: finished with every step at its goal.

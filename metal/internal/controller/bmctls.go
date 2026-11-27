@@ -10,7 +10,6 @@ import (
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
 	gofishclient "github.com/dennisklein/platform-kit/metal/internal/bmc/gofish"
@@ -81,7 +80,6 @@ func (r *ManagementEndpointReconciler) checkPin(ctx context.Context, ep *metalv1
 	presented := gofishclient.PublicKeyPin(leaf)
 	pin := func(source string) {
 		ep.Status.TLSPin = &metalv1alpha1.TLSPin{PublicKey: presented, Source: source}
-		logf.FromContext(ctx).Info("pinned the BMC's TLS key", "endpoint", ep.Name, "key", presented, "source", source)
 	}
 	cur := ep.Status.TLSPin
 	switch {

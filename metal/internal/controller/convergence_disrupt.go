@@ -9,7 +9,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
@@ -147,7 +146,6 @@ func (r *ConvergenceReconciler) withdrawPlan(ctx context.Context, plan **metalv1
 	if !op.AwaitsApproval() {
 		return nil
 	}
-	logf.FromContext(ctx).Info("withdrew proposal for a node that is gone", "operation", (*plan).Operation)
 	if err := deleteOp(ctx, r.Client, r.Audit, op, audit.DeleteWithdrawn,
 		"the node it was planned for is gone before anyone approved it", client.Preconditions{UID: &op.UID}); client.IgnoreNotFound(err) != nil {
 		return err

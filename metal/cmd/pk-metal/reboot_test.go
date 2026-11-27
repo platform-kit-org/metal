@@ -134,11 +134,18 @@ func TestEveryActionIsDescribed(t *testing.T) {
 		TalosReset:       &metalv1alpha1.TalosResetAction{NodeRef: node, Graceful: ptr.To(false), UserDisks: []string{"/dev/sdb"}},
 		WaitNodeReady:    &metalv1alpha1.WaitNodeReadyAction{NodeRef: node, Version: "v1.14.7"},
 		WaitEtcdHealthy:  &metalv1alpha1.WaitEtcdHealthyAction{NodeRef: node},
+		EtcdRecover: &metalv1alpha1.EtcdRecoverAction{NodeRef: node,
+			SnapshotRef: metalv1alpha1.Reference{Name: "lab-daily"}, SHA256: digest},
+		EtcdForfeitLeadership: &metalv1alpha1.EtcdForfeitLeadershipAction{NodeRef: node},
+		DeleteKubernetesNode:  &metalv1alpha1.DeleteKubernetesNodeAction{NodeRef: node},
+		StageFirmware: &metalv1alpha1.StageFirmwareAction{Image: "https://x/fw.bin", Version: "2.1",
+			Targets: []string{"/redfish/v1/UpdateService/FirmwareInventory/BIOS"}},
 	}
 	pc := planContext{Nodes: map[string]*osv1alpha1.TalosNode{"cp-2": talosNodeObj("cp-2", osv1alpha1.RoleControlPlane)}}
 	// One action at a time: copy each set field into an otherwise empty union.
 	v := reflect.ValueOf(all)
 	for i := range v.NumField() {
+		require.Falsef(t, v.Field(i).IsNil(), "set %s in all", metalv1alpha1.ActionKeys()[i])
 		one := metalv1alpha1.HostOperationAction{}
 		reflect.ValueOf(&one).Elem().Field(i).Set(v.Field(i))
 		got := describeAction(one, pc)
@@ -147,7 +154,6 @@ func TestEveryActionIsDescribed(t *testing.T) {
 			assert.Contains(t, got, "node cp-2 (control plane of cluster lab)", one.Key())
 		}
 	}
-	assert.Equal(t, len(metalv1alpha1.ActionKeys()), v.NumField(), "the test sets every action")
 
 	reset := describeAction(metalv1alpha1.HostOperationAction{TalosReset: all.TalosReset}, pc)
 	assert.Contains(t, reset, "WIPE the system disk and the user disks /dev/sdb of")

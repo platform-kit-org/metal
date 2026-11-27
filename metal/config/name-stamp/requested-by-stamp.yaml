@@ -2,12 +2,11 @@
 # what an object asks the operator to do gets the annotation
 # metal.platform-kit.org/requested-by set to its own username. So a person
 # who edits with kubectl, or a GitOps controller that applies a manifest,
-# does not set the annotation by hand; the requested-by policies
-# (requested-by.yaml, requested-by-patches.yaml) then find the name they ask
-# for.
+# does not set the annotation by hand; the requested-by policy
+# (requested-by.yaml) then finds the name it asks for.
 #
-# The intent of each kind is the one of requested-by.yaml and
-# requested-by-patches.yaml; keep the expressions below the same as theirs.
+# The intent of each kind, and the two bindings, are the ones of
+# requested-by.yaml; keep the expressions below the same as theirs.
 # A request that does not change the intent is left as it is: a person can
 # still take a change on as theirs by setting the annotation, and nobody can
 # remove it.
@@ -19,7 +18,7 @@
 # Kubernetes 1.36 or later; see kustomization.yaml.
 #
 # failurePolicy is Ignore: the stamp only saves typing. If it does not apply,
-# the requested-by policies still refuse a change that names nobody where
+# the requested-by policy still refuses a change that names nobody where
 # the site forbids self-approval.
 apiVersion: admissionregistration.k8s.io/v1
 kind: MutatingAdmissionPolicy
@@ -42,6 +41,10 @@ spec:
         apiVersions: ["v1alpha1"]
         operations: ["UPDATE"]
         resources: ["talosrollouts"]
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["configmaps"]
   variables:
     - name: res
       expression: "request.resource.resource"
@@ -65,6 +68,10 @@ spec:
         : request.operation == 'CREATE' ? true
         : variables.res == 'hostclaims'
           ? object.spec != oldObject.spec || 'metal.platform-kit.org/reinstall' in variables.setAnnotation
+        : variables.res == 'configmaps'
+          ? object.?data.orValue({}) != oldObject.?data.orValue({})
+            || object.?binaryData.orValue({}) != oldObject.?binaryData.orValue({})
+            || !('os.platform-kit.org/patch' in oldObject.metadata.?labels.orValue({}))
         : object.spec != oldObject.spec
   mutations:
     - patchType: ApplyConfiguration
@@ -80,16 +87,20 @@ metadata:
   name: requested-by-stamp
 spec:
   policyName: requested-by-stamp
+  matchResources:
+    excludeResourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["*"]
+        resources: ["configmaps"]
 ---
-# The same for the ConfigMaps that hold Talos config patches.
 apiVersion: admissionregistration.k8s.io/v1
-kind: MutatingAdmissionPolicy
+kind: MutatingAdmissionPolicyBinding
 metadata:
   name: requested-by-stamp-patches
 spec:
-  failurePolicy: Ignore
-  reinvocationPolicy: Never
-  matchConstraints:
+  policyName: requested-by-stamp
+  matchResources:
     objectSelector:
       matchExpressions:
         - key: os.platform-kit.org/patch
@@ -99,24 +110,3 @@ spec:
         apiVersions: ["v1"]
         operations: ["CREATE", "UPDATE"]
         resources: ["configmaps"]
-  variables:
-    - name: intentChanged
-      expression: >-
-        request.operation != 'UPDATE' ? true
-        : object.?data.orValue({}) != oldObject.?data.orValue({})
-          || object.?binaryData.orValue({}) != oldObject.?binaryData.orValue({})
-          || !('os.platform-kit.org/patch' in oldObject.metadata.?labels.orValue({}))
-  mutations:
-    - patchType: ApplyConfiguration
-      applyConfiguration:
-        expression: >-
-          variables.intentChanged
-          ? Object{metadata: Object.metadata{annotations: {'metal.platform-kit.org/requested-by': request.userInfo.username}}}
-          : Object{}
----
-apiVersion: admissionregistration.k8s.io/v1
-kind: MutatingAdmissionPolicyBinding
-metadata:
-  name: requested-by-stamp-patches
-spec:
-  policyName: requested-by-stamp-patches

@@ -1,8 +1,8 @@
 // The requested-by suite: where the site forbids self-approval, an edit that
 // makes the operator propose work names its requester
-// (config/policy/requested-by.yaml, requested-by-patches.yaml), the operator
-// copies the names into the proposal's spec.requestedBy, and the approval
-// policies refuse an approval by one of them. Where the site allows
+// (config/policy/requested-by.yaml), the operator copies the names into the
+// proposal's spec.requestedBy, and the approval policy refuses an approval
+// by one of them. Where the site allows
 // self-approval, the name is not necessary, but a name that is set names
 // the user of each change.
 package envtest_test
@@ -33,7 +33,6 @@ func TestRequestedBy(t *testing.T) {
 	const operator = "op-sa"
 	installApprovalPolicy(t, ctx, cl, operator)
 	installPolicy(t, ctx, cl, "requested-by.yaml")
-	installPolicy(t, ctx, cl, "requested-by-patches.yaml")
 	// The base settings allow self-approval; the first subtests are the
 	// rules of a site that forbids it.
 	setSelfApproval(t, ctx, cl, ptr.To("Forbidden"))

@@ -37,9 +37,13 @@ var GatePolicies = []string{
 	"admin-guard",
 	"guard-lift",
 	"requested-by",
-	"requested-by-patches",
 	"settings-guard",
 }
+
+// gateBindings are the bindings that a gate policy needs by name, because
+// each covers other objects: requested-by checks the Talos config patches
+// through requested-by-patches. Each must deny.
+var gateBindings = map[string][]string{"requested-by": {"requested-by", "requested-by-patches"}}
 
 // defaultGateCheck is how often the settings controller checks the gate.
 const defaultGateCheck = time.Minute
@@ -162,10 +166,11 @@ func gateProblems(ctx context.Context, c client.Reader, policies []string) (map[
 	return problems, nil
 }
 
-// bindingProblem says why no binding of p denies, or "" when one does.
+// bindingProblem says why no binding of p denies, or why a binding that p
+// needs by name (gateBindings) is missing or does not deny; "" when none.
 func bindingProblem(p *admissionregistrationv1.ValidatingAdmissionPolicy,
 	bindings []admissionregistrationv1.ValidatingAdmissionPolicyBinding) string {
-	var found []string
+	var found, denying []string
 	for i := range bindings {
 		b := &bindings[i]
 		if b.Spec.PolicyName != p.Name {
@@ -181,7 +186,7 @@ func bindingProblem(p *admissionregistrationv1.ValidatingAdmissionPolicy,
 				continue
 			}
 		}
-		return ""
+		denying = append(denying, b.Name)
 	}
 	if len(found) == 0 {
 		return fmt.Sprintf("the policy %s has no ValidatingAdmissionPolicyBinding, so it checks nothing: apply metal/config/policy", p.Name)
@@ -190,7 +195,16 @@ func bindingProblem(p *admissionregistrationv1.ValidatingAdmissionPolicy,
 	if p.Spec.ParamKind != nil {
 		need += " and parameterNotFoundAction Deny"
 	}
-	return fmt.Sprintf("no binding of the policy %s (%s) denies: each needs %s", p.Name, strings.Join(found, ", "), need)
+	if len(denying) == 0 {
+		return fmt.Sprintf("no binding of the policy %s (%s) denies: each needs %s", p.Name, strings.Join(found, ", "), need)
+	}
+	for _, name := range gateBindings[p.Name] {
+		if !slices.Contains(denying, name) {
+			return fmt.Sprintf("the binding %s of the policy %s is missing or does not deny (it needs %s): apply metal/config/policy",
+				name, p.Name, need)
+		}
+	}
+	return ""
 }
 
 // Start runs the gate check until ctx ends. It runs on the leader only.

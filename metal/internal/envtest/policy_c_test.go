@@ -27,18 +27,20 @@ const (
 	recipientB = "age1lggyhqrw2nlhcxprm67z43rta597azn8gknawjehu9d9dl0jq3yqqvfafg"
 )
 
-// installPolicy loads one committed policy and its binding from config/policy.
+// installPolicy loads one committed policy and its bindings from config/policy.
 // The params are the ones installApprovalPolicy created.
 func installPolicy(t *testing.T, ctx context.Context, cl client.Client, file string) {
 	t.Helper()
 	docs := strings.Split(readFile(t, filepath.Join("..", "..", "config", "policy", file)), "\n---")
-	require.Len(t, docs, 2)
+	require.Greater(t, len(docs), 1, "%s has a binding", file)
 	vap := &admissionregistrationv1.ValidatingAdmissionPolicy{}
 	require.NoError(t, yaml.Unmarshal([]byte(docs[0]), vap))
 	require.NoError(t, cl.Create(ctx, vap))
-	binding := &admissionregistrationv1.ValidatingAdmissionPolicyBinding{}
-	require.NoError(t, yaml.Unmarshal([]byte(docs[1]), binding))
-	require.NoError(t, cl.Create(ctx, binding))
+	for _, doc := range docs[1:] {
+		binding := &admissionregistrationv1.ValidatingAdmissionPolicyBinding{}
+		require.NoError(t, yaml.Unmarshal([]byte(doc), binding))
+		require.NoError(t, cl.Create(ctx, binding))
+	}
 }
 
 // refusedOnceEnforcing waits until a policy compiles and refuses c's create

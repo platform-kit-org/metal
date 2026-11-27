@@ -8,9 +8,8 @@
 # this record the person who made the edit could also approve its result.
 # The operator copies the annotations of the objects behind a proposal into
 # its spec.requestedBy, and the approval policies refuse an approval by one
-# of them where the site forbids self-approval. The ConfigMaps that hold
-# Talos config patches have their own policy with the same rules
-# (requested-by-patches.yaml).
+# of them where the site forbids self-approval. A change of a Talos config
+# patch makes the operator propose work as a change of a TalosCluster does.
 #
 # The intent of each kind, the change that needs the name:
 #   - TalosCluster, TalosNode, BIOSProfile, FirmwareProfile: create, a change
@@ -19,7 +18,18 @@
 #     (a release);
 #   - Host: setting or changing metal.platform-kit.org/wipe;
 #   - TalosRollout: a change of spec.abort or spec.paused, or of the
-#     annotation os.platform-kit.org/resume (who stopped or let on a rollout).
+#     annotation os.platform-kit.org/resume (who stopped or let on a rollout);
+#   - ConfigMap with the label os.platform-kit.org/patch (the operator reads
+#     no other): create, a change of data or binaryData, the label set on a
+#     ConfigMap that had none (its data becomes a patch), delete.
+#
+# The ConfigMaps have a binding of their own, requested-by-patches. Its
+# objectSelector selects the patches before the API server looks for the
+# params, so while the params are missing it denies only the patches, not
+# each ConfigMap request in the cluster (the settings ConfigMap itself
+# included). It matches when the object or the object before the request
+# has the label (a delete, a label taken off). The binding requested-by
+# leaves the ConfigMaps out.
 #
 # The rules, in order:
 #   - a request that changes the intent sets the annotation to the username
@@ -79,6 +89,10 @@ spec:
         apiVersions: ["v1alpha1"]
         operations: ["UPDATE"]
         resources: ["talosrollouts"]
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["configmaps"]
   variables:
     - name: key
       expression: "'metal.platform-kit.org/requested-by'"
@@ -100,6 +114,9 @@ spec:
         ['metal.platform-kit.org/wipe', 'metal.platform-kit.org/reinstall', 'os.platform-kit.org/resume'].filter(k,
           k in variables.newAnnotations
           && (!(k in variables.oldAnnotations) || variables.oldAnnotations[k] != variables.newAnnotations[k]))
+    # For a patch, a label taken off with the data unchanged is no change of
+    # intent: the operator stops reading the patch, and a render without it
+    # stops.
     - name: intentChanged
       expression: >-
         request.operation == 'DELETE' ? true
@@ -111,6 +128,10 @@ spec:
         : request.operation == 'CREATE' ? true
         : variables.res == 'hostclaims'
           ? object.spec != oldObject.spec || 'metal.platform-kit.org/reinstall' in variables.setAnnotation
+        : variables.res == 'configmaps'
+          ? object.?data.orValue({}) != oldObject.?data.orValue({})
+            || object.?binaryData.orValue({}) != oldObject.?binaryData.orValue({})
+            || !('os.platform-kit.org/patch' in oldObject.metadata.?labels.orValue({}))
         : object.spec != oldObject.spec
     - name: user
       expression: "request.userInfo.username"
@@ -172,3 +193,31 @@ spec:
     name: hostoperation-approval
     namespace: pk-metal
     parameterNotFoundAction: Deny
+  matchResources:
+    excludeResourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["*"]
+        resources: ["configmaps"]
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: requested-by-patches
+spec:
+  policyName: requested-by
+  validationActions: ["Deny"]
+  paramRef:
+    name: hostoperation-approval
+    namespace: pk-metal
+    parameterNotFoundAction: Deny
+  matchResources:
+    objectSelector:
+      matchExpressions:
+        - key: os.platform-kit.org/patch
+          operator: Exists
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["configmaps"]

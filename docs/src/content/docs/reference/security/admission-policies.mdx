@@ -1,6 +1,6 @@
 ---
 title: Admission policies
-description: The seven ValidatingAdmissionPolicies that guard approval, provisioning, backups, BMC settings, guard lifts, the name of the requester and the site settings, rule by rule, and the MutatingAdmissionPolicies that write your username for you.
+description: The six ValidatingAdmissionPolicies that guard approval, provisioning, backups, BMC settings, guard lifts, the name of the requester and the site settings, rule by rule, and the MutatingAdmissionPolicies that write your username for you.
 type: reference
 eyebrow: Reference · security
 xref: { cat: ref, id: admission-policies }
@@ -10,7 +10,6 @@ sources:
   - /repo/metal/config/policy/admin-guard.yaml
   - /repo/metal/config/policy/guard-lift.yaml
   - /repo/metal/config/policy/requested-by.yaml
-  - /repo/metal/config/policy/requested-by-patches.yaml
   - /repo/metal/config/name-stamp/requested-by-stamp.yaml
   - /repo/metal/config/name-stamp/guard-lift-stamp.yaml
   - /repo/metal/config/policy/settings-guard.yaml
@@ -23,8 +22,8 @@ import Edge from '../../../../components/diagram/Edge.astro';
 import Callout from '../../../../components/Callout.astro';
 
 RBAC says who may create or patch an object. It cannot see the name that a person writes into a field.
-Seven [ValidatingAdmissionPolicies](term:vap) close that gap. They are [CEL](term:cel) in the API server: no webhook, no certificate, no pod.
-Three MutatingAdmissionPolicies write your username into the annotations that these policies check. See [The name stamps](#the-name-stamps).
+Six [ValidatingAdmissionPolicies](term:vap) close that gap. They are [CEL](term:cel) in the API server: no webhook, no certificate, no pod.
+Two MutatingAdmissionPolicies write your username into the annotations that these policies check. See [The name stamps](#the-name-stamps).
 
 ## At a glance
 
@@ -34,11 +33,10 @@ Three MutatingAdmissionPolicies write your username into the annotations that th
 | `hostclaim-provisioning` | [](kind:HostClaim) | CREATE, UPDATE | Who may choose the OS of a machine, and who may skip the boot approval. |
 | `admin-guard` | [](kind:EndpointProfile), [](kind:EtcdBackupPolicy), [](kind:TalosCluster) | CREATE, UPDATE | The changes that only an admin makes to kinds without an approval. |
 | `guard-lift` | HostOperation, HostClaim, [](kind:TalosNode), [](kind:Host) | CREATE, UPDATE | A guard lift or a decision names the person who sets it, and a reason. Only the operator removes `disk-not-wiped` without a named waiver. |
-| `requested-by` | TalosCluster, TalosNode, HostClaim, [](kind:BiosProfile), [](kind:FirmwareProfile), Host, TalosRollout | CREATE, UPDATE, DELETE | If `selfApproval` is `Forbidden`, a change that makes the operator propose work names the user who asked for it. |
-| `requested-by-patches` | ConfigMaps with `os.platform-kit.org/patch` | CREATE, UPDATE, DELETE | The rules of `requested-by` for the Talos config patches. |
+| `requested-by` | TalosCluster, TalosNode, HostClaim, [](kind:BiosProfile), [](kind:FirmwareProfile), Host, TalosRollout, ConfigMaps with `os.platform-kit.org/patch` | CREATE, UPDATE, DELETE | If `selfApproval` is `Forbidden`, a change that makes the operator propose work names the user who asked for it. |
 | `settings-guard` | The ConfigMap `pk-metal/hostoperation-approval` | CREATE, UPDATE, DELETE | Only the admin group changes or deletes the site settings. |
 
-All seven have these settings:
+All six have these settings:
 
 <dl>
   <dt>`failurePolicy: Fail`</dt>
@@ -189,7 +187,7 @@ These annotations lift a safety rule of the operator, or decide a step of a chan
 
 The operator proposes most changes itself, as the result of an edit. The proposal names the operator as proposer. If the site forbids self-approval, this policy makes each such edit name the user who made it, in the annotation `metal.platform-kit.org/requested-by`. The operator copies the names into `spec.requestedBy` of the proposal. Rule 8 of `hostoperation-approval` then applies.
 
-The policy `requested-by-patches` has the same rules for the ConfigMaps with the label `os.platform-kit.org/patch`. It is a separate policy because it selects these ConfigMaps by their label before the API server reads the parameters. So without the parameters, a request on another ConfigMap passes.
+The policy also checks the ConfigMaps with the label `os.platform-kit.org/patch`. They have a binding of their own, `requested-by-patches`. It selects these ConfigMaps by their label before the API server reads the parameters. So without the parameters, a request on another ConfigMap passes. The binding `requested-by` leaves out the ConfigMaps.
 
 The key `selfApproval` of the parameters sets the mode. A missing key is `Allowed`. A value other than `Allowed` is the same as `Forbidden`.
 
@@ -216,7 +214,7 @@ An edit asks for work in these cases:
 
 - Rules 1 and 2 apply under `Allowed` to an object with the annotation. Thus the annotation never names a person as the requester of the change of another person.
 - Rule 3 applies under `Allowed` too. The operator proposes some time after the edit. The annotation is the record of who asked for a change that is not proposed yet. The next user of a change can replace the name with their own name, so a removal is never necessary.
-- If the ConfigMap `hostoperation-approval` is missing, the two policies refuse each request that they check, also a delete by the namespace controller. Restore the ConfigMap.
+- If the ConfigMap `hostoperation-approval` is missing, the policy refuses each request that it checks, also a delete by the namespace controller. Restore the ConfigMap.
 - Where the site installs [`requested-by-stamp`](#requested-by-stamp), the API server sets the annotation for each create and update that asks for work. Then rule 1 refuses no such request. The operator copies the annotation into `spec.requestedBy`, so the audit trail names the requester. See [](howto:approval-permissions#who-asked-for-a-change).
 - The operator has no exemption. It changes no spec of these kinds.
 - [](cli:pivot) writes each object as the user that the annotation names. An object without the annotation gets `pk-metal-pivot`.
@@ -224,7 +222,7 @@ An edit asks for work in these cases:
 
 ## The name stamps
 
-The kustomize component `config/name-stamp` has three MutatingAdmissionPolicies. They write your username into the annotations that the policies `requested-by`, `requested-by-patches`, and `guard-lift` check. So you do not type your username: not with `kubectl`, not in the manifests of a GitOps controller. The API server applies them before the validating policies, which still check each name.
+The kustomize component `config/name-stamp` has two MutatingAdmissionPolicies. They write your username into the annotations that the policies `requested-by` and `guard-lift` check. So you do not type your username: not with `kubectl`, not in the manifests of a GitOps controller. The API server applies them before the validating policies, which still check each name.
 
 - They need Kubernetes 1.36 or later, so the base `config/default` does not include them. The sample site overlay and the lab add the component.
 - They have no parameters and apply in the two modes of `selfApproval`.
@@ -234,7 +232,7 @@ The kustomize component `config/name-stamp` has three MutatingAdmissionPolicies.
 
 ### `requested-by-stamp`
 
-For each create and update that asks for work, as the tables of [`requested-by`](#requested-by) say, the API server sets `metal.platform-kit.org/requested-by` to the username of the request. `requested-by-stamp-patches` does the same for the Talos config patches.
+For each create and update that asks for work, as the tables of [`requested-by`](#requested-by) say, the API server sets `metal.platform-kit.org/requested-by` to the username of the request. It has the same two bindings as `requested-by`.
 
 - A request that asks for no work stays as it is. A person can still set the annotation to their own name, to take on a change. Nobody can remove it (rule 3).
 - A request that writes another name gets the name of its user.
@@ -263,7 +261,7 @@ The ConfigMap `pk-metal/hostoperation-approval` names the operator and the admin
 
 ## The check of the gate
 
-The operator checks each policy of this page one time each minute. It reports a policy that is missing, has a `failurePolicy` other than `Fail`, or has no binding that denies. A binding of a policy with parameters must also have `parameterNotFoundAction: Deny`. The operator then sets the metric `pk_metal_admission_gate_degraded` to 1 for the policy, and writes a `gate.degraded` line. The alert `PkMetalAdmissionGateDegraded` links [](rb:admission-gate-degraded). The operator changes no policy.
+The operator checks each policy of this page one time each minute. It reports a policy that is missing, has a `failurePolicy` other than `Fail`, or has no binding that denies. A binding of a policy with parameters must also have `parameterNotFoundAction: Deny`. Each of the two bindings of `requested-by` must deny. The operator then sets the metric `pk_metal_admission_gate_degraded` to 1 for the policy, and writes a `gate.degraded` line. The alert `PkMetalAdmissionGateDegraded` links [](rb:admission-gate-degraded). The operator changes no policy.
 
 ## Related
 

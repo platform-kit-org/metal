@@ -9,7 +9,6 @@ sidebar:
 sources:
   - /repo/metal/config/policy/hostoperation-approval.yaml
   - /repo/metal/config/policy/requested-by.yaml
-  - /repo/metal/config/policy/requested-by-patches.yaml
   - /repo/metal/config/name-stamp/requested-by-stamp.yaml
   - /repo/metal/config/samples/site-overlay/kustomization.yaml
   - /repo/metal/config/policy/settings-guard.yaml
@@ -150,7 +149,7 @@ The operator proposes most changes itself, as the result of an edit. For example
 - An install applies the config of the node. So the install also names the last editor of the [](kind:TalosCluster). It also names the last editor of each patch ConfigMap of the node. A rollout names the same persons.
 - A BIOS or firmware change names the last editor of each profile that it applies. A profile can select the Host by a label of the [](kind:HostClaim). Then the change also names the last editor of the claim. A label that a person puts on the Host directly names nobody.
 - A rollout that the operator proposed ends with `PlanChanged` if a person who is not in its `spec.requestedBy` changes what it applies. The operator then proposes it again, with the new names.
-- A Talos config patch in a ConfigMap must have the label `os.platform-kit.org/patch: "true"`. The operator reads no ConfigMap without it. So the policy `requested-by-patches` can find the patches and ask for a name.
+- A Talos config patch in a ConfigMap must have the label `os.platform-kit.org/patch: "true"`. The operator reads no ConfigMap without it. So the policy `requested-by` can find the patches and ask for a name.
 
 <Callout type="caution">
 A GitOps controller applies the manifests as its own service account. So `metal.platform-kit.org/requested-by` names that service account, for example `system:serviceaccount:flux-system:kustomize-controller`, and `spec.requestedBy` names it too, not the person who wrote the commit. `Forbidden` does not stop that person from approving the result. Make the review of the commit the second person, or approve only commits that another person wrote. See [](concept:gitops).

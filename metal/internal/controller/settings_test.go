@@ -76,19 +76,29 @@ func gateScheme(t *testing.T) *runtime.Scheme {
 	return s
 }
 
-// gate is a policy and its binding as config/policy has them.
+// gate is a policy and its bindings as config/policy has them.
 func gate(name string, params bool) []client.Object {
 	p := &admissionregistrationv1.ValidatingAdmissionPolicy{ObjectMeta: metav1.ObjectMeta{Name: name},
 		Spec: admissionregistrationv1.ValidatingAdmissionPolicySpec{FailurePolicy: ptr.To(admissionregistrationv1.Fail)}}
-	b := &admissionregistrationv1.ValidatingAdmissionPolicyBinding{ObjectMeta: metav1.ObjectMeta{Name: name},
-		Spec: admissionregistrationv1.ValidatingAdmissionPolicyBindingSpec{PolicyName: name,
-			ValidationActions: []admissionregistrationv1.ValidationAction{admissionregistrationv1.Deny}}}
 	if params {
 		p.Spec.ParamKind = &admissionregistrationv1.ParamKind{APIVersion: "v1", Kind: "ConfigMap"}
-		b.Spec.ParamRef = &admissionregistrationv1.ParamRef{Name: siteSettingsConfigMap, Namespace: "pk-metal",
-			ParameterNotFoundAction: ptr.To(admissionregistrationv1.DenyAction)}
 	}
-	return []client.Object{p, b}
+	objs := []client.Object{p}
+	names := gateBindings[name]
+	if names == nil {
+		names = []string{name}
+	}
+	for _, n := range names {
+		b := &admissionregistrationv1.ValidatingAdmissionPolicyBinding{ObjectMeta: metav1.ObjectMeta{Name: n},
+			Spec: admissionregistrationv1.ValidatingAdmissionPolicyBindingSpec{PolicyName: name,
+				ValidationActions: []admissionregistrationv1.ValidationAction{admissionregistrationv1.Deny}}}
+		if params {
+			b.Spec.ParamRef = &admissionregistrationv1.ParamRef{Name: siteSettingsConfigMap, Namespace: "pk-metal",
+				ParameterNotFoundAction: ptr.To(admissionregistrationv1.DenyAction)}
+		}
+		objs = append(objs, b)
+	}
+	return objs
 }
 
 func TestGateProblems(t *testing.T) {
@@ -121,8 +131,9 @@ func TestGateProblems(t *testing.T) {
 	assert.Contains(t, got["missing"], "is missing")
 }
 
-// A policy that goes missing is one gate.degraded line and a metric of 1
-// until it is back; then one gate.restored line and a metric of 0.
+// A binding that goes missing is one gate.degraded line and a metric of 1
+// until it is back; then one gate.restored line and a metric of 0. The
+// policy keeps its other binding: requested-by needs each of its two.
 func TestGateCheck(t *testing.T) {
 	ctx := t.Context()
 	var objs []client.Object
@@ -159,7 +170,7 @@ func TestGateCheck(t *testing.T) {
 	assert.Empty(t, buf.String(), "a gate in place writes no line")
 
 	binding := &admissionregistrationv1.ValidatingAdmissionPolicyBinding{}
-	require.NoError(t, cl.Get(ctx, client.ObjectKey{Name: "requested-by"}, binding))
+	require.NoError(t, cl.Get(ctx, client.ObjectKey{Name: "requested-by-patches"}, binding))
 	require.NoError(t, cl.Delete(ctx, binding))
 	require.NoError(t, r.checkGate(ctx))
 	require.NoError(t, r.checkGate(ctx))
@@ -173,5 +184,5 @@ func TestGateCheck(t *testing.T) {
 	lines := trail(t, &buf)
 	require.Equal(t, []string{"gate.degraded", "gate.restored"}, eventNames(lines))
 	assert.Equal(t, "requested-by", lines[0].Name)
-	assert.Contains(t, lines[0].Message, "has no ValidatingAdmissionPolicyBinding")
+	assert.Contains(t, lines[0].Message, "the binding requested-by-patches of the policy requested-by is missing")
 }

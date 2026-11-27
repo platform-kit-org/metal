@@ -60,7 +60,7 @@ Nothing here disrupts the machine, so there is no operation and no approval. To 
 1. Read the endpoint from the API server.
 2. Select the matching profiles. If none matches, withdraw the in-flight identity material and remove `Configured`. A rotated account stays as it is.
 3. Merge the profiles stanza by stanza. Two profiles that set the same stanza differently are a `ProfileConflict`.
-4. Do not write to a BMC that is not `Verified`. The wrong-box guard holds every lane that writes.
+4. Do not write to a BMC that is not `Verified`. The wrong-box guard holds every part that writes.
 5. Credentials: rotate the account of the operator when it is due (see below).
 6. NTP: set the time servers if they differ.
 7. Identity: get a certificate for `bmc-<endpoint>.<domain>` from cert-manager and push it to the BMC. It goes last, because a certificate needs a correct clock.
@@ -68,7 +68,7 @@ Nothing here disrupts the machine, so there is no operation and no approval. To 
 
 ## Credential rotation
 
-The lane rotates the account of the operator. The factory credentials in `spec.credentialsRef` stay as a break-glass login.
+The `credentials` part of the profile rotates the account of the operator. The factory credentials in `spec.credentialsRef` stay as a break-glass login.
 
 1. Generate a new password. Park it in the managed Secret as a candidate, next to the working one.
 2. Set it on the BMC, through the managed login or the factory login.
@@ -106,7 +106,7 @@ The push memory is a server-side apply, not an update. An update from a stale ca
 | Condition | Status | Reasons |
 | --- | --- | --- |
 | `Configured` | True | `InSync` |
-| `Configured` | False | `ProfileConflict`, `RotationFailed`, `NTPFailed`, and the reasons of the identity lane |
+| `Configured` | False | `ProfileConflict`, `RotationFailed`, `NTPFailed`, and the reasons of the `tls` part |
 | `Configured` | Unknown | `AwaitingVerification` |
 
 ## Failure modes

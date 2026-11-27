@@ -21,14 +21,14 @@ const boxes = [
 
 <Figure
   title="The operator merges the EndpointProfiles that match an endpoint. When the endpoint is verified, it applies credentials, then NTP, then TLS."
-  caption="The lanes of an EndpointProfile. The operator applies them in this order."
+  caption="The parts of an EndpointProfile. The operator applies them in this order."
   width={798}
   height={150}
   wide
 >
   {boxes.map((b, i) => <Box x={xs[i]} y={y} w={w} h={h} label={b.label} sub={b.sub} variant={'variant' in b ? b.variant : undefined} />)}
   {xs.slice(0, -1).map((x, i) => <Edge points={[[x + w, mid], [xs[i + 1], mid]]} />)}
-  <Box x={xs[2]} y={104} w={xs[4] + w - xs[2]} h={36} label="Configured is True when all lanes agree with the BMC" variant="ok" />
-  <text class="t-small t-label" x={xs[0]} y={120} text-anchor="start">The first lane that is not complete</text>
+  <Box x={xs[2]} y={104} w={xs[4] + w - xs[2]} h={36} label="Configured is True when all parts agree with the BMC" variant="ok" />
+  <text class="t-small t-label" x={xs[0]} y={120} text-anchor="start">The first part that is not complete</text>
   <text class="t-small t-label" x={xs[0]} y={136} text-anchor="start">gives the reason of Configured.</text>
 </Figure>

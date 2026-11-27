@@ -181,7 +181,7 @@ The API server takes your groups from your credential:
 | Credential | Where the group comes from |
 | --- | --- |
 | Client certificate | Each `O=` of the subject is a group. Issue the certificate with `O=pk-metal:admins`. |
-| OIDC token | The groups claim of your identity provider. Put the person in a group with the name `pk-metal:admins`, or add a prefix and set that name in the ConfigMap. |
+| OIDC token | A group in the token of your identity provider. Put the person in a group with the name `pk-metal:admins`, or add a prefix and set that name in the ConfigMap. |
 | Impersonation | `kubectl --as=<you> --as-group=pk-metal:admins`. You need the `impersonate` verb on users and groups. The virtual lab uses this: `mise run lab:apply`. |
 
 Read your groups:

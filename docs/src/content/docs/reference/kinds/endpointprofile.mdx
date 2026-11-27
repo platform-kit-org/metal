@@ -47,11 +47,11 @@ It writes to the BMC only when the endpoint has the condition `Verified`. Thus t
 The result is the condition `Configured` on the [](kind:ManagementEndpoint).
 
 A profile is one of the three types of [convergence](concept:convergence). A [](kind:BiosProfile) and a [](kind:FirmwareProfile) change the machine, and they need an approved [](kind:HostOperation). An EndpointProfile does not.
-[](flow:credential-rotation) shows the credentials lane step by step.
+[](flow:credential-rotation) shows the credentials part step by step.
 
-## The three lanes
+## The three parts
 
-Each part of the spec is one lane. A lane is active only when the profile has that part.
+Each part of the spec works alone. A part is active only when the profile has it.
 
 <dl>
   <dt>`credentials`</dt>
@@ -93,7 +93,7 @@ The condition is on the ManagementEndpoint. It is absent when no profile selects
 
 | Status | Reason | Meaning |
 | --- | --- | --- |
-| True | `InSync` | The BMC has the configuration of all lanes. |
+| True | `InSync` | The BMC has the configuration of all parts. |
 | Unknown | `AwaitingVerification` | A profile selects the endpoint, but the endpoint is not `Verified`. |
 | False | `ProfileConflict` | Two profiles on the same layer do not agree. |
 | False | `RotationFailed` | The operator could not set a password that works. The old password stays. |

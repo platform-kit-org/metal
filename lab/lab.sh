@@ -2186,12 +2186,14 @@ EOF
 # The secrets bundle, the kubeconfigs, the disks and the image cache stay out.
 collect() {
   local root=$1 lab_dir=$2 fleet=$3
-  local out=$lab_dir/diagnostics state_dir log
+  local out=$lab_dir/diagnostics state_dir log taps=()
   rm -rf "$out"
   mkdir -p "$out"
   step "collecting diagnostics into $out"
 
-  "$root/lab/net.sh" status >"$out/network.txt" 2>&1 || true
+  # net.sh status checks only the taps it is given.
+  mapfile -t taps <"$(dirname "$fleet")/taps" || true
+  "$root/lab/net.sh" status "${taps[@]}" >"$out/network.txt" 2>&1 || true
   cp "$lab_dir/fleet.log" "$out/" 2>/dev/null || true
   state_dir=$(fleet_state_dir "$root" "$fleet")
   if [[ -d $state_dir ]]; then

@@ -42,6 +42,7 @@ import (
 
 	"github.com/dennisklein/platform-kit/metal/internal/bmc"
 	"github.com/dennisklein/platform-kit/metal/internal/poll"
+	"github.com/dennisklein/platform-kit/metal/internal/redact"
 )
 
 type Config struct {
@@ -179,7 +180,8 @@ func Connect(ctx context.Context, cfg Config) (bmc.Client, error) {
 	hc := &http.Client{Transport: g}
 	fail := func(err error) (bmc.Client, error) {
 		t.CloseIdleConnections()
-		return nil, fmt.Errorf("bmc: connect %s: %w", cfg.Endpoint, err)
+		// A refused login can echo the password.
+		return nil, redact.Error(fmt.Errorf("bmc: connect %s: %w", cfg.Endpoint, err), cfg.Password)
 	}
 
 	// The service root is public: it is read before any credential is sent,

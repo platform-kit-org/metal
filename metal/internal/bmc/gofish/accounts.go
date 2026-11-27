@@ -9,6 +9,8 @@ import (
 	"slices"
 
 	"github.com/stmcginnis/gofish/schemas"
+
+	"github.com/dennisklein/platform-kit/metal/internal/redact"
 )
 
 // accountRole is the role every account this client creates gets: the
@@ -30,7 +32,14 @@ const accountRole = "Administrator"
 //
 // Raw writes, not gofish's typed helpers — the payload must be exactly the
 // properties named here, nothing a schema round-trip might add.
+//
+// The error text is masked as InsertMedia does: a service that refuses the
+// write can echo the new password in MessageArgs.
 func (c *client) EnsureAccount(ctx context.Context, username, password string) error {
+	return redact.Error(c.ensureAccount(username, password), password)
+}
+
+func (c *client) ensureAccount(username, password string) error {
 	c.renew.changed(username)
 	as, err := c.svc.AccountService()
 	if err != nil {

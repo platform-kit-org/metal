@@ -3,11 +3,14 @@ title: Assert and observe
 description: You write what must be true. The operator writes what it finds. The two never mix.
 type: concept
 xref: { cat: concept, id: assert-vs-observe }
+redirectFrom: [concepts/identity/]
 sidebar:
   order: 2
 sources:
   - /repo/metal/api/v1alpha1/asset_types.go
   - /repo/metal/api/v1alpha1/host_types.go
+  - /repo/metal/internal/identity/identity.go
+  - /repo/metal/internal/controller/managementendpoint_controller.go
 ---
 
 import Figure from '../../../components/diagram/Figure.astro';
@@ -46,11 +49,26 @@ The operator observes facts and writes them in its own objects and in each `stat
   <dd>The part of an object that holds observations. Only the operator writes it.</dd>
 </dl>
 
-## When they disagree
+## The identity of a machine
 
-The operator does not guess which side is correct.
-If the serial number in the Asset is not the serial number that the BMC reports, the operator stops for that machine.
-See [](concept:identity) and [](rb:host-mismatch).
+A machine has one identity: its serial number.
+Two independent sources give it: you, in the [](kind:Asset), and the BMC, through Redfish. The operator continues only when they agree.
+The operator does not guess which side is correct. If they disagree, the endpoint goes to `Mismatch`, and nothing happens to the machine. See [](rb:host-mismatch).
+
+<dl>
+  <dt>Serial anchor</dt>
+  <dd>The serial number that the operator reads for a vendor. A Supermicro system gives the board serial. A Huawei system gives the chassis serial.</dd>
+  <dt>Host name</dt>
+  <dd>The serial anchor in lower case. Each path to the same machine gives the same [](kind:Host). If the facts of two paths differ, the Host shows `Inspected=False` with `IdentityDiverged`, and the operator holds it.</dd>
+  <dt>Verified</dt>
+  <dd>The condition that says that the two sources agree. `False` with `SerialMismatch`: the serials differ. `False` with `MACMismatch`: the BMC at the ledger address reports a different MAC address, so the ledger points to another machine.</dd>
+</dl>
+
+Why two sources:
+
+- A wrong cable or a wrong ledger line can point an Asset to another machine.
+- If the operator trusted one source, it could install the wrong machine.
+- The identity does not use the address, the endpoint name or the BMC firmware.
 
 ## Why it helps
 

@@ -4,6 +4,7 @@ description: Find what is wrong with the etcd of a cluster and restore it - one 
 type: howto
 day: 2
 xref: { cat: howto, id: restore-etcd }
+redirectFrom: [workflows/disaster-recovery/]
 sidebar:
   order: 13
 sources:
@@ -26,6 +27,11 @@ Bring back the etcd of a cluster with the minimum data loss.
 - A person with `pk-metal-approver` can approve. That is you, if your site allows self-approval. If not, it is a second person. See [](howto:approval-permissions).
 - For a lost majority: you have an age identity that can decrypt the snapshot, and a verified snapshot exists.
 - The operator never restores and never bootstraps again by itself.
+
+<Callout type="warning">
+Do not delete and write the TalosCluster again to repair etcd.
+A new TalosCluster gets a new, empty etcd, and you lose all workloads.
+</Callout>
 
 ## Find the case
 

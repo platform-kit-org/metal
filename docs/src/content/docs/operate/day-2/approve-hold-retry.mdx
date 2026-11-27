@@ -80,6 +80,8 @@ The command reads the operation again after your answer. If the plan changed, it
 ## Hold a claim
 
 A hold stops new proposals for one [](kind:HostClaim). Nothing on the machine changes.
+To say no to a proposed operation, hold the claim, or remove `spec.os` from the claim.
+If you delete a proposed operation, the operator proposes the same plan again.
 
 <Steps>
 
@@ -161,5 +163,5 @@ Do not delete a running operation to stop it. A deletion stops it too, but it un
 ## Related
 
 - [](cli:approve), [](cli:hold), [](cli:unhold), [](cli:retry), [](cli:abort)
-- [](concept:approval) and [](flow:approval-flow)
+- [](concept:approval)
 - [](kind:HostOperation)

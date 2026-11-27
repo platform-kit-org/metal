@@ -47,7 +47,7 @@ It writes to the BMC only when the endpoint has the condition `Verified`. Thus t
 The result is the condition `Configured` on the [](kind:ManagementEndpoint).
 
 A profile is one of the three types of [convergence](concept:convergence). A [](kind:BiosProfile) and a [](kind:FirmwareProfile) change the machine, and they need an approved [](kind:HostOperation). An EndpointProfile does not.
-[](flow:credential-rotation) shows the credentials lane step by step.
+[](howto:rotate-bmc-credentials) shows the credentials lane step by step.
 
 ## The three lanes
 
@@ -174,6 +174,6 @@ When you delete a profile, the operator stops the work on the BMCs that it selec
 
 ## Tasks
 
-- [](flow:credential-rotation)
+- [](howto:rotate-bmc-credentials)
 - [](howto:enroll-hosts)
 - [](rb:bmc-unreachable)

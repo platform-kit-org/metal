@@ -50,7 +50,7 @@ Only a person with a private key can decrypt it, on that person's own machine.
 1. A snapshot needs no approval. It reads etcd and changes no machine.
 2. Retention removes old snapshots, but never the newest Verified snapshot.
 3. The operator refuses a PVC sink for the cluster that it runs on, with `SinkRefused`. The cluster takes that volume with it when it fails.
-4. The operator never restores by itself. A restore is approved operations, see [](flow:disaster-recovery).
+4. The operator never restores by itself. A restore is approved operations, see [](howto:restore-etcd).
 5. The operator never bootstraps a cluster two times.
 
 <Callout type="warning">
@@ -66,3 +66,4 @@ It holds each Secret of the cluster in plain text.
 ## Do it
 
 - [](howto:back-up-etcd)
+- [](howto:restore-etcd)

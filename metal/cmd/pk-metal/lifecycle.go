@@ -56,7 +56,7 @@ MAC address fits one machine only: edit those to the new machine's values
 before replace, or the install finds no disk and the node no link.
 
 For hardware that still works, add the new node first and remove the old
-one after (see https://metal.platform-kit.org/workflows/add-and-remove-nodes/):
+one after (see https://metal.platform-kit.org/operate/day-2/replace-a-node/):
 etcd then never runs short.`
 	verbHelp["scale"] = `
 scale prints the plan that takes a cluster to the given number of control

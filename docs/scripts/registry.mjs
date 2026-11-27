@@ -27,7 +27,6 @@ const pathRule = {
   lab: (id) => `reference/lab/tasks/#${id}`,
   ref: (id) => `reference/${id}/`,
   concept: (id) => `concepts/${id}/`,
-  flow: (id) => `workflows/${id}/`,
   howto: (id) => `operate/${id}/`,
   rb: (id) => `operate/runbooks/${id}/`,
   tut: (id) => `learn/${id}/`,

@@ -11,7 +11,7 @@ export const collections = {
       extend: z.object({
         /** Page type. It selects the page template and the checks in scripts/check-pages.mjs. */
         type: z
-          .enum(['landing', 'start', 'kind', 'controller', 'cli', 'lab', 'concept', 'workflow', 'howto', 'runbook', 'tutorial', 'reference', 'project'])
+          .enum(['landing', 'start', 'kind', 'controller', 'cli', 'lab', 'concept', 'howto', 'runbook', 'tutorial', 'reference', 'project'])
           .optional(),
         /**
          * The category link id of this page: `[](kind:Host)` resolves to the page with `{cat: kind, id: Host}`.

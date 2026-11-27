@@ -28,7 +28,7 @@ follow [Day 2](https://metal.platform-kit.org/operate/day-2/).
   machine is powered off. For a machine that runs its node, that waits for an
   approval too. `kubectl delete -f .lab/generated/manifests/` does this to
   every lab machine. It is not "remove from the inventory". Adding, removing
-  and replacing nodes: [Add and remove nodes](https://metal.platform-kit.org/workflows/add-and-remove-nodes/).
+  and replacing nodes: [Node lifecycle](https://metal.platform-kit.org/concepts/node-lifecycle/).
 
 ## What runs where
 
@@ -357,7 +357,7 @@ What `lab:backup-restore` does:
    `dr-after` is not.
 
 The procedure for a real site, and the other cases, are in
-[Disaster recovery](https://metal.platform-kit.org/workflows/disaster-recovery/).
+[Restore etcd](https://metal.platform-kit.org/operate/day-2/restore-etcd/).
 
 ## A one-slot BMC
 

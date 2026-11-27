@@ -44,7 +44,7 @@ type glossaryTerm struct {
 
 var (
 	glossaryID    = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
-	glossarySee   = regexp.MustCompile(`^(kind|ctrl|act|cli|lab|ref|concept|flow|howto|rb|tut):[A-Za-z0-9/_.#-]+$`)
+	glossarySee   = regexp.MustCompile(`^(kind|ctrl|act|cli|lab|ref|concept|howto|rb|tut):[A-Za-z0-9/_.#-]+$`)
 	glossaryKinds = []string{"noun", "verb", "api-kind", "abbr", "tool", "phase", "annotation"}
 	glossaryGuard = []string{"not_before", "not_after", "only_after"}
 )
@@ -96,7 +96,7 @@ func checkGlossary(path string) error {
 			bad(t.ID, "an abbr needs its expansion in abbr")
 		}
 		if !glossarySee.MatchString(t.See) {
-			bad(t.ID, "see %q is not a category link (kind:, ctrl:, act:, cli:, lab:, concept:, flow:, howto:, rb:, tut:)", t.See)
+			bad(t.ID, "see %q is not a category link (kind:, ctrl:, act:, cli:, lab:, concept:, howto:, rb:, tut:)", t.See)
 		}
 		if t.Scope != "" && t.Scope != "page" {
 			bad(t.ID, "scope %q is not page (leave it out to link once in each section)", t.Scope)

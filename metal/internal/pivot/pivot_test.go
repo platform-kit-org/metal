@@ -382,6 +382,18 @@ func TestRunResumedKeepsTheSourcePaused(t *testing.T) {
 	assert.NotContains(t, err.Error(), m.resumeSourceCommand())
 }
 
+// A move reads one cluster and writes another: an error names the cluster
+// that refused, so that the person knows which kubeconfig lacks a right.
+func TestInstallNamesTheClusterThatRefuses(t *testing.T) {
+	m := fakeMover(t, operatorObjects(1, nil), nil)
+	m.Source.Client = interceptor.NewClient(m.Source.Client.(client.WithWatch), interceptor.Funcs{
+		List: func(context.Context, client.WithWatch, client.ObjectList, ...client.ListOption) error {
+			return errors.New("forbidden")
+		},
+	})
+	require.ErrorContains(t, m.Install(context.Background()), "list CustomResourceDefinition on kind: forbidden")
+}
+
 func TestPauseWaitsForTheLease(t *testing.T) {
 	ctx := context.Background()
 	held := &coordinationv1.Lease{

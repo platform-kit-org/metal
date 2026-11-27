@@ -20,6 +20,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
@@ -30,41 +31,122 @@ var crdGVK = schema.GroupVersionKind{Group: "apiextensions.k8s.io", Version: "v1
 // operatorGroups are the API groups of the operator's own kinds.
 var operatorGroups = []string{metalv1alpha1.GroupVersion.Group, osv1alpha1.GroupVersion.Group}
 
+// copyStep is one kind that Install copies from the source as it is there.
+type copyStep struct {
+	gvk schema.GroupVersionKind
+	// namespaced: only the objects in the operator namespace move.
+	namespaced bool
+	// keep selects the objects that move; nil moves all of them.
+	keep func(*unstructured.Unstructured) bool
+	// drop names the fields that belong to the source cluster.
+	drop [][]string
+}
+
+// operatorNamed: the cluster-wide RBAC names the operator, so it carries
+// its prefix.
+func operatorNamed(u *unstructured.Unstructured) bool {
+	return strings.HasPrefix(u.GetName(), "pk-metal")
+}
+
+// installSteps are the kinds that Install copies after the namespaces: the
+// cluster-wide RBAC (the manager's roles, the approver role and their
+// bindings), then in the operator namespace the service accounts, the roles,
+// the Services and the NetworkPolicies.
+var installSteps = []copyStep{
+	{gvk: rbacv1.SchemeGroupVersion.WithKind("ClusterRole"), keep: operatorNamed},
+	{gvk: rbacv1.SchemeGroupVersion.WithKind("ClusterRoleBinding"), keep: operatorNamed},
+	// A token Secret of a service account is the source's.
+	{gvk: corev1.SchemeGroupVersion.WithKind("ServiceAccount"), namespaced: true, drop: [][]string{{"secrets"}},
+		keep: func(u *unstructured.Unstructured) bool { return u.GetName() != "default" }},
+	{gvk: rbacv1.SchemeGroupVersion.WithKind("Role"), namespaced: true},
+	{gvk: rbacv1.SchemeGroupVersion.WithKind("RoleBinding"), namespaced: true},
+	// Addresses belong to the source's service network.
+	{gvk: corev1.SchemeGroupVersion.WithKind("Service"), namespaced: true,
+		drop: [][]string{{"spec", "clusterIP"}, {"spec", "clusterIPs"}, {"spec", "ipFamilies"}, {"spec", "ipFamilyPolicy"}}},
+	// The media port answers the BMC network only, on the target as on the
+	// source.
+	{gvk: networkingv1.SchemeGroupVersion.WithKind("NetworkPolicy"), namespaced: true},
+}
+
 // Install puts the operator onto the target, from what runs on the source:
 // the same manifests the source was installed with, read back from its API
 // server. The order is the one a fresh install needs: the CRDs (and the wait
-// until they are served), the admission policies, the cluster-wide RBAC, the
-// operator namespace, and in it the service account, roles, the policies'
-// parameters, the Services, the NetworkPolicies, the claims the manager mounts (empty: their
-// contents do not move) and the manager's Deployment at zero replicas.
-// Every object is applied server-side, so a rerun changes only what differs.
+// until they are served), the admission policies, the namespaces and the
+// policies' parameters, the installSteps, the claims the manager mounts
+// (empty: their contents do not move) and the manager's Deployment at zero
+// replicas. Every object is applied server-side, so a rerun changes only
+// what differs.
 func (m *Mover) Install(ctx context.Context) error {
 	o := m.Options
 	src := m.Source.Client
+	if err := m.installCRDs(ctx); err != nil {
+		return err
+	}
 
-	crds, err := listUnstructured(ctx, src, crdGVK)
+	// The admission policies guard the operator's kinds; their bindings name
+	// their parameters, which live in a namespace.
+	params := map[types.NamespacedName]bool{}
+	policies := 0
+	for _, kind := range []string{"ValidatingAdmissionPolicy", "MutatingAdmissionPolicy"} {
+		n, err := m.installPolicies(ctx, kind, params)
+		if err != nil {
+			return err
+		}
+		policies += n
+	}
+	m.logf("installed %d admission policies", policies)
+
+	if err := m.installNamespaces(ctx, params); err != nil {
+		return err
+	}
+	for _, s := range installSteps {
+		if _, err := m.copyKind(ctx, s); err != nil {
+			return err
+		}
+	}
+
+	claims, err := m.claimMoves(ctx)
 	if err != nil {
 		return err
 	}
-	var names []string
-	for i := range crds {
-		group, _, _ := unstructured.NestedString(crds[i].Object, "spec", "group")
-		if !slices.Contains(operatorGroups, group) {
+	for _, c := range claims {
+		if c.Action != ClaimCreate {
 			continue
 		}
-		if err := m.apply(ctx, &crds[i]); err != nil {
+		if err := m.applyTyped(ctx, targetClaim(c)); err != nil {
 			return err
 		}
-		names = append(names, crds[i].GetName())
+		m.logf("made PersistentVolumeClaim %s/%s, empty", o.Namespace, c.Name)
 	}
-	if len(names) == 0 {
+	d := &appsv1.Deployment{}
+	if err := src.Get(ctx, client.ObjectKey{Namespace: o.Namespace, Name: o.Deployment}, d); err != nil {
+		return fmt.Errorf("read Deployment %s/%s on %s: %w", o.Namespace, o.Deployment, m.Source.Name, err)
+	}
+	if err := m.applyTyped(ctx, managerForTarget(d, o.Image, o.MediaURL, claims)); err != nil {
+		return err
+	}
+	m.logf("installed the operator in namespace %s (Deployment %s at 0 replicas)", o.Namespace, o.Deployment)
+	return nil
+}
+
+// installCRDs copies the CRDs of the operator's groups, and waits until the
+// target serves them.
+func (m *Mover) installCRDs(ctx context.Context) error {
+	crds, err := m.copyKind(ctx, copyStep{gvk: crdGVK, keep: func(u *unstructured.Unstructured) bool {
+		group, _, _ := unstructured.NestedString(u.Object, "spec", "group")
+		return slices.Contains(operatorGroups, group)
+	}})
+	if err != nil {
+		return err
+	}
+	if len(crds) == 0 {
 		return fmt.Errorf("%s serves none of the operator's CRDs", m.Source.Name)
 	}
 	if err := m.wait(ctx, "the CRDs to be served on "+m.Target.Name, func(ctx context.Context) (bool, error) {
-		for _, n := range names {
+		for i := range crds {
 			crd := &unstructured.Unstructured{}
 			crd.SetGroupVersionKind(crdGVK)
-			if err := m.Target.Client.Get(ctx, client.ObjectKey{Name: n}, crd); err != nil {
+			if err := m.Target.Client.Get(ctx, client.ObjectKey{Name: crds[i].GetName()}, crd); err != nil {
 				return false, client.IgnoreNotFound(err)
 			}
 			if !crdEstablished(crd) {
@@ -75,74 +157,49 @@ func (m *Mover) Install(ctx context.Context) error {
 	}); err != nil {
 		return err
 	}
-	m.logf("installed %d CRDs", len(names))
+	m.logf("installed %d CRDs", len(crds))
+	return nil
+}
 
-	// The admission policies guard the operator's kinds; their bindings name
-	// their parameters, which live in a namespace.
-	policies := &admissionregistrationv1.ValidatingAdmissionPolicyList{}
-	if err := src.List(ctx, policies); err != nil {
-		return err
+// installPolicies copies the admission policies of kind (validating or
+// mutating) that guard the operator's objects, and their bindings, and adds
+// the parameters the bindings name to params. It returns how many policies
+// it copied. A source that does not serve the kind (a mutating one before
+// Kubernetes 1.36) has none to copy.
+func (m *Mover) installPolicies(ctx context.Context, kind string, params map[types.NamespacedName]bool) (int, error) {
+	gv := admissionregistrationv1.SchemeGroupVersion
+	policies, err := m.copyKind(ctx, copyStep{gvk: gv.WithKind(kind), keep: func(u *unstructured.Unstructured) bool {
+		raw, _, _ := unstructured.NestedMap(u.Object, "spec", "matchConstraints")
+		match := &admissionregistrationv1.MatchResources{}
+		return runtime.DefaultUnstructuredConverter.FromUnstructured(raw, match) == nil && guardsOperator(match)
+	}})
+	if meta.IsNoMatchError(err) || apierrors.IsNotFound(err) {
+		return 0, nil
+	} else if err != nil {
+		return 0, err
 	}
-	var policyNames []string
-	for i := range policies.Items {
-		if guardsOperator(policies.Items[i].Spec.MatchConstraints) {
-			if err := m.applyTyped(ctx, &policies.Items[i], "ValidatingAdmissionPolicy"); err != nil {
-				return err
-			}
-			policyNames = append(policyNames, policies.Items[i].Name)
-		}
-	}
-	bindings := &admissionregistrationv1.ValidatingAdmissionPolicyBindingList{}
-	if err := src.List(ctx, bindings); err != nil {
-		return err
-	}
-	params := map[types.NamespacedName]bool{}
-	for i := range bindings.Items {
-		b := &bindings.Items[i]
-		if !slices.Contains(policyNames, b.Spec.PolicyName) {
-			continue
-		}
-		if err := m.applyTyped(ctx, b, "ValidatingAdmissionPolicyBinding"); err != nil {
-			return err
-		}
-		if p := b.Spec.ParamRef; p != nil && p.Name != "" && p.Namespace != "" {
-			params[types.NamespacedName{Namespace: p.Namespace, Name: p.Name}] = true
-		}
-	}
-	stamps, err := m.installMutatingPolicies(ctx)
+	bindings, err := m.copyKind(ctx, copyStep{gvk: gv.WithKind(kind + "Binding"), keep: func(u *unstructured.Unstructured) bool {
+		policy, _, _ := unstructured.NestedString(u.Object, "spec", "policyName")
+		return slices.ContainsFunc(policies, func(p unstructured.Unstructured) bool { return p.GetName() == policy })
+	}})
 	if err != nil {
-		return err
+		return 0, err
 	}
-	m.logf("installed %d admission policies", len(policyNames)+stamps)
-
-	// Cluster-wide RBAC: the manager's roles, the approver role, and their
-	// bindings. They name the operator, so they carry its prefix.
-	crs := &rbacv1.ClusterRoleList{}
-	if err := src.List(ctx, crs); err != nil {
-		return err
-	}
-	for i := range crs.Items {
-		if strings.HasPrefix(crs.Items[i].Name, "pk-metal") {
-			if err := m.applyTyped(ctx, &crs.Items[i], "ClusterRole"); err != nil {
-				return err
-			}
+	for i := range bindings {
+		ns, _, _ := unstructured.NestedString(bindings[i].Object, "spec", "paramRef", "namespace")
+		name, _, _ := unstructured.NestedString(bindings[i].Object, "spec", "paramRef", "name")
+		if ns != "" && name != "" {
+			params[types.NamespacedName{Namespace: ns, Name: name}] = true
 		}
 	}
-	crbs := &rbacv1.ClusterRoleBindingList{}
-	if err := src.List(ctx, crbs); err != nil {
-		return err
-	}
-	for i := range crbs.Items {
-		if strings.HasPrefix(crbs.Items[i].Name, "pk-metal") {
-			if err := m.applyTyped(ctx, &crbs.Items[i], "ClusterRoleBinding"); err != nil {
-				return err
-			}
-		}
-	}
+	return len(policies), nil
+}
 
-	// The namespaces: the operator's, marked as moved here from the
-	// source, and the ones the policy parameters live in.
-	namespaces := []string{o.Namespace}
+// installNamespaces copies the namespaces, the operator's (marked as moved
+// here from the source) and the ones the policies' parameters live in, then
+// the parameters.
+func (m *Mover) installNamespaces(ctx context.Context, params map[types.NamespacedName]bool) error {
+	namespaces := []string{m.Options.Namespace}
 	for p := range params {
 		if !slices.Contains(namespaces, p.Namespace) {
 			namespaces = append(namespaces, p.Namespace)
@@ -150,106 +207,54 @@ func (m *Mover) Install(ctx context.Context) error {
 	}
 	for _, n := range namespaces {
 		ns := &corev1.Namespace{}
-		if err := src.Get(ctx, client.ObjectKey{Name: n}, ns); err != nil {
-			return err
+		if err := m.Source.Client.Get(ctx, client.ObjectKey{Name: n}, ns); err != nil {
+			return fmt.Errorf("read namespace %s on %s: %w", n, m.Source.Name, err)
 		}
 		ns.Annotations = nil
-		if err := m.applyTyped(ctx, ns, "Namespace"); err != nil {
+		if err := m.applyTyped(ctx, ns); err != nil {
 			return err
 		}
 	}
 	if err := m.markNamespace(ctx, m.Target, map[string]any{AnnotationSource: m.sourceID, AnnotationMovedTo: nil}); err != nil {
 		return err
 	}
-
-	// In the operator namespace: the service account, its roles, the
-	// policies' parameters, the Services, and the Deployment.
-	sas := &corev1.ServiceAccountList{}
-	if err := src.List(ctx, sas, client.InNamespace(o.Namespace)); err != nil {
-		return err
-	}
-	for i := range sas.Items {
-		if sas.Items[i].Name == "default" {
-			continue
-		}
-		sas.Items[i].Secrets = nil
-		if err := m.applyTyped(ctx, &sas.Items[i], "ServiceAccount"); err != nil {
-			return err
-		}
-	}
-	roles := &rbacv1.RoleList{}
-	if err := src.List(ctx, roles, client.InNamespace(o.Namespace)); err != nil {
-		return err
-	}
-	for i := range roles.Items {
-		if err := m.applyTyped(ctx, &roles.Items[i], "Role"); err != nil {
-			return err
-		}
-	}
-	rbs := &rbacv1.RoleBindingList{}
-	if err := src.List(ctx, rbs, client.InNamespace(o.Namespace)); err != nil {
-		return err
-	}
-	for i := range rbs.Items {
-		if err := m.applyTyped(ctx, &rbs.Items[i], "RoleBinding"); err != nil {
-			return err
-		}
-	}
 	for p := range params {
 		cm := &corev1.ConfigMap{}
-		if err := src.Get(ctx, client.ObjectKey(p), cm); err != nil {
-			return fmt.Errorf("the admission policies' parameters %s: %w", p, err)
+		if err := m.Source.Client.Get(ctx, client.ObjectKey(p), cm); err != nil {
+			return fmt.Errorf("read the admission policies' parameters %s on %s: %w", p, m.Source.Name, err)
 		}
-		if err := m.applyTyped(ctx, cm, "ConfigMap"); err != nil {
+		if err := m.applyTyped(ctx, cm); err != nil {
 			return err
 		}
 	}
-	svcs := &corev1.ServiceList{}
-	if err := src.List(ctx, svcs, client.InNamespace(o.Namespace)); err != nil {
-		return err
+	return nil
+}
+
+// copyKind applies to the target each object of one kind on the source that
+// s keeps, without the fields s drops, and returns them.
+func (m *Mover) copyKind(ctx context.Context, s copyStep) ([]unstructured.Unstructured, error) {
+	var opts []client.ListOption
+	if s.namespaced {
+		opts = append(opts, client.InNamespace(m.Options.Namespace))
 	}
-	for i := range svcs.Items {
-		svc := &svcs.Items[i]
-		// Addresses belong to the source's service network.
-		svc.Spec.ClusterIP, svc.Spec.ClusterIPs = "", nil
-		svc.Spec.IPFamilies, svc.Spec.IPFamilyPolicy = nil, nil
-		if err := m.applyTyped(ctx, svc, "Service"); err != nil {
-			return err
-		}
-	}
-	// The NetworkPolicies: the media port answers the BMC network only, on
-	// the target as on the source.
-	netPolicies := &networkingv1.NetworkPolicyList{}
-	if err := src.List(ctx, netPolicies, client.InNamespace(o.Namespace)); err != nil {
-		return err
-	}
-	for i := range netPolicies.Items {
-		if err := m.applyTyped(ctx, &netPolicies.Items[i], "NetworkPolicy"); err != nil {
-			return err
-		}
-	}
-	claims, err := m.claimMoves(ctx)
+	items, err := listKind(ctx, m.Source, s.gvk, opts...)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	for _, c := range claims {
-		if c.Action != ClaimCreate {
+	var out []unstructured.Unstructured
+	for i := range items {
+		if s.keep != nil && !s.keep(&items[i]) {
 			continue
 		}
-		if err := m.applyTyped(ctx, targetClaim(c), "PersistentVolumeClaim"); err != nil {
-			return err
+		for _, f := range s.drop {
+			unstructured.RemoveNestedField(items[i].Object, f...)
 		}
-		m.logf("made PersistentVolumeClaim %s/%s, empty", o.Namespace, c.Name)
+		if err := m.apply(ctx, &items[i]); err != nil {
+			return nil, err
+		}
+		out = append(out, items[i])
 	}
-	d := &appsv1.Deployment{}
-	if err := src.Get(ctx, client.ObjectKey{Namespace: o.Namespace, Name: o.Deployment}, d); err != nil {
-		return err
-	}
-	if err := m.applyTyped(ctx, managerForTarget(d, o.Image, o.MediaURL, claims), "Deployment"); err != nil {
-		return err
-	}
-	m.logf("installed the operator in namespace %s (Deployment %s at 0 replicas)", o.Namespace, o.Deployment)
-	return nil
+	return out, nil
 }
 
 // managerForTarget is the source's Deployment as the target runs it: at zero
@@ -293,41 +298,6 @@ func managerForTarget(src *appsv1.Deployment, image, mediaURL string, claims []C
 		})
 	}
 	return d
-}
-
-// installMutatingPolicies copies the MutatingAdmissionPolicies on the
-// operator's objects and their bindings, such as requested-by-stamp, and
-// returns how many policies it copied. A source that does not serve them
-// (before Kubernetes 1.36) has none to copy.
-func (m *Mover) installMutatingPolicies(ctx context.Context) (int, error) {
-	src := m.Source.Client
-	policies := &admissionregistrationv1.MutatingAdmissionPolicyList{}
-	if err := src.List(ctx, policies); meta.IsNoMatchError(err) || apierrors.IsNotFound(err) {
-		return 0, nil
-	} else if err != nil {
-		return 0, err
-	}
-	var names []string
-	for i := range policies.Items {
-		if guardsOperator(policies.Items[i].Spec.MatchConstraints) {
-			if err := m.applyTyped(ctx, &policies.Items[i], "MutatingAdmissionPolicy"); err != nil {
-				return 0, err
-			}
-			names = append(names, policies.Items[i].Name)
-		}
-	}
-	bindings := &admissionregistrationv1.MutatingAdmissionPolicyBindingList{}
-	if err := src.List(ctx, bindings); err != nil {
-		return 0, err
-	}
-	for i := range bindings.Items {
-		if slices.Contains(names, bindings.Items[i].Spec.PolicyName) {
-			if err := m.applyTyped(ctx, &bindings.Items[i], "MutatingAdmissionPolicyBinding"); err != nil {
-				return 0, err
-			}
-		}
-	}
-	return len(names), nil
 }
 
 // guardsOperator: the policy matches a resource of the operator's groups,
@@ -378,37 +348,32 @@ func crdEstablished(crd *unstructured.Unstructured) bool {
 	return false
 }
 
-func listUnstructured(ctx context.Context, c client.Client, gvk schema.GroupVersionKind, opts ...client.ListOption) ([]unstructured.Unstructured, error) {
+// listKind lists the objects of one kind on c.
+func listKind(ctx context.Context, c *Cluster, gvk schema.GroupVersionKind, opts ...client.ListOption) ([]unstructured.Unstructured, error) {
 	list := &unstructured.UnstructuredList{}
 	list.SetGroupVersionKind(gvk.GroupVersion().WithKind(gvk.Kind + "List"))
-	if err := c.List(ctx, list, opts...); err != nil {
-		return nil, err
+	if err := c.Client.List(ctx, list, opts...); err != nil {
+		return nil, fmt.Errorf("list %s on %s: %w", gvk.Kind, c.Name, err)
+	}
+	for i := range list.Items {
+		list.Items[i].SetGroupVersionKind(gvk)
 	}
 	return list.Items, nil
 }
 
 // applyTyped applies a client-go object read from the source.
-func (m *Mover) applyTyped(ctx context.Context, obj client.Object, kind string) error {
+func (m *Mover) applyTyped(ctx context.Context, obj client.Object) error {
 	raw, err := runtime.DefaultUnstructuredConverter.ToUnstructured(obj)
 	if err != nil {
 		return err
 	}
-	u := &unstructured.Unstructured{Object: raw}
-	gvk, err := apiutilGVK(obj, kind)
+	gvk, err := apiutil.GVKForObject(obj, typedScheme)
 	if err != nil {
 		return err
 	}
+	u := &unstructured.Unstructured{Object: raw}
 	u.SetGroupVersionKind(gvk)
 	return m.apply(ctx, u)
-}
-
-// apiutilGVK names the group and version of a client-go object of kind.
-func apiutilGVK(obj client.Object, kind string) (schema.GroupVersionKind, error) {
-	gvks, _, err := typedScheme.ObjectKinds(obj)
-	if err != nil || len(gvks) == 0 {
-		return schema.GroupVersionKind{}, fmt.Errorf("unknown kind %s: %w", kind, err)
-	}
-	return gvks[0], nil
 }
 
 // apply writes obj to the target server-side, without what the source's API

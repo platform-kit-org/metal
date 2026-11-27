@@ -2,7 +2,7 @@
 // network: it holds nothing and terminates nothing. The operator dials OUT to
 // the tunnel port and registers;
 // inbound BMC fetches on the front port are handed back over the tunnel, and the
-// operator's outbound Redfish dials are passed onward. TLS terminates at the
+// outbound Redfish dials of pk-metal boot are passed onward. TLS terminates at the
 // asset server, never here — the relay splices ciphertext, which is what makes it
 // acceptable to run on a box we don't own.
 //
@@ -18,7 +18,7 @@
 //
 //	REGISTER          -> OK front=<addr>    the control connection (last wins)
 //	ACCEPT <id>       picks up the front stream announced as "STREAM <id>"
-//	DIAL <host:port>  -> OK | ERR <why>     the operator's Redfish path onward,
+//	DIAL <host:port>  -> OK | ERR <why>     boot's Redfish path onward,
 //	                                        to targets in the allow list only
 //
 // Everything after a connection's first line is spliced payload. Without the

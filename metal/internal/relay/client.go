@@ -130,7 +130,7 @@ func (a frontTCPAddr) Network() string { return "tcp" }
 func (a frontTCPAddr) String() string  { return string(a) }
 
 // DialOnward opens a TCP connection to hostport as dialed FROM the relay — the
-// operator's outbound Redfish path into the BMC network.
+// Redfish path of pk-metal boot into the BMC network.
 func (c *Client) DialOnward(ctx context.Context, hostport string) (net.Conn, error) {
 	d := net.Dialer{Timeout: handshakeTimeout}
 	conn, err := d.DialContext(ctx, "tcp", c.tunnelAddr)

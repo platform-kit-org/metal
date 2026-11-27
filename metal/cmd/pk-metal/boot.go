@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"log"
+	"net"
 	"os"
 	"time"
 
@@ -84,6 +86,7 @@ func bootCmd(args []string) {
 	defer stop()
 
 	var rc *relay.Client
+	var dial func(ctx context.Context, network, addr string) (net.Conn, error)
 	if *relayAddr != "" {
 		// Read, never created here: boot must hold the secret the relay has.
 		secret, err := relaySecret(*relaySecretFile, false)
@@ -94,9 +97,12 @@ func bootCmd(args []string) {
 			die(err)
 		}
 		log.Printf("boot: registered at relay %s, front %s", *relayAddr, rc.FrontAddr())
+		// The Redfish calls go through the relay too: this host may not
+		// reach the BMC network.
+		dial = func(ctx context.Context, _, addr string) (net.Conn, error) { return rc.DialOnward(ctx, addr) }
 	}
 
-	c := mustConnect(ctx, fs.Arg(0), bf, false) // the ladder mounts, overrides, powers
+	c := mustConnect(ctx, fs.Arg(0), bf, false, dial) // the ladder mounts, overrides, powers
 	defer c.Close()
 
 	res, err := boot.Run(ctx, boot.Options{

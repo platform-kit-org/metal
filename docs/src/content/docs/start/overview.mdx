@@ -62,7 +62,7 @@ The operator never approves. Your site decides if a person can approve their own
 | Architecture | x86-64 machines in UEFI boot mode. |
 | BMC | Redfish with virtual media. No IPMI, no PXE. See [](ref:hardware). |
 | Tested hardware | Simulated BMCs only. See [](ref:status). |
-| Machine selection | You name each machine. No replica count and no autoscaler. |
+| Machine selection | No replica count in the API and no autoscaler. [](cli:scale) picks free Hosts when you run it. |
 | Workloads | The operator installs the cluster. It does not install add-ons or applications. |
 | Operator replicas | One manager. See [Scale and sizing](concept:architecture#scale-and-sizing). |
 | Tested size | One cluster of five virtual machines. |

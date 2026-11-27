@@ -126,16 +126,6 @@ func (s *State) BootOverride(systemID string) (target string, once bool) {
 	return "", false
 }
 
-// BootMode reports a system's BootSourceOverrideMode (test observability).
-func (s *State) BootMode(systemID string) string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if bo := s.boot[systemID]; bo != nil {
-		return bo.mode
-	}
-	return ""
-}
-
 // Resets reports how many boots a system has seen (test observability).
 func (s *State) Resets(systemID string) int {
 	s.mu.Lock()

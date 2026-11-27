@@ -135,7 +135,8 @@ type Options struct {
 
 	// NodeName is the Kubernetes node the manager's pod runs on. When set,
 	// the claim, operation and convergence lanes refuse to reboot the
-	// machines the operator itself runs on (SelfGuard).
+	// machines the operator itself runs on (SelfGuard), and the etcd backup
+	// lane refuses a pvc sink for the cluster the operator runs on.
 	NodeName string
 }
 

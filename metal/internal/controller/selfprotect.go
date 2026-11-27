@@ -314,26 +314,17 @@ func (g *SelfGuard) Check(ctx context.Context, host *metalv1alpha1.Host) (string
 	if host.Spec.OS == nil {
 		return "", nil
 	}
-	nodes := &osv1alpha1.TalosNodeList{}
-	if err := g.Reader.List(ctx, nodes); err != nil {
+	self, nodes, err := g.locate(ctx)
+	if err != nil {
 		return "", err
 	}
-	var k8sNode *corev1.Node
-	n := &corev1.Node{}
-	switch err := g.Reader.Get(ctx, client.ObjectKey{Name: g.NodeName}, n); {
-	case err == nil:
-		k8sNode = n
-	case client.IgnoreNotFound(err) != nil:
-		return "", err
-	}
-	in := disruptionInput{host: host, self: locateSelf(g.NodeName, k8sNode, nodes.Items), nodes: nodes.Items}
+	in := disruptionInput{host: host, self: self, nodes: nodes}
 	// Most hosts are neither: the verdict allows them, and the reads below
 	// (the claim, the cluster, its secrets bundle, every Host, every
 	// operation) would only cost the API server on each step of each one.
-	if !concerned(in.self.node, findNode(nodes.Items, host.Spec.OS.NodeRef.Name)) {
+	if !concerned(self.node, findNode(nodes, host.Spec.OS.NodeRef.Name)) {
 		return "", nil
 	}
-	var err error
 	if in.handedOff, err = g.handedOff(ctx, host); err != nil {
 		return "", err
 	}
@@ -357,6 +348,28 @@ func (g *SelfGuard) Check(ctx context.Context, host *metalv1alpha1.Host) (string
 	}
 	in.hosts, in.ops = hosts.Items, ops.Items
 	return disruptionVerdict(in), nil
+}
+
+// locate reads where the operator runs: every TalosNode, the Kubernetes
+// Node (it may be missing) and the TalosNode that matches it. A nil guard,
+// or one without a node name, locates nothing.
+func (g *SelfGuard) locate(ctx context.Context) (selfLocation, []osv1alpha1.TalosNode, error) {
+	if g == nil || g.NodeName == "" {
+		return selfLocation{}, nil, nil
+	}
+	nodes := &osv1alpha1.TalosNodeList{}
+	if err := g.Reader.List(ctx, nodes); err != nil {
+		return selfLocation{}, nil, err
+	}
+	var k8sNode *corev1.Node
+	n := &corev1.Node{}
+	switch err := g.Reader.Get(ctx, client.ObjectKey{Name: g.NodeName}, n); {
+	case err == nil:
+		k8sNode = n
+	case client.IgnoreNotFound(err) != nil:
+		return selfLocation{}, nil, err
+	}
+	return locateSelf(g.NodeName, k8sNode, nodes.Items), nodes.Items, nil
 }
 
 // handedOff reads whether the claim holding host records the hand-off of the

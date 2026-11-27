@@ -55,8 +55,6 @@ const (
 	memberWait = 10 * time.Minute
 	// keepFailedSnapshots failures are kept for a person to read why.
 	keepFailedSnapshots = 3
-	// defaultBackupVolumeName names the backup volume in pvc:// URLs.
-	defaultBackupVolumeName = "pk-metal-etcd-backups"
 )
 
 // EtcdBackups is what both backup reconcilers need.
@@ -98,28 +96,11 @@ func (e *sinkError) Error() string { return e.msg }
 // ownCluster names the TalosCluster the operator's pod runs on, "" when
 // none of them (kind, a cluster built otherwise).
 func (b *EtcdBackups) ownCluster(ctx context.Context) (string, error) {
-	if b.Self == nil || b.Self.NodeName == "" {
-		return "", nil
-	}
-	var reader client.Reader = b.Client
-	if b.Self.Reader != nil {
-		reader = b.Self.Reader
-	}
-	var k8sNode *corev1.Node
-	n := &corev1.Node{}
-	if err := reader.Get(ctx, types.NamespacedName{Name: b.Self.NodeName}, n); err == nil {
-		k8sNode = n
-	} else if !apierrors.IsNotFound(err) {
+	self, _, err := b.Self.locate(ctx)
+	if err != nil || self.node == nil {
 		return "", err
 	}
-	nodes := &osv1alpha1.TalosNodeList{}
-	if err := reader.List(ctx, nodes); err != nil {
-		return "", err
-	}
-	if loc := locateSelf(b.Self.NodeName, k8sNode, nodes.Items); loc.node != nil {
-		return loc.node.Spec.ClusterRef.Name, nil
-	}
-	return "", nil
+	return self.node.Spec.ClusterRef.Name, nil
 }
 
 // sink builds the policy's sink and the key prefix of its cluster. A
@@ -142,7 +123,7 @@ func (b *EtcdBackups) sink(ctx context.Context, p *osv1alpha1.EtcdBackupPolicy) 
 				"no backup volume is mounted into the manager: add the config/etcd-backup component " +
 					"(it sets --etcd-backup-dir), or use an s3 sink"}
 		}
-		return etcdbackup.FileSink{Root: b.Dir, Name: cmp.Or(b.VolumeName, defaultBackupVolumeName)}, cluster + "/", nil
+		return etcdbackup.FileSink{Root: b.Dir, Name: b.VolumeName}, cluster + "/", nil
 	case s.S3 != nil:
 		creds, err := b.secretData(ctx, s.S3.CredentialsSecretRef.Name)
 		if err != nil {

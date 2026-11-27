@@ -119,7 +119,7 @@ The column BLOCKED of `kubectl get hostclaims -o wide` shows `status.blockedOn`.
 | `HeldByUser` | The claim has the hold annotation. | [](cli:unhold) |
 | `HostInMaintenance` | The Host has the maintenance annotation. | [](howto:maintenance-mode) |
 | `SelfDisruption` | The install would stop the machine that the operator runs on, or a control plane of its own cluster. | [](concept:self-protection) |
-| `SingleMediumUnsupported` | The BMC holds one medium, and an installer with the config inside cannot help. | [](concept:one-slot-bmc) |
+| `SingleMediumUnsupported` | The BMC holds one medium, and an installer with the config inside cannot help. | [One-slot BMCs](concept:virtual-media-boot#one-slot-bmcs) |
 | `NoBootableMedia` | The BMC shows no media slot that can mount an image, or no boot target for it. | [](rb:media-slot-busy) |
 | `OperationFailed` | The install operation failed. | [](rb:operation-failed) |
 | `ReleaseFailed` | The release operation failed. The machine stays bound. | [](rb:operation-failed) |

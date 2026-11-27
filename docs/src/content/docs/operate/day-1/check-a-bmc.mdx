@@ -72,7 +72,7 @@ Make sure that one BMC answers, and find its serial number, media slots and NIC 
   <dt>`dialect=none`</dt>
   <dd>The slot cannot mount an image. The operator does not use it.</dd>
   <dt>One usable slot</dt>
-  <dd>Add the media store to your overlay before the install. See [One-slot BMCs](howto:install-operator#one-slot-bmcs) and [](concept:one-slot-bmc).</dd>
+  <dd>Add the media store to your overlay before the install. See [One-slot BMCs](howto:install-operator#one-slot-bmcs). [Virtual media boot](concept:virtual-media-boot#one-slot-bmcs) explains why.</dd>
   <dt>More than one `system:` line</dt>
   <dd>The BMC controls more than one machine. [](cli:inventory) needs `--system`, and your [](kind:HostClaim) must set `spec.systemRef`.</dd>
   <dt>`serial=-`</dt>

@@ -224,7 +224,7 @@ A BMC with one usable media slot gets one install image with the machine config 
 - The manager builds the image in a Job. The cluster must pull `ghcr.io/siderolabs/imager`, or a mirror that you set with `--imager-repository`.
 - The images hold the machine config, which has secrets. Use storage with encryption if your Secrets are encrypted.
 
-Without the media store, the install of such a machine waits with the reason `BuilderUnavailable`. See [](concept:one-slot-bmc).
+Without the media store, the install of such a machine waits with the reason `BuilderUnavailable`. See [One-slot BMCs](concept:virtual-media-boot#one-slot-bmcs).
 
 ## Verify
 

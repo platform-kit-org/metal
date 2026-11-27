@@ -152,7 +152,7 @@ terms:
     kind: noun
     domain: hw
     forms: [media slot, media slots, virtual media slot, virtual media slots]
-    see: concept:one-slot-bmc
+    see: concept:virtual-media-boot#one-slot-bmcs
     related: [virtual-media, one-slot-bmc]
     def: >-
       One place on a BMC that holds one virtual media image. Most BMCs have two
@@ -163,7 +163,7 @@ terms:
     kind: noun
     domain: hw
     forms: [one-slot BMC, one-slot BMCs]
-    see: concept:one-slot-bmc
+    see: concept:virtual-media-boot#one-slot-bmcs
     related: [media-slot, embedded-installer, imager, media-store]
     def: >-
       A BMC that holds only one virtual media image at a time. For a blank
@@ -1055,7 +1055,7 @@ terms:
     kind: noun
     domain: talos
     forms: [embedded installer, embedded installers]
-    see: concept:one-slot-bmc
+    see: concept:virtual-media-boot#one-slot-bmcs
     related: [one-slot-bmc, imager, bootasset]
     def: >-
       An installer ISO with the machine config of one node inside. The
@@ -1066,7 +1066,7 @@ terms:
     kind: noun
     domain: talos
     forms: [imager, Talos imager]
-    see: concept:one-slot-bmc
+    see: concept:virtual-media-boot#one-slot-bmcs
     related: [embedded-installer, media-store]
     def: >-
       The Talos tool that builds an ISO. The operator runs it as a Kubernetes
@@ -1077,7 +1077,7 @@ terms:
     kind: noun
     domain: talos
     forms: [media store]
-    see: concept:one-slot-bmc
+    see: concept:virtual-media-boot#one-slot-bmcs
     related: [embedded-installer, media-service]
     def: >-
       A volume of the operator that keeps the embedded installers. The files

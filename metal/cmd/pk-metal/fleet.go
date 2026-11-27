@@ -42,7 +42,7 @@ func simFleetCmd(args []string) {
 	verbose := fs.Bool("verbose", false, "log every request (default: only state-changing ones)")
 	stateListen := fs.String("state-listen", defaultStateListen,
 		"address of the read-only state endpoint (plain HTTP, GET "+fleet.StatePath+`; "" serves none); keep it on loopback`)
-	hangTimeout := fs.Duration("hang-timeout", qemu.DefaultHangTimeout,
+	hangTimeout := fs.Duration("hang-timeout", 0,
 		"power-cycle a VM (up to three times per power-on) when its console shows only firmware screen control for this long after a power-on (0: never; not given: "+
 			qemu.DefaultHangTimeout.String()+" under kvm, "+qemu.DefaultHangTimeoutTCG.String()+" under tcg)")
 	parseFlags(fs, args)

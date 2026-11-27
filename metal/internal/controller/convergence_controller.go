@@ -178,9 +178,10 @@ func (r *ConvergenceReconciler) matchedProfiles(ctx context.Context, host *metal
 	return matchedBios, matchedFw, nil
 }
 
-// firmware converges the manager firmware and reports whether the BIOS lane
-// may proceed (converged, or nothing desired). The observation is a pure
-// cluster-state join — the endpoint poll already serves the manager version.
+// firmware converges the manager firmware and reports whether the lanes
+// after it, system firmware and BIOS, may proceed (converged, or nothing
+// desired). The observation is a pure cluster-state join — the endpoint poll
+// already serves the manager version.
 func (r *ConvergenceReconciler) firmware(ctx context.Context, host *metalv1alpha1.Host, profiles []metalv1alpha1.FirmwareProfile, setCond func(string, metav1.ConditionStatus, string, string)) (bool, error) {
 	if len(profiles) == 0 {
 		if err := r.withdrawPlan(ctx, &host.Status.FirmwareProposed, whyMovedOn); err != nil {
@@ -231,47 +232,19 @@ func (r *ConvergenceReconciler) firmware(ctx context.Context, host *metalv1alpha
 		return true, nil
 	}
 
-	hash := planHash(target)
-	if plan := host.Status.FirmwareProposed; plan != nil && plan.PlanHash == hash {
-		reason, msg, again, err := r.planVerdict(ctx, plan)
-		if err != nil {
-			return false, err
-		}
-		if !again {
-			setCond(metalv1alpha1.ConditionFirmwareConverged, metav1.ConditionFalse, reason, msg)
-			return false, nil
-		}
-		host.Status.FirmwareProposed = nil
-	}
-	if !push {
-		setCond(metalv1alpha1.ConditionFirmwareConverged, metav1.ConditionFalse,
-			metalv1alpha1.ReasonNoUpdateTransport,
-			drifted+" — no path advertises the proven multipart-push transport")
-		return false, nil
-	}
-	if err := r.withdrawPlan(ctx, &host.Status.FirmwareProposed, whyMovedOn); err != nil {
-		return false, err
-	}
-	op := r.proposal(host.Name, "firmware", hash, metalv1alpha1.OperationReasonFirmwareConvergence, []metalv1alpha1.HostOperationAction{
-		{FlashFirmware: &metalv1alpha1.FlashFirmwareAction{Image: target.Image, Version: target.Version}},
+	reason, msg, err := r.proposePlan(ctx, host, lanePlan{
+		memory: &host.Status.FirmwareProposed, domain: "firmware",
+		reason: metalv1alpha1.OperationReasonFirmwareConvergence, desired: target,
+		stage: []metalv1alpha1.HostOperationAction{
+			{FlashFirmware: &metalv1alpha1.FlashFirmwareAction{Image: target.Image, Version: target.Version}},
+		},
+		drift: drifted, noTransport: !push,
+		requesters: func() ([]string, error) { return convergenceRequesters(ctx, r.Client, host, profiles) },
 	})
-	requesters, err := convergenceRequesters(ctx, r.Client, host, profiles)
 	if err != nil {
 		return false, err
 	}
-	op.Spec.RequestedBy = requesters
-	// Create before recording: a crash between the two re-proposes into
-	// AlreadyExists (benign), the reverse order would hold on a ghost.
-	if err := r.propose(ctx, op); err != nil {
-		return false, err
-	}
-	logf.FromContext(ctx).Info("proposed operation", "operation", op.Namespace+"/"+op.Name, "host", host.Name, "reason", op.Spec.Reason)
-	host.Status.FirmwareProposed = &metalv1alpha1.ProposedPlan{
-		PlanHash: hash, Operation: op.Namespace + "/" + op.Name,
-	}
-	setCond(metalv1alpha1.ConditionFirmwareConverged, metav1.ConditionFalse,
-		metalv1alpha1.ReasonAwaitingOperation,
-		fmt.Sprintf("%s; operation %s/%s proposed", drifted, op.Namespace, op.Name))
+	setCond(metalv1alpha1.ConditionFirmwareConverged, metav1.ConditionFalse, reason, msg)
 	return false, nil
 }
 
@@ -315,7 +288,6 @@ func (r *ConvergenceReconciler) bios(ctx context.Context, host *metalv1alpha1.Ho
 
 	origSettings := settings.DeepCopy()
 	status, reason, msg := metav1.ConditionFalse, "", ""
-	requeue := true
 	switch {
 	case len(conflicts) > 0:
 		reason, msg = metalv1alpha1.ReasonProfileConflict, strings.Join(conflicts, "; ")
@@ -350,74 +322,22 @@ func (r *ConvergenceReconciler) bios(ctx context.Context, host *metalv1alpha1.Ho
 			msg = "drift on " + strings.Join(drifted, ", ") + " — firmware converges first"
 			break
 		}
-		// A host that runs a node gets the change applied the way a running
-		// node needs: drained first, waited for after (disruptivePlan).
-		node, nodeHold, err := r.installedNode(ctx, host)
-		if err != nil {
-			return false, err
-		}
-		if nodeHold != "" {
-			// A proposal made while the node was there names it in every
-			// drain step: take it back while nobody approved it yet.
-			if err := r.withdrawPlan(ctx, &settings.Status.Proposed, whyNodeGone); err != nil {
-				return false, err
-			}
-			reason = metalv1alpha1.ReasonInstalledNodeMissing
-			msg = "drift on " + strings.Join(drifted, ", ") + "; " + nodeHold
-			break
-		}
-		hash := disruptiveHash(desired, node)
-		if plan := settings.Status.Proposed; plan != nil && plan.PlanHash == hash {
-			again := false
-			var err error
-			if reason, msg, again, err = r.planVerdict(ctx, plan); err != nil {
-				return false, err
-			}
-			if !again {
-				break
-			}
-			settings.Status.Proposed = nil
-		}
-		if err := r.withdrawPlan(ctx, &settings.Status.Proposed, whyMovedOn); err != nil {
-			return false, err
-		}
-		// The change takes effect at a reboot, which the operation does.
-		// A machine that may still hold a released node's install is not
-		// powered on for it: it would boot that node back into its cluster.
-		if hold := notWipedPowerHold(host); hold != "" {
-			reason, msg = metalv1alpha1.ReasonDiskNotWiped, "drift on "+strings.Join(drifted, ", ")+"; "+hold
-			break
-		}
-		guard, err := r.Self.Check(ctx, host)
-		if err != nil {
-			return false, err
-		}
-		if guard != "" {
-			reason = metalv1alpha1.ReasonSelfDisruption
-			msg = "drift on " + strings.Join(drifted, ", ") + "; no BIOS change is proposed: " + guard
-			break
-		}
-		op := r.proposal(host.Name, "bios", hash, metalv1alpha1.OperationReasonBiosConvergence, disruptivePlan(node, []metalv1alpha1.HostOperationAction{
+		var err error
+		if reason, msg, err = r.proposePlan(ctx, host, lanePlan{
+			memory: &settings.Status.Proposed, domain: "bios",
+			reason: metalv1alpha1.OperationReasonBiosConvergence, desired: desired,
 			// The attributes travel inside the operation: the approver sees
 			// exactly what will be staged, and a later edit of the settings
 			// cannot change an approved operation.
-			{ApplyBios: &metalv1alpha1.ApplyBiosAction{
+			stage: []metalv1alpha1.HostOperationAction{{ApplyBios: &metalv1alpha1.ApplyBiosAction{
 				SettingsRef: &metalv1alpha1.Reference{Name: settings.Name},
 				Attributes:  settings.Spec.Attributes,
-			}},
-		}))
-		if op.Spec.RequestedBy, err = convergenceRequesters(ctx, r.Client, host, profiles); err != nil {
+			}}},
+			reboots: true, drift: "drift on " + strings.Join(drifted, ", "),
+			requesters: func() ([]string, error) { return convergenceRequesters(ctx, r.Client, host, profiles) },
+		}); err != nil {
 			return false, err
 		}
-		if err := r.propose(ctx, op); err != nil {
-			return false, err
-		}
-		logf.FromContext(ctx).Info("proposed operation", "operation", op.Namespace+"/"+op.Name, "host", host.Name, "reason", op.Spec.Reason)
-		settings.Status.Proposed = &metalv1alpha1.ProposedPlan{
-			PlanHash: hash, Operation: op.Namespace + "/" + op.Name,
-		}
-		reason = metalv1alpha1.ReasonAwaitingOperation
-		msg = fmt.Sprintf("drift on %s; operation %s/%s proposed", strings.Join(drifted, ", "), op.Namespace, op.Name)
 	}
 
 	setCondition(&settings.Status.Conditions, settings.Generation, metalv1alpha1.ConditionConverged, status, reason, msg)
@@ -425,7 +345,90 @@ func (r *ConvergenceReconciler) bios(ctx context.Context, host *metalv1alpha1.Ho
 		return false, client.IgnoreNotFound(err)
 	}
 	setCond(metalv1alpha1.ConditionBiosConverged, status, reason, msg)
-	return requeue, nil
+	return true, nil
+}
+
+// lanePlan is a lane's drifted desired state, for proposePlan.
+type lanePlan struct {
+	memory      **metalv1alpha1.ProposedPlan // the lane's plan memory
+	domain      string                       // the middle of the operation name
+	reason      string                       // the operation's spec.reason
+	desired     any                          // what the plan hash binds
+	stage       []metalv1alpha1.HostOperationAction
+	reboots     bool   // the change applies at a reset of the machine
+	drift       string // what drifts, in words
+	noTransport bool   // no path advertises the multipart-push transport
+	requesters  func() ([]string, error)
+}
+
+// proposePlan proposes a lane's plan once, and returns the lane's condition
+// reason and message. The steps run in one order for every lane:
+//
+//  1. A change that reboots a machine that runs a node drains the node first
+//     (disruptivePlan). A node that is gone holds the plan, and the proposal
+//     made for it is withdrawn.
+//  2. A remembered plan with the same hash is not proposed again: its
+//     operation, or the lack of one, gives the verdict (planVerdict).
+//  3. A remembered plan with another hash is withdrawn while nobody approved
+//     it, before any hold below.
+//  4. The holds: no update transport; for a reboot, a disk that can still
+//     hold a released node's install (powering it on would boot that node
+//     back into its cluster), and the machine the operator runs on.
+//  5. The operation is created, and then remembered.
+func (r *ConvergenceReconciler) proposePlan(ctx context.Context, host *metalv1alpha1.Host, p lanePlan) (reason, msg string, err error) {
+	var node *osv1alpha1.TalosNode
+	if p.reboots {
+		var nodeHold string
+		if node, nodeHold, err = r.installedNode(ctx, host); err != nil {
+			return "", "", err
+		}
+		if nodeHold != "" {
+			// A proposal made while the node was there names it in every
+			// drain step: take it back while nobody approved it yet.
+			return metalv1alpha1.ReasonInstalledNodeMissing, p.drift + "; " + nodeHold, r.withdrawPlan(ctx, p.memory, whyNodeGone)
+		}
+	}
+	hash := disruptiveHash(p.desired, node)
+	if plan := *p.memory; plan != nil && plan.PlanHash == hash {
+		var again bool
+		if reason, msg, again, err = r.planVerdict(ctx, plan); err != nil || !again {
+			return reason, msg, err
+		}
+		*p.memory = nil
+	}
+	if err = r.withdrawPlan(ctx, p.memory, whyMovedOn); err != nil {
+		return "", "", err
+	}
+	if p.noTransport {
+		return metalv1alpha1.ReasonNoUpdateTransport, p.drift + " — no path advertises the proven multipart-push transport", nil
+	}
+	actions := p.stage
+	if p.reboots {
+		if hold := notWipedPowerHold(host); hold != "" {
+			return metalv1alpha1.ReasonDiskNotWiped, p.drift + "; " + hold, nil
+		}
+		var guard string
+		if guard, err = r.Self.Check(ctx, host); err != nil {
+			return "", "", err
+		}
+		if guard != "" {
+			return metalv1alpha1.ReasonSelfDisruption, p.drift + "; no change that reboots the machine is proposed: " + guard, nil
+		}
+		actions = disruptivePlan(node, p.stage)
+	}
+	op := r.proposal(host.Name, p.domain, hash, p.reason, actions)
+	if op.Spec.RequestedBy, err = p.requesters(); err != nil {
+		return "", "", err
+	}
+	// Create before recording: a crash between the two re-proposes into
+	// AlreadyExists (benign), the reverse order would hold on a ghost.
+	if err = r.propose(ctx, op); err != nil {
+		return "", "", err
+	}
+	ref := op.Namespace + "/" + op.Name
+	logf.FromContext(ctx).Info("proposed operation", "operation", ref, "host", host.Name, "reason", p.reason)
+	*p.memory = &metalv1alpha1.ProposedPlan{PlanHash: hash, Operation: ref}
+	return metalv1alpha1.ReasonAwaitingOperation, p.drift + "; operation " + ref + " proposed", nil
 }
 
 // planVerdict derives a held plan's condition live from the operation or its

@@ -10,7 +10,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
 	"github.com/dennisklein/platform-kit/metal/internal/bmc"
@@ -187,62 +186,21 @@ func (r *ConvergenceReconciler) systemFirmware(ctx context.Context, host *metalv
 		return false, nil
 	}
 
-	node, nodeHold, err := r.installedNode(ctx, host)
-	if err != nil {
-		return false, err
-	}
-	if nodeHold != "" {
-		if err := r.withdrawPlan(ctx, &host.Status.SystemFirmwareProposed, whyNodeGone); err != nil {
-			return false, err
-		}
-		setCond(cond, metav1.ConditionFalse, metalv1alpha1.ReasonInstalledNodeMissing, what+"; "+nodeHold)
-		return false, nil
-	}
-	hash := disruptiveHash(stages, node)
-	if plan := host.Status.SystemFirmwareProposed; plan != nil && plan.PlanHash == hash {
-		reason, msg, again, err := r.planVerdict(ctx, plan)
-		if err != nil {
-			return false, err
-		}
-		if !again {
-			setCond(cond, metav1.ConditionFalse, reason, msg)
-			return false, nil
-		}
-		host.Status.SystemFirmwareProposed = nil
-	}
-	if !push {
-		setCond(cond, metav1.ConditionFalse, metalv1alpha1.ReasonNoUpdateTransport,
-			what+" — no path advertises the proven multipart-push transport")
-		return false, nil
-	}
-	if err := r.withdrawPlan(ctx, &host.Status.SystemFirmwareProposed, whyMovedOn); err != nil {
-		return false, err
-	}
-	// Applying it reboots the machine, like a BIOS change.
-	guard, err := r.Self.Check(ctx, host)
-	if err != nil {
-		return false, err
-	}
-	if guard != "" {
-		setCond(cond, metav1.ConditionFalse, metalv1alpha1.ReasonSelfDisruption, what+"; no firmware change is proposed: "+guard)
-		return false, nil
-	}
 	stage := make([]metalv1alpha1.HostOperationAction, 0, len(stages))
 	for _, st := range stages {
 		stage = append(stage, metalv1alpha1.HostOperationAction{StageFirmware: &metalv1alpha1.StageFirmwareAction{
 			Image: st.Image, Version: st.Version, Targets: st.Entries,
 		}})
 	}
-	op := r.proposal(host.Name, "sysfw", hash, metalv1alpha1.OperationReasonSystemFirmwareConvergence, disruptivePlan(node, stage))
-	if op.Spec.RequestedBy, err = convergenceRequesters(ctx, r.Client, host, profiles); err != nil {
+	reason, msg, err := r.proposePlan(ctx, host, lanePlan{
+		memory: &host.Status.SystemFirmwareProposed, domain: "sysfw",
+		reason: metalv1alpha1.OperationReasonSystemFirmwareConvergence, desired: stages, stage: stage,
+		reboots: true, drift: what, noTransport: !push,
+		requesters: func() ([]string, error) { return convergenceRequesters(ctx, r.Client, host, profiles) },
+	})
+	if err != nil {
 		return false, err
 	}
-	if err := r.propose(ctx, op); err != nil {
-		return false, err
-	}
-	logf.FromContext(ctx).Info("proposed operation", "operation", op.Namespace+"/"+op.Name, "host", host.Name, "reason", op.Spec.Reason)
-	host.Status.SystemFirmwareProposed = &metalv1alpha1.ProposedPlan{PlanHash: hash, Operation: op.Namespace + "/" + op.Name}
-	setCond(cond, metav1.ConditionFalse, metalv1alpha1.ReasonAwaitingOperation,
-		fmt.Sprintf("%s; operation %s/%s proposed", what, op.Namespace, op.Name))
+	setCond(cond, metav1.ConditionFalse, reason, msg)
 	return false, nil
 }

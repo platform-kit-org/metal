@@ -80,9 +80,9 @@ It never changes a machine itself. It proposes a [](kind:HostOperation), and a p
   <dt>Firmware before BIOS</dt>
   <dd>The BIOS lane waits with `AwaitingFirmware` until both firmware lanes are converged.</dd>
   <dt>Old install on disk</dt>
-  <dd>The controller does not power on a Host with `metal.platform-kit.org/disk-not-wiped` for a BIOS change. It would boot the old node back into its cluster.</dd>
+  <dd>The controller does not power on a Host with `metal.platform-kit.org/disk-not-wiped` for a BIOS or system firmware change. It would boot the old node back into its cluster.</dd>
   <dt>Self guard</dt>
-  <dd>The controller does not propose a BIOS change on a machine that the operator runs on. See [](ctrl:protection).</dd>
+  <dd>The controller does not propose a BIOS or system firmware change on a machine that the operator runs on. See [](ctrl:protection).</dd>
 </dl>
 
 ## Writes
@@ -99,7 +99,7 @@ It never changes a machine itself. It proposes a [](kind:HostOperation), and a p
 | Condition | True | False or Unknown |
 | --- | --- | --- |
 | `FirmwareConverged` | `InSync` | `ProfileConflict`, `NoUpdateTransport`, `AwaitingOperation`, `OperationFailed`, `NoReachablePath` |
-| `SystemFirmwareConverged` | `InSync` | `ProfileConflict`, `NoMatchingComponent`, `AwaitingFirmware`, `InstalledNodeMissing`, `NoUpdateTransport`, `SelfDisruption`, `AwaitingOperation`, `OperationFailed`, `NoReachablePath` |
+| `SystemFirmwareConverged` | `InSync` | `ProfileConflict`, `NoMatchingComponent`, `AwaitingFirmware`, `InstalledNodeMissing`, `NoUpdateTransport`, `DiskNotWiped`, `SelfDisruption`, `AwaitingOperation`, `OperationFailed`, `NoReachablePath` |
 | `BiosConverged` | `InSync` | `ProfileConflict`, `SchemaViolation`, `AwaitingFirmware`, `InstalledNodeMissing`, `DiskNotWiped`, `SelfDisruption`, `AwaitingOperation`, `NoReachablePath` |
 
 ## Failure modes

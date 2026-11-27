@@ -72,6 +72,10 @@ check: each added TalosNode's install disk and network links must fit the host i
 `, out.String(), "the host that is not wiped is not used")
 
 	out.Reset()
+	require.NoError(t, p.dryRun("", &out))
+	assert.Equal(t, "\nNothing changed. To do it: add --apply\n", out.String())
+
+	out.Reset()
 	require.NoError(t, p.apply(ctx, cl, "", &out))
 	c := &metalv1alpha1.HostClaim{}
 	require.NoError(t, cl.Get(ctx, client.ObjectKey{Namespace: "default", Name: "cp-4"}, c))
@@ -92,6 +96,14 @@ func TestScalePlanShrinksThroughAnEvenCountOnlyWhenAcknowledged(t *testing.T) {
 	assert.Contains(t, out.String(), " 2. remove cp-3 from host h-3")
 	assert.Contains(t, out.String(), " 3. remove cp-2 from host h-2")
 	assert.Contains(t, out.String(), "even number of them")
+
+	out.Reset()
+	require.NoError(t, p.dryRun("", &out))
+	assert.Equal(t, "\nNothing changed. To do it: add --apply --ack-etcd-risk \"<reason>\"\n", out.String(),
+		"the hint names each flag that apply needs")
+	out.Reset()
+	require.NoError(t, p.dryRun("scale down", &out))
+	assert.Equal(t, "\nNothing changed. To do it: add --apply\n", out.String())
 
 	assert.ErrorContains(t, p.apply(ctx, cl, "", &out), "--ack-etcd-risk")
 	require.NoError(t, p.apply(ctx, cl, "scale down", &out))
@@ -114,6 +126,23 @@ func TestScalePlanSaysWhatIsMissing(t *testing.T) {
 	p.print(&out)
 	assert.Contains(t, out.String(), "cannot: 1 more controlplane TalosNode(s) of cluster lab are needed")
 	assert.Error(t, p.apply(context.Background(), fakeClient(), "", &out))
+
+	out.Reset()
+	assert.EqualError(t, p.dryRun("", &out), "the plan cannot be carried out as it is; nothing was changed",
+		"a dry run fails as --apply does, so that a script can check the plan first")
+	assert.Empty(t, out.String(), "no hint to run a command that fails")
+}
+
+// A plan with nothing to do gets no hint to apply it.
+func TestScalePlanWithNothingToDo(t *testing.T) {
+	p, err := planScale(context.Background(), fakeClient(scaleFleet()...), "lab", 3, 1, "default")
+	require.NoError(t, err)
+	var out bytes.Buffer
+	p.print(&out)
+	assert.Contains(t, out.String(), "nothing to do")
+	out.Reset()
+	require.NoError(t, p.dryRun("", &out))
+	assert.Empty(t, out.String())
 }
 
 func TestReinstallBindsTheRequestToTheInstall(t *testing.T) {

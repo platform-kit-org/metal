@@ -333,11 +333,12 @@ func scaleCmd(args []string) {
 		die(err)
 	}
 	plan.print(os.Stdout)
-	if !*apply {
-		fmt.Println("\nNothing changed. To do it: add --apply")
-		return
+	if *apply {
+		err = plan.apply(ctx, cl, *ack, os.Stdout)
+	} else {
+		err = plan.dryRun(*ack, os.Stdout)
 	}
-	if err := plan.apply(ctx, cl, *ack, os.Stdout); err != nil {
+	if err != nil {
 		die(err)
 	}
 }
@@ -530,14 +531,39 @@ func hostOf(c *metalv1alpha1.HostClaim) string {
 	return "(none)"
 }
 
-// apply creates and deletes the plan's claims. Each operation the operator
-// proposes from them still waits for approval.
-func (p *scalePlan) apply(ctx context.Context, cl client.Client, ack string, w io.Writer) error {
+// ready says why apply refuses the plan, or nil.
+func (p *scalePlan) ready(ack string) error {
 	if len(p.problems) > 0 {
 		return fmt.Errorf("the plan cannot be carried out as it is; nothing was changed")
 	}
 	if p.evenStep && strings.TrimSpace(ack) == "" {
 		return fmt.Errorf("the plan passes through an even number of control planes; give --ack-etcd-risk \"<reason>\" to accept it")
+	}
+	return nil
+}
+
+// dryRun ends a run without --apply. It fails as apply does on a problem,
+// so that a script can check a plan before it applies it, and it names the
+// flags that apply needs.
+func (p *scalePlan) dryRun(ack string, w io.Writer) error {
+	err := p.ready(ack)
+	switch {
+	case len(p.problems) > 0:
+		return err
+	case len(p.add)+len(p.remove) == 0:
+	case err != nil:
+		fmt.Fprintln(w, "\nNothing changed. To do it: add --apply --ack-etcd-risk \"<reason>\"")
+	default:
+		fmt.Fprintln(w, "\nNothing changed. To do it: add --apply")
+	}
+	return nil
+}
+
+// apply creates and deletes the plan's claims. Each operation the operator
+// proposes from them still waits for approval.
+func (p *scalePlan) apply(ctx context.Context, cl client.Client, ack string, w io.Writer) error {
+	if err := p.ready(ack); err != nil {
+		return err
 	}
 	ack, err := namedLift(ctx, cl, ack)
 	if err != nil {

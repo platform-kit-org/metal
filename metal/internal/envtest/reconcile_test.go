@@ -101,7 +101,7 @@ func TestReconcile(t *testing.T) {
 		PollInterval:         pollInterval,
 	}, controller.LaneAsset, controller.LaneEndpoint, controller.LaneHost, controller.LaneHostClaim,
 		controller.LaneHostOperation))
-	runManager(t, ctx, mgr)
+	startManager(t, mgr)
 
 	asset := func(name, serial, mac string) *metalv1alpha1.Asset {
 		return &metalv1alpha1.Asset{

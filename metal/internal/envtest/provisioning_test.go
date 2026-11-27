@@ -177,7 +177,7 @@ func TestProvisioning(t *testing.T) {
 		Factory:      imageFactory,
 	}, controller.LaneAsset, controller.LaneEndpoint, controller.LaneHost, controller.LaneHostClaim,
 		controller.LaneProtection, controller.LaneHostOperation, controller.LaneBootAsset))
-	runManager(t, ctx, mgr)
+	startManager(t, mgr)
 
 	// --- helpers -----------------------------------------------------------
 

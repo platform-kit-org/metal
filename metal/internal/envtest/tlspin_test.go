@@ -40,7 +40,7 @@ func TestTLSKeyPin(t *testing.T) {
 		PollInterval:         pollInterval,
 		Audit:                audit.New(trail, "op"),
 	}, controller.LaneAsset, controller.LaneEndpoint))
-	runManager(t, ctx, mgr)
+	startManager(t, mgr)
 
 	require.NoError(t, cl.Create(ctx, &metalv1alpha1.Asset{
 		ObjectMeta: metav1.ObjectMeta{Name: "ci-smc"},

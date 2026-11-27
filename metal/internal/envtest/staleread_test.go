@@ -16,13 +16,10 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/rest"
-	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
-	"sigs.k8s.io/controller-runtime/pkg/config"
-	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
@@ -122,22 +119,19 @@ func newStaleWorld(t *testing.T, s *suite, kinds ...client.Object) *staleWorld {
 		require.NoError(t, err)
 		w.kinds = append(w.kinds, gvk)
 	}
-	mgr, err := ctrl.NewManager(s.cfg, ctrl.Options{
-		Scheme: s.scheme,
-		NewCache: func(cfg *rest.Config, opts cache.Options) (cache.Cache, error) {
-			inner, err := cache.New(cfg, opts)
-			return &staleCache{Cache: inner, w: w}, err
-		},
-		NewClient: func(cfg *rest.Config, opts client.Options) (client.Client, error) {
-			c, err := client.New(cfg, client.Options{Scheme: opts.Scheme, Mapper: opts.Mapper})
-			if err != nil {
-				return nil, err
-			}
-			return &staleClient{Client: c, dry: client.NewDryRunClient(c), w: w}, nil
-		},
-		Metrics:    metricsserver.Options{BindAddress: "0"},
-		Controller: config.Controller{SkipNameValidation: ptr.To(true)},
-	})
+	opts := s.managerOptions()
+	opts.NewCache = func(cfg *rest.Config, opts cache.Options) (cache.Cache, error) {
+		inner, err := cache.New(cfg, opts)
+		return &staleCache{Cache: inner, w: w}, err
+	}
+	opts.NewClient = func(cfg *rest.Config, opts client.Options) (client.Client, error) {
+		c, err := client.New(cfg, client.Options{Scheme: opts.Scheme, Mapper: opts.Mapper})
+		if err != nil {
+			return nil, err
+		}
+		return &staleClient{Client: c, dry: client.NewDryRunClient(c), w: w}, nil
+	}
+	mgr, err := ctrl.NewManager(s.cfg, opts)
 	require.NoError(t, err)
 	w.mgr = mgr
 	return w

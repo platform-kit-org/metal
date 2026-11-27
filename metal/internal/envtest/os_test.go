@@ -172,7 +172,7 @@ func TestOSLane(t *testing.T) {
 		Proposer:        "pk-metal-operator",
 		ResolveImage:    pinImage,
 	}, controller.LaneTalosNode, controller.LaneTalosCluster, controller.LaneBootAsset, controller.LaneTalosRollout))
-	runManager(t, ctx, mgr)
+	startManager(t, mgr)
 
 	lab := labSample(t)
 	lab.Cluster.Spec.SecretsRef.Namespace = "default"

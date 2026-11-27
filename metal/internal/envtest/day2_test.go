@@ -95,7 +95,7 @@ func TestDay2Operations(t *testing.T) {
 		CredentialsNamespace: "pk-metal", OperationsNamespace: "pk-metal",
 		TalosDial: fleet.Dialer(), WaitInterval: pollInterval, GuardInterval: pollInterval,
 	}, controller.LaneHostOperation))
-	runManager(t, ctx, mgr)
+	startManager(t, mgr)
 
 	op := func(name, node string, actions ...metalv1alpha1.HostOperationAction) *metalv1alpha1.HostOperation {
 		return &metalv1alpha1.HostOperation{

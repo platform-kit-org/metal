@@ -134,7 +134,7 @@ func TestRollout(t *testing.T) {
 		Workload:             func([]byte) (k8supgrade.Workload, error) { return workload, nil },
 		GateInterval:         100 * time.Millisecond,
 	}, controller.LaneTalosRollout))
-	runManager(t, ctx, mgr)
+	startManager(t, mgr)
 
 	getRollout := func(name string) *osv1alpha1.TalosRollout {
 		ro := &osv1alpha1.TalosRollout{}
@@ -355,7 +355,7 @@ func TestRollout(t *testing.T) {
 			CredentialsNamespace: "default", OperationsNamespace: "default", Proposer: operator,
 			WaitInterval: 100 * time.Millisecond,
 		}, controller.LaneHostOperation))
-		runManager(t, ctx, exec)
+		startManager(t, exec)
 
 		real := opFor(upgrade, "cp-2")
 		require.NotNil(t, real)

@@ -8,9 +8,7 @@
 package envtest_test
 
 import (
-	"context"
 	"fmt"
-	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -40,28 +38,8 @@ import (
 	"github.com/dennisklein/platform-kit/metal/internal/bmc/sim"
 	"github.com/dennisklein/platform-kit/metal/internal/controller"
 	"github.com/dennisklein/platform-kit/metal/internal/pivot"
-	pkscheme "github.com/dennisklein/platform-kit/metal/internal/scheme"
 	"github.com/dennisklein/platform-kit/metal/internal/talos/render"
 )
-
-// startBareEnv starts a control plane without the operator's CRDs: a cluster
-// the operator has not been installed on yet.
-func startBareEnv(t *testing.T) *suite {
-	t.Helper()
-	if os.Getenv("KUBEBUILDER_ASSETS") == "" {
-		t.Skip("KUBEBUILDER_ASSETS unset: run via `mise run envtest`")
-	}
-	env := &envtest.Environment{}
-	env.ControlPlane.GetAPIServer().Configure().Set("advertise-address", "127.0.0.1")
-	cfg, err := env.Start()
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, env.Stop()) })
-	s, err := pkscheme.New()
-	require.NoError(t, err)
-	cl, err := client.New(cfg, client.Options{Scheme: s})
-	require.NoError(t, err)
-	return &suite{env: env, cfg: cfg, scheme: s, cl: cl, reads: &readLog{seen: map[string]int{}}}
-}
 
 // testLog passes the move's step lines to the test log.
 type testLog struct{ t *testing.T }
@@ -69,29 +47,6 @@ type testLog struct{ t *testing.T }
 func (l testLog) Write(p []byte) (int, error) {
 	l.t.Log(strings.TrimRight(string(p), "\n"))
 	return len(p), nil
-}
-
-// startManager runs mgr until the returned stop is called, and stop waits
-// until the manager has returned: no pass of it runs after.
-func startManager(t *testing.T, mgr interface{ Start(context.Context) error }) (stop func()) {
-	ctx, cancel := context.WithCancel(t.Context())
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		if err := mgr.Start(ctx); err != nil {
-			t.Logf("manager: %v", err)
-		}
-	}()
-	stopped := false
-	stop = func() {
-		if !stopped {
-			stopped = true
-			cancel()
-			<-done
-		}
-	}
-	t.Cleanup(stop)
-	return stop
 }
 
 // newStore is an empty media store.
@@ -104,7 +59,9 @@ func newStore(t *testing.T) *asset.Store {
 
 func TestPivot(t *testing.T) {
 	src := startEnv(t)
-	dst := startBareEnv(t)
+	// Without the operator's CRDs: a cluster the operator has not been
+	// installed on yet.
+	dst := startControlPlane(t, &envtest.Environment{})
 	ctx := t.Context()
 	const ns, claimNS = "pk-metal", "lab"
 

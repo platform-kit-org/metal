@@ -54,16 +54,21 @@ type suite struct {
 }
 
 // startEnv starts a control plane with the operator's CRDs and any extra CRD
-// directories, and stops it when the test ends. It skips the test when the
-// control-plane binaries are not set up.
+// directories.
 func startEnv(t *testing.T, extraCRDDirs ...string) *suite {
+	t.Helper()
+	return startControlPlane(t, &envtest.Environment{
+		CRDDirectoryPaths:     append([]string{filepath.Join("..", "..", "config", "crd")}, extraCRDDirs...),
+		ErrorIfCRDPathMissing: true,
+	})
+}
+
+// startControlPlane starts env, and stops it when the test ends. It skips
+// the test when the control-plane binaries are not set up.
+func startControlPlane(t *testing.T, env *envtest.Environment) *suite {
 	t.Helper()
 	if os.Getenv("KUBEBUILDER_ASSETS") == "" {
 		t.Skip("KUBEBUILDER_ASSETS unset: run via `mise run envtest`")
-	}
-	env := &envtest.Environment{
-		CRDDirectoryPaths:     append([]string{filepath.Join("..", "..", "config", "crd")}, extraCRDDirs...),
-		ErrorIfCRDPathMissing: true,
 	}
 	// envtest is loopback-only; without this the apiserver enumerates routes via
 	// netlink to pick an advertise address, which sandboxes may forbid.
@@ -93,28 +98,49 @@ func (s *suite) userClient(t *testing.T, name string, groups ...string) client.C
 	return c
 }
 
-// newManager is a manager on the suite's control plane, without metrics.
-// Several suites run the same controllers in this one process, and controller
-// names are process-global (metrics uniqueness), so the name check is off.
-func (s *suite) newManager(t *testing.T) ctrl.Manager {
-	t.Helper()
-	mgr, err := ctrl.NewManager(s.cfg, ctrl.Options{
+// managerOptions are the options of a manager on the suite's control plane,
+// without metrics. Several suites run the same controllers in this one
+// process, and controller names are process-global (metrics uniqueness), so
+// the name check is off.
+func (s *suite) managerOptions() ctrl.Options {
+	return ctrl.Options{
 		Scheme:     s.scheme,
 		NewClient:  s.reads.newClient,
 		Metrics:    metricsserver.Options{BindAddress: "0"},
 		Controller: config.Controller{SkipNameValidation: ptr.To(true)},
-	})
+	}
+}
+
+// newManager is a manager on the suite's control plane.
+func (s *suite) newManager(t *testing.T) ctrl.Manager {
+	t.Helper()
+	mgr, err := ctrl.NewManager(s.cfg, s.managerOptions())
 	require.NoError(t, err)
 	return mgr
 }
 
-// runManager starts mgr in the background until ctx ends.
-func runManager(t *testing.T, ctx context.Context, mgr ctrl.Manager) {
+// startManager runs mgr until the returned stop is called or the test ends,
+// and stop waits until the manager has returned: no pass of it runs after,
+// and it is stopped before the control plane.
+func startManager(t *testing.T, mgr interface{ Start(context.Context) error }) (stop func()) {
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		if err := mgr.Start(ctx); err != nil {
 			t.Logf("manager: %v", err)
 		}
 	}()
+	stopped := false
+	stop = func() {
+		if !stopped {
+			stopped = true
+			cancel()
+			<-done
+		}
+	}
+	t.Cleanup(stop)
+	return stop
 }
 
 // writeLedger writes the ledger text to a file and loads it, the way the

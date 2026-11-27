@@ -85,7 +85,7 @@ func TestEndpointConvergence(t *testing.T) {
 		PollInterval:         pollInterval,
 		Audit:                audit.New(trail, "op"),
 	}, controller.LaneAsset, controller.LaneEndpoint, controller.LaneEndpointConvergence))
-	runManager(t, ctx, mgr)
+	startManager(t, mgr)
 
 	for _, a := range []*metalv1alpha1.Asset{
 		{ObjectMeta: metav1.ObjectMeta{Name: "ci-huawei"},

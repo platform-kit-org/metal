@@ -125,7 +125,7 @@ func TestEtcdBackupLane(t *testing.T) {
 		NodeName:             "own-cp-1",
 		CheckInterval:        200 * time.Millisecond,
 	}, controller.LaneEtcdBackup))
-	runManager(t, ctx, mgr)
+	startManager(t, mgr)
 
 	getSnap := func(name string) *osv1alpha1.EtcdSnapshot {
 		s := &osv1alpha1.EtcdSnapshot{}
@@ -355,7 +355,7 @@ func TestEtcdBackupLeastPrivilege(t *testing.T) {
 		EtcdBackupVolume: "pk-metal-etcd-backups",
 		CheckInterval:    200 * time.Millisecond,
 	}, controller.LaneEtcdBackup))
-	runManager(t, ctx, mgr)
+	startManager(t, mgr)
 
 	require.NoError(t, cl.Create(ctx, pvcPolicy("rl-daily", "rl", id.Recipient().String(), 2)))
 	require.Eventually(t, func() bool {

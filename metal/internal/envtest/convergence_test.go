@@ -109,7 +109,7 @@ func TestConvergence(t *testing.T) {
 		RegistryClient:       registry.Client(),
 	}, controller.LaneAsset, controller.LaneEndpoint, controller.LaneHost, controller.LaneHostClaim,
 		controller.LaneHostOperation, controller.LaneConvergence, controller.LaneMaintenanceWindow))
-	runManager(t, ctx, mgr)
+	startManager(t, mgr)
 
 	for _, a := range []*metalv1alpha1.Asset{
 		{ObjectMeta: metav1.ObjectMeta{Name: "ci-huawei"},

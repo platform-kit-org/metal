@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"cmp"
 	"context"
 	"crypto/x509"
 	"errors"
@@ -323,7 +324,7 @@ func (x *exec) restart(ctx context.Context, i int, node *osv1alpha1.TalosNode, a
 		p = p.DeepCopy()
 		p.RequestedAt = ptrTime(metav1.NewTime(talosClock()))
 		if !took && !restarts {
-			p.Mode = cmpOr(mode, "auto")
+			p.Mode = cmp.Or(mode, "auto")
 		}
 		if err := x.record(p); err != nil {
 			return stepState{}, err
@@ -364,7 +365,7 @@ func (x *exec) restart(ctx context.Context, i int, node *osv1alpha1.TalosNode, a
 			node.Name, what, before.UTC().Format(time.RFC3339)), nil
 	case st.Stage != "running" || !st.Ready:
 		return waitingOn("node %s restarted at %s and is %s, not ready yet%s", node.Name,
-			booted.UTC().Format(time.RFC3339), cmpOr(st.Stage, "booting"), unmet(st)), nil
+			booted.UTC().Format(time.RFC3339), cmp.Or(st.Stage, "booting"), unmet(st)), nil
 	case ready != nil:
 		return res, rerr
 	}
@@ -388,13 +389,6 @@ func unmet(st talos.Status) string {
 		return ""
 	}
 	return " (waiting for " + strings.Join(st.UnmetConditions, ", ") + ")"
-}
-
-func cmpOr(s, def string) string {
-	if s == "" {
-		return def
-	}
-	return s
 }
 
 func (x *exec) talosReboot(ctx context.Context, i int, a *metalv1alpha1.TalosRebootAction) (stepState, error) {
@@ -529,7 +523,7 @@ func (x *exec) confirmTry(ctx context.Context, node *osv1alpha1.TalosNode, acc *
 		return waitingOn("node %s took the config in Try mode and does not answer now (%v)", node.Name, err), nil
 	}
 	return waitingOn("node %s took the config in Try mode and is %s, not ready yet%s; it is confirmed once ready",
-		node.Name, cmpOr(st.Stage, "booting"), unmet(st)), nil
+		node.Name, cmp.Or(st.Stage, "booting"), unmet(st)), nil
 }
 
 // applyModes maps the action's modes onto the machine API's.
@@ -1039,7 +1033,7 @@ func (x *exec) waitNodeReady(ctx context.Context, a *metalv1alpha1.WaitNodeReady
 	case err != nil:
 		return waitingOn("node %s: %v", node.Name, err), nil
 	case st.Stage != "running" || !st.Ready:
-		return waitingOn("node %s is %s, not ready yet%s", node.Name, cmpOr(st.Stage, "booting"), unmet(st)), nil
+		return waitingOn("node %s is %s, not ready yet%s", node.Name, cmp.Or(st.Stage, "booting"), unmet(st)), nil
 	case a.Version != "" && version != a.Version:
 		return waitingOn("node %s runs Talos %s, waiting for %s", node.Name, version, a.Version), nil
 	}
@@ -1066,7 +1060,7 @@ func (x *exec) waitNodeReady(ctx context.Context, a *metalv1alpha1.WaitNodeReady
 			if c.Status == corev1.ConditionTrue {
 				return stepDone, nil
 			}
-			return waitingOn("Kubernetes Node %s is not Ready: %s", node.Name, cmpOr(c.Message, c.Reason)), nil
+			return waitingOn("Kubernetes Node %s is not Ready: %s", node.Name, cmp.Or(c.Message, c.Reason)), nil
 		}
 	}
 	return waitingOn("Kubernetes Node %s reports no Ready condition yet", node.Name), nil

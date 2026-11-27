@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -714,12 +715,7 @@ func (r *HostOperationReconciler) imageClient() *http.Client {
 	return c
 }
 
-func (r *HostOperationReconciler) workers() int {
-	if r.Workers > 0 {
-		return r.Workers
-	}
-	return DefaultOperationWorkers
-}
+func (r *HostOperationReconciler) workers() int { return cmp.Or(r.Workers, DefaultOperationWorkers) }
 
 // DefaultOperationWorkers is how many passes run at once, each on another
 // host and another BMC (see passLocks). One firmware flash holds its pass
@@ -799,24 +795,15 @@ func recordedSteps(op *metalv1alpha1.HostOperation) int {
 func ptrTime(t metav1.Time) *metav1.Time { return &t }
 
 func (r *HostOperationReconciler) waitInterval() time.Duration {
-	if r.WaitInterval > 0 {
-		return r.WaitInterval
-	}
-	return defaultWaitInterval
+	return cmp.Or(r.WaitInterval, defaultWaitInterval)
 }
 
 func (r *HostOperationReconciler) powerSettle() time.Duration {
-	if r.PowerSettle > 0 {
-		return r.PowerSettle
-	}
-	return defaultPowerSettle
+	return cmp.Or(r.PowerSettle, defaultPowerSettle)
 }
 
 func (r *HostOperationReconciler) powerTimeout() time.Duration {
-	if r.PowerTimeout > 0 {
-		return r.PowerTimeout
-	}
-	return defaultPowerTimeout
+	return cmp.Or(r.PowerTimeout, defaultPowerTimeout)
 }
 
 // opNow re-reads the operation between steps: deleted or deleting stops the
@@ -990,10 +977,7 @@ func passTimeout(op *metalv1alpha1.HostOperation) time.Duration {
 }
 
 func (r *HostOperationReconciler) guardInterval() time.Duration {
-	if r.GuardInterval > 0 {
-		return r.GuardInterval
-	}
-	return selfRecheck
+	return cmp.Or(r.GuardInterval, selfRecheck)
 }
 
 // usesBMC: a step of the operation talks to the BMC, so the operation needs

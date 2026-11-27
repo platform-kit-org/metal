@@ -226,6 +226,13 @@ func parseFlags(fs *flag.FlagSet, args []string) {
 	_ = fs.Parse(append([]string{"--"}, pos...))
 }
 
+// flagGiven reports whether the flag was set on the command line.
+func flagGiven(fs *flag.FlagSet, name string) bool {
+	given := false
+	fs.Visit(func(f *flag.Flag) { given = given || f.Name == name })
+	return given
+}
+
 // badUsage reports a wrong call of a verb, with its usage line, and exits 1.
 func badUsage(fs *flag.FlagSet, msg string) {
 	verb := strings.Fields(fs.Name())[0]
@@ -237,9 +244,9 @@ func badUsage(fs *flag.FlagSet, msg string) {
 	os.Exit(1)
 }
 
-// signalContext is the context of one verb that talks to the cluster: Ctrl-C
-// or SIGTERM cancels it, so that a call that hangs on a slow API server ends,
-// and a question that waits for an answer ends with "nothing changed".
+// signalContext is the context of one verb: Ctrl-C or SIGTERM cancels it, so
+// that a call that hangs on a slow API server ends, and a question that waits
+// for an answer ends with "nothing changed".
 func signalContext() (ctx context.Context, stop context.CancelFunc) {
 	return signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 }

@@ -85,15 +85,9 @@ func wipeCmd(args []string) {
 	if fs.NArg() != 1 {
 		badUsage(fs, "give exactly one host")
 	}
-	cl, err := newClient()
-	if err != nil {
-		die(err)
-	}
-	ctx, stop := signalContext()
-	defer stop()
-	if err := wipe(ctx, cl, fs.Arg(0), *version, os.Stdout); err != nil {
-		die(err)
-	}
+	onCluster(func(ctx context.Context, cl client.Client) error {
+		return wipe(ctx, cl, fs.Arg(0), *version, os.Stdout)
+	})
 }
 
 // wipe marks a not-wiped host for a wipe.
@@ -139,15 +133,9 @@ func reinstallCmd(args []string) {
 	if fs.NArg() != 1 {
 		badUsage(fs, "give exactly one claim or node")
 	}
-	cl, err := newClient()
-	if err != nil {
-		die(err)
-	}
-	ctx, stop := signalContext()
-	defer stop()
-	if err := reinstall(ctx, cl, *ns, fs.Arg(0), *ack, os.Stdout); err != nil {
-		die(err)
-	}
+	onCluster(func(ctx context.Context, cl client.Client) error {
+		return reinstall(ctx, cl, *ns, fs.Arg(0), *ack, os.Stdout)
+	})
 }
 
 // findClaim reads a claim by namespace/name or name, or else the claim whose
@@ -210,15 +198,9 @@ func replaceCmd(args []string) {
 	if fs.NArg() != 1 || *hostName == "" {
 		badUsage(fs, "give one claim or node, and --host")
 	}
-	cl, err := newClient()
-	if err != nil {
-		die(err)
-	}
-	ctx, stop := signalContext()
-	defer stop()
-	if err := replace(ctx, cl, *ns, fs.Arg(0), *hostName, *ack, os.Stdout); err != nil {
-		die(err)
-	}
+	onCluster(func(ctx context.Context, cl client.Client) error {
+		return replace(ctx, cl, *ns, fs.Arg(0), *hostName, *ack, os.Stdout)
+	})
 }
 
 // hostAsset is the Asset and the system id a claim selects to bind host. A
@@ -293,24 +275,18 @@ func scaleCmd(args []string) {
 	if fs.NArg() != 1 || *cps < 0 || *workers < 0 {
 		badUsage(fs, "give one cluster, --control-planes and --workers")
 	}
-	cl, err := newClient()
-	if err != nil {
-		die(err)
-	}
-	ctx, stop := signalContext()
-	defer stop()
-	plan, err := planScale(ctx, cl, fs.Arg(0), *cps, *workers, *ns)
-	if err != nil {
-		die(err)
-	}
-	plan.print(os.Stdout)
-	if !*apply {
-		fmt.Println("\nNothing changed. To do it: add --apply")
-		return
-	}
-	if err := plan.apply(ctx, cl, *ack, os.Stdout); err != nil {
-		die(err)
-	}
+	onCluster(func(ctx context.Context, cl client.Client) error {
+		plan, err := planScale(ctx, cl, fs.Arg(0), *cps, *workers, *ns)
+		if err != nil {
+			return err
+		}
+		plan.print(os.Stdout)
+		if !*apply {
+			fmt.Println("\nNothing changed. To do it: add --apply")
+			return nil
+		}
+		return plan.apply(ctx, cl, *ack, os.Stdout)
+	})
 }
 
 // scalePlan is what scale does: claims to create and claims to delete, in

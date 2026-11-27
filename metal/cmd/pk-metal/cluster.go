@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"strings"
 
@@ -54,6 +55,26 @@ func newClient() (client.Client, error) {
 	return cl, nil
 }
 
+// mustClient is newClient for a verb: it exits 1 on an error.
+func mustClient() client.Client {
+	cl, err := newClient()
+	if err != nil {
+		die(err)
+	}
+	return cl
+}
+
+// onCluster runs a verb that talks to the cluster: it connects, runs run
+// under signalContext, and exits 1 with run's error.
+func onCluster(run func(ctx context.Context, cl client.Client) error) {
+	cl := mustClient()
+	ctx, stop := signalContext()
+	defer stop()
+	if err := run(ctx, cl); err != nil {
+		die(err)
+	}
+}
+
 // restConfig loads the connection --kubeconfig/--context name, by the
 // kubectl rules.
 func restConfig() (*rest.Config, error) {
@@ -78,6 +99,19 @@ func splitRef(arg, nsFlag string, nsSet bool) (namespace, name string, err error
 		return "", "", fmt.Errorf("%q names namespace %s, but -n says %s; give only one", arg, ns, nsFlag)
 	}
 	return ns, n, nil
+}
+
+// oneRef reads the one "name" or "namespace/name" argument of a verb with a
+// -n flag, as splitRef does.
+func oneRef(fs *flag.FlagSet, ns, what string) (namespace, name string) {
+	if fs.NArg() != 1 {
+		badUsage(fs, "give exactly one "+what)
+	}
+	namespace, name, err := splitRef(fs.Arg(0), ns, flagGiven(fs, "n"))
+	if err != nil {
+		badUsage(fs, err.Error())
+	}
+	return namespace, name
 }
 
 // getNamed reads one namespaced object. When it is not in namespace, it looks

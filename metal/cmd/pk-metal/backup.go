@@ -57,7 +57,8 @@ func backupCmd(args []string) {
 	sub, rest := args[0], args[1:]
 	fs := newFlags("backup " + sub)
 	addGlobalFlags(fs)
-	ctx := context.Background()
+	ctx, stop := signalContext()
+	defer stop()
 	switch sub {
 	case "now":
 		wait := fs.Bool("wait", true, "wait until the snapshot is stored and verified")
@@ -113,14 +114,6 @@ func backupCmd(args []string) {
 	default:
 		badUsage(fs, fmt.Sprintf("unknown subcommand %q: now, list, get or decrypt", sub))
 	}
-}
-
-func mustClient() client.Client {
-	cl, err := newClient()
-	if err != nil {
-		die(err)
-	}
-	return cl
 }
 
 // policyFor finds the backup policy a name means: a policy of that name, or
@@ -209,6 +202,9 @@ func waitSnapshot(ctx context.Context, cl client.Client, name string, every time
 		}
 		select {
 		case <-ctx.Done():
+			if errors.Is(ctx.Err(), context.Canceled) {
+				return fmt.Errorf("interrupted; snapshot %s continues; see it with: pk-metal backup list", name)
+			}
 			return fmt.Errorf("snapshot %s did not end in time; see: kubectl get etcdsnapshot %s -o yaml", name, name)
 		case <-time.After(every):
 		}

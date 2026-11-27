@@ -69,18 +69,13 @@ func rebootCmd(args []string) {
 	if *drainTimeout < 30*time.Second || *drainTimeout > 24*time.Hour {
 		badUsage(fs, "--drain-timeout is between 30s and 24h")
 	}
-	cl, err := newClient()
-	if err != nil {
-		die(err)
-	}
-	ctx, stop := signalContext()
-	defer stop()
-	if opts.User, err = whoAmI(ctx, cl); err != nil {
-		die(err)
-	}
-	if _, err := proposeReboot(ctx, cl, opts, os.Stdout); err != nil {
-		die(err)
-	}
+	onCluster(func(ctx context.Context, cl client.Client) (err error) {
+		if opts.User, err = whoAmI(ctx, cl); err != nil {
+			return err
+		}
+		_, err = proposeReboot(ctx, cl, opts, os.Stdout)
+		return err
+	})
 }
 
 // rebootOptions is one reboot proposal.

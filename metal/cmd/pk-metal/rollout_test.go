@@ -268,4 +268,14 @@ func TestUpgrade(t *testing.T) {
 		require.ErrorContains(t, err, "no rollout planned")
 		assert.Equal(t, 1, strings.Count(out.String(), "waiting up to"), "the wait is said once, so it does not look like a hang")
 	})
+	t.Run("an interrupt stops only the wait", func(t *testing.T) {
+		cl := fakeClientAs("bob", cluster())
+		interrupted, stop := context.WithCancel(ctx)
+		stop()
+		err := upgrade(interrupted, cl, "kubernetes", "lab", "v1.36.3", time.Minute, time.Millisecond, &bytes.Buffer{})
+		require.ErrorContains(t, err, "interrupted; cluster lab still asks for kubernetes v1.36.3")
+		c := &osv1alpha1.TalosCluster{}
+		require.NoError(t, cl.Get(ctx, client.ObjectKey{Name: "lab"}, c))
+		assert.Equal(t, "v1.36.3", c.Spec.KubernetesVersion)
+	})
 }

@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -47,22 +46,10 @@ func retryCmd(args []string) {
 	ns := fs.String("n", operatorNamespace, "namespace of the operation")
 	addGlobalFlags(fs)
 	parseFlags(fs, args)
-	if fs.NArg() != 1 {
-		badUsage(fs, "give exactly one operation")
-	}
-	namespace, name, err := splitRef(fs.Arg(0), *ns, flagGiven(fs, "n"))
-	if err != nil {
-		badUsage(fs, err.Error())
-	}
-	cl, err := newClient()
-	if err != nil {
-		die(err)
-	}
-	ctx, stop := signalContext()
-	defer stop()
-	if err := retry(ctx, cl, namespace, name, os.Stdout); err != nil {
-		die(err)
-	}
+	namespace, name := oneRef(fs, *ns, "operation")
+	onCluster(func(ctx context.Context, cl client.Client) error {
+		return retry(ctx, cl, namespace, name, os.Stdout)
+	})
 }
 
 // convergenceProposal reports an operation the convergence lane proposed for
@@ -190,7 +177,10 @@ func holdCmd(args []string) {
 	reason := fs.String("reason", "", "why, for the people who see the hold (stored on the claim)")
 	addGlobalFlags(fs)
 	parseFlags(fs, args)
-	setHold(fs, ns, *reason, true)
+	namespace, name := oneRef(fs, *ns, "claim")
+	onCluster(func(ctx context.Context, cl client.Client) error {
+		return hold(ctx, cl, namespace, name, *reason, true, os.Stdout)
+	})
 }
 
 func unholdCmd(args []string) {
@@ -198,27 +188,10 @@ func unholdCmd(args []string) {
 	ns := fs.String("n", claimNamespace, "namespace of the claim")
 	addGlobalFlags(fs)
 	parseFlags(fs, args)
-	setHold(fs, ns, "", false)
-}
-
-// setHold runs hold or unhold for the one claim the command line names.
-func setHold(fs *flag.FlagSet, ns *string, reason string, on bool) {
-	if fs.NArg() != 1 {
-		badUsage(fs, "give exactly one claim")
-	}
-	namespace, name, err := splitRef(fs.Arg(0), *ns, flagGiven(fs, "n"))
-	if err != nil {
-		badUsage(fs, err.Error())
-	}
-	cl, err := newClient()
-	if err != nil {
-		die(err)
-	}
-	ctx, stop := signalContext()
-	defer stop()
-	if err := hold(ctx, cl, namespace, name, reason, on, os.Stdout); err != nil {
-		die(err)
-	}
+	namespace, name := oneRef(fs, *ns, "claim")
+	onCluster(func(ctx context.Context, cl client.Client) error {
+		return hold(ctx, cl, namespace, name, "", false, os.Stdout)
+	})
 }
 
 // hold sets (on) or removes the hold annotation on a claim.

@@ -293,6 +293,12 @@ func TestBackupNowAndList(t *testing.T) {
 	assert.Contains(t, lines[1], "Taking")
 	assert.Contains(t, lines[2], "Verified")
 	assert.Contains(t, lines[2], "6h ago")
+
+	interrupted, stop := context.WithCancel(ctx)
+	stop()
+	err = waitSnapshot(interrupted, cl, name, time.Millisecond, &out)
+	require.ErrorContains(t, err, "interrupted; snapshot "+name+" continues",
+		"Ctrl-C stops the wait, not the snapshot; the message must not say it timed out")
 }
 
 func TestBackupDecryptChecksTheSnapshot(t *testing.T) {

@@ -69,20 +69,19 @@ func rolloutCmd(args []string) {
 	}
 	addGlobalFlags(fs)
 	parseFlags(fs, rest)
-	ctx := context.Background()
 	need := func(n int) {
 		if fs.NArg() != n {
 			badUsage(fs, fmt.Sprintf("rollout %s takes %d argument(s)", sub, n))
 		}
 	}
-	var run func(cl client.Client) error
+	var run func(ctx context.Context, cl client.Client) error
 	switch sub {
 	case "list":
 		need(0)
-		run = func(cl client.Client) error { return listRollouts(ctx, cl, os.Stdout, time.Now()) }
+		run = func(ctx context.Context, cl client.Client) error { return listRollouts(ctx, cl, os.Stdout, time.Now()) }
 	case "show":
 		need(1)
-		run = func(cl client.Client) error {
+		run = func(ctx context.Context, cl client.Client) error {
 			ro, err := getRollout(ctx, cl, fs.Arg(0))
 			if err != nil {
 				return err
@@ -92,7 +91,7 @@ func rolloutCmd(args []string) {
 		}
 	case "approve":
 		need(1)
-		run = func(cl client.Client) error {
+		run = func(ctx context.Context, cl client.Client) error {
 			user, err := whoAmI(ctx, cl)
 			if err != nil {
 				return err
@@ -102,25 +101,19 @@ func rolloutCmd(args []string) {
 		}
 	case "resume":
 		need(1)
-		run = func(cl client.Client) error { return resumeRollout(ctx, cl, fs.Arg(0), os.Stdout) }
+		run = func(ctx context.Context, cl client.Client) error { return resumeRollout(ctx, cl, fs.Arg(0), os.Stdout) }
 	case "pause":
 		need(1)
-		run = func(cl client.Client) error { return pauseRollout(ctx, cl, fs.Arg(0), os.Stdout) }
+		run = func(ctx context.Context, cl client.Client) error { return pauseRollout(ctx, cl, fs.Arg(0), os.Stdout) }
 	case "abort":
 		need(1)
-		run = func(cl client.Client) error {
+		run = func(ctx context.Context, cl client.Client) error {
 			return abortRollout(ctx, cl, fs.Arg(0), prompt{Yes: *yes, Interactive: isTerminal(os.Stdin), In: os.Stdin, Out: os.Stdout})
 		}
 	default:
 		badUsage(fs, "unknown subcommand "+sub+": give list, show, approve, resume, pause or abort")
 	}
-	cl, err := newClient()
-	if err != nil {
-		die(err)
-	}
-	if err := run(cl); err != nil {
-		die(err)
-	}
+	onCluster(run)
 }
 
 func getRollout(ctx context.Context, cl client.Client, name string) (*osv1alpha1.TalosRollout, error) {

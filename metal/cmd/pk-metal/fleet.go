@@ -2,12 +2,8 @@ package main
 
 import (
 	"context"
-	"flag"
 	"log"
 	"net/http"
-	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
 	"github.com/dennisklein/platform-kit/metal/internal/bmc/sim/fleet"
@@ -46,8 +42,6 @@ func simFleetCmd(args []string) {
 		"power-cycle a VM (up to three times per power-on) when its console shows only firmware screen control for this long after a power-on (0: never; not given: "+
 			qemu.DefaultHangTimeout.String()+" under kvm, "+qemu.DefaultHangTimeoutTCG.String()+" under tcg)")
 	parseFlags(fs, args)
-	hangGiven := false
-	fs.Visit(func(f *flag.Flag) { hangGiven = hangGiven || f.Name == "hang-timeout" })
 	if *config == "" {
 		badUsage(fs, "--config is required")
 	}
@@ -56,11 +50,11 @@ func simFleetCmd(args []string) {
 		dief("sim fleet: %v", err)
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, stop := signalContext()
 	defer stop()
 	f, err := fleet.Start(ctx, cfg, fleet.Options{
 		StateListen: *stateListen,
-		HangTimeout: guardTimeout(*hangTimeout, hangGiven),
+		HangTimeout: guardTimeout(*hangTimeout, flagGiven(fs, "hang-timeout")),
 		Wrap: func(machine string, h http.Handler) http.Handler {
 			return logRequests(h, "sim["+machine+"]", *verbose)
 		},

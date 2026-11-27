@@ -52,14 +52,9 @@ func upgradeCmd(args []string) {
 	if what != "talos" && what != "kubernetes" {
 		badUsage(fs, "upgrade talos or kubernetes, not "+what)
 	}
-	cl, err := newClient()
-	if err != nil {
-		die(err)
-	}
-	ctx := context.Background()
-	if err := upgrade(ctx, cl, what, cluster, version, *wait, time.Second*2, os.Stdout); err != nil {
-		die(err)
-	}
+	onCluster(func(ctx context.Context, cl client.Client) error {
+		return upgrade(ctx, cl, what, cluster, version, *wait, time.Second*2, os.Stdout)
+	})
 }
 
 // upgradeCheck refuses a version step Talos does not support, before the
@@ -157,7 +152,8 @@ func upgrade(ctx context.Context, cl client.Client, what, name, version string, 
 		}
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return fmt.Errorf("interrupted; cluster %s still asks for %s %s; see the rollout later with: pk-metal rollout list",
+				name, what, version)
 		case <-time.After(poll):
 		}
 	}

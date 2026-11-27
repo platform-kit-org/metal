@@ -78,7 +78,8 @@ func restoreCmd(args []string) {
 	fs := newFlags("restore " + sub)
 	addGlobalFlags(fs)
 	talosconfigFile := fs.String("talosconfig", "", "talosconfig file (default: the cluster's published Secret)")
-	ctx := context.Background()
+	ctx, stop := signalContext()
+	defer stop()
 	switch sub {
 	case "plan":
 		snapshot := fs.String("snapshot", "", "EtcdSnapshot to restore (default: the cluster's newest verified one)")

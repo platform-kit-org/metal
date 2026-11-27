@@ -43,26 +43,14 @@ func abortCmd(args []string) {
 	reason := fs.String("reason", "", "why, for the people who read the operation later (required)")
 	addGlobalFlags(fs)
 	parseFlags(fs, args)
-	if fs.NArg() != 1 {
-		badUsage(fs, "give exactly one operation")
-	}
-	namespace, name, err := splitRef(fs.Arg(0), *ns, flagGiven(fs, "n"))
-	if err != nil {
-		badUsage(fs, err.Error())
-	}
-	cl, err := newClient()
-	if err != nil {
-		die(err)
-	}
-	ctx, stop := signalContext()
-	defer stop()
-	user, err := whoAmI(ctx, cl)
-	if err != nil {
-		die(err)
-	}
-	if err := abort(ctx, cl, namespace, name, user, *reason, os.Stdout); err != nil {
-		die(err)
-	}
+	namespace, name := oneRef(fs, *ns, "operation")
+	onCluster(func(ctx context.Context, cl client.Client) error {
+		user, err := whoAmI(ctx, cl)
+		if err != nil {
+			return err
+		}
+		return abort(ctx, cl, namespace, name, user, *reason, os.Stdout)
+	})
 }
 
 // abort marks the operation for abort and says what happens next.

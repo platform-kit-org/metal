@@ -5,7 +5,6 @@ import (
 	"cmp"
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"maps"
@@ -75,31 +74,21 @@ func approveCmd(args []string) {
 	if err != nil {
 		badUsage(fs, err.Error())
 	}
-	cl, err := newClient()
-	if err != nil {
-		die(err)
-	}
-	ctx, stop := signalContext()
-	defer stop()
-
-	if len(refs) == 0 {
-		if err := listPending(ctx, cl, os.Stdout, time.Now()); err != nil {
-			die(err)
+	onCluster(func(ctx context.Context, cl client.Client) error {
+		if len(refs) == 0 {
+			return listPending(ctx, cl, os.Stdout, time.Now())
 		}
-		return
-	}
-	user, err := whoAmI(ctx, cl)
-	if err != nil {
-		die(err)
-	}
-	// One reader for all the questions: each answer is one line, and a line
-	// meant for the next operation must not be read with this one.
-	in := oneByteAtATime{os.Stdin}
-	if err := approveAll(ctx, cl, refs, approval{
-		User: user, Yes: *yes, In: in, Interactive: isTerminal(os.Stdin), Out: os.Stdout,
-	}); err != nil {
-		die(err)
-	}
+		user, err := whoAmI(ctx, cl)
+		if err != nil {
+			return err
+		}
+		// One reader for all the questions: each answer is one line, and a
+		// line meant for the next operation must not be read with this one.
+		in := oneByteAtATime{os.Stdin}
+		return approveAll(ctx, cl, refs, approval{
+			User: user, Yes: *yes, In: in, Interactive: isTerminal(os.Stdin), Out: os.Stdout,
+		})
+	})
 }
 
 // approveRefs reads the operations the command line names, in order, each
@@ -164,13 +153,6 @@ func (o oneByteAtATime) Read(p []byte) (int, error) {
 		p = p[:1]
 	}
 	return o.r.Read(p)
-}
-
-// flagGiven reports whether the flag was set on the command line.
-func flagGiven(fs *flag.FlagSet, name string) bool {
-	given := false
-	fs.Visit(func(f *flag.Flag) { given = given || f.Name == name })
-	return given
 }
 
 // isTerminal: stdin is a character device, so a person can answer a prompt.

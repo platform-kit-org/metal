@@ -86,11 +86,6 @@ Repair one member at a time. With three control planes, a second lost member is 
 >
   <svg viewBox="0 0 720 220" role="img" aria-labelledby="ex-rs-t" xmlns="http://www.w3.org/2000/svg" class="pk-stage-svg">
     <title id="ex-rs-t">A restore resets the stuck members and uploads the snapshot to one control plane. etcd starts there and the others join.</title>
-    <defs>
-      <marker id="pk-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-        <path d="M0 0 10 5 0 10z" fill="context-stroke"></path>
-      </marker>
-    </defs>
     <Box node="snap" x={20} y={20} w={180} h={50} label="EtcdSnapshot" sub="Verified" cat="kind" href="/reference/kinds/etcdsnapshot/" />
     <Box node="you" x={20} y={130} w={180} h={50} label="Your workstation" sub="age identity" variant="soft" />
     <Box node="cp1" x={300} y={130} w={130} h={50} label="cp-1" sub="no quorum" text="cp1-s" />

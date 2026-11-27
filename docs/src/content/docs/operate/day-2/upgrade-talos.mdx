@@ -14,9 +14,7 @@ sources:
 
 import { Steps } from '@astrojs/starlight/components';
 import Callout from '../../../../components/Callout.astro';
-import Explainer from '../../../../components/Explainer.astro';
-import Box from '../../../../components/diagram/Box.astro';
-import Edge from '../../../../components/diagram/Edge.astro';
+import RollingUpgrade from '../../../../components/explainers/RollingUpgrade.astro';
 
 ## Goal
 
@@ -34,43 +32,7 @@ Move every node of one cluster to a new Talos release, one node at a time.
 
 ## How the rollout moves
 
-<Explainer
-  title="A Talos upgrade rollout"
-  steps={[
-    { title: 'Ask', caption: 'You set the new release. The operator proposes one TalosRollout with a plan. No machine changes.', code: 'pk-metal upgrade talos prod v1.14.7', state: { you: 'active', ro: 'warn', ask: 'flow' }, text: { 'ro-ph': 'AwaitingApproval' } },
-    { title: 'Approve', caption: 'A person reads the plan and approves it. The approval names the plan hash.', code: 'pk-metal rollout approve prod-talosupgrade-1a2b3c4d', state: { you: 'done', ask: 'done', ro: 'active', other: 'active', ok: 'flow' }, text: { 'ro-ph': 'Approved' } },
-    { title: 'First node', caption: 'The first control plane drains, upgrades, reboots and becomes Ready. etcd must be healthy again.', code: 'drain → talosUpgrade → waitNodeReady → waitEtcdHealthy → uncordon', state: { ro: 'active', ok: 'done', cp1: 'active', r1: 'flow' }, text: { 'ro-ph': 'NodeRunning', 'cp1-v': 'upgrading' } },
-    { title: 'Pause', caption: 'The rollout always stops after the first node. Examine the node, then resume.', code: 'pk-metal rollout resume prod-talosupgrade-1a2b3c4d', state: { ro: 'warn', cp1: 'ok', you: 'active', res: 'flow' }, text: { 'ro-ph': 'PausedAfterFirstNode', 'cp1-v': 'v1.14.7' } },
-    { title: 'Control planes', caption: 'The other control planes follow, one at a time. The etcd leader goes last.', state: { ro: 'active', cp1: 'ok', cp2: 'active', r2: 'flow' }, text: { 'ro-ph': 'NodeRunning', 'cp1-v': 'v1.14.7', 'cp2-v': 'upgrading' } },
-    { title: 'Workers', caption: 'Then the workers. Between two nodes, the operator checks etcd and all Kubernetes nodes again.', state: { ro: 'active', cp1: 'ok', cp2: 'ok', cp3: 'ok', w1: 'active', r4: 'flow' }, text: { 'ro-ph': 'WaitingForHealth', 'cp1-v': 'v1.14.7', 'cp2-v': 'v1.14.7', 'cp3-v': 'v1.14.7', 'w1-v': 'upgrading' } },
-    { title: 'Complete', caption: 'Every node runs the new release. The rollout is Complete.', state: { ro: 'ok', cp1: 'ok', cp2: 'ok', cp3: 'ok', w1: 'ok', w2: 'ok' }, text: { 'ro-ph': 'Complete', 'cp1-v': 'v1.14.7', 'cp2-v': 'v1.14.7', 'cp3-v': 'v1.14.7', 'w1-v': 'v1.14.7', 'w2-v': 'v1.14.7' } },
-  ]}
->
-  <svg viewBox="0 0 720 250" role="img" aria-labelledby="ex-up-t" xmlns="http://www.w3.org/2000/svg" class="pk-stage-svg">
-    <title id="ex-up-t">A TalosRollout upgrades the control planes one at a time, pauses after the first node, then upgrades the workers.</title>
-    <defs>
-      <marker id="pk-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-        <path d="M0 0 10 5 0 10z" fill="context-stroke"></path>
-      </marker>
-    </defs>
-    <Box node="you" x={20} y={14} w={120} h={34} label="You" variant="soft" />
-    <Box node="other" x={580} y={14} w={120} h={34} label="Approver" variant="soft" />
-    <Box node="ro" x={260} y={8} w={200} h={50} label="TalosRollout" sub="-" text="ro-ph" cat="kind" href="/reference/kinds/talosrollout/" />
-    <Edge node="ask" points={[[140, 31], [260, 31]]} label="upgrade" at={[200, 24]} />
-    <Edge node="ok" points={[[580, 31], [460, 31]]} label="approve" at={[520, 24]} />
-    <Edge node="res" points={[[80, 48], [80, 92], [260, 92], [260, 58]]} label="resume" at={[170, 86]} />
-    <Box node="cp1" x={20} y={140} w={120} h={50} label="cp-1" sub="v1.14.6" text="cp1-v" />
-    <Box node="cp2" x={160} y={140} w={120} h={50} label="cp-2" sub="v1.14.6" text="cp2-v" />
-    <Box node="cp3" x={300} y={140} w={120} h={50} label="cp-3 (leader)" sub="v1.14.6" text="cp3-v" />
-    <Box node="w1" x={440} y={140} w={120} h={50} label="w-1" sub="v1.14.6" text="w1-v" />
-    <Box node="w2" x={580} y={140} w={120} h={50} label="w-2" sub="v1.14.6" text="w2-v" />
-    <Edge node="r1" points={[[320, 58], [320, 110], [80, 110], [80, 140]]} />
-    <Edge node="r2" points={[[340, 58], [340, 118], [220, 118], [220, 140]]} />
-    <Edge node="r4" points={[[400, 58], [400, 118], [500, 118], [500, 140]]} />
-    <text class="t-small t-label" x={220} y={222} text-anchor="middle">control planes, one at a time</text>
-    <text class="t-small t-label" x={570} y={222} text-anchor="middle">workers</text>
-  </svg>
-</Explainer>
+<RollingUpgrade />
 
 ## Upgrade pk-metal first
 

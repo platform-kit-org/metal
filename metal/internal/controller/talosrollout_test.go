@@ -57,19 +57,6 @@ func TestRolloutActions(t *testing.T) {
 	assert.Equal(t, "v1.14.6", upgrade[2].WaitNodeReady.Version, "an upgrade waits for the version it installs")
 }
 
-func TestSameActionsIgnoresAPIDefaults(t *testing.T) {
-	ro := &osv1alpha1.TalosRollout{Spec: osv1alpha1.TalosRolloutSpec{Kind: osv1alpha1.RolloutTalosUpgrade}}
-	built := rolloutActions(ro, step("cp", osv1alpha1.RoleControlPlane))
-	stored := withDefaults(built)
-	stored[1].TalosUpgrade.RebootMode = "" // as if the API server had not defaulted it
-	assert.True(t, sameActions(stored, built))
-
-	changed := withDefaults(built)
-	changed[1].TalosUpgrade.Image = "other@sha256:y"
-	assert.False(t, sameActions(changed, built))
-	assert.False(t, sameActions(built[:2], built))
-}
-
 func TestRolloutPlanHash(t *testing.T) {
 	ro := approvedRollout(osv1alpha1.RolloutReboot, step("a", osv1alpha1.RoleWorker))
 	h := ro.Status.PlanHash

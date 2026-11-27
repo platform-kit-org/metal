@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"reflect"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -73,7 +74,7 @@ func rolloutCovers(ro *osv1alpha1.TalosRollout, op *metalv1alpha1.HostOperation)
 	if step.Host != op.Spec.HostRef.Name {
 		return fmt.Sprintf("the approved plan runs node %s on host %s, this operation targets host %s", node, step.Host, op.Spec.HostRef.Name)
 	}
-	if !sameActions(op.Spec.Actions, rolloutActions(ro, step)) {
+	if !reflect.DeepEqual(op.Spec.Actions, rolloutActions(ro, step)) {
 		return fmt.Sprintf("this operation's actions for node %s differ from the ones the approved plan of rollout %s gives it", node, ro.Name)
 	}
 	return ""

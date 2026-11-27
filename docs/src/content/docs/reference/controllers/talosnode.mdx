@@ -58,7 +58,7 @@ A second controller in the same lane, `talosnode-member`, holds a deleted node u
     { label: 'Read the TalosCluster and bundle', out: 'Rendered = False', outSub: 'ClusterNotFound, SecretsUnavailable' },
     { label: 'Resolve the patches', out: 'Rendered = False', outSub: 'PatchesUnresolvable' },
     { label: 'Register the schematic', out: 'Rendered = False', outSub: 'SchematicUnavailable' },
-    { label: 'Render, write the config Secret', sub: 'content-addressed, never rewritten', out: 'Rendered = False', outSub: 'UnsupportedVersion, RenderFailed' },
+    { label: 'Render, write the config Secret', sub: 'content-addressed, never rewritten', out: 'Rendered = False', outSub: 'UnsupportedVersionPair, RenderFailed' },
     { label: 'Check in with the machine', sub: 'only if a Host runs the node' },
     { label: 'Update status, collect old Secrets', variant: 'ok' },
   ]}

@@ -28,6 +28,7 @@ import (
 
 	"github.com/dennisklein/platform-kit/metal/internal/ledger"
 	pkscheme "github.com/dennisklein/platform-kit/metal/internal/scheme"
+	"github.com/dennisklein/platform-kit/metal/internal/talos/render"
 )
 
 // suite is one running kube-apiserver and etcd with the operator's CRDs, and
@@ -131,6 +132,16 @@ func seedBMCSecrets(t *testing.T, ctx context.Context, cl client.Client, certs .
 	} {
 		require.NoError(t, cl.Create(ctx, sec))
 	}
+}
+
+// bundleSecret is a Secret that holds the render package's test secrets
+// bundle, as a person creates it from the output of `talosctl gen secrets`.
+func bundleSecret(t *testing.T, namespace, name string) *corev1.Secret {
+	t.Helper()
+	bundle, err := os.ReadFile(filepath.Join("..", "talos", "render", "testdata", "secrets.yaml"))
+	require.NoError(t, err)
+	return &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: name},
+		Data: map[string][]byte{render.BundleKey: bundle}}
 }
 
 // barrierAnnotation carries the token that settle stamps on an object.

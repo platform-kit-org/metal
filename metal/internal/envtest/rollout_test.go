@@ -11,7 +11,6 @@ package envtest_test
 
 import (
 	"context"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -98,22 +97,13 @@ func TestRollout(t *testing.T) {
 	machinesByName := map[string]*fake.Machine{}
 	addrs := map[string]string{"cp-1": "10.88.0.11", "cp-2": "10.88.0.12", "w-1": "10.88.0.21", "w-2": "10.88.0.22"}
 	for name, addr := range addrs {
-		m := fake.NewMachine("v1.14.5")
-		m.Configure([]byte("running config"))
-		m.SetStage("running", true)
-		fleet.Add(addr, name, m)
-		machinesByName[name] = m
+		machinesByName[name] = fleet.AddRunning(addr, name, "v1.14.5", []byte("running config"))
 	}
 	machinesByName["cp-1"].JoinEtcd(etcd, false)
 	machinesByName["cp-2"].JoinEtcd(etcd, false)
 	workload := &stubWorkload{notReady: map[string]bool{}}
 
-	bundle, err := os.ReadFile(filepath.Join("..", "talos", "render", "testdata", "secrets.yaml"))
-	require.NoError(t, err)
-	require.NoError(t, cl.Create(ctx, &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: "fleet-secrets", Namespace: "default"},
-		Data:       map[string][]byte{render.BundleKey: bundle},
-	}))
+	require.NoError(t, cl.Create(ctx, bundleSecret(t, "default", "fleet-secrets")))
 	require.NoError(t, cl.Create(ctx, &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Name: "fleet-kubeconfig", Namespace: "default"},
 		Data:       map[string][]byte{controller.KubeconfigKey: []byte("stub")},

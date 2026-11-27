@@ -150,17 +150,8 @@ func TestOSLane(t *testing.T) {
 	cl := st.cl
 	ctx := t.Context()
 
-	// The cluster secrets bundle, as a person creates it from the output of
-	// `talosctl gen secrets`: the render package's throwaway test bundle.
-	bundle, err := os.ReadFile(filepath.Join("..", "talos", "render", "testdata", "secrets.yaml"))
-	require.NoError(t, err)
-	createBundle := func(name string) {
-		require.NoError(t, cl.Create(ctx, &corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
-			Data:       map[string][]byte{render.BundleKey: bundle},
-		}))
-	}
-	createBundle("lab-talos-secrets")
+	labBundle := bundleSecret(t, "default", "lab-talos-secrets")
+	require.NoError(t, cl.Create(ctx, labBundle))
 
 	mgr := st.newManager(t)
 	factory, posted := stubFactory(t)
@@ -471,7 +462,7 @@ func TestOSLane(t *testing.T) {
 			return b != nil && b.Reason == osv1alpha1.ReasonSecretsUnavailable
 		}, waitFor, tick)
 
-		createBundle("other-talos-secrets")
+		require.NoError(t, cl.Create(ctx, bundleSecret(t, "default", "other-talos-secrets")))
 		require.Eventually(t, func() bool {
 			_, c := nodeCondition("other-1", osv1alpha1.ConditionRendered)
 			return c != nil && c.Reason == osv1alpha1.ReasonPatchesUnresolvable
@@ -751,7 +742,7 @@ func TestOSLane(t *testing.T) {
 		assert.Equal(t, node1.Status.ConfigDigest, n1.Status.ConfigDigest, "configs still render from the bundle the machines run")
 
 		require.NoError(t, cl.Get(ctx, types.NamespacedName{Namespace: "default", Name: "lab-talos-secrets"}, &sec))
-		sec.Data[render.BundleKey] = bundle
+		sec.Data[render.BundleKey] = labBundle.Data[render.BundleKey]
 		require.NoError(t, cl.Update(ctx, &sec))
 		require.Eventually(t, func() bool {
 			_, c := clusterCondition("lab", osv1alpha1.ConditionSecretsBundleHeld)

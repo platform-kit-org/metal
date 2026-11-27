@@ -2,8 +2,6 @@ package controller
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -11,7 +9,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -24,7 +21,6 @@ import (
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
 	"github.com/dennisklein/platform-kit/metal/internal/talos"
 	talosfake "github.com/dennisklein/platform-kit/metal/internal/talos/fake"
-	"github.com/dennisklein/platform-kit/metal/internal/talos/render"
 )
 
 // ---- the pure rules -------------------------------------------------------
@@ -135,8 +131,6 @@ func labNode(name string, role osv1alpha1.NodeRole, i int) *osv1alpha1.TalosNode
 // objects go into the API too.
 func newLifecycleLab(t *testing.T, cps, workers []string, extra ...client.Object) *lifecycleLab {
 	t.Helper()
-	bundle, err := os.ReadFile(filepath.Join("..", "talos", "render", "testdata", "secrets.yaml"))
-	require.NoError(t, err)
 	cluster := &osv1alpha1.TalosCluster{
 		ObjectMeta: metav1.ObjectMeta{Name: "lab"},
 		Spec: osv1alpha1.TalosClusterSpec{
@@ -144,10 +138,7 @@ func newLifecycleLab(t *testing.T, cps, workers []string, extra ...client.Object
 		},
 		Status: osv1alpha1.TalosClusterStatus{BootstrappedAt: ptr.To(metav1.Now())},
 	}
-	objs := []client.Object{cluster, &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "pk-metal", Name: "lab-secrets"},
-		Data:       map[string][]byte{render.BundleKey: bundle},
-	}, slotlessEndpoint()}
+	objs := []client.Object{cluster, bundleSecret(t, "pk-metal", "lab-secrets"), slotlessEndpoint()}
 	lab := &lifecycleLab{fleet: talosfake.NewFleet(), etcd: talosfake.NewEtcdCluster(), machines: map[string]*talosfake.Machine{}}
 	i := 1
 	for _, group := range []struct {
@@ -156,10 +147,7 @@ func newLifecycleLab(t *testing.T, cps, workers []string, extra ...client.Object
 	}{{cps, osv1alpha1.RoleControlPlane}, {workers, osv1alpha1.RoleWorker}} {
 		for _, name := range group.names {
 			n := labNode(name, group.role, i)
-			m := talosfake.NewMachine("v1.14.6")
-			m.SetStage("running", true)
-			m.Configure([]byte("config of " + name))
-			lab.fleet.Add(n.Spec.Address, name, m)
+			m := lab.fleet.AddRunning(n.Spec.Address, name, "v1.14.6", []byte("config of "+name))
 			if group.role == osv1alpha1.RoleControlPlane {
 				m.JoinEtcd(lab.etcd, false)
 			}

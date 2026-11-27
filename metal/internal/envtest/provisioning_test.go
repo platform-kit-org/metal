@@ -150,13 +150,6 @@ func TestProvisioning(t *testing.T) {
 	// API is this apiserver, reached with an admin kubeconfig as the
 	// TalosCluster reconciler would publish it.
 	fleet := talosfake.NewFleet()
-	runningMachine := func(node string) *talosfake.Machine {
-		m := talosfake.NewMachine("v1.14.0")
-		m.Configure([]byte("machine: {}"))
-		m.SetStage("running", true)
-		fleet.Add("192.0.2.11", node, m)
-		return m
-	}
 	workloadNode := func(name string) {
 		require.NoError(t, cl.Create(ctx, &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: name}}))
 	}
@@ -390,14 +383,9 @@ func TestProvisioning(t *testing.T) {
 		require.NoError(t, err)
 		kubeconfig, err := workloadAdmin.KubeConfig()
 		require.NoError(t, err)
-		bundle, err := os.ReadFile(filepath.Join("..", "talos", "render", "testdata", "secrets.yaml"))
-		require.NoError(t, err)
-		for name, data := range map[string]map[string][]byte{
-			"lab-secrets":    {render.BundleKey: bundle},
-			"lab-kubeconfig": {controller.KubeconfigKey: kubeconfig},
-		} {
-			require.NoError(t, cl.Create(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: name}, Data: data}))
-		}
+		require.NoError(t, cl.Create(ctx, bundleSecret(t, "default", "lab-secrets")))
+		require.NoError(t, cl.Create(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "lab-kubeconfig"},
+			Data: map[string][]byte{controller.KubeconfigKey: kubeconfig}}))
 		labCluster.Status.KubeconfigSecretRef = &osv1alpha1.SecretReference{Namespace: "default", Name: "lab-kubeconfig"}
 		require.NoError(t, cl.Status().Update(ctx, labCluster))
 	}
@@ -668,7 +656,7 @@ func TestProvisioning(t *testing.T) {
 	})
 
 	st.run(t, "deleting the claim of a running node waits for approval, then removes and resets it", func(t *testing.T) {
-		machine := runningMachine("node-dual")
+		machine := fleet.AddRunning("192.0.2.11", "node-dual", "v1.14.0", []byte("machine: {}"))
 		workloadNode("node-dual")
 		c, err := claimOf("dual")
 		require.NoError(t, err)
@@ -853,7 +841,7 @@ func TestProvisioning(t *testing.T) {
 		assert.Empty(t, mediaOf(singleState))
 		waitClaim("single-disk", provisionedReason(metalv1alpha1.ReasonHandedOff))
 
-		machine := runningMachine("node-single-disk")
+		machine := fleet.AddRunning("192.0.2.11", "node-single-disk", "v1.14.0", []byte("machine: {}"))
 		workloadNode("node-single-disk")
 		c, err := claimOf("single-disk")
 		require.NoError(t, err)

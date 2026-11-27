@@ -3,8 +3,6 @@ package controller
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 	"slices"
 	"testing"
 
@@ -22,7 +20,6 @@ import (
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
 	talosfake "github.com/dennisklein/platform-kit/metal/internal/talos/fake"
-	"github.com/dennisklein/platform-kit/metal/internal/talos/render"
 )
 
 // selfNode is a TalosNode of cluster "mgmt" at 10.0.0.<n>, checked in.
@@ -357,8 +354,6 @@ func TestSelfGuardStopsReinstallAndPowerOff(t *testing.T) {
 // still reads Ready (the poll is minutes apart) while the machine is in POST
 // after its power cycle: rebooting cp-2 then would leave etcd one member.
 func TestSelfGuardAsksTheControlPlanes(t *testing.T) {
-	bundle, err := os.ReadFile(filepath.Join("..", "talos", "render", "testdata", "secrets.yaml"))
-	require.NoError(t, err)
 	objs := guardedObjects()
 	for _, o := range objs {
 		if c, ok := o.(*osv1alpha1.TalosCluster); ok {
@@ -366,22 +361,12 @@ func TestSelfGuardAsksTheControlPlanes(t *testing.T) {
 			c.Spec.SecretsRef = osv1alpha1.SecretReference{Namespace: "pk-metal", Name: "mgmt-secrets"}
 		}
 	}
-	objs = append(objs, &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "pk-metal", Name: "mgmt-secrets"},
-		Data:       map[string][]byte{render.BundleKey: bundle},
-	})
+	objs = append(objs, bundleSecret(t, "pk-metal", "mgmt-secrets"))
 	cl := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(objs...).Build()
 
 	fleet := talosfake.NewFleet()
-	machine := func(addr string) *talosfake.Machine {
-		m := talosfake.NewMachine("v1.14.6")
-		m.Configure([]byte("machine: {}"))
-		m.SetStage("running", true)
-		fleet.Add(addr, addr, m)
-		return m
-	}
-	machine("10.0.0.1")
-	cp3 := machine("10.0.0.3")
+	fleet.AddRunning("10.0.0.1", "10.0.0.1", "v1.14.6", []byte("machine: {}"))
+	cp3 := fleet.AddRunning("10.0.0.3", "10.0.0.3", "v1.14.6", []byte("machine: {}"))
 	cp3.SetUnreachable(true) // in POST
 
 	g := &SelfGuard{Reader: cl, NodeName: "talos-1", Dial: fleet.Dialer(), Namespace: "pk-metal"}

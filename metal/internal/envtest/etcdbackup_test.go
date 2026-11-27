@@ -20,7 +20,6 @@ import (
 	"filippo.io/age"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -41,11 +40,8 @@ func etcdFleet(fleet *fake.Fleet, net int, names []string, snap []byte) map[stri
 	etcd := fake.NewEtcdCluster()
 	out := map[string]*fake.Machine{}
 	for i, name := range names {
-		m := fake.NewMachine(labTalos)
-		m.Configure([]byte("config of " + name))
-		m.SetStage("running", true)
+		m := fleet.AddRunning(fmt.Sprintf("10.%d.0.1%d", net, i+1), name, labTalos, []byte("config of "+name))
 		m.SetSnapshot(snap)
-		fleet.Add(fmt.Sprintf("10.%d.0.1%d", net, i+1), name, m)
 		m.JoinEtcd(etcd, false)
 		out[name] = m
 	}
@@ -57,12 +53,7 @@ func etcdFleet(fleet *fake.Fleet, net int, names []string, snap []byte) map[stri
 func createTalosCluster(t *testing.T, cl client.Client, name string, net int, nodes []string) {
 	t.Helper()
 	ctx := t.Context()
-	bundle, err := os.ReadFile(filepath.Join("..", "talos", "render", "testdata", "secrets.yaml"))
-	require.NoError(t, err)
-	require.NoError(t, cl.Create(ctx, &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: name + "-talos-secrets", Namespace: "default"},
-		Data:       map[string][]byte{render.BundleKey: bundle},
-	}))
+	require.NoError(t, cl.Create(ctx, bundleSecret(t, "default", name+"-talos-secrets")))
 	require.NoError(t, cl.Create(ctx, &osv1alpha1.TalosCluster{
 		ObjectMeta: metav1.ObjectMeta{Name: name},
 		Spec: osv1alpha1.TalosClusterSpec{

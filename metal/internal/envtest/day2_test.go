@@ -8,8 +8,6 @@
 package envtest_test
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -29,7 +27,6 @@ import (
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
 	"github.com/dennisklein/platform-kit/metal/internal/controller"
 	talosfake "github.com/dennisklein/platform-kit/metal/internal/talos/fake"
-	"github.com/dennisklein/platform-kit/metal/internal/talos/render"
 )
 
 func TestDay2Operations(t *testing.T) {
@@ -44,14 +41,9 @@ func TestDay2Operations(t *testing.T) {
 	require.NoError(t, err)
 	kubeconfig, err := admin.KubeConfig()
 	require.NoError(t, err)
-	bundle, err := os.ReadFile(filepath.Join("..", "talos", "render", "testdata", "secrets.yaml"))
-	require.NoError(t, err)
-	for name, data := range map[string]map[string][]byte{
-		"lab-secrets":    {render.BundleKey: bundle},
-		"lab-kubeconfig": {controller.KubeconfigKey: kubeconfig},
-	} {
-		require.NoError(t, cl.Create(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "pk-metal", Name: name}, Data: data}))
-	}
+	require.NoError(t, cl.Create(ctx, bundleSecret(t, "pk-metal", "lab-secrets")))
+	require.NoError(t, cl.Create(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "pk-metal", Name: "lab-kubeconfig"},
+		Data: map[string][]byte{controller.KubeconfigKey: kubeconfig}}))
 	cluster := &osv1alpha1.TalosCluster{
 		ObjectMeta: metav1.ObjectMeta{Name: "lab"},
 		Spec: osv1alpha1.TalosClusterSpec{
@@ -91,10 +83,7 @@ func TestDay2Operations(t *testing.T) {
 			LastHeartbeatTime: metav1.Now(), LastTransitionTime: metav1.Now(), Reason: "KubeletReady"}}
 		require.NoError(t, cl.Status().Update(ctx, node))
 
-		m := talosfake.NewMachine(labTalos)
-		m.Configure([]byte("machine: {}"))
-		m.SetStage("running", true)
-		fleet.Add(n.addr, n.name, m)
+		m := fleet.AddRunning(n.addr, n.name, labTalos, []byte("machine: {}"))
 		if n.role == osv1alpha1.RoleControlPlane {
 			m.JoinEtcd(etcd, false)
 		}

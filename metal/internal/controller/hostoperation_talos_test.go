@@ -61,10 +61,18 @@ var labNodes = []struct {
 	{"w-1", osv1alpha1.RoleWorker, "10.0.0.4"},
 }
 
-func newTalosLab(t *testing.T, objs ...client.Object) *talosLab {
+// bundleSecret is a Secret that holds the render package's test secrets
+// bundle, as a person creates it from the output of `talosctl gen secrets`.
+func bundleSecret(t *testing.T, namespace, name string) *corev1.Secret {
 	t.Helper()
 	bundle, err := os.ReadFile(filepath.Join("..", "talos", "render", "testdata", "secrets.yaml"))
 	require.NoError(t, err)
+	return &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: name},
+		Data: map[string][]byte{render.BundleKey: bundle}}
+}
+
+func newTalosLab(t *testing.T, objs ...client.Object) *talosLab {
+	t.Helper()
 	lab := &talosLab{machines: map[string]*talosfake.Machine{}, etcd: talosfake.NewEtcdCluster()}
 	fleet := talosfake.NewFleet()
 
@@ -77,9 +85,7 @@ func newTalosLab(t *testing.T, objs ...client.Object) *talosLab {
 	}
 	cluster.Status.BootstrappedAt = ptr.To(metav1.Now())
 	cluster.Status.KubeconfigSecretRef = &osv1alpha1.SecretReference{Namespace: "pk-metal", Name: "lab-kubeconfig"}
-	objs = append(objs, cluster,
-		&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "pk-metal", Name: "lab-secrets"},
-			Data: map[string][]byte{render.BundleKey: bundle}},
+	objs = append(objs, cluster, bundleSecret(t, "pk-metal", "lab-secrets"),
 		&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "pk-metal", Name: "lab-kubeconfig"},
 			Data: map[string][]byte{KubeconfigKey: []byte("unused: the Workload seam answers")}})
 
@@ -97,10 +103,7 @@ func newTalosLab(t *testing.T, objs ...client.Object) *talosLab {
 		}
 		objs = append(objs, node, host)
 
-		m := talosfake.NewMachine("v1.14.6")
-		m.Configure([]byte("machine: {}"))
-		m.SetStage("running", true)
-		fleet.Add(n.addr, n.name, m)
+		m := fleet.AddRunning(n.addr, n.name, "v1.14.6", []byte("machine: {}"))
 		if n.role == osv1alpha1.RoleControlPlane {
 			m.JoinEtcd(lab.etcd, false)
 		}

@@ -31,7 +31,7 @@ The result is a Kubernetes cluster that the operator installed through simulated
 
 <dl class="pk-glance">
   <dt>Time</dt>
-  <dd>About 15 minutes. The first start downloads the images and takes more time.</dd>
+  <dd>About 15 minutes. The first start takes more time. It downloads the Go modules, builds the operator two times, and pulls the images `golang` and `kindest/node` and the Talos installer.</dd>
   <dt>Workstation</dt>
   <dd>Linux with KVM, Docker Engine, 12 GiB of free memory and 15 GiB of free disk.</dd>
   <dt>Repository</dt>

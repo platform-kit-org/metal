@@ -103,10 +103,11 @@ jobs:
   lab:
     name: provision the virtual lab
     runs-on: ubuntu-latest
-    # Doctor and up take about ten minutes on a cold runner, the wait is capped
-    # at forty, and a failed run still needs time to collect its evidence. The
-    # day-2 round adds two reboots of at most twenty minutes each and a
-    # config rollout without reboots; observe adds about three minutes.
+    # Doctor and up take about four minutes with the Go caches restored, and
+    # up to five without them. The wait is capped at forty, and a failed run
+    # still needs time to collect its evidence. The day-2 round adds two
+    # reboots of at most twenty minutes each and a config rollout without
+    # reboots; observe adds about three minutes.
     # The nightly run has both.
     timeout-minutes: ${{ (github.event_name == 'schedule' || (inputs.day2 && inputs.observe)) && 145 || inputs.day2 && 135 || inputs.observe && 85 || 75 }}
     env:

@@ -107,7 +107,7 @@ The input `huawei` changes the fleet, not the rounds. Thus the nightly run does 
 | `upgrade` | `1cp+1w` | `PK_LAB_TALOS=v1.14.5`, `PK_LAB_ROLLOUT_TIMEOUT=3000` | 120 minutes |
 
 All jobs set `PK_LAB_MIN_FREE_GIB=10` and `PK_LAB_WAIT_TIMEOUT=2400`.
-A hosted runner has 4 cores and 16 GB of memory. The `lab:up` step takes about four minutes, and the three installs take about three minutes more.
+A hosted runner has 4 cores and 16 GB of memory. The workflow restores the Go caches. Then the `lab:up` step takes about three minutes, and the approval and the three installs take about four minutes more.
 
 ## Start a run by hand
 

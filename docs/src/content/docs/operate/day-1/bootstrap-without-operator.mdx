@@ -27,7 +27,7 @@ Make the first Talos cluster of a site from a workstation, when no management cl
 - You have the secrets bundle from `talosctl gen secrets`.
 - Your workstation, or a host that runs [](cli:relay), can reach the BMCs. The BMCs can reach it back.
 - You have the BMC password of each machine.
-- Each BMC has two virtual media slots. [](cli:check) shows the slots: two lines that are not `dialect=none`.
+- Each BMC has two virtual media slots. [](cli:check) shows them on the `slots:` line: `config=-` means one slot.
 - You have the URL of a Talos installer ISO that reads its configuration from a medium. Step 1 makes it.
 
 <Callout type="caution">

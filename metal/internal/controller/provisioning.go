@@ -125,13 +125,12 @@ const (
 // machine that does or does not answer. It returns a hold reason and message
 // when no boot this operator can make fits.
 func decideShape(hostName string, v endpointView, reachable bool, talosVersion string) (bootShape, string, string) {
-	_, configSlot := v.mediaSlots()
 	switch {
-	case configSlot != "":
+	case v.config != "":
 		return shapeTwoMedia, "", ""
 	case reachable:
 		return shapeConfigOnly, "", ""
-	case len(v.bootSlots) == 0:
+	case v.boot == "":
 		return 0, metalv1alpha1.ReasonSingleMediumUnsupported, fmt.Sprintf(
 			"host %s can hold one virtual medium only (slots %v), and none of them boots an ISO; a blank machine needs one that does",
 			hostName, v.insertable)
@@ -408,7 +407,6 @@ func (r *HostClaimReconciler) installPlan(ctx context.Context, claim *metalv1alp
 	if len(shape.insertable) == 0 {
 		return plan, nil, nil, metalv1alpha1.ReasonNoBootableMedia, fmt.Sprintf("host %s advertises no insertable media slot", hostName), nil
 	}
-	bootSlot, configSlot := shape.mediaSlots()
 	// One slot cannot carry the installer and the config side by side. A
 	// machine that already runs Talos from its disk (it answers, blank, in
 	// maintenance mode) needs the config medium alone; a blank one gets an
@@ -437,7 +435,7 @@ func (r *HostClaimReconciler) installPlan(ctx context.Context, claim *metalv1alp
 			return plan, nil, nil, metalv1alpha1.ReasonNoBootableMedia, err.Error(), nil
 		}
 		plan.ArtifactDigest, plan.Embedded = installer.Status.Digest, true
-		plan.Slots, plan.Target, plan.Mode = []string{shape.bootSlots[0]}, target, boot.OverrideMode(shape.mode)
+		plan.Slots, plan.Target, plan.Mode = []string{shape.boot}, target, boot.OverrideMode(shape.mode)
 	default:
 		if config, err = r.ensureConfigAsset(ctx, node); err != nil {
 			return plan, nil, nil, "", "", err
@@ -461,7 +459,7 @@ func (r *HostClaimReconciler) installPlan(ctx context.Context, claim *metalv1alp
 			return plan, nil, nil, metalv1alpha1.ReasonNoBootableMedia, err.Error(), nil
 		}
 		plan.Installer, plan.InstallerDigest = installer.Status.URL, installer.Status.Digest
-		plan.Slots, plan.Target = []string{bootSlot, configSlot}, target
+		plan.Slots, plan.Target = []string{shape.boot, shape.config}, target
 		plan.Mode = boot.OverrideMode(shape.mode)
 	}
 
@@ -712,12 +710,10 @@ type endpointView struct {
 	// insertable lists every slot with an insert mechanism, best boot slot
 	// first (bmc.InsertableSlots) — what a release empties.
 	insertable []string
-	// bootSlots are the insertable slots an ISO boots from: optical ones,
-	// then untyped ones (a slot that advertises nothing may still be one),
-	// in the endpoint's order. A slot typed as something else (a USB stick)
-	// is left out: the installer boots from one of these, the config medium
-	// may take any other insertable slot.
-	bootSlots []string
+	// boot and config are the slots of an install (bmc.MediaSlots): the
+	// installer goes on boot, the config medium on config. boot is empty
+	// when no slot boots an ISO, config when the endpoint holds one medium.
+	boot, config string
 	// targets are the boot override targets the path's system allows.
 	targets []string
 	// mode is the override mode the path's system serves.
@@ -750,17 +746,10 @@ func (r *HostClaimReconciler) endpointShape(ctx context.Context, host *metalv1al
 			}
 		}
 		media := make([]bmc.VirtualMedia, 0, len(ep.Status.VirtualMedia))
-		types := map[string][]string{}
 		for _, m := range ep.Status.VirtualMedia {
 			media = append(media, bmc.VirtualMedia{ID: m.ID, MediaTypes: m.MediaTypes})
-			types[m.ID] = m.MediaTypes
 		}
-		v.insertable = bmc.InsertableSlots(media, caps)
-		for _, id := range v.insertable {
-			if t := types[id]; len(t) == 0 || slices.Contains(t, "CD") || slices.Contains(t, "DVD") {
-				v.bootSlots = append(v.bootSlots, id)
-			}
-		}
+		v.insertable, v.boot, v.config = bmc.MediaSlots(media, caps)
 		for _, sys := range ep.Status.Systems {
 			if sys.ID == path.SystemID {
 				v.targets, v.mode = sys.BootTargets, sys.BootOverrideMode
@@ -769,23 +758,6 @@ func (r *HostClaimReconciler) endpointShape(ctx context.Context, host *metalv1al
 		return v, nil
 	}
 	return endpointView{}, nil
-}
-
-// mediaSlots picks the slots of a two-medium boot: the installer goes on the
-// best boot slot, the config medium on the next insertable slot. The config
-// medium is only read, never booted: Talos finds it by its volume label on any
-// block device, so a USB-stick slot carries it as well as an optical one. Both
-// are empty when the endpoint cannot hold an installer next to a config.
-func (v endpointView) mediaSlots() (boot, config string) {
-	if len(v.bootSlots) == 0 {
-		return "", ""
-	}
-	for _, id := range v.insertable {
-		if id != v.bootSlots[0] {
-			return v.bootSlots[0], id
-		}
-	}
-	return "", ""
 }
 
 // ensureConfigAsset finds the node's configISO BootAsset, creating one owned

@@ -69,15 +69,13 @@ The repository has no record of an install on real hardware. Read [](ref:status)
    pk-metal check --user "$BMC_USER" --insecure https://192.0.2.21
    ```
 
-4. Count the `media:` lines that do not show `dialect=none`. One such line means a BMC with one slot.
-
-5. Read the inventory into a file.
+4. Read the inventory into a file.
 
    ```sh
    pk-metal inventory --user "$BMC_USER" --insecure --node cp-1 https://192.0.2.21 > cp-1-inventory.yaml
    ```
 
-6. Write down these values: the serial number, the BMC MAC, the node NIC MAC and the install disk serial.
+5. Write down these values: the serial number, the BMC MAC, the node NIC MAC and the install disk serial.
    A disk behind a RAID volume has no serial in the inventory. See the install disk in [](ref:hardware).
 
 </Steps>
@@ -128,7 +126,7 @@ This stage is a short form of [](howto:install-operator). That page explains eac
 
 11. Decide how the manager checks the BMC certificate. See [BMC certificates](howto:install-operator#bmc-certificates). For this first test on a closed BMC network, you can remove `--bmc-ca-secret=bmc-ca`. The manager then pins the key that the BMC shows at the first contact.
 
-12. If the BMC has one slot, remove the comment mark from the component `media-store` in `overlays/site/kustomization.yaml`.
+12. If the check of stage 1 shows `config=-`, remove the comment mark from the component `media-store` in `overlays/site/kustomization.yaml`.
 
 13. Apply the overlay.
 

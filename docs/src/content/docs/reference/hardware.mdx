@@ -46,7 +46,7 @@ The fixtures of the two vendor models follow what real BMCs of these models serv
 | Secure Boot | Off. The operator boots the image factory ISO `metal-<arch>.iso`, or the `iso` output of the imager. Secure Boot does not accept these images. | In the lab, off |
 | BMC protocol | Redfish over HTTPS. The operator logs in with a Redfish session, or with HTTP Basic authentication if the BMC has no sessions. IPMI is not used. | In the lab |
 | Virtual media | The BMC can mount an ISO from an HTTPS URL. For a medium with a config, the BMC sends a user name and a password: `UserName` and `Password` of `InsertMedia`, or the URL for the Huawei OEM action. The certificate is self-signed if you do not set `--media-cert-secret`. The BMC needs the license for this. | In the lab |
-| Boot override | The BMC can set a one-time boot from the virtual CD. | In the lab |
+| Boot override | The BMC can set a one-time boot from the virtual CD. The system offers `Cd` or `UsbCd` as a boot override target. | In the lab |
 | Media slots | Two usable slots, or one slot with the [media store](concept:one-slot-bmc). | In the lab, both shapes |
 | Install disk | A disk that the OS sees directly: NVMe, or a SATA or SAS disk with the controller in HBA mode. Behind a RAID volume, the serial in the inventory is the serial of a member drive. Then select the disk with `model`, `busPath` or `match`. | In the lab, a virtual disk |
 | Network of the BMC | See [](howto:network-checklist). | |

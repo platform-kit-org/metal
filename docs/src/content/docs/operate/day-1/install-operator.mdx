@@ -223,7 +223,7 @@ Impersonation is a shortcut for a lab. On a production cluster, give the group t
 
 A BMC with one usable media slot gets one install image with the machine config inside. The manager keeps these images in the media store.
 
-- [](howto:check-a-bmc) shows how to count the slots of a BMC.
+- [](howto:check-a-bmc) shows the slots of a BMC.
 - The component `metal/config/media-store` adds a claim for a 10 GiB volume. The cluster needs a storage class. kind has one.
 - The manager builds the image in a Job. The cluster must pull `ghcr.io/siderolabs/imager`, or a mirror that you set with `--imager-repository`.
 - The images hold the machine config, which has secrets. Use storage with encryption if your Secrets are encrypted.

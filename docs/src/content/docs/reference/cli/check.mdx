@@ -47,8 +47,9 @@ Each request to the BMC must answer in 30 seconds. <kbd>Ctrl</kbd>+<kbd>C</kbd> 
 1. The command logs in to the BMC with a Redfish session, and deletes the session when it stops. A BMC without sessions gets HTTP Basic authentication.
 2. It reads the manager: the vendor and the firmware version.
 3. It reads each virtual media slot and the dialect that the slot uses to mount an image.
-4. It reads each system: the serial number and the power state.
-5. It prints `check: OK (read-only)`.
+4. It prints the slots of an install: the boot slot for the installer, and the slot for the config medium. The operator uses the same rule.
+5. It reads each system: the serial number, the power state and the boot override target that the operator sets.
+6. It prints `check: OK (read-only)`. If no slot can mount an image, or no system offers `Cd` or `UsbCd`, it prints `not installable`. The exit status is then 1.
 
 The session cannot change the BMC. The client refuses all requests that write.
 
@@ -62,12 +63,13 @@ text={`
     manager:  Huawei fw 6.72
     media:    CD             dialect=vmm-control
     media:    USBStick       dialect=none
-    system:   1 serial=SIMHW2288V5000397 power=On
+    slots:    boot=CD config=-
+    system:   1 serial=SIMHW2288V5000397 power=On boot=Cd
     check:    OK (read-only)
 `}
 />
 
-A slot with `dialect=none` cannot mount an image. This BMC has one slot that can: it is a [](term:one-slot-bmc).
+A slot with `dialect=none` cannot mount an image. `config=-` shows that this BMC holds one medium: it is a [](term:one-slot-bmc).
 
 Check a BMC whose certificate comes from the CA of your site:
 

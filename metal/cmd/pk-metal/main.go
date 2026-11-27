@@ -26,6 +26,7 @@ import (
 	"github.com/dennisklein/platform-kit/metal/internal/bmc"
 	gofishclient "github.com/dennisklein/platform-kit/metal/internal/bmc/gofish"
 	"github.com/dennisklein/platform-kit/metal/internal/bmc/sim"
+	"github.com/dennisklein/platform-kit/metal/internal/boot"
 	"github.com/dennisklein/platform-kit/metal/internal/inventory"
 )
 
@@ -140,28 +141,57 @@ func checkCmd(args []string) {
 	ctx, stop := signalContext()
 	defer stop()
 	c := mustConnect(ctx, fs.Arg(0), bf, true) // check is read-only by construction
-	defer c.Close()
-
-	m, err := c.Manager(ctx)
+	why, err := check(ctx, c, os.Stdout)
+	_ = c.Close() // ends the session before an exit, which runs no defers
 	if err != nil {
 		dief("check failed: %v", err)
 	}
-	fmt.Printf("manager:  %s fw %s\n", orDash(m.Vendor), orDash(m.FirmwareVersion))
-	caps, err := c.Capabilities(ctx)
-	if err != nil {
-		dief("check failed: %v", err)
-	}
-	for _, id := range slices.Sorted(maps.Keys(caps.MediaDialect)) {
-		fmt.Printf("media:    %-14s dialect=%s\n", id, caps.MediaDialect[id])
-	}
-	systems, err := c.Systems(ctx)
-	if err != nil {
-		dief("check failed: %v", err)
-	}
-	for _, s := range systems {
-		fmt.Printf("system:   %s serial=%s power=%s\n", s.ID, orDash(s.SerialNumber), s.PowerState)
+	if why != "" {
+		dief("not installable: %s", why)
 	}
 	fmt.Println("check:    OK (read-only)")
+}
+
+// check reads a BMC and writes the facts that an install of the operator
+// depends on: the manager, the dialect of each media slot, the slots that an
+// install takes (bmc.MediaSlots, the rule of the operator) and the boot target
+// of each system (boot.PickTarget). why is not empty when no install can work.
+func check(ctx context.Context, c bmc.Client, w io.Writer) (why string, err error) {
+	m, err := c.Manager(ctx)
+	if err != nil {
+		return "", err
+	}
+	fmt.Fprintf(w, "manager:  %s fw %s\n", orDash(m.Vendor), orDash(m.FirmwareVersion))
+	caps, err := c.Capabilities(ctx)
+	if err != nil {
+		return "", err
+	}
+	for _, id := range slices.Sorted(maps.Keys(caps.MediaDialect)) {
+		fmt.Fprintf(w, "media:    %-14s dialect=%s\n", id, caps.MediaDialect[id])
+	}
+	media, err := c.Media(ctx)
+	if err != nil {
+		return "", err
+	}
+	insertable, bootSlot, configSlot := bmc.MediaSlots(media, caps)
+	fmt.Fprintf(w, "slots:    boot=%s config=%s\n", orDash(bootSlot), orDash(configSlot))
+	systems, err := c.Systems(ctx)
+	if err != nil {
+		return "", err
+	}
+	bootable := false
+	for _, s := range systems {
+		target, err := boot.PickTarget(s.BootTargets)
+		bootable = bootable || err == nil
+		fmt.Fprintf(w, "system:   %s serial=%s power=%s boot=%s\n", s.ID, orDash(s.SerialNumber), s.PowerState, orDash(target))
+	}
+	switch {
+	case len(insertable) == 0:
+		return "no slot can mount an image", nil
+	case !bootable:
+		return "no system offers Cd or UsbCd as a boot target", nil
+	}
+	return "", nil
 }
 
 func endpointHost(endpoint string) string {

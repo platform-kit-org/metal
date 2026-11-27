@@ -419,7 +419,8 @@ func claimPass(s state, v view, mask uint8) *pass {
 	return p
 }
 
-// provision mirrors HostClaimReconciler.provision for the bound host.
+// provision mirrors HostClaimReconciler.provision and handedOff for the
+// bound host.
 func (p *pass) provision(v view, claim mClaim, host mHost) {
 	boot := v.Ops[slotBoot]
 	withdraw := func() {
@@ -437,6 +438,7 @@ func (p *pass) provision(v view, claim mClaim, host mHost) {
 		withdraw()
 		p.updateClaim(v.Claim, func(c *mClaim) { c.Finalizer, c.HandOff, c.HandOffByOp = true, true, byOp })
 	case boot.Exists && opSucceeded(opObj(boot)):
+		withdraw()
 		p.updateClaim(v.Claim, func(c *mClaim) { c.Finalizer, c.HandOff, c.HandOffByOp = true, true, true })
 	case held(claim):
 		withdraw()

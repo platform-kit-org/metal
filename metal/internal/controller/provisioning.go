@@ -179,61 +179,28 @@ func (r *HostClaimReconciler) provision(ctx context.Context, claim *metalv1alpha
 	if !node.DeletionTimestamp.IsZero() {
 		return r.removeNode(ctx, claim, host, node, ops)
 	}
-	reinstall := reinstallRequested(claim, hostName, node.Name)
-	// The hand-off record on the claim says the install is done: the node may
-	// simply be down now, and that is not a reason to install it again. A
-	// record of any other host or node is no record of this one.
-	if h := claim.Status.HandOff; h != nil && h.Host == hostName && h.Node == node.Name && !reinstall {
-		at := h.At.UTC().Format(time.RFC3339)
-		msg := fmt.Sprintf("host %s runs TalosNode %s (installed %s)", hostName, node.Name, at)
-		if !nodeCheckedIn(node) {
-			msg = fmt.Sprintf("host %s was installed with TalosNode %s at %s; the node does not answer now, which does not start a new install",
-				hostName, node.Name, at)
-		}
+	// The node ran for this claim on another machine before the claim was
+	// moved (pk-metal replace): what its status says of a check-in came
+	// from that machine, which the release has wiped since. This one is not
+	// installed until a boot of its own says so.
+	moved := claim.Status.HandOff != nil && claim.Status.HandOff.Node == node.Name && claim.Status.HandOff.Host != hostName
+	if msg, ok := r.handedOff(claim, hostName, node, ops, moved); ok {
 		set(metav1.ConditionTrue, metalv1alpha1.ReasonHandedOff, msg)
 		if err := r.withdraw(ctx, ops, ""); err != nil {
 			return err
 		}
 		return r.dropConfigMedia(ctx, node, ops)
 	}
-	// The node ran for this claim on another machine before the claim was
-	// moved (pk-metal replace): what its status says of a check-in came
-	// from that machine, which the release has wiped since. This one is not
-	// installed until a boot of its own says so.
-	moved := claim.Status.HandOff != nil && claim.Status.HandOff.Node == node.Name && claim.Status.HandOff.Host != hostName
-	if nodeCheckedIn(node) && !reinstall && !moved {
-		// The boot that got it there, if one of ours did: the release reads
-		// it to know whether the operator touched this machine.
-		var booted *metalv1alpha1.HostOperation
-		for i := range ops {
-			if ops[i].Status.Baseline != nil && bootsNode(&ops[i], hostName, node.Name) {
-				booted = &ops[i]
-			}
-		}
-		recordHandOff(claim, hostName, node.Name, node.Status.ConfigDigest, booted)
-		set(metav1.ConditionTrue, metalv1alpha1.ReasonHandedOff, fmt.Sprintf("host %s runs TalosNode %s", hostName, node.Name))
+	withdrawAndHold := func(reason, msg string) error {
 		if err := r.withdraw(ctx, ops, ""); err != nil {
 			return err
 		}
-		return r.dropConfigMedia(ctx, node, ops)
-	}
-	// A claim from before the record existed: a succeeded boot operation of
-	// this node onto this host is the hand-off, and becomes the record.
-	for i := range ops {
-		if !reinstall && opSucceeded(&ops[i]) && bootsNode(&ops[i], hostName, node.Name) && ops[i].Annotations[annotationReinstallOf] == "" {
-			recordHandOff(claim, hostName, node.Name, ops[i].Annotations[annotationConfigDigest], &ops[i])
-			set(metav1.ConditionTrue, metalv1alpha1.ReasonHandedOff,
-				fmt.Sprintf("operation %s/%s booted host %s", ops[i].Namespace, ops[i].Name, hostName))
-			return r.dropConfigMedia(ctx, node, ops)
-		}
+		return hold(reason, msg)
 	}
 	// A person said no for now: nothing new is proposed, and what still waits
 	// for approval is taken back. An approved boot keeps running — stopping
 	// one halfway is what dropping spec.os is for.
 	if why, held := heldBy(claim); held {
-		if err := r.withdraw(ctx, ops, ""); err != nil {
-			return err
-		}
 		msg := fmt.Sprintf("held%s: no install is proposed while the claim carries the %s annotation. To go on: %s",
 			why, metalv1alpha1.AnnotationHold, releaseHoldCommand(claim))
 		for i := range ops {
@@ -242,14 +209,11 @@ func (r *HostClaimReconciler) provision(ctx context.Context, claim *metalv1alpha
 					ops[i].Namespace, ops[i].Name)
 			}
 		}
-		return hold(metalv1alpha1.ReasonHeldByUser, msg)
+		return withdrawAndHold(metalv1alpha1.ReasonHeldByUser, msg)
 	}
 	// The same for a machine a person took into maintenance.
 	if _, ok := inMaintenance(host); ok {
-		if err := r.withdraw(ctx, ops, ""); err != nil {
-			return err
-		}
-		return hold(metalv1alpha1.ReasonHostInMaintenance, maintenanceNote(host)+
+		return withdrawAndHold(metalv1alpha1.ReasonHostInMaintenance, maintenanceNote(host)+
 			": no install is proposed until it is given back: "+endMaintenanceCommand(host))
 	}
 	if !meta.IsStatusConditionTrue(host.Status.Conditions, metalv1alpha1.ConditionVerified) {
@@ -258,10 +222,7 @@ func (r *HostClaimReconciler) provision(ctx context.Context, claim *metalv1alpha
 	// Another node's install left on the disk must not boot again, and is
 	// not installed over without a person seeing it.
 	if msg := notWipedHold(host, node.Spec.ClusterRef.Name, node.Name); msg != "" {
-		if err := r.withdraw(ctx, ops, ""); err != nil {
-			return err
-		}
-		return hold(metalv1alpha1.ReasonDiskNotWiped, msg)
+		return withdrawAndHold(metalv1alpha1.ReasonDiskNotWiped, msg)
 	}
 	// What the boot replaces: the same node (a reinstall), or another node
 	// the machine ran for this claim before its OS intent was changed.
@@ -379,6 +340,50 @@ func (r *HostClaimReconciler) provision(ctx context.Context, claim *metalv1alpha
 		return hold(metalv1alpha1.ReasonAwaitingOperation, "boot operation "+ref+": "+ex.Message)
 	}
 	return hold(metalv1alpha1.ReasonAwaitingOperation, "boot operation "+ref+" in flight")
+}
+
+// handedOff says whether host hostName runs node for the claim already, with
+// the message for Provisioned. It records a hand-off that only the node's
+// check-in or a succeeded boot shows. A reinstall is not handed off, and a
+// node that moved here (moved) is not handed off by its check-in: the boot
+// that replaces the install decides.
+func (r *HostClaimReconciler) handedOff(claim *metalv1alpha1.HostClaim, hostName string, node *osv1alpha1.TalosNode,
+	ops []metalv1alpha1.HostOperation, moved bool) (string, bool) {
+	if reinstallRequested(claim, hostName, node.Name) {
+		return "", false
+	}
+	// The hand-off record on the claim says the install is done: the node may
+	// simply be down now, and that is not a reason to install it again. A
+	// record of any other host or node is no record of this one.
+	if h := claim.Status.HandOff; h != nil && h.Host == hostName && h.Node == node.Name {
+		at := h.At.UTC().Format(time.RFC3339)
+		if !nodeCheckedIn(node) {
+			return fmt.Sprintf("host %s was installed with TalosNode %s at %s; the node does not answer now, which does not start a new install",
+				hostName, node.Name, at), true
+		}
+		return fmt.Sprintf("host %s runs TalosNode %s (installed %s)", hostName, node.Name, at), true
+	}
+	if nodeCheckedIn(node) && !moved {
+		// The boot that got it there, if one of ours did: the release reads
+		// it to know whether the operator touched this machine.
+		var booted *metalv1alpha1.HostOperation
+		for i := range ops {
+			if opStarted(&ops[i]) && bootsNode(&ops[i], hostName, node.Name) {
+				booted = &ops[i]
+			}
+		}
+		recordHandOff(claim, hostName, node.Name, node.Status.ConfigDigest, booted)
+		return fmt.Sprintf("host %s runs TalosNode %s", hostName, node.Name), true
+	}
+	// The boot succeeded, but the node does not answer now, and no pass
+	// recorded its hand-off yet: the boot is the record.
+	for i := range ops {
+		if opSucceeded(&ops[i]) && bootsNode(&ops[i], hostName, node.Name) && ops[i].Annotations[annotationReinstallOf] == "" {
+			recordHandOff(claim, hostName, node.Name, ops[i].Annotations[annotationConfigDigest], &ops[i])
+			return fmt.Sprintf("operation %s/%s booted host %s", ops[i].Namespace, ops[i].Name, hostName), true
+		}
+	}
+	return "", false
 }
 
 // installPlan picks how the install reaches the machine, makes the media it

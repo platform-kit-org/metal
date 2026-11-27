@@ -29,7 +29,8 @@ import (
 var mirrored = map[string]string{
 	"HostClaimReconciler.Reconcile":     "fba19fb46be14563",
 	"HostClaimReconciler.finishRelease": "0988f8ac95640f6b",
-	"HostClaimReconciler.provision":     "fc5524ef8a85ffea",
+	"HostClaimReconciler.handedOff":     "fb248396eee96748",
+	"HostClaimReconciler.provision":     "0f523fc3a14f7f4b",
 	"HostClaimReconciler.release":       "1a276ff648be969f",
 	"HostOperationReconciler.Reconcile": "2e6a1caf224249ef",
 }

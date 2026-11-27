@@ -152,8 +152,8 @@ spec:
       rules:
         - alert: PkMetalNodeNotReady
           # Only a node that pk-metal status also flags: its cluster is
-          # bootstrapped and it has answered once. A node still being
-          # installed is not Ready, and that is no page.
+          # bootstrapped and a claim records its hand-off. A node still
+          # being installed is not Ready, and that is no page.
           expr: |
             max by (cluster, node, role) (pk_metal_talosnode_ready) == 0
               and on (cluster, node, role) max by (cluster, node, role) (pk_metal_talosnode_expected_ready) == 1

@@ -90,13 +90,14 @@ func backedUp(policies []osv1alpha1.EtcdBackupPolicy, cluster string) (state, ms
 // its HOST column (the Host whose spec.os names the node); the backup
 // policies its BACKUP column.
 func addClusters(rep *statusReport, clusters []osv1alpha1.TalosCluster, nodes []osv1alpha1.TalosNode, hosts []metalv1alpha1.Host,
-	policies []osv1alpha1.EtcdBackupPolicy) {
+	claims []metalv1alpha1.HostClaim, policies []osv1alpha1.EtcdBackupPolicy) {
 	hostOf := map[string]string{}
 	for _, h := range hosts {
 		if h.Spec.OS != nil {
 			hostOf[h.Spec.OS.NodeRef.Name] = h.Name
 		}
 	}
+	handedOff := metalv1alpha1.HandedOffNodes(claims, hosts)
 	running := map[string][]string{}
 	bootstrapped := map[string]bool{}
 	for _, c := range clusters {
@@ -112,10 +113,10 @@ func addClusters(rep *statusReport, clusters []osv1alpha1.TalosCluster, nodes []
 		if ready != nil && ready.Status == metav1.ConditionTrue {
 			row.Ready = "Ready"
 		}
-		// A node of a cluster that runs, and that has answered before (it
-		// reported a version), is expected to be Ready. One still being
+		// A node of a cluster that runs, and that has answered before (a
+		// machine was handed it), is expected to be Ready. One still being
 		// installed is not, and is no alarm.
-		row.NeedsAttention = bootstrapped[cluster] && n.Status.Version != "" &&
+		row.NeedsAttention = bootstrapped[cluster] && handedOff[n.Name] &&
 			(ready == nil || ready.Status != metav1.ConditionTrue)
 		if n.Status.Version != "" && !slices.Contains(running[cluster], n.Status.Version) {
 			running[cluster] = append(running[cluster], n.Status.Version)

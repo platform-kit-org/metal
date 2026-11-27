@@ -49,10 +49,11 @@ var (
 	descNodeReady = desc("talosnode_ready",
 		"1 when a TalosNode reports Ready, 0 otherwise.", "node", "cluster", "role")
 	// The same rule as pk-metal status: a node of a bootstrapped cluster that
-	// has answered once (it reported a version). A node still being installed
-	// is not expected to be Ready, and its alert would page for normal work.
+	// has answered once (metalv1alpha1.HandedOffNodes). A node still being
+	// installed is not expected to be Ready, and its alert would page for
+	// normal work.
 	descNodeExpectedReady = desc("talosnode_expected_ready",
-		"1 when a TalosNode is expected to be Ready: its cluster is bootstrapped and the node reported a version.",
+		"1 when a TalosNode is expected to be Ready: its cluster is bootstrapped and a machine was handed the node.",
 		"node", "cluster", "role")
 	descNodeVersion = desc("talosnode_info",
 		"1 per TalosNode, labelled with the Talos version it reports.", "node", "cluster", "version")
@@ -234,11 +235,17 @@ func (c *Collector) nodes(ctx context.Context, ch chan<- prometheus.Metric) {
 			bootstrapped[clusters.Items[i].Name] = clusters.Items[i].Status.BootstrappedAt != nil
 		}
 	}
+	// So does a node whose hand-off cannot be read.
+	handedOff := map[string]bool{}
+	claims, hosts := &metalv1alpha1.HostClaimList{}, &metalv1alpha1.HostList{}
+	if c.Reader.List(ctx, claims) == nil && c.Reader.List(ctx, hosts) == nil {
+		handedOff = metalv1alpha1.HandedOffNodes(claims.Items, hosts.Items)
+	}
 	for i := range nodes.Items {
 		n := &nodes.Items[i]
 		ready := meta.IsStatusConditionTrue(n.Status.Conditions, osv1alpha1.ConditionReady)
 		gauge(ch, descNodeReady, boolValue(ready), n.Name, n.Spec.ClusterRef.Name, string(n.Spec.Role))
-		gauge(ch, descNodeExpectedReady, boolValue(bootstrapped[n.Spec.ClusterRef.Name] && n.Status.Version != ""),
+		gauge(ch, descNodeExpectedReady, boolValue(bootstrapped[n.Spec.ClusterRef.Name] && handedOff[n.Name]),
 			n.Name, n.Spec.ClusterRef.Name, string(n.Spec.Role))
 		if n.Status.Version != "" {
 			gauge(ch, descNodeVersion, 1, n.Name, n.Spec.ClusterRef.Name, n.Status.Version)

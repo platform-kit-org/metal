@@ -7,10 +7,8 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
-	"crypto/x509/pkix"
 	"encoding/pem"
 	"fmt"
-	"net"
 	"reflect"
 	"time"
 
@@ -136,28 +134,10 @@ func (s *State) GenerateCSR(_ context.Context, subject bmc.CSRSubject) ([]byte, 
 	if err != nil {
 		return nil, err
 	}
-	var ips []net.IP
-	for _, raw := range subject.IPAddresses {
-		if ip := net.ParseIP(raw); ip != nil {
-			ips = append(ips, ip)
-		}
-	}
-	der, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{
-		Subject: pkix.Name{
-			CommonName:         subject.CommonName,
-			Country:            nonEmpty(subject.Country),
-			Province:           nonEmpty(subject.State),
-			Locality:           nonEmpty(subject.Locality),
-			Organization:       nonEmpty(subject.Organization),
-			OrganizationalUnit: nonEmpty(subject.OrganizationalUnit),
-		},
-		DNSNames:    subject.DNSNames,
-		IPAddresses: ips,
-	}, key)
+	csr, err := subject.Request(key)
 	if err != nil {
 		return nil, err
 	}
-	csr := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: der})
 	if d := s.f.Identity.CSRDelay; d > 0 && !s.f.Identity.CertificateService {
 		s.identity.nextKey, s.identity.nextCSR, s.identity.nextAt = key, csr, time.Now().Add(d)
 		return csr, nil
@@ -165,13 +145,6 @@ func (s *State) GenerateCSR(_ context.Context, subject bmc.CSRSubject) ([]byte, 
 	s.identity.pendingKey, s.identity.pendingCSR = key, csr
 	s.identity.nextKey, s.identity.nextCSR = nil, nil
 	return csr, nil
-}
-
-func nonEmpty(s string) []string {
-	if s == "" {
-		return nil
-	}
-	return []string{s}
 }
 
 // ImportServerCertificate takes the signed chain back — csr-native only, and

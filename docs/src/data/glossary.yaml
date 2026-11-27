@@ -1548,7 +1548,7 @@ terms:
     domain: ops
     forms: [release, releases, released]
     guards: { not_after: '(Talos|Kubernetes)\s+$' }
-    see: howto:release-a-host
+    see: howto:remove-a-node
     related: [hostclaim, wipe, finalizer]
     def: >-
       What the operator does when you delete a HostClaim. It drains the node,

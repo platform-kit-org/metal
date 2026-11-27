@@ -41,7 +41,7 @@ Read the `BLOCKED` value and the note line in [](cli:status). Then find it in th
 | `HeldByUser` | The claim has `metal.platform-kit.org/hold` | [](cli:unhold) |
 | `HostInMaintenance` | The Host has `metal.platform-kit.org/maintenance` | [](howto:maintenance-mode) |
 | `EtcdJoinWaiting` | Another control plane joins, or etcd is not healthy | Wait. If it stays, see [](rb:etcd-unhealthy). |
-| `EtcdRiskRefused` | The removal leaves etcd unsafe | Choose an odd size, or set `metal.platform-kit.org/ack-etcd-risk`. See [](howto:scale-control-planes). |
+| `EtcdRiskRefused` | The removal leaves etcd unsafe | Choose an odd size, or set `metal.platform-kit.org/ack-etcd-risk`. See [Join and leave rules](howto:scale-a-cluster#join-and-leave-rules). |
 | `RemovalWaiting` | Another control plane leaves first | Wait. |
 | `RolloutRefused` | The rollout approval does not cover this operation | See [](rb:rollout-paused). The machine did not change. |
 | `NoReachablePath` | The BMC does not answer | [](rb:bmc-unreachable) |

@@ -40,13 +40,7 @@ A person still approves each change. A [](kind:MaintenanceWindow) decides only *
 
 ## Rules
 
-1. An approved operation on a covered machine waits until one of its windows is open.
-2. When a window opens, the waiting operations start. Nobody has to be awake.
-3. A step that runs is never stopped when the window closes.
-4. A machine that no window covers is not held.
-5. New installs (reason `Provisioning`) are not held.
-6. A window that the operator cannot read is `Valid=False` and never opens. A mistake holds work back.
-7. A rollout that reaches a node outside its windows waits between nodes.
+The [rules](kind:MaintenanceWindow#rules) are on the kind page.
 
 ## Where you see it
 

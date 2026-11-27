@@ -1,0 +1,122 @@
+---
+title: Scale a cluster
+description: Add or remove workers and control planes with pk-metal scale, without a loss of the etcd majority.
+type: howto
+day: 2
+xref: { cat: howto, id: scale-a-cluster }
+redirectFrom: [operate/day-2/add-a-node/, operate/day-2/scale-control-planes/]
+sidebar:
+  order: 14
+sources:
+  - /repo/metal/cmd/pk-metal/lifecycle.go
+  - /repo/metal/internal/controller/lifecycle.go
+  - /repo/metal/internal/controller/removal.go
+---
+
+import { Steps } from '@astrojs/starlight/components';
+import Callout from '../../../../components/Callout.astro';
+
+## Goal
+
+Change the number of workers or control planes of a cluster. Keep an odd number of control planes: 1, 3 or 5.
+
+## Before you start
+
+- You are a member of the admin group.
+- To add nodes, free [](kind:Host) objects exist: `Available`, not claimed, and wiped.
+- The cluster is `Available`. For a change of the control planes, etcd is healthy: `pk-metal status` shows `EtcdRunning` in the `ETCD` column.
+- A person with `pk-metal-approver` can approve. See [](howto:approval-permissions).
+
+<Callout type="note">
+`pk-metal scale --apply` makes and deletes HostClaims. If your claims are in git, change the files there, and use the command without `--apply` to read the plan. See [](concept:gitops).
+</Callout>
+
+## Steps
+
+<Steps>
+
+1. To add a node, write its [](kind:TalosNode). Give its role, install disk and network links.
+
+   ```sh
+   kubectl apply -f nodes/w-3.yaml
+   ```
+
+   A TalosNode with no machine is not a member yet. The cluster lists it in `status.unassignedNodes`.
+
+2. Show the plan for the new size. This changes nothing.
+
+   ```sh
+   pk-metal scale prod --control-planes 3 --workers 3
+   ```
+
+   The plan lists each machine that the cluster gets or gives back, in order. It pairs a new node with a free machine, and prefers the Asset with the same name as the node. To remove nodes, it deletes the claims of the nodes with the highest names.
+
+3. Apply the plan.
+
+   ```sh
+   pk-metal scale prod --control-planes 3 --workers 3 --apply
+   ```
+
+   A plan that passes through an even number of control planes needs a reason. For example, from 3 to 1:
+
+   ```sh
+   pk-metal scale prod --control-planes 1 --workers 2 --apply --ack-etcd-risk "move to 1 control plane for rack work"
+   ```
+
+4. Approve each operation when it appears. [](cli:status) shows its name.
+
+   ```sh
+   pk-metal approve pk-metal/provision-simhw2288v5000399-2a3b4c5d
+   ```
+
+   The operator proposes the next control plane only after the previous one finished. With `--ack-etcd-risk`, it does not check the health of etcd: approve the next one only when `pk-metal status` shows `EtcdRunning`.
+
+</Steps>
+
+<Callout type="caution">
+While the cluster has 2 control planes, one failure stops etcd. Keep this time short.
+</Callout>
+
+You can also write the [](kind:HostClaim) yourself, as in [](howto:install-hosts). To remove one specified node, see [](howto:remove-a-node).
+
+## Join and leave rules
+
+The operator holds the install of a control plane with `EtcdJoinWaiting` while:
+
+- another control plane of the cluster boots or leaves,
+- an etcd member is unhealthy or is a learner,
+- etcd still lists a member with the name of the new node.
+
+The operator refuses or holds the removal of a control plane:
+
+| After the removal | Without acknowledgement |
+| --- | --- |
+| No member left | Refused |
+| Fewer healthy members than a majority | Refused |
+| An even number of members (2, 4) | Refused |
+| The member is the leader while others leave | Waits. The leader leaves last. |
+| Another control plane joins (etcd learner) or leaves | Waits |
+| The member list cannot be read | Waits |
+
+An acknowledgement (`metal.platform-kit.org/ack-etcd-risk`) lets a refused removal go on. It also lets a removal go on when the member list cannot be read. [](cli:scale), [](cli:replace) and [](cli:reinstall) write it with `--ack-etcd-risk`.
+
+## Verify
+
+- `kubectl get taloscluster prod` shows the new count in `CP` and `WORKERS`.
+- Each new [](kind:TalosNode) shows `READY` `True`. A new control plane is an etcd member that votes.
+
+## If it fails
+
+| What you see | Go to |
+| --- | --- |
+| Claim blocked on `EtcdJoinWaiting` for a long time | [](rb:etcd-unhealthy) |
+| Claim blocked on `EtcdRiskRefused` | Give `--ack-etcd-risk`, or choose an odd size. |
+| Claim blocked on `RemovalWaiting` | Wait. The message says for what. |
+| Claim blocked on `DiskNotWiped` | [](rb:disk-not-wiped) |
+| The install fails | [](rb:operation-failed) |
+
+## Related
+
+- [](cli:scale), [](howto:remove-a-node), [](howto:replace-a-node)
+- [](concept:node-lifecycle)
+- [](lab:scale) runs a full scale round in the lab.

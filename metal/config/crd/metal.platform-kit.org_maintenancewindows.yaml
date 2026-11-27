@@ -22,7 +22,7 @@ spec:
           type: boolean
         - jsonPath: .status.nextChange
           name: Next change
-          type: date
+          type: string
         - jsonPath: .spec.timeZone
           name: Zone
           type: string

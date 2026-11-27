@@ -280,7 +280,7 @@ func (m *Mover) Run(ctx context.Context) (*Report, error) {
 		}
 	}
 	if err := m.WaitRunning(ctx); err != nil {
-		return rep, err
+		return rep, m.notRunning(err)
 	}
 	return rep, m.Settle(ctx, rep)
 }
@@ -315,6 +315,15 @@ func (m *Mover) Moved(ctx context.Context) (*Report, error) {
 		}
 	}
 	return rep, nil
+}
+
+// notRunning says how to go on when the target manager is scaled up but does
+// not run: once its pod starts, a manager next to the source acts on the same
+// machines.
+func (m *Mover) notRunning(err error) error {
+	return fmt.Errorf("%w\nThe manager on %s is scaled up but does not run. Fix the cause and run the move again, "+
+		"or stop it with kubectl -n %s scale deployment %s --replicas=0 (on %s) and give the source its manager back: %s",
+		err, m.Target.Name, m.Options.Namespace, m.Options.Deployment, m.Target.Name, m.resumeSourceCommand())
 }
 
 // stopped says how to go on after a move broke off before the target

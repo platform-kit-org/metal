@@ -249,7 +249,7 @@ kubectl --kubeconfig .lab/workload.kubeconfig get nodes -L lab.platform-kit.org/
    metal/bin/pk-metal rollout resume <rollout>
    ```
 
-The rollout does the control plane first, then the workers. The action is [](act:TalosUpgrade). See [](cli:upgrade) and [](howto:upgrade-talos).
+The rollout does the control plane first, then the workers. The action is [](act:TalosUpgrade). See [](cli:upgrade) and [](howto:roll-out-a-change).
 
 <Callout type="warning">
 Use the override only in the lab, or on a cluster that has one control plane by design.

@@ -122,7 +122,7 @@ type MaintenanceWindowStatus struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Cluster,categories=metal
 // +kubebuilder:printcolumn:name="Open",type=boolean,JSONPath=`.status.open`
-// +kubebuilder:printcolumn:name="Next change",type=date,JSONPath=`.status.nextChange`
+// +kubebuilder:printcolumn:name="Next change",type=string,JSONPath=`.status.nextChange`
 // +kubebuilder:printcolumn:name="Zone",type=string,JSONPath=`.spec.timeZone`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 type MaintenanceWindow struct {

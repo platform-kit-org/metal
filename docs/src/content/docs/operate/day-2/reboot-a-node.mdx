@@ -21,7 +21,7 @@ Reboot one node and give it back to the scheduler when it is `Ready`.
 
 ## Before you start
 
-- A person with `pk-metal-approver` can approve. That is you, if your site allows self-approval. If not, it is a second person. See [](howto:approval-permissions). You propose the reboot.
+- A person with `pk-metal-approver` can approve. See [](howto:approval-permissions). You propose the reboot.
 - The PodDisruptionBudgets of the workloads let one pod leave.
 - The reboot goes through the Talos API. It does not need the BMC.
 
@@ -44,7 +44,7 @@ Reboot one node and give it back to the scheduler when it is `Ready`.
 
    The command makes one [](kind:HostOperation), for example `pk-metal/reboot-w-1-x7k2p`.
 
-2. Approve it. If your site forbids self-approval, ask a second person to approve it.
+2. Approve it.
 
    ```sh
    pk-metal approve pk-metal/reboot-w-1-x7k2p
@@ -75,12 +75,33 @@ Reboot one node and give it back to the scheduler when it is `Ready`.
 
 ## Reboot all nodes
 
-Propose one reboot for each node. Approve all of them.
-Workers reboot in parallel. Control planes reboot one at a time, because the cluster guard holds the others.
+Write a [](kind:TalosRollout) of the kind `Reboot`. It reboots one node at a time and checks the health of the cluster between two nodes. It pauses after the first node. One approval covers all nodes.
+
+<Steps>
+
+1. Copy `metal/config/samples/rollout-reboot.yaml`. Set `metadata.name` and `spec.clusterRef.name`. Remove `spec.nodes` to reboot all nodes of the cluster.
+
+2. Set `spec.proposedBy` to your username. This command shows it.
+
+   ```sh
+   kubectl auth whoami
+   ```
+
+3. Apply the rollout.
+
+   ```sh
+   kubectl apply -f rollout-reboot.yaml
+   ```
+
+4. Approve the rollout and resume it after the first node. See [Approve and run the rollout](howto:roll-out-a-change#approve-and-run-the-rollout).
+
+</Steps>
+
+A rollout has no reboot mode. For a cold start (`--mode powercycle`) of each node, propose one reboot at a time with [](cli:reboot).
 
 <Callout type="note">
-With one control plane only, the cluster guard holds the reboot.
-Set `metal.platform-kit.org/override-cluster-guard` on the operation. The value is `<username>: <reason>`, with your username. See [](ref:audit-trail).
+With one control plane only, the cluster guard holds the reboot of the control plane, also in a rollout.
+Set `metal.platform-kit.org/override-cluster-guard` on its operation, with the value `<username>: <reason>`. See [](ref:labels-annotations).
 </Callout>
 
 ## Verify

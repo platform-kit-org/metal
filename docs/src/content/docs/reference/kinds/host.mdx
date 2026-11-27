@@ -48,6 +48,11 @@ For hardware work, follow [](howto:maintenance-mode). If the serial numbers do n
 To learn by practice, start with [](tut:lab-first-cluster).
 The operator reads the machine through [Redfish](https://www.dmtf.org/standards/redfish).
 
+<Callout type="caution">
+Do not set `metal.platform-kit.org/allow-self-disruption` on a machine that runs the operator, unless it is necessary.
+With this annotation, the operator can reboot the machine that it runs on.
+</Callout>
+
 ## Lifecycle
 
 <HostPhases />
@@ -109,52 +114,11 @@ simhw2288v5000398   asset-08   SIMHW2288V5000398   Huawei   Available     3d
 
 `kubectl get hosts -o wide` adds the columns `BLOCKED` and `CLAIM`.
 
-## Put a Host in maintenance
-
-Use maintenance mode for hardware work, for example to replace a memory module.
-
-1. Find the name of the Host.
-
-   ```sh
-   kubectl get hosts
-   ```
-
-2. Set the annotation. Give the reason as the value.
-
-   ```sh
-   kubectl annotate host simhw2288v5000398 metal.platform-kit.org/maintenance="replace DIMM B2"
-   ```
-
-3. Make sure that the phase is Maintenance.
-
-   ```sh
-   kubectl get host simhw2288v5000398
-   ```
-
-4. Do the hardware work.
-5. Remove the annotation.
-
-   ```sh
-   kubectl annotate host simhw2288v5000398 metal.platform-kit.org/maintenance-
-   ```
-
-An operation that already runs continues to its end. The operator starts no new operation.
-
-<Callout type="warning">
-Do not delete the HostClaim of a machine that has data you must keep.
-When the operator releases the Host, it wipes the disk.
-</Callout>
-
-<Callout type="caution">
-Do not set `metal.platform-kit.org/allow-self-disruption` on a machine that runs the operator, unless it is necessary.
-With this annotation, the operator can reboot the machine that it runs on.
-</Callout>
-
 ## Tasks
 
 - [](howto:enroll-hosts)
 - [](howto:install-hosts)
 - [](howto:maintenance-mode)
-- [](howto:release-a-host)
+- [](howto:remove-a-node)
 - [](rb:host-mismatch)
 - [](rb:bmc-unreachable)

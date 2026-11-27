@@ -76,7 +76,7 @@ Run a node on other hardware, with the same node name.
 
 1. Write a new TalosNode for the new machine, for example `cp-4`.
 
-2. Add it. See [](howto:add-a-node).
+2. Add it. See [](howto:scale-a-cluster).
 
 3. Wait until it is `Ready`. For a control plane, wait until its etcd member votes.
 
@@ -89,7 +89,7 @@ Run a node on other hardware, with the same node name.
 
 <Callout type="note">
 If the old machine does not answer, the operator cannot reset it. It powers the machine off and marks its disk as not wiped.
-See [](howto:wipe-and-decommission).
+See [](rb:disk-not-wiped).
 </Callout>
 
 ## Verify

@@ -15,6 +15,7 @@ import Edge from '../../../../components/diagram/Edge.astro';
 
 Day 2 is all the work after the install, while workloads run on the nodes.
 The rule does not change: the operator proposes, a person approves, the operator does it.
+If `selfApproval` is `Forbidden`, a second person approves. See [](howto:approval-permissions).
 
 <Figure
   title="Two paths for a day-2 change: one HostOperation for one machine, or one TalosRollout for a whole cluster, node by node."
@@ -50,9 +51,7 @@ The rule does not change: the operator proposes, a person approves, the operator
 | Task | Command | Approval |
 | --- | --- | --- |
 | [](howto:reboot-a-node) | [](cli:reboot) | Each reboot |
-| [](howto:change-machine-config) | Edit the TalosCluster or TalosNode | Rollout plan |
-| [](howto:upgrade-talos) | [](cli:upgrade) | Rollout plan |
-| [](howto:upgrade-kubernetes) | [](cli:upgrade) | Rollout plan |
+| [](howto:roll-out-a-change) | Edit the TalosCluster or TalosNode, or [](cli:upgrade) | Rollout plan |
 | [](howto:rotate-cluster-credentials) | Edit the TalosCluster | None for a credential. Manual for a CA. |
 
 ## Change machines
@@ -74,23 +73,16 @@ The rule does not change: the operator proposes, a person approves, the operator
 
 | Task | Command | Approval |
 | --- | --- | --- |
-| [](howto:add-a-node) | A claim, or [](cli:scale) | Each install |
-| [](howto:remove-a-node) | Delete the claim, or [](cli:scale) | The release |
-| [](howto:scale-control-planes) | [](cli:scale) | One at a time |
+| [](howto:scale-a-cluster) | [](cli:scale), or a claim | Each install and each release |
+| [](howto:remove-a-node) | Delete the claim | The release |
 | [](howto:replace-a-node) | [](cli:replace) | Release, then install |
 | [](howto:reinstall-a-node) | [](cli:reinstall) | Each step |
-| [](howto:release-a-host) | Delete the claim | The release |
-| [](howto:wipe-and-decommission) | [](cli:wipe) | The wipe |
 
 ## Keep the operator current
 
 | Task | Command | Approval |
 | --- | --- | --- |
 | [](howto:upgrade-operator) | `mise run crd:diff`, `kubectl apply -k` | None. The operator does not act on machines while it restarts. |
-
-## Move the operator back
-
-[](howto:move-back) returns the operator to the bootstrap cluster after a [](howto:pivot).
 
 ## Learn first
 

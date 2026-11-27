@@ -36,10 +36,8 @@ For etcd, the operator does not trust these counts. Before a control plane joins
 <dl>
   <dt>Member</dt>
   <dd>A TalosNode that a claim gave a machine. A TalosNode that waits for a machine is in `status.unassignedNodes` and does not lower `Available`.</dd>
-  <dt>Join serialization</dt>
-  <dd>A control plane boot waits with `EtcdJoinWaiting` while another control plane boots or leaves. It also waits while a member is not healthy, a member is a learner, or etcd has a member with the same name.</dd>
-  <dt>Leave verdict</dt>
-  <dd>A control plane leaves only if what stays is safe: not empty, a healthy majority, an odd count. The leader leaves last.</dd>
+  <dt>Join and leave rules</dt>
+  <dd>Control planes join and leave etcd one at a time, and what stays must be safe. See [Join and leave rules](howto:scale-a-cluster#join-and-leave-rules).</dd>
   <dt>ack-etcd-risk</dt>
   <dd>The annotation `metal.platform-kit.org/ack-etcd-risk` on the claim or the TalosNode. Its value is your username and your reason for an unsafe removal.</dd>
   <dt>RemovalBlocked</dt>

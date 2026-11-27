@@ -9,7 +9,6 @@ sources:
   - /repo/metal/internal/controller/window.go
 ---
 
-import Callout from '../../../../components/Callout.astro';
 import FieldTable from '../../../../components/FieldTable.astro';
 import WindowGate from '../../../../components/catalog/WindowGate.astro';
 
@@ -52,6 +51,8 @@ When you change a window, an operation that waits uses the new window in 5 minut
   <dd>A machine that no window covers is not delayed. With no MaintenanceWindow objects, the operator works as before.</dd>
   <dt>One open window is enough</dt>
   <dd>When more than one window covers a machine, the operation starts when one of them is open.</dd>
+  <dt>An operation that waits starts by itself</dt>
+  <dd>When a window opens, the operations that wait for it start. Nobody has to be awake.</dd>
   <dt>A window delays only the start</dt>
   <dd>The operator does not stop an operation when the window closes. A machine with half of a change is in a worse condition.</dd>
   <dt>A new install does not wait</dt>
@@ -135,48 +136,14 @@ spec:
 
 ```console
 $ kubectl get maintenancewindows
-NAME              OPEN    NEXT CHANGE   ZONE            AGE
-compute-weekend   false   2d            Europe/Berlin   5d
+NAME              OPEN    NEXT CHANGE            ZONE            AGE
+compute-weekend   false   2026-11-28T21:00:00Z   Europe/Berlin   5d
 ```
-
-## Start one operation outside the windows
-
-Use this procedure for an urgent change, for example a security correction.
-
-1. Find the operation that waits. The column BLOCKED shows `OutsideMaintenanceWindow`.
-
-   ```sh
-   kubectl get hostoperations -n pk-metal -o wide
-   ```
-
-2. Set the annotation on the operation. Give your username and the reason as the value.
-
-   ```sh
-   kubectl annotate hostoperation -n pk-metal <operation> metal.platform-kit.org/ignore-window="<username>: urgent security correction"
-   ```
-
-3. Make sure that the phase of the operation is Running.
-
-   ```sh
-   kubectl get hostoperation -n pk-metal <operation>
-   ```
-
-The operation starts on the next pass of the operator, in a few seconds. The reason stays in the record of the operation.
-You can set the annotation before or after the approval. The operation does not start without the approval.
-
-<Callout type="caution">
-Make the window long enough for the work that you approve into it.
-An operation that starts in the window continues after the window closes.
-</Callout>
-
-<Callout type="note">
-An operation that waits for its window does not count as a problem in [](cli:status).
-The metric `pk_metal_operation_blocked` lists these operations with the reason `OutsideMaintenanceWindow`.
-</Callout>
 
 ## Tasks
 
+- [](howto:maintenance-windows)
 - [](howto:approve-hold-retry)
-- [](howto:upgrade-talos)
+- [](howto:roll-out-a-change)
 - [](howto:maintenance-mode)
 - [](ref:labels-annotations)

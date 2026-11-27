@@ -1,14 +1,18 @@
 ---
-title: Remove a node
-description: Delete the claim of a node, approve the release, and let the operator drain, reset and power off the machine.
+title: Remove a node and free its machine
+description: Delete the claim of a node, approve the release, and let the operator drain the node, reset the machine and give it back to the pool.
 type: howto
 day: 2
 xref: { cat: howto, id: remove-a-node }
+redirectFrom: [operate/day-2/release-a-host/, operate/day-2/wipe-and-decommission/]
 sidebar:
+  label: Remove a node
   order: 15
 sources:
+  - /repo/metal/internal/controller/provisioning.go
   - /repo/metal/internal/controller/removal.go
   - /repo/metal/internal/controller/talosnode_finalizer.go
+  - /repo/metal/api/v1alpha1/hostclaim_types.go
 ---
 
 import { Steps } from '@astrojs/starlight/components';
@@ -16,21 +20,27 @@ import Callout from '../../../../components/Callout.astro';
 
 ## Goal
 
-Take one node out of its cluster and wipe its machine.
+Take one node out of its cluster. Give its machine back to the pool for another claim, or take the machine out of the fleet.
 
 ## Before you start
 
+- You know the name and the namespace of the claim.
 - The workloads can move to the other nodes.
-- For a control plane: what remains of etcd is safe. See [](howto:scale-control-planes).
-- A person can approve the release.
+- For a control plane: what remains of etcd is safe. See [Join and leave rules](howto:scale-a-cluster#join-and-leave-rules).
+- A person with `pk-metal-approver` can approve. See [](howto:approval-permissions).
 
 ## What the release does
 
-1. [](act:Cordon) and [](act:Drain). The drain stops after 15 minutes.
-2. For a control plane: [](act:EtcdForfeitLeadership) if it is the leader, and [](act:EtcdLeave).
-3. [](act:TalosReset). This wipes the system disk.
-4. [](act:DeleteKubernetesNode).
-5. [](act:PowerOff). The Host returns to the pool.
+| The machine | The release |
+| --- | --- |
+| Was never installed by this claim | Powered off without a question. |
+| Runs a node that answers | One operation: [](act:Drain), [](act:EtcdLeave) for a control plane, [](act:TalosReset), [](act:DeleteKubernetesNode), [](act:PowerOff). It waits for approval. The drain stops after 15 minutes. The reset wipes the system disk. |
+| Ran a node that does not answer | etcd member removed by ID, Kubernetes node deleted, power off. The operator marks the Host as not wiped. |
+
+<Callout type="warning">
+Do not delete a claim to "stop managing" a machine, or when the machine has data that you must keep. The release wipes the disk.
+A GitOps tool that prunes a deleted file deletes the claim too.
+</Callout>
 
 ## Steps
 
@@ -42,13 +52,23 @@ Take one node out of its cluster and wipe its machine.
    kubectl -n default delete hostclaim w-3
    ```
 
+   The Host goes to `Releasing`.
+
 2. Approve the release.
 
    ```sh
    pk-metal approve pk-metal/release-simhw2288v5000399-8e7f6a5b
    ```
 
-3. To remove the node for good, delete its TalosNode.
+3. Monitor the Host.
+
+   ```sh
+   kubectl get host simhw2288v5000399 -w
+   ```
+
+   The phase goes from `Releasing` to `Available`.
+
+4. To remove the node for good, delete its TalosNode. If you keep it, it waits without a machine for the next scale up.
 
    ```sh
    kubectl delete talosnode w-3
@@ -56,34 +76,56 @@ Take one node out of its cluster and wipe its machine.
 
 </Steps>
 
-<Callout type="warning">
-Do not delete a claim to "stop managing" a machine. The release wipes its disk.
-A GitOps tool that prunes a deleted file deletes the claim too.
-</Callout>
-
 ## Remove a control plane
 
-The operator refuses a removal that leaves etcd with no member, no healthy majority, or an even count.
-The claim then shows `EtcdRiskRefused`. To accept the risk, annotate the claim with your reason. The API server writes your username in front of the reason. See [`guard-lift-stamp`](ref:admission-policies#guard-lift-stamp).
+The operator refuses a removal that leaves etcd unsafe. See [Join and leave rules](howto:scale-a-cluster#join-and-leave-rules).
+The claim then shows `EtcdRiskRefused`. To accept the risk, annotate the claim with your reason. See [](ref:labels-annotations) for the value.
 
 ```sh
-kubectl -n default annotate hostclaim cp-3 metal.platform-kit.org/ack-etcd-risk="scale down to one control plane"
+kubectl -n default annotate hostclaim cp-3 metal.platform-kit.org/ack-etcd-risk="alice: scale down to one control plane"
 ```
+
+## Take the machine out of the fleet
+
+<Steps>
+
+1. Release the machine, as above.
+
+2. If the Host shows `DiskWiped=False`, wipe it. See [](rb:disk-not-wiped).
+
+3. Delete its [](kind:Asset).
+
+   ```sh
+   kubectl delete asset sim-0003
+   ```
+
+4. Remove its line from the ledger and apply the overlay.
+
+5. Remove the BMC credentials Secret if no other Asset uses it.
+
+</Steps>
+
+<Callout type="note">
+A claim holds the Host and its endpoint. The operator keeps them until the claim is gone (`DeletionHeld`).
+</Callout>
 
 ## Verify
 
-- The [](kind:Host) is `Available`.
-- `kubectl get talosnodes` does not list the node.
+- The [](kind:Host) is `Available` and has no claim.
+- `kubectl get talosnodes` does not list the node that you deleted.
+- After you took the machine out of the fleet, `kubectl get hosts` does not list it.
 
 ## If it fails
 
 | What you see | Go to |
 | --- | --- |
 | The drain step fails | [](rb:drain-stuck) |
+| Claim blocked on `ReleaseFailed` | [](rb:operation-failed). Retry the release. |
 | Host `DiskWiped=False`, `InstalledNodeRemains` | [](rb:disk-not-wiped) |
 | TalosNode stays with `RemovalBlocked` | The message names what it waits for: the machine, or the etcd member. |
 
 ## Related
 
-- [](howto:release-a-host), [](howto:scale-control-planes)
-- [](flow:release-and-reuse)
+- [](howto:scale-a-cluster) removes nodes to reach a size.
+- [](kind:HostClaim), [](cli:wipe), [](flow:release-and-reuse)
+- [](lab:release) runs a release in the lab.

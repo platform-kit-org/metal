@@ -92,6 +92,11 @@ The Host has a different set of phases. Read [](kind:Host).
 - A key in `spec.labels` has no prefix and no `/`. A claim can have 16 labels at most.
 - `spec.provisioning.approval` is `Required` or `Automatic`. The default is `Required`.
 
+<Callout type="caution">
+Do not set `spec.provisioning.approval` to `Automatic` for machines that have data.
+With `Automatic`, the install and the release start with no approval.
+</Callout>
+
 ## Status
 
 <FieldTable kind="HostClaim" part="status" />
@@ -179,45 +184,10 @@ node-1   asset-07   simhw2288v5000397   node-1   Bound   HandedOff           3d
 node-2   asset-08   simhw2288v5000398   node-2   Bound   AwaitingApproval    4m
 ```
 
-## Stop the proposals for a claim
-
-Use a hold when you want the operator to wait, for example before a change window.
-
-1. Set the hold. Give the reason.
-
-   ```sh
-   pk-metal hold --reason "wait for the change window" default/node-2
-   ```
-
-2. Make sure that the claim shows the hold.
-
-   ```sh
-   kubectl get hostclaims -o wide
-   ```
-
-3. Do your work.
-4. Remove the hold.
-
-   ```sh
-   pk-metal unhold default/node-2
-   ```
-
-A hold does not stop an operation that has an approval and runs.
-
-<Callout type="warning">
-Do not delete the HostClaim of a machine that has data you must keep.
-The release removes the node from its cluster and erases its disk.
-</Callout>
-
-<Callout type="caution">
-Do not set `spec.provisioning.approval` to `Automatic` for machines that have data.
-With `Automatic`, the install and the release start with no approval.
-</Callout>
-
 ## Tasks
 
 - [](howto:install-hosts)
 - [](howto:approve-hold-retry)
-- [](howto:release-a-host)
+- [](howto:remove-a-node)
 - [](howto:replace-a-node)
 - [](rb:operation-failed)

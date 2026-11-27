@@ -9,7 +9,7 @@ interface Props {
 const { compact } = Astro.props;
 const examples: Record<string, string> = {
   kind: 'Host', ctrl: 'host', act: 'PowerCycle', cli: 'pk-metal approve', lab: 'mise run lab:up', ref: 'Phases',
-  concept: 'Approval', flow: 'Rack to running node', howto: 'Upgrade Talos', rb: 'Host in Mismatch',
+  concept: 'Approval', flow: 'Rack to running node', howto: 'Roll out a change', rb: 'Host in Mismatch',
   tut: 'Your first cluster', term: 'BMC', ext: 'redfish.dmtf.org', src: 'host_types.go',
 };
 const shown = categories.filter((c) => c.id !== 'term');

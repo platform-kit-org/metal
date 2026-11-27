@@ -10,6 +10,13 @@
 # approval (`approve`).
 set -euo pipefail
 
+# The tools below (realpath -m, /proc, ip) are those of Linux. Without this,
+# macOS stops at the first realpath with no word on why.
+[[ $(uname -s) == Linux ]] || {
+  echo "Error: the virtual lab runs on Linux only. On a Mac, run it in an ARM64 Linux VM: https://metal.platform-kit.org/reference/lab/prerequisites/#apple-silicon" >&2
+  exit 1
+}
+
 SCRIPT=${0##*/}
 HELP="usage: $SCRIPT <verb>
 
@@ -404,6 +411,7 @@ doctor() {
   # machines the lab runs (architecture, accelerator, memory), and so what to
   # check. doctor changes nothing, and a lab that is up keeps the files it was
   # rendered from. The subshell keeps render_into's die from ending doctor.
+  note "compiling the lab helpers (labrender, labreach); the first run downloads the Go modules"
   preview=$(mktemp -d)
   if problem=$( (render_into "$root" "$spec" "$size" "$workload" "$preview") 2>&1 ); then
     rendered=1
@@ -432,6 +440,11 @@ doctor() {
     check "IPv4 forwarding is on (Docker Engine turns it on)" \
       "restart Docker: sudo systemctl restart docker. Do not set \"ip-forward\": false in /etc/docker/daemon.json" \
       ip_forward_on || missing=$((missing + 1))
+    # The image build (metal/hack/image.sh) uses RUN --mount, which needs
+    # BuildKit. Without buildx, lab:up fails late, after the network and kind.
+    check "docker buildx (the image build uses BuildKit)" \
+      "$(install_hint docker-buildx docker-buildx-plugin), or install Docker Engine from https://docs.docker.com/engine/install/" \
+      docker buildx version || missing=$((missing + 1))
   else
     missing=$((missing + 1))
   fi
@@ -497,6 +510,11 @@ doctor() {
   else
     echo "MISS  the lab spec renders${size:+ at size $size}" >&2
     sed 's/^/      /' <<<"$problem" >&2
+    # The render compiles labrender first; a blocked module proxy is not a
+    # fault of the spec.
+    if grep -qE 'proxy\.golang\.org|dial tcp|i/o timeout' <<<"$problem"; then
+      echo "      fix: the Go module proxy does not answer. Set HTTPS_PROXY, or set GOPROXY to a mirror" >&2
+    fi
     missing=$((missing + 1))
   fi
   rm -rf "$preview"

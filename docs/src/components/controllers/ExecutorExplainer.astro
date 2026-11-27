@@ -6,10 +6,6 @@ import Explainer from '../Explainer.astro';
 import Box from '../diagram/Box.astro';
 import Edge from '../diagram/Edge.astro';
 
-interface Props {
-  start?: number;
-}
-const { start = 0 } = Astro.props;
 const gates = [
   ['g-abort', 'Abort', 'asked?'],
   ['g-appr', 'Approval', 'approvedBy'],
@@ -124,7 +120,7 @@ const steps = [
 const gx = (i: number) => 8 + i * 79;
 ---
 
-<Explainer title="The executor: start gates and step loop" steps={steps as any} start={start}>
+<Explainer title="The executor: start gates and step loop" steps={steps as any} {...Astro.props}>
   <svg viewBox="0 0 720 320" role="img" aria-labelledby="ex-exec-t" xmlns="http://www.w3.org/2000/svg" class="pk-stage-svg">
     <title id="ex-exec-t">Nine start gates in a row, then the baseline, then a loop of four boxes: next step, cluster guard, run step and record. A pass leaves the loop to wait, to fail or to succeed.</title>
     <text class="t-small t-zone" x={8} y={14}>Start gates, in order</text>

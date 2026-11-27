@@ -1,22 +1,6 @@
 // Helpers for the inline SVG diagrams (Figure, Explainer and the components that
 // draw their own <svg>).
 
-/** The ids of the shared markers and patterns. SvgDefs.astro defines each once per page. */
-export const sharedDefIds = ['pk-arrow', 'pk-hatch'];
-
-/**
- * Removes the local copies of the shared defs (`<marker id="pk-arrow">`,
- * `<pattern id="pk-hatch">`) and a `<defs>` that is then empty. Two copies of one id
- * on a page are invalid HTML; the copy in SvgDefs.astro serves every diagram.
- */
-export function dropSharedDefs(html: string): string {
-  let out = html;
-  for (const id of sharedDefIds) {
-    out = out.replace(new RegExp(`<(marker|pattern)\\b[^>]*\\bid="${id}"[^>]*>[\\s\\S]*?</\\1>`, 'g'), '');
-  }
-  return out.replace(/<defs>\s*<\/defs>/g, '');
-}
-
 /**
  * Gives each `<svg role="img">` that contains a link the role "group". The role
  * "img" hides the children from assistive technology, so a screen reader would not

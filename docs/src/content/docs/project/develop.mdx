@@ -2,19 +2,9 @@
 title: Develop pk-metal
 description: How to build and test the operator, the rules that the code must keep, and the places to change when you add an action.
 type: project
-eyebrow: Project
 xref: { cat: ref, id: develop }
 sidebar:
   order: 3
-sources:
-  - /repo/mise.toml
-  - /repo/metal/internal/phase/writesites_test.go
-  - /repo/metal/internal/envtest/invariants_test.go
-  - /repo/metal/internal/controller/status.go
-  - /repo/metal/internal/controller/hostoperation_controller.go
-  - /repo/metal/internal/controller/selfprotect.go
-  - /repo/metal/api/v1alpha1/hostoperation_actions.go
-  - /repo/metal/internal/bmc/bmctest/bmctest.go
 ---
 
 import Callout from '../../../components/Callout.astro';
@@ -114,7 +104,7 @@ These are the places to change. The compiler finds only some of them.
 | 7 | `passTimeout` in `hostoperation_controller.go`, `waitStart` and `stepBudget` in `hostoperation_steps.go` | Give the step a time budget if it waits. | Nothing. Check by hand. |
 | 8 | `describeAction` in `cmd/pk-metal/approve.go` | Write the line that the approver reads in the plan. | A unit test over all keys |
 | 9 | The simulated BMC (`metal/internal/bmc/sim`) and the conformance checks (`bmctest`) | For a BMC action: add the behavior of each fixture and a check. | Your tests |
-| 10 | `docs/src/content/docs/reference/actions.mdx` | Add the row and the section. | `docs:check` for the links only |
+| 10 | `docs/src/content/docs/reference/actions.mdx` | Add the row and the section. | `docs:check` (`check-actions.mjs`) finds a missing anchor, Summary row, section or field |
 | 11 | The proposer | Add the action to the plan that uses it (install, release, rollout, convergence). | Your tests |
 
 Rows 5, 6 and 7 fail without a message. A wrong answer in row 6 lets an action stop a control plane with no guard.

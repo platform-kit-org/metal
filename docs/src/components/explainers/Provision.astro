@@ -5,10 +5,6 @@ import Explainer from '../Explainer.astro';
 import Box from '../diagram/Box.astro';
 import Edge from '../diagram/Edge.astro';
 
-interface Props {
-  start?: number;
-}
-const { start = 0 } = Astro.props;
 const steps = [
   {
     title: 'Claim',
@@ -48,7 +44,7 @@ const steps = [
 ];
 ---
 
-<Explainer title="Install one machine" steps={steps as any} start={start}>
+<Explainer title="Install one machine" steps={steps as any} {...Astro.props}>
   <svg viewBox="0 0 720 280" role="img" aria-labelledby="ex-prov-t" xmlns="http://www.w3.org/2000/svg" class="pk-stage-svg">
     <title id="ex-prov-t">A HostClaim binds a Host. A HostOperation, after approval, boots the machine through its BMC with virtual media.</title>
     <Box node="you" x={290} y={6} w={140} h={30} label="You" variant="soft" />

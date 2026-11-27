@@ -64,8 +64,8 @@ const lines = rawLines.map((l) => l.slice(indent)).map((raw) => {
     margin-block: 1.25rem;
     border: 1px solid var(--pk-rule-strong);
     border-radius: var(--pk-radius-lg);
-    background: var(--pk-ex-bg, #0d1117);
-    box-shadow: var(--pk-shadow, none);
+    background: var(--pk-ex-bg);
+    box-shadow: var(--pk-shadow);
     overflow: hidden;
   }
   .pk-cliterm-bar {
@@ -73,8 +73,8 @@ const lines = rawLines.map((l) => l.slice(indent)).map((raw) => {
     align-items: center;
     gap: 0.75rem;
     padding: 0.4rem 0.8rem;
-    border-bottom: 1px solid var(--pk-ex-rule, rgb(255 255 255 / 0.12));
-    color: var(--pk-ex-ink-2, #9aa4b2);
+    border-bottom: 1px solid var(--pk-ex-rule);
+    color: var(--pk-ex-ink-2);
     font-family: var(--pk-font-mono);
     font-size: 0.72rem;
     letter-spacing: 0.02em;
@@ -96,14 +96,14 @@ const lines = rawLines.map((l) => l.slice(indent)).map((raw) => {
     inline-size: 0.55rem;
     block-size: 0.55rem;
     border-radius: 50%;
-    background: var(--pk-ex-rule, rgb(255 255 255 / 0.2));
+    background: var(--pk-ex-rule);
   }
   .pk-cliterm-body {
     margin: 0;
     padding: 0.8rem 1rem 0.9rem;
     border: 0;
     background: none;
-    color: var(--pk-ex-ink-2, #c9d1d9);
+    color: var(--pk-ex-ink-2);
     font-size: 0.8rem;
     line-height: 1.55;
     overflow-x: auto;
@@ -120,26 +120,26 @@ const lines = rawLines.map((l) => l.slice(indent)).map((raw) => {
     min-block-size: 1.55em;
   }
   .pk-cliterm-line.cmd {
-    color: var(--pk-ex-ink, #f0f6fc);
+    color: var(--pk-ex-ink);
     font-weight: 600;
   }
   .pk-cliterm-line.cmd:not(:first-child) {
     margin-block-start: 0.5em;
   }
   .pk-cliterm-prompt {
-    color: var(--pk-ex-active, var(--pk-accent));
+    color: var(--pk-ex-active);
     user-select: none;
   }
   .pk-cliterm-line.note {
-    color: var(--pk-ex-dim, #6e7681);
+    color: var(--pk-ex-dim);
     font-style: italic;
   }
   .pk-cliterm-line.mark {
     margin-inline: -1rem;
     padding-inline: calc(1rem - 2px) 1rem;
-    border-inline-start: 2px solid var(--pk-ex-active, var(--pk-accent));
-    background: color-mix(in srgb, var(--pk-ex-active, var(--pk-accent)) 14%, transparent);
-    color: var(--pk-ex-ink, #f0f6fc);
+    border-inline-start: 2px solid var(--pk-ex-active);
+    background: color-mix(in srgb, var(--pk-ex-active) 14%, transparent);
+    color: var(--pk-ex-ink);
   }
   @media (prefers-reduced-motion: no-preference) {
     .pk-cliterm.is-armed .pk-cliterm-line {

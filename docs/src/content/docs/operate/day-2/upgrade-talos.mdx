@@ -2,14 +2,9 @@
 title: Upgrade Talos
 description: Ask for a new Talos release, approve the rollout and resume it after the first node.
 type: howto
-day: 2
 xref: { cat: howto, id: upgrade-talos }
 sidebar:
   order: 4
-sources:
-  - /repo/metal/cmd/pk-metal/upgrade.go
-  - /repo/metal/cmd/pk-metal/rollout.go
-  - /repo/metal/internal/controller/talosrollout_controller.go
 ---
 
 import { Steps } from '@astrojs/starlight/components';
@@ -48,11 +43,6 @@ Move every node of one cluster to a new Talos release, one node at a time.
 >
   <svg viewBox="0 0 720 250" role="img" aria-labelledby="ex-up-t" xmlns="http://www.w3.org/2000/svg" class="pk-stage-svg">
     <title id="ex-up-t">A TalosRollout upgrades the control planes one at a time, pauses after the first node, then upgrades the workers.</title>
-    <defs>
-      <marker id="pk-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-        <path d="M0 0 10 5 0 10z" fill="context-stroke"></path>
-      </marker>
-    </defs>
     <Box node="you" x={20} y={14} w={120} h={34} label="You" variant="soft" />
     <Box node="other" x={580} y={14} w={120} h={34} label="Approver" variant="soft" />
     <Box node="ro" x={260} y={8} w={200} h={50} label="TalosRollout" sub="-" text="ro-ph" cat="kind" href="/reference/kinds/talosrollout/" />

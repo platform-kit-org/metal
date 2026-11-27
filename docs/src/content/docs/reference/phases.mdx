@@ -4,9 +4,6 @@ description: All phases of Host, HostClaim, HostOperation and ManagementEndpoint
 type: reference
 eyebrow: Catalog · status.phase
 xref: { cat: ref, id: phases }
-sources:
-  - /repo/metal/internal/phase/phase.go
-  - /repo/docs/src/data/generated/phases.json
 ---
 
 import Callout from '../../../components/Callout.astro';
@@ -14,7 +11,7 @@ import HostPhases from '../../../components/diagrams/HostPhases.astro';
 import PhaseTable from '../../../components/catalog/PhaseTable.astro';
 import EndpointPhases from '../../../components/catalog/EndpointPhases.astro';
 import ClaimPhases from '../../../components/catalog/ClaimPhases.astro';
-import OperationPhases from '../../../components/catalog/OperationPhases.astro';
+import OperationPhases from '../../../components/diagrams/OperationPhases.astro';
 
 A phase is one word in `status.phase` that tells a person where an object is.
 Four kinds have a phase. This page lists each phase, what it tells you, and the rule that gives it.

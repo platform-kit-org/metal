@@ -6,12 +6,6 @@ eyebrow: Reference · HostOperation actions
 xref: { cat: act, id: index }
 anchors:
   act: [PowerCycle, PowerOff, SetBootOverride, ApplyBios, InsertMedia, EjectMedia, FlashFirmware, StageFirmware, Cordon, Drain, Uncordon, DeleteKubernetesNode, TalosReboot, TalosShutdown, TalosUpgrade, TalosApplyConfig, TalosReset, EtcdLeave, EtcdRemoveMember, EtcdForfeitLeadership, EtcdRecover, AwaitCheckIn, WaitNodeReady, WaitEtcdHealthy]
-sources:
-  - /repo/metal/api/v1alpha1/hostoperation_types.go
-  - /repo/metal/internal/controller/hostoperation_steps.go
-  - /repo/metal/internal/controller/hostoperation_talos_steps.go
-  - /repo/metal/internal/controller/hostoperation_etcdrecover.go
-  - /repo/metal/internal/controller/selfprotect.go
 ---
 
 import { Badge } from '@astrojs/starlight/components';

@@ -37,8 +37,7 @@ const url = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/xref.json`;
       if (!x) return;
       html = `<p class="pk-card-head" data-cat="${esc(x.cat)}"><span class="pk-card-icon"></span>${esc(d.categories[x.cat])}</p>
         <p class="pk-card-title">${esc(x.title)}</p>
-        ${x.description ? `<p class="pk-card-body">${esc(x.description)}</p>` : ''}
-        ${x.planned ? '<p class="pk-card-note">This page is planned.</p>' : ''}`;
+        ${x.description ? `<p class="pk-card-body">${esc(x.description)}</p>` : ''}`;
     }
     card.innerHTML = html;
     card.hidden = false;

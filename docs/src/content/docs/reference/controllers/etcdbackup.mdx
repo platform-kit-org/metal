@@ -2,15 +2,11 @@
 title: Etcd backup controllers
 description: Schedule, take, encrypt, verify and prune the etcd snapshots of each TalosCluster.
 type: controller
-eyebrow: Controller · manager
 xref: { cat: ctrl, id: etcdbackup }
 anchors:
   ctrl:
     etcdbackuppolicy: { anchor: policy-loop, title: EtcdBackupPolicy controller }
     etcdsnapshot: { anchor: snapshot-loop, title: EtcdSnapshot controller }
-sources:
-  - /repo/metal/internal/controller/etcdbackup_controller.go
-  - /repo/metal/internal/etcdbackup/pipeline.go
 ---
 
 import LoopFlow from '../../../../components/controllers/LoopFlow.astro';

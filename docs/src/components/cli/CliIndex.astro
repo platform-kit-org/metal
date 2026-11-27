@@ -18,8 +18,8 @@ const rows = (names: string[]) =>
     const c = byName.get(name);
     if (!c) throw new Error(`cli: group names "${name}", which is not a pk-metal command`);
     const e = reg.get(`cli:${name}`);
-    if (!e) throw new Error(`cli: no page or planned entry for cli:${name}`);
-    return { name, changes: c.changes, href: e.href, text: e.description ?? c.summary, planned: e.planned };
+    if (!e) throw new Error(`cli: no page for cli:${name}`);
+    return { name, changes: c.changes, href: e.href, text: e.description ?? c.summary };
   });
 ---
 
@@ -38,7 +38,7 @@ const rows = (names: string[]) =>
           {rows(g.commands).map((r) => (
             <tr>
               <td class="f-path">
-                <a class="x" data-cat="cli" data-xref={`cli:${r.name}`} data-planned={r.planned ? '' : undefined} href={r.href}>pk-metal {r.name}</a>
+                <a class="x" data-cat="cli" data-xref={`cli:${r.name}`} href={r.href}>pk-metal {r.name}</a>
               </td>
               <td class="f-desc">{r.text}</td>
               <td class="f-effect">

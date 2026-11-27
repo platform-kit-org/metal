@@ -359,14 +359,14 @@ sources = ["package.json", "package-lock.json"]
 outputs = ["node_modules/.package-lock.json"]
 
 [tasks."docs:dev"]
-description = "Serve the documentation site with live reload at http://localhost:4321/platform-kit/"
+description = "Serve the documentation site with live reload at http://localhost:4321/"
 dir = "docs"
 depends = ["docs:install"]
 env = { ASTRO_TELEMETRY_DISABLED = "1" }
 run = "npx astro dev"
 
 [tasks."docs:build"]
-description = "Build the documentation site into docs/dist; fails on an unknown category link or a broken internal link"
+description = "Build the documentation site into docs/dist; fails on an unknown category link"
 dir = "docs"
 depends = ["docs:install"]
 env = { ASTRO_TELEMETRY_DISABLED = "1" }
@@ -379,7 +379,7 @@ env = { ASTRO_TELEMETRY_DISABLED = "1" }
 run = "npx astro preview"
 
 [tasks."docs:links"]
-description = "Check the category links and their anchors in docs/dist, and the pages for links hidden in SVG images and for duplicate ids"
+description = "Check the internal links and their anchors in docs/dist, and the pages for links hidden in SVG images and for duplicate ids"
 dir = "docs"
 depends = ["docs:build"]
 run = ["node scripts/check-xrefs.mjs dist", "node scripts/check-html.mjs dist"]

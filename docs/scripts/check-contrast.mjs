@@ -2,10 +2,10 @@
 //
 // Reads the tokens of src/styles/theme.css for the dark theme (:root), the light
 // theme (:root[data-theme='light']) and the dark console panels in the light theme
-// (explainers and the hero panel), and computes the WCAG 2.2 contrast ratio of each
-// pair below. Text needs 4.5:1 (SC 1.4.3); lines and borders that carry meaning
-// need 3:1 (SC 1.4.11). The rest opacity of the explainer edges comes from
-// src/styles/components.css.
+// (explainers, terminal replays and the hero panel), and computes the WCAG 2.2
+// contrast ratio of each pair below. Text needs 4.5:1 (SC 1.4.3); lines and borders
+// that carry meaning need 3:1 (SC 1.4.11). The rest opacity of the explainer edges
+// comes from src/styles/components.css.
 // Usage: node scripts/check-contrast.mjs
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';

@@ -1,8 +1,8 @@
-// Checks the category links in the built site (mise run docs:links).
+// Checks the links in the built site (mise run docs:links).
 //
 // Fails when
-//   - a category link points to a page or an anchor that is not in dist/
-//     (links to planned pages, data-planned, are counted but not checked),
+//   - a link in the page content points to a page or an anchor that is not in dist/
+//     (Markdown links, category and glossary links, and the links of components),
 //   - a link into reference/ has no category (write `[](kind:Host)`, not a path),
 //   - a reference page has no `xref` frontmatter,
 //   - an id of a page's `anchors` frontmatter has no anchor on that page,
@@ -10,78 +10,58 @@
 //   - a back-link rule fails: a kind page links no controller, a controller page links
 //     no kind, a command page links no how-to, runbook or tutorial.
 // Usage: node scripts/check-xrefs.mjs [dist]
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync } from 'node:fs';
 import { base } from './site.mjs';
 import { anchorsOf, loadPages } from './registry.mjs';
-import { root } from './root.mjs';
+import { builtPages } from './root.mjs';
 
-const dist = process.argv[2] ?? join(root, 'dist');
-if (!existsSync(dist)) {
-  console.error(`check-xrefs: ${dist} does not exist. Run mise run docs:build first.`);
-  process.exit(1);
+const { dist, files } = builtPages('check-xrefs');
+
+/**
+ * The content of a page: from the Markdown container to the footer of the page. A
+ * component can have a <footer> too (KeyList), so the footer of the page is the last one.
+ */
+function contentOf(html) {
+  const start = html.indexOf('class="sl-markdown-content"');
+  return start < 0 ? '' : html.slice(start, html.lastIndexOf('<footer'));
 }
 
-const walk = (d) => readdirSync(d).flatMap((n) => {
-  const p = join(d, n);
-  return statSync(p).isDirectory() ? walk(p) : n.endsWith('.html') ? [p] : [];
-});
-
 const ids = new Map();
-const pages = walk(dist).map((file) => {
+const pages = files.map((file) => {
   const html = readFileSync(file, 'utf8');
   const path = `${base}/${file.slice(dist.length + 1).replace(/index\.html$/, '')}`;
   ids.set(path, new Set([...html.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1])));
-  return { file, path, html };
+  return { path, content: contentOf(html) };
 });
 
 const errors = [];
-let planned = 0;
 let checked = 0;
 /** Category links in page content: target path -> pages that link it; page -> categories it links. */
 const inbound = new Map();
 const outCats = new Map();
-for (const { path, html } of pages) {
-  const content = (html.split('class="sl-markdown-content"')[1] ?? '').split('<footer')[0];
+for (const { path, content } of pages) {
   const cats = new Set();
   for (const m of content.matchAll(/<a\s([^>]*)>/g)) {
-    const href = /href="([^"#]*)/.exec(m[1])?.[1];
-    const cat = /data-cat="([^"]*)"/.exec(m[1])?.[1];
-    if (!href || !cat) continue;
-    cats.add(cat);
-    if (href !== path) {
-      if (!inbound.has(href)) inbound.set(href, new Set());
-      inbound.get(href).add(path);
-    }
-  }
-  outCats.set(path, cats);
-}
-for (const { path, html } of pages) {
-  for (const m of html.matchAll(/<a\s([^>]*)>/g)) {
     const attrs = m[1];
     const href = /href="([^"]*)"/.exec(attrs)?.[1];
-    if (!href || !href.startsWith(`${base}/`)) continue;
-    const cat = /data-cat="([^"]*)"/.exec(attrs)?.[1];
-    const inMarkdown = /class="[^"]*\b(x|gl)\b/.test(attrs);
-    if (!inMarkdown) continue;
-    if (/data-planned/.test(attrs)) {
-      planned++;
-      continue;
-    }
+    if (!href || !(href.startsWith('#') || href.startsWith(`${base}/`))) continue;
     checked++;
-    const [target, hash] = href.split('#');
+    const [target, hash] = (href.startsWith('#') ? path + href : href).split('#');
     const t = ids.get(target);
     if (!t) errors.push(`${path}: ${href}: no page`);
     else if (hash && !t.has(decodeURIComponent(hash))) errors.push(`${path}: ${href}: no anchor "${hash}"`);
-  }
-  // Plain links into the reference, inside the page content.
-  const content = (html.split('class="sl-markdown-content"')[1] ?? '').split('<footer')[0];
-  for (const m of content.matchAll(/<a\s([^>]*)>/g)) {
-    const href = /href="([^"]*)"/.exec(m[1])?.[1] ?? '';
-    if (href.startsWith(`${base}/reference/`) && !/data-cat=|class="[^"]*\bgl\b/.test(m[1]) && !/class="[^"]*(f-anchor|box-g|pk-)/.test(m[1])) {
+    const cat = /data-cat="([^"]*)"/.exec(attrs)?.[1];
+    if (cat) {
+      cats.add(cat);
+      if (target !== path) {
+        if (!inbound.has(target)) inbound.set(target, new Set());
+        inbound.get(target).add(path);
+      }
+    } else if (href.startsWith(`${base}/reference/`) && !/class="[^"]*(\bgl\b|f-anchor|box-g|pk-)/.test(attrs)) {
       errors.push(`${path}: ${href}: a link into the reference needs a category, for example [](kind:Host)`);
     }
   }
+  outCats.set(path, cats);
 }
 
 const backlinks = {
@@ -106,5 +86,5 @@ for (const p of loadPages()) {
 for (const o of orphans) errors.push(`${o}: no other page links here (orphan); link it with its category id`);
 
 for (const e of errors) console.error(`check-xrefs: ${e}`);
-console.log(`check-xrefs: ${checked} links checked, ${planned} links to planned pages, ${errors.length} errors`);
+console.log(`check-xrefs: ${checked} links checked, ${errors.length} errors`);
 process.exit(errors.length ? 1 : 0);

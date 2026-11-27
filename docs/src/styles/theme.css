@@ -95,6 +95,7 @@
 
 /* The console panels stay dark in light mode: they keep the dark status colors. */
 :root[data-theme='light'] .pk-ex,
+:root[data-theme='light'] .pk-tr,
 :root[data-theme='light'] .pk-hero-panel {
   --pk-ok: #3fb950;
   --pk-warn: #d29922;

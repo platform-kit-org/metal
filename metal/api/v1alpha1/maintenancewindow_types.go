@@ -116,7 +116,7 @@ type MaintenanceWindowStatus struct {
 // New installs (operations with reason Provisioning) are not held: they
 // disturb no running workload. To let one operation start now anyway:
 //
-//	kubectl annotate hostoperation -n pk-metal <name> metal.platform-kit.org/ignore-window="<why>"
+//	kubectl annotate --overwrite hostoperation -n pk-metal <name> metal.platform-kit.org/ignore-window="<your username>: <reason>"
 //
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status

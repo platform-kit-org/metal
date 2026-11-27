@@ -11,6 +11,10 @@ import (
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
 )
 
+// namedLift is the value a guard's hint tells a person to set. Without the
+// name stamp, admission refuses any other form (config/policy/guard-lift.yaml).
+const namedLift = `="<your username>: <reason>"`
+
 // An empty or blank guard annotation lifts nothing: only a reason does.
 func TestGuardOverrideNeedsAReason(t *testing.T) {
 	for value, lifts := range map[string]bool{"": false, "   ": false, "\t\n": false, "CVE fix": true, " repair ": true} {
@@ -33,7 +37,7 @@ func TestDecideWindowEmptyIgnoreWindowHolds(t *testing.T) {
 
 	v := decideWindow([]metalv1alpha1.MaintenanceWindow{sat}, op, host, "", now)
 	require.NotEmpty(t, v.held, "an empty reason does not lift the window")
-	assert.Contains(t, v.held, "an empty reason does not count")
+	assert.Contains(t, v.held, "kubectl annotate --overwrite hostoperation -n pk-metal bios "+metalv1alpha1.AnnotationIgnoreWindow+namedLift)
 	assert.Empty(t, windowExempt(op))
 }
 
@@ -44,5 +48,5 @@ func TestClusterGuardEmptyOverrideHolds(t *testing.T) {
 		op.Annotations = map[string]string{metalv1alpha1.AnnotationOverrideClusterGuard: " "}
 	})
 	assert.Contains(t, msg, "1 healthy voting member(s) of 3", "a blank override lifts nothing")
-	assert.Contains(t, msg, "an empty reason does not count")
+	assert.Contains(t, msg, metalv1alpha1.AnnotationOverrideClusterGuard+namedLift)
 }

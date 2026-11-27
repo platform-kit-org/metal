@@ -93,9 +93,8 @@ func (g *ClusterGuard) Check(ctx context.Context, host *metalv1alpha1.Host, op *
 	if _, overridden := guardOverride(op, metalv1alpha1.AnnotationOverrideClusterGuard); overridden {
 		return "", nil
 	}
-	override := fmt.Sprintf(" To take it down anyway (etcd is broken already and this is the repair, or the cluster has a single "+
-		"control plane): kubectl annotate --overwrite hostoperation -n %s %s %s='<why>' (an empty reason does not count)",
-		op.Namespace, op.Name, metalv1alpha1.AnnotationOverrideClusterGuard)
+	override := " To take it down anyway (etcd is broken already and this is the repair, or the cluster has a single " +
+		"control plane): " + liftHint("hostoperation", op.Namespace, op.Name, metalv1alpha1.AnnotationOverrideClusterGuard)
 
 	// Etcd health is a read: os:reader serves it.
 	acc, err := newTalosAccessAs(ctx, g.Reader, g.Namespace, g.Dial, cluster, role.Reader)

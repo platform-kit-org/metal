@@ -77,12 +77,11 @@ Make approved operations start only in agreed time slots. A window does not appr
 
 ## Start one operation now
 
-For an urgent fix, annotate the operation. The value is your username and your reason.
+For an urgent fix, annotate the operation with your reason. The API server writes your username in front of the reason. See [`guard-lift-stamp`](ref:admission-policies#guard-lift-stamp).
 
 ```sh
-me=$(kubectl auth whoami -o jsonpath='{.status.userInfo.username}')
 kubectl -n pk-metal annotate hostoperation simhw2288v5000398-bios-4b5c6d7e \
-  metal.platform-kit.org/ignore-window="$me: CVE fix, agreed with on-call"
+  metal.platform-kit.org/ignore-window="CVE fix, agreed with on-call"
 ```
 
 The operation still needs its approval.

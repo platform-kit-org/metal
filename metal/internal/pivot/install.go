@@ -13,6 +13,7 @@ import (
 	networkingv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -84,7 +85,7 @@ func (m *Mover) Install(ctx context.Context) error {
 	}
 	var policyNames []string
 	for i := range policies.Items {
-		if guardsOperator(&policies.Items[i]) {
+		if guardsOperator(policies.Items[i].Spec.MatchConstraints) {
 			if err := m.applyTyped(ctx, &policies.Items[i], "ValidatingAdmissionPolicy"); err != nil {
 				return err
 			}
@@ -108,7 +109,11 @@ func (m *Mover) Install(ctx context.Context) error {
 			params[types.NamespacedName{Namespace: p.Namespace, Name: p.Name}] = true
 		}
 	}
-	m.logf("installed %d admission policies", len(policyNames))
+	stamps, err := m.installMutatingPolicies(ctx)
+	if err != nil {
+		return err
+	}
+	m.logf("installed %d admission policies", len(policyNames)+stamps)
 
 	// Cluster-wide RBAC: the manager's roles, the approver role, and their
 	// bindings. They name the operator, so they carry its prefix.
@@ -290,11 +295,45 @@ func managerForTarget(src *appsv1.Deployment, image, mediaURL string, claims []C
 	return d
 }
 
+// installMutatingPolicies copies the MutatingAdmissionPolicies on the
+// operator's objects and their bindings, such as requested-by-stamp, and
+// returns how many policies it copied. A source that does not serve them
+// (before Kubernetes 1.36) has none to copy.
+func (m *Mover) installMutatingPolicies(ctx context.Context) (int, error) {
+	src := m.Source.Client
+	policies := &admissionregistrationv1.MutatingAdmissionPolicyList{}
+	if err := src.List(ctx, policies); meta.IsNoMatchError(err) || apierrors.IsNotFound(err) {
+		return 0, nil
+	} else if err != nil {
+		return 0, err
+	}
+	var names []string
+	for i := range policies.Items {
+		if guardsOperator(policies.Items[i].Spec.MatchConstraints) {
+			if err := m.applyTyped(ctx, &policies.Items[i], "MutatingAdmissionPolicy"); err != nil {
+				return 0, err
+			}
+			names = append(names, policies.Items[i].Name)
+		}
+	}
+	bindings := &admissionregistrationv1.MutatingAdmissionPolicyBindingList{}
+	if err := src.List(ctx, bindings); err != nil {
+		return 0, err
+	}
+	for i := range bindings.Items {
+		if slices.Contains(names, bindings.Items[i].Spec.PolicyName) {
+			if err := m.applyTyped(ctx, &bindings.Items[i], "MutatingAdmissionPolicyBinding"); err != nil {
+				return 0, err
+			}
+		}
+	}
+	return len(names), nil
+}
+
 // guardsOperator: the policy matches a resource of the operator's groups,
 // the site settings ConfigMap that the other policies read, or the
 // ConfigMaps that hold Talos config patches (selected by their label).
-func guardsOperator(p *admissionregistrationv1.ValidatingAdmissionPolicy) bool {
-	m := p.Spec.MatchConstraints
+func guardsOperator(m *admissionregistrationv1.MatchResources) bool {
 	if m == nil {
 		return false
 	}

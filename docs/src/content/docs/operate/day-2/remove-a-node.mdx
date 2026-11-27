@@ -64,11 +64,10 @@ A GitOps tool that prunes a deleted file deletes the claim too.
 ## Remove a control plane
 
 The operator refuses a removal that leaves etcd with no member, no healthy majority, or an even count.
-The claim then shows `EtcdRiskRefused`. To accept the risk, annotate the claim with your username and your reason:
+The claim then shows `EtcdRiskRefused`. To accept the risk, annotate the claim with your reason. The API server writes your username in front of the reason. See [`guard-lift-stamp`](ref:admission-policies#guard-lift-stamp).
 
 ```sh
-me=$(kubectl auth whoami -o jsonpath='{.status.userInfo.username}')
-kubectl -n default annotate hostclaim cp-3 metal.platform-kit.org/ack-etcd-risk="$me: scale down to one control plane"
+kubectl -n default annotate hostclaim cp-3 metal.platform-kit.org/ack-etcd-risk="scale down to one control plane"
 ```
 
 ## Verify

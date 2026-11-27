@@ -1,0 +1,19 @@
+# The API server writes the name of the person who asks:
+#   - requested-by-stamp.yaml sets metal.platform-kit.org/requested-by to the
+#     username of each change that makes the operator propose work;
+#   - guard-lift-stamp.yaml puts the username in front of the reason of a
+#     guard lift, the form "<username>: <reason>".
+# So nobody types their own username, not with kubectl and not in a GitOps
+# manifest; the validating policies (../policy) still check each name.
+#
+# It needs MutatingAdmissionPolicy in admissionregistration.k8s.io/v1, that
+# is Kubernetes 1.36 or later; the base (../default) needs 1.30 only, so the
+# stamp is a component. Add it to an overlay with:
+#
+#   components:
+#     - ../name-stamp
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+resources:
+  - requested-by-stamp.yaml
+  - guard-lift-stamp.yaml

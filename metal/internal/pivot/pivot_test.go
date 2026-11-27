@@ -174,13 +174,13 @@ func TestManagerForTarget(t *testing.T) {
 
 func TestGuardsOperator(t *testing.T) {
 	p := &admissionregistrationv1.ValidatingAdmissionPolicy{}
-	assert.False(t, guardsOperator(p))
+	assert.False(t, guardsOperator(p.Spec.MatchConstraints))
 	p.Spec.MatchConstraints = &admissionregistrationv1.MatchResources{ResourceRules: []admissionregistrationv1.NamedRuleWithOperations{{
 		RuleWithOperations: admissionregistrationv1.RuleWithOperations{Rule: admissionregistrationv1.Rule{APIGroups: []string{"apps"}}},
 	}}}
-	assert.False(t, guardsOperator(p))
+	assert.False(t, guardsOperator(p.Spec.MatchConstraints))
 	p.Spec.MatchConstraints.ResourceRules[0].APIGroups = append(p.Spec.MatchConstraints.ResourceRules[0].APIGroups, "metal.platform-kit.org")
-	assert.True(t, guardsOperator(p))
+	assert.True(t, guardsOperator(p.Spec.MatchConstraints))
 
 	settings := &admissionregistrationv1.ValidatingAdmissionPolicy{}
 	settings.Spec.MatchConstraints = &admissionregistrationv1.MatchResources{ResourceRules: []admissionregistrationv1.NamedRuleWithOperations{{
@@ -188,15 +188,15 @@ func TestGuardsOperator(t *testing.T) {
 		RuleWithOperations: admissionregistrationv1.RuleWithOperations{Rule: admissionregistrationv1.Rule{
 			APIGroups: []string{""}, Resources: []string{"configmaps"}}},
 	}}}
-	assert.True(t, guardsOperator(settings), "the guard of the site settings moves too")
+	assert.True(t, guardsOperator(settings.Spec.MatchConstraints), "the guard of the site settings moves too")
 	settings.Spec.MatchConstraints.ResourceRules[0].ResourceNames = nil
-	assert.False(t, guardsOperator(settings), "a policy on other ConfigMaps stays behind")
+	assert.False(t, guardsOperator(settings.Spec.MatchConstraints), "a policy on other ConfigMaps stays behind")
 
 	settings.Spec.MatchConstraints.ObjectSelector = &metav1.LabelSelector{MatchExpressions: []metav1.LabelSelectorRequirement{
 		{Key: "os.platform-kit.org/patch", Operator: metav1.LabelSelectorOpExists}}}
-	assert.True(t, guardsOperator(settings), "the policy on the Talos config patches moves too")
+	assert.True(t, guardsOperator(settings.Spec.MatchConstraints), "the policy on the Talos config patches moves too")
 	settings.Spec.MatchConstraints.ObjectSelector.MatchExpressions[0].Operator = metav1.LabelSelectorOpDoesNotExist
-	assert.False(t, guardsOperator(settings), "a policy on the ConfigMaps that are no patches stays behind")
+	assert.False(t, guardsOperator(settings.Spec.MatchConstraints), "a policy on the ConfigMaps that are no patches stays behind")
 }
 
 func TestLeaseFree(t *testing.T) {

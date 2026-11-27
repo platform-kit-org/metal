@@ -45,11 +45,11 @@ A machine that did not answer during its release keeps its install. Its Host sho
 
 </Steps>
 
-If you know that the disk is empty (you replaced it, or erased it another way), remove the mark yourself. Set `metal.platform-kit.org/wipe-waived` to your user name and the reason in the same request:
+If you know that the disk is empty (you replaced it, or erased it another way), remove the mark yourself. Set `metal.platform-kit.org/wipe-waived` to the reason in the same request. The API server writes your username in front of the reason. See [`guard-lift-stamp`](ref:admission-policies#guard-lift-stamp).
 
 ```sh
 kubectl annotate host simhw2288v5000399 metal.platform-kit.org/disk-not-wiped- \
-  metal.platform-kit.org/wipe-waived="$(kubectl auth whoami -o jsonpath='{.status.userInfo.username}'): disk replaced"
+  metal.platform-kit.org/wipe-waived="disk replaced"
 ```
 
 ## Decommission a machine

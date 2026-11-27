@@ -20,8 +20,11 @@ import "slices"
 // that follows, although the operator proposed it.
 //
 // The intent of each kind, and the kinds themselves, are listed in the
-// policy. pk-metal sets the annotation for its caller; a GitOps controller
-// sets its own service account name in the manifests it applies.
+// policy. Where the site installs config/name-stamp (Kubernetes 1.36
+// or later), the API server sets the annotation on each create and each
+// change of the intent. Elsewhere pk-metal sets it for its caller, and a
+// GitOps controller sets its own service account name in the manifests it
+// applies.
 const AnnotationRequestedBy = "metal.platform-kit.org/requested-by"
 
 // RequestedBy collects the names that the annotations of objs give, sorted

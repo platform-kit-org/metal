@@ -160,7 +160,7 @@ func buildWorkloadClient(_ context.Context, kubeconfig []byte) (client.Client, e
 // etcdReport is the health of one etcd cluster, counted from its own member
 // list: a member no TalosNode describes still counts, and a TalosNode that
 // is not a member does not. clusterEtcd (etcdview.go) reads one for the
-// lifecycle verdicts.
+// lifecycle verdicts and the rollout's gate.
 type etcdReport struct {
 	// via is the control plane that listed the members; "" when none did.
 	via     string

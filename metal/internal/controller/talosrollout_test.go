@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
@@ -267,4 +268,24 @@ func TestRolloutStepHeldByAWindowIsStillRunning(t *testing.T) {
 	require.NoError(t, r.observeStep(t.Context(), ro, &osv1alpha1.TalosCluster{}, 0))
 	assert.Equal(t, osv1alpha1.RolloutNodeRunning, ro.Status.Steps[0].State)
 	assert.Equal(t, "waits for window nights", ro.Status.Steps[0].Message, "the rollout says why it waits")
+}
+
+// The gate between rollout steps reads etcd as the cluster guard does: a
+// member that no machine runs any more holds the next step.
+func TestRolloutEtcdGateCountsEveryMember(t *testing.T) {
+	lab := newLifecycleLab(t, []string{"cp-1", "cp-2"}, nil)
+	r := &TalosRolloutReconciler{Client: lab.r.Client, Namespace: "pk-metal", Dial: lab.fleet.Dialer()}
+	cluster := &osv1alpha1.TalosCluster{}
+	require.NoError(t, r.Get(t.Context(), client.ObjectKey{Name: "lab"}, cluster))
+	nodes, err := clusterMembers(t.Context(), r.Client, "lab")
+	require.NoError(t, err)
+	gate := func() string {
+		why, err := r.etcdGate(t.Context(), cluster, nodes, map[string]string{"cp-1": "box-1", "cp-2": "box-2"})
+		require.NoError(t, err)
+		return why
+	}
+	assert.Empty(t, gate())
+
+	lab.etcd.AddStale("cp-9")
+	assert.Contains(t, gate(), "member cp-9", "a stale member counts towards the majority")
 }

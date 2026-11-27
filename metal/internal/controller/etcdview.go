@@ -78,6 +78,16 @@ func (r *etcdReport) voting() (voting, healthyVoting int) {
 	return voting, healthyVoting
 }
 
+// leaderName is the hostname of the leading member, "" when unknown.
+func (r *etcdReport) leaderName() string {
+	for _, m := range r.members {
+		if m.ID == r.leader {
+			return m.Hostname
+		}
+	}
+	return ""
+}
+
 // learnerNames names the members that do not vote yet, as the member list
 // says.
 func (r *etcdReport) learnerNames() []string {

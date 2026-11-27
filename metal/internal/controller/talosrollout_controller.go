@@ -3,14 +3,12 @@ package controller
 import (
 	"cmp"
 	"context"
-	"errors"
 	"fmt"
 	"slices"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/siderolabs/talos/pkg/machinery/config/generate/secrets"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -52,9 +50,9 @@ type ImageResolver func(ctx context.Context, ref string) (string, error)
 //
 // Between nodes it pauses: always after the first node until a person
 // resumes (os.platform-kit.org/resume=<planHash>), whenever spec.paused is set, and
-// while a live health gate fails (every etcd member healthy and voting,
-// every Kubernetes Node of the cluster Ready, read now rather than from a
-// status polled minutes ago).
+// while a live health gate fails (etcd as the cluster guard reads it, every
+// Kubernetes Node of the cluster Ready, read now rather than from a status
+// polled minutes ago).
 type TalosRolloutReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
@@ -693,10 +691,9 @@ func (r *TalosRolloutReconciler) reader() client.Reader {
 	return r.Client
 }
 
-// healthGate checks, live, that the cluster can take the next step: every
-// etcd member answers, votes and reports no error, and every Kubernetes Node
-// of the cluster that no running step has taken down is Ready. It returns
-// why not, or "".
+// healthGate checks, live, that the cluster can take the next step: etcd is
+// healthy (etcdGate), and every Kubernetes Node of the cluster that no
+// running step has taken down is Ready. It returns why not, or "".
 func (r *TalosRolloutReconciler) healthGate(ctx context.Context, ro *osv1alpha1.TalosRollout, cluster *osv1alpha1.TalosCluster) (string, error) {
 	nodes, err := clusterMembers(ctx, r.Client, cluster.Name)
 	if err != nil {
@@ -740,70 +737,33 @@ func (r *TalosRolloutReconciler) healthGate(ctx context.Context, ro *osv1alpha1.
 	return "", nil
 }
 
-// etcdGate asks the control planes about etcd: every control plane that a
-// Host runs must be a voting member, and each must report no error.
+// etcdGate reads etcd as the cluster guard does (clusterEtcd): every member
+// answers, votes and reports no error, no alarm is raised, and every control
+// plane that a Host runs is a member.
 func (r *TalosRolloutReconciler) etcdGate(ctx context.Context, cluster *osv1alpha1.TalosCluster,
 	nodes []osv1alpha1.TalosNode, hosts map[string]string) (string, error) {
 	if r.Dial == nil {
 		return "", nil
 	}
-	bundle, err := loadBundle(ctx, r.Client, r.Namespace, cluster)
-	if err != nil {
-		if unavailable := (*bundleUnavailable)(nil); errors.As(err, &unavailable) {
-			return unavailable.msg, nil
-		}
-		return "", err
-	}
-	var cps []osv1alpha1.TalosNode
+	var cps []string
 	for _, n := range nodes {
 		if n.Spec.Role == osv1alpha1.RoleControlPlane && hosts[n.Name] != "" {
-			cps = append(cps, n)
+			cps = append(cps, n.Name)
 		}
 	}
 	if len(cps) == 0 {
 		return "no control plane runs", nil
 	}
-	var members []talos.EtcdMember
-	var problems []string
-	for _, n := range cps {
-		addr := render.NodeAddress(&n)
-		tcfg, err := readerTalosconfig(bundle, cluster.Name, []string{addr})
-		if err != nil {
-			return "", err
-		}
-		derr := talos.With(ctx, r.Dial, talos.Target{Endpoint: addr, Talosconfig: tcfg}, func(c talos.Client) error {
-			st, err := c.EtcdStatus(ctx)
-			if err != nil {
-				return err
-			}
-			if len(st.Errors) > 0 {
-				problems = append(problems, n.Name+": "+strings.Join(st.Errors, "; "))
-			}
-			if st.LeaderID == 0 {
-				problems = append(problems, n.Name+" follows no leader")
-			}
-			if members == nil {
-				members, err = c.EtcdMembers(ctx)
-			}
-			return err
-		})
-		if derr != nil {
-			problems = append(problems, n.Name+": "+derr.Error())
-		}
+	rep, why, err := clusterEtcd(ctx, r.Client, r.Dial, r.Namespace, cluster)
+	if err != nil || why != "" {
+		return why, err
 	}
-	if len(problems) > 0 {
+	if problems := rep.problems(0); len(problems) > 0 {
 		return "etcd is not healthy: " + strings.Join(problems, "; "), nil
 	}
-	voting := map[string]bool{}
-	for _, m := range members {
-		if m.IsLearner {
-			return "etcd member " + m.Hostname + " is still a learner", nil
-		}
-		voting[m.Hostname] = true
-	}
 	for _, n := range cps {
-		if !voting[n.Name] {
-			return "control plane " + n.Name + " is not an etcd member", nil
+		if rep.member(n) == nil {
+			return "control plane " + n + " is not an etcd member", nil
 		}
 	}
 	return "", nil
@@ -866,11 +826,11 @@ func (r *TalosRolloutReconciler) plan(ctx context.Context, ro *osv1alpha1.TalosR
 			"rendered now carries the old CA. Finish the rotation first", nil
 	}
 
-	var bundle *secrets.Bundle // only for the leader lookup
-	if r.Dial != nil {
-		bundle, _ = loadBundle(ctx, r.Client, r.Namespace, cluster)
+	etcd, _, err := clusterEtcd(ctx, r.Client, r.Dial, r.Namespace, cluster)
+	if err != nil {
+		return nil, "", err
 	}
-	leader := r.etcdLeader(ctx, cluster, members, hosts, bundle)
+	leader := etcd.leaderName()
 
 	var cps, workers []osv1alpha1.RolloutStep
 	var blocked []string
@@ -1025,44 +985,6 @@ func (r *TalosRolloutReconciler) kubeProxyImage(ctx context.Context, members []o
 		return image, "", nil
 	}
 	return "", "no control plane has a rendered config to read the kube-proxy image from", nil
-}
-
-// etcdLeader names the control plane that leads etcd now, "" when unknown.
-func (r *TalosRolloutReconciler) etcdLeader(ctx context.Context, cluster *osv1alpha1.TalosCluster,
-	members []osv1alpha1.TalosNode, hosts map[string]string, bundle *secrets.Bundle) string {
-	if bundle == nil {
-		return ""
-	}
-	for _, n := range members {
-		if n.Spec.Role != osv1alpha1.RoleControlPlane || hosts[n.Name] == "" {
-			continue
-		}
-		addr := render.NodeAddress(&n)
-		tcfg, err := readerTalosconfig(bundle, cluster.Name, []string{addr})
-		if err != nil {
-			return ""
-		}
-		var leader string
-		if talos.With(ctx, r.Dial, talos.Target{Endpoint: addr, Talosconfig: tcfg}, func(c talos.Client) error {
-			st, err := c.EtcdStatus(ctx)
-			if err != nil {
-				return err
-			}
-			ms, err := c.EtcdMembers(ctx)
-			if err != nil {
-				return err
-			}
-			for _, m := range ms {
-				if m.ID == st.LeaderID {
-					leader = m.Hostname
-				}
-			}
-			return nil
-		}) == nil {
-			return leader
-		}
-	}
-	return ""
 }
 
 // rolloutClusterField is a selectable field of the TalosRollout CRD: the API

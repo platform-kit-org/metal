@@ -77,7 +77,7 @@ drain → change → waitNodeReady → waitEtcdHealthy* → uncordon
 - **Approval.** The approver names the `planHash` that they saw. After the approval, the plan is frozen.
 - **Plan changed.** If the plan that the operator would make now differs from the approved plan, the rollout ends with `Complete=False`, reason `PlanChanged`. Nothing runs.
 - **Pause after the first node.** The rollout always stops after the first node. [](cli:rollout) `resume` sets `os.platform-kit.org/resume` to the plan hash.
-- **Health gate.** Before each step, the operator asks etcd and Kubernetes again. It needs a leader, no member with an error, no learner, all control planes as members and all other Nodes Ready. Until then, the reason is `WaitingForHealth`.
+- **Health gate.** Before each step, the operator asks etcd and Kubernetes again. etcd must pass the same check as for the [](concept:cluster-guard). Each member answers, has no error, knows a leader and is not a learner. etcd has no alarm. Each control plane must be a member, and each other Node must be Ready. Until then, the reason is `WaitingForHealth`.
 - **One rollout per cluster.** A rollout that started holds the cluster. Another approved rollout waits until it ends, also when that rollout is older. If no approved rollout started, the oldest one goes first.
 - **Failure.** A step fails: the rollout stops with `RolloutFailed`. The steps that did not start are `Skipped`.
 

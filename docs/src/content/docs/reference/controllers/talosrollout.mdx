@@ -98,7 +98,7 @@ The TalosRollout lane changes a running cluster one node at a time: a Talos upgr
 4. If a step failed or a person aborted, mark the pending steps Skipped. Wait for running steps to finish. Nodes that changed stay changed.
 5. Pick the next steps: control planes and kube-proxy one at a time, workers up to `maxUnavailableWorkers`.
 6. Pause if `spec.paused` is set, or after the first node until a person resumes it with the plan hash.
-7. Gate: no other rollout holds the cluster, every etcd member answers and votes, and every Kubernetes Node is Ready. The gate reads live, not from a status. The rollouts come from the API server, not from the cache.
+7. Gate: no other rollout holds the cluster, and the [health gate](kind:TalosRollout#run) passes. The gate reads live, not from a status. The rollouts come from the API server, not from the cache.
 8. Start each step: create a [](kind:HostOperation) with `rolloutRef` and no approval of its own.
 
 ## The proposer

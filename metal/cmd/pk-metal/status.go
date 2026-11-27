@@ -163,6 +163,7 @@ type opStatus struct {
 	Host           string `json:"host"`
 	Phase          string `json:"phase"`
 	ApprovedBy     string `json:"approvedBy"`
+	AwaitsApproval bool   `json:"awaitsApproval"`
 	BlockedOn      string `json:"blockedOn"`
 	Message        string `json:"message"`
 	NeedsAttention bool   `json:"needsAttention"`
@@ -338,11 +339,13 @@ func addMachines(rep *statusReport, in topInput) {
 
 	for _, op := range in.Ops {
 		row := opStatus{Namespace: op.Namespace, Name: op.Name, Host: op.Spec.HostRef.Name,
-			Phase: string(op.Status.Phase), ApprovedBy: op.Spec.Approval.ApprovedBy, BlockedOn: op.Status.BlockedOn}
+			Phase: string(op.Status.Phase), ApprovedBy: op.Spec.Approval.ApprovedBy,
+			AwaitsApproval: op.AwaitsApproval(), BlockedOn: op.Status.BlockedOn}
 		row.Message = explain(op.Status.Conditions, op.Status.BlockedOn, metalv1alpha1.ConditionExecuted)
 		// Queued behind another operation or waiting for its maintenance
 		// window is the plan working, not something a person must do.
-		row.NeedsAttention = op.Status.Phase == metalv1alpha1.OperationFailed || op.Status.Phase == metalv1alpha1.OperationAborted ||
+		row.NeedsAttention = row.AwaitsApproval ||
+			op.Status.Phase == metalv1alpha1.OperationFailed || op.Status.Phase == metalv1alpha1.OperationAborted ||
 			(op.Status.BlockedOn != "" && op.Status.BlockedOn != metalv1alpha1.ReasonOperationQueued &&
 				op.Status.BlockedOn != metalv1alpha1.ReasonOutsideMaintenanceWindow)
 		rep.Operations = append(rep.Operations, row)
@@ -415,7 +418,7 @@ func renderReport(rep statusReport) string {
 			ops.notes = append(ops.notes, note(ref, op.Message, "failed")+"; to try again: pk-metal retry "+ref)
 		case op.Phase == string(metalv1alpha1.OperationAborted):
 			ops.notes = append(ops.notes, note(ref, op.Message, "aborted")+"; to run it again: pk-metal retry "+ref)
-		case op.Phase == string(metalv1alpha1.OperationAwaitingApproval) || (op.ApprovedBy == "" && op.BlockedOn == metalv1alpha1.ReasonAwaitingApproval):
+		case op.AwaitsApproval:
 			ops.notes = append(ops.notes, ref+": waits for approval; see the plan and approve: pk-metal approve "+ref)
 		default:
 			ops.noteIf(op.NeedsAttention, ref, op.Message, op.BlockedOn)

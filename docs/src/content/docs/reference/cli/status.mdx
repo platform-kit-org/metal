@@ -61,7 +61,7 @@ A failed operation stays in the table until you run [](cli:retry).
   <dt>Host</dt>
   <dd>The Host or its claim has a block, or the phase is Failed.</dd>
   <dt>Operation</dt>
-  <dd>The phase is Failed or Aborted, or the operation has a block. This includes an operation that waits for approval.</dd>
+  <dd>The operation waits for approval, the phase is Failed or Aborted, or the operation has a block. An operation waits for approval when it needs one, nobody approved it, and it did not end. [](cli:approve) uses the same rule.</dd>
   <dt>Endpoint</dt>
   <dd>The endpoint has a block, or the phase is Unreachable or Mismatch.</dd>
   <dt>Claim</dt>
@@ -130,7 +130,7 @@ watch -n 10 pk-metal status
 | `version` | `1`. Keys do not change while the version is 1. New keys can come. |
 | `needsAttention` | `true` if one row or more needs a person. |
 | `hosts` | `name`, `asset`, `vendor`, `phase`, `claim`, `node` (`name`, `address`, or `null`), `pathsUp`, `pathsTotal`, `blockedOn`, `message`, `needsAttention` |
-| `operations` | `namespace`, `name`, `host`, `phase`, `approvedBy`, `blockedOn`, `message`, `needsAttention` |
+| `operations` | `namespace`, `name`, `host`, `phase`, `approvedBy`, `awaitsApproval`, `blockedOn`, `message`, `needsAttention` |
 | `endpoints` | `name`, `asset`, `vendor`, `phase`, `address`, `blockedOn`, `message`, `needsAttention` |
 | `claims` | `namespace`, `name`, `asset`, `host`, `phase`, `blockedOn`, `message`, `onHold`, `needsAttention` |
 | `clusters` | `name`, `talosVersion`, `talosVersionsRunning`, `kubernetesVersion`, `kubernetesVersionRunning`, `controlPlanes`, `readyControlPlanes`, `workers`, `readyWorkers`, `available`, `etcd`, `bootstrappedAt`, `backup`, `backupMessage`, `message`, `needsAttention` |

@@ -200,7 +200,7 @@ func TestStatusJSONShape(t *testing.T) {
 	assert.Equal(t, true, doc["needsAttention"])
 	assert.ElementsMatch(t, []string{"name", "asset", "vendor", "phase", "claim", "node", "pathsUp", "pathsTotal",
 		"blockedOn", "message", "needsAttention"}, keys(first("hosts")))
-	assert.ElementsMatch(t, []string{"namespace", "name", "host", "phase", "approvedBy", "blockedOn", "message",
+	assert.ElementsMatch(t, []string{"namespace", "name", "host", "phase", "approvedBy", "awaitsApproval", "blockedOn", "message",
 		"needsAttention"}, keys(first("operations")))
 	assert.ElementsMatch(t, []string{"name", "asset", "vendor", "phase", "address", "blockedOn", "message",
 		"needsAttention"}, keys(first("endpoints")))
@@ -265,6 +265,26 @@ func TestStatusExitCodes(t *testing.T) {
 	code, err = runStatus(ctx, broken, "table", &out)
 	assert.ErrorContains(t, err, "connection refused")
 	assert.Equal(t, exitError, code)
+}
+
+// Status says that an operation waits for approval exactly when pk-metal
+// approve lists it: a proposal that the controller did not read yet waits,
+// and an approved operation whose status is old does not.
+func TestStatusAwaitsApprovalAsApproveDoes(t *testing.T) {
+	fresh := metalv1alpha1.HostOperation{ObjectMeta: metav1.ObjectMeta{Namespace: "pk-metal", Name: "fresh"},
+		Spec: metalv1alpha1.HostOperationSpec{HostRef: metalv1alpha1.Reference{Name: "simx12b000001"}}}
+	approved := *fresh.DeepCopy()
+	approved.Name, approved.Spec.Approval.ApprovedBy = "approved", "alice"
+	approved.Status = metalv1alpha1.HostOperationStatus{Phase: metalv1alpha1.OperationAwaitingApproval,
+		BlockedOn: metalv1alpha1.ReasonAwaitingApproval}
+	rep := buildStatus(topInput{Ops: []metalv1alpha1.HostOperation{fresh, approved}}, nil)
+	require.Len(t, rep.Operations, 2)
+	assert.False(t, rep.Operations[0].AwaitsApproval)
+	assert.True(t, rep.Operations[1].AwaitsApproval)
+	assert.True(t, rep.Operations[1].NeedsAttention, "a proposal with no status yet needs a person")
+	out := renderReport(rep)
+	assert.Contains(t, out, "pk-metal/fresh: waits for approval; see the plan and approve: pk-metal approve pk-metal/fresh")
+	assert.NotContains(t, out, "approve pk-metal/approved", "alice approved it already")
 }
 
 // A kind that the caller may not read fails the command: an empty ROLLOUT

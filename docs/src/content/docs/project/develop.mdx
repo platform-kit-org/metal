@@ -68,9 +68,10 @@ mise run docs:check
 
 | Task | What it checks |
 | --- | --- |
-| `lint:go` | `golangci-lint` with the configuration in `metal/.golangci.yml` |
+| `lint:go` | `golangci-lint` with the configuration in `metal/.golangci.yml`. It also fails on a file that `gofmt` or `goimports` would change. `golangci-lint fmt` in `metal/` writes the change. |
 | `lint:phase` | The phase rule. See the invariants below. |
 | `lint:shell` | `bash -n` and `shellcheck` for the scripts in `lab/` and `metal/hack/` |
+| `lint:vuln` | `govulncheck`: the known vulnerabilities in the code that the module calls. It reads `vuln.go.dev`. |
 | `generate` | Writes the deepcopy code, the CRDs, the role of the manager and the reference data of this site |
 | `generate:check` | Fails if a generated file does not agree with its source |
 | `docs:check` | Builds this site and checks each link |

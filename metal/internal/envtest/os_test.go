@@ -94,14 +94,15 @@ func stubFactory(t *testing.T) (*render.Factory, func() []string) {
 		_ = json.NewEncoder(w).Encode(map[string]string{"id": id, "schematic": string(normalized)})
 	}))
 	t.Cleanup(srv.Close)
-	return &render.Factory{
-			RegistryURL: strings.TrimPrefix(srv.URL, "https://"),
-			HTTPClient:  srv.Client(),
-		}, func() []string {
-			mu.Lock()
-			defer mu.Unlock()
-			return append([]string(nil), ids...)
-		}
+	factory := &render.Factory{
+		RegistryURL: strings.TrimPrefix(srv.URL, "https://"),
+		HTTPClient:  srv.Client(),
+	}
+	return factory, func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]string(nil), ids...)
+	}
 }
 
 // pinImage stands in for the registry: it pins a tag to a digest derived

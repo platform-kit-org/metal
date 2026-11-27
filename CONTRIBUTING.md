@@ -17,7 +17,8 @@ has the long one.
 2. Run `mise trust` and then `mise install` in the repository root.
 3. Run `mise tasks` to see every task.
 
-mise pins Go, kubectl, kind, talosctl, golangci-lint, Node and Vale.
+mise pins Go, kubectl, kind, talosctl, golangci-lint, jq, yq, promtool, Node
+and Vale, each to its minor version.
 Docker, QEMU, OVMF and shellcheck are system packages.
 
 Development happens on the `main` branch. Start your branch from it.
@@ -59,11 +60,12 @@ part of the specification above it, change it if needed, run
 ## Lint
 
 ```sh
-mise run lint          # golangci-lint, the phase check and shellcheck
+mise run lint          # golangci-lint, the phase check, shellcheck, govulncheck
 ```
 
-CI runs the three parts as separate steps: `lint:go`, `lint:phase` and
-`lint:shell`.
+CI runs the four parts as separate steps: `lint:go`, `lint:phase`,
+`lint:shell` and `lint:vuln`. `lint:go` also fails on a file that `gofmt` or
+`goimports` would change; `golangci-lint fmt` in `metal/` writes the change.
 
 ## Generated files
 

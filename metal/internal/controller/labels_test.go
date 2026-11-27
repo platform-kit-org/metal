@@ -32,8 +32,8 @@ func TestStampLabels(t *testing.T) {
 	t.Run("bind stamps both axes and bookkeeps", func(t *testing.T) {
 		require.True(t, stampLabels(host, claim, "node-1", "Supermicro", "X12DPi-N6"))
 		assert.Equal(t, map[string]string{
-			"human":              "kept",
-			"role":               "worker",
+			"human":                         "kept",
+			"role":                          "worker",
 			"metal.platform-kit.org/asset":  "node-1",
 			"metal.platform-kit.org/vendor": "Supermicro",
 			"metal.platform-kit.org/model":  "X12DPi-N6",
@@ -53,7 +53,7 @@ func TestStampLabels(t *testing.T) {
 	t.Run("release clears intent, keeps discovery and humans", func(t *testing.T) {
 		require.True(t, stampLabels(host, nil, "node-1", "Supermicro", "X12DPi-N6"))
 		assert.Equal(t, map[string]string{
-			"human":              "kept",
+			"human":                         "kept",
 			"metal.platform-kit.org/asset":  "node-1",
 			"metal.platform-kit.org/vendor": "Supermicro",
 			"metal.platform-kit.org/model":  "X12DPi-N6",

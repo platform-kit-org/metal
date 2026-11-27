@@ -11,9 +11,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	// The controller package registers the reconcile and worker series of
-	// controller-runtime.
-	_ "sigs.k8s.io/controller-runtime/pkg/controller"
+	_ "sigs.k8s.io/controller-runtime/pkg/controller" // registers the reconcile and worker series
 	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/yaml"
 )

@@ -21,8 +21,8 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
-	"github.com/dennisklein/platform-kit/metal/internal/bmc"
 	"github.com/dennisklein/platform-kit/metal/internal/audit"
+	"github.com/dennisklein/platform-kit/metal/internal/bmc"
 	gofishclient "github.com/dennisklein/platform-kit/metal/internal/bmc/gofish"
 	"github.com/dennisklein/platform-kit/metal/internal/identity"
 	"github.com/dennisklein/platform-kit/metal/internal/phase"

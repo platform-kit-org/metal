@@ -17,15 +17,15 @@ talosctl = "1.14"
 # Kubernetes 1.36 — the k8s.io/* modules in metal/go.mod and the kind node image.
 kubectl = "1.36"
 kind = "0.32"
-golangci-lint = "2"
-jq = "1"
-yq = "4"
+golangci-lint = "2.15"
+jq = "1.8"
+yq = "4.54"
 # Node 24 LTS for the documentation site in docs/ (Astro + Starlight).
 node = "24.22"
 # Vale lints the documentation site against the STE style in docs/styles.
 vale = "3.28"
 # promtool checks and unit-tests the alerting rules (mise run metrics:rules).
-promtool = "3"
+promtool = "3.16"
 # Skyhook Radar, a read-mostly Kubernetes UI (mise run lab:radar). The release ships one
 # binary, kubectl-radar, so it also runs as the kubectl plugin `kubectl radar`. Unlike the
 # rest, it floats on the latest release: it is a viewer, and nothing must match it.
@@ -110,8 +110,8 @@ CGO_ENABLED=1 KUBEBUILDER_ASSETS="$assets" go test -race ./...
 '''
 
 [tasks.lint]
-description = "golangci-lint, the phase invariant and shellcheck"
-depends = ["lint:go", "lint:phase", "lint:shell"]
+description = "golangci-lint, the phase invariant, shellcheck and the known vulnerabilities"
+depends = ["lint:go", "lint:phase", "lint:shell", "lint:vuln"]
 
 [tasks."lint:shell"]
 description = "bash -n and shellcheck over the lab and hack scripts"
@@ -127,6 +127,15 @@ echo "lint:shell: clean"
 [tasks."lint:go"]
 dir = "metal"
 run = "golangci-lint run"
+
+[tasks."lint:vuln"]
+description = "govulncheck: the known vulnerabilities in the code that the module calls"
+dir = "metal"
+# go run at a fixed version, not a tool directive in go.mod: a tool directive
+# puts govulncheck's own requirements into the module graph, and that raises
+# golang.org/x modules that the binaries link. The Go checksum database checks
+# the download. govulncheck reads https://vuln.go.dev.
+run = "go run golang.org/x/vuln/cmd/govulncheck@v1.10.0 ./..."
 
 [tasks."lint:phase"]
 description = "Only internal/phase writes .Status.Phase/.Status.BlockedOn, and reconcilers never read them (a typed check)"

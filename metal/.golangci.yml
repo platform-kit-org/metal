@@ -7,3 +7,13 @@ linters:
     presets:
       - std-error-handling
       - common-false-positives
+# golangci-lint run also reports a file that the formatters would change, so
+# CI fails on it; golangci-lint fmt rewrites the files.
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/dennisklein/platform-kit

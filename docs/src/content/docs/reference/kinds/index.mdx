@@ -100,7 +100,7 @@ A script or a GitOps tool must read conditions, not the phase. This table gives 
 
 - A wait does not approve. A claim with `spec.os` stays at `Provisioned=False` until a person approves the install. See [A claim that waits for approval](kind:HostClaim#a-claim-that-waits-for-approval).
 - `Complete=False` on a rollout is an end too: the rollout failed, or someone aborted it. A wait for True then ends with a timeout.
-- Only the Asset has `status.observedGeneration`. For the other kinds, the status can be older than your last change for a short time. Each condition has its own `observedGeneration`.
+- No kind has `status.observedGeneration`. Each condition has its own `observedGeneration`. Compare it with `metadata.generation` before you trust the condition.
 - No kind has a `Ready` condition that summarizes the others.
 
 ## When you delete an object

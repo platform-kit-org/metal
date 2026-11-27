@@ -131,7 +131,7 @@ Some commands change the spec of an object that you keep in git. With a GitOps t
 ## Wait for a result
 
 A tool that waits for health needs a condition for each kind. [Wait for a kind](kind:index#wait-for-a-kind) has the list.
-Only the Asset has `status.observedGeneration`. For the other kinds, a tool cannot see that the status is as new as the spec.
+No kind has `status.observedGeneration`. Each condition has its own `observedGeneration`. Compare it with `metadata.generation` before you trust the condition.
 
 ## Related
 

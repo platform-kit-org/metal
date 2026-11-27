@@ -6,13 +6,12 @@ kind: MaintenanceWindow
 metadata:
   name: workers-weekend
 spec:
-  # The Hosts that carry this label. The label comes from the claim (claim.yaml
-  # sets role on its Host).
+  # The Hosts that carry this label. A claim copies its spec.labels to its
+  # Host. Add clusters: to also cover each node of a cluster: either match is
+  # enough.
   hostSelector:
     matchLabels:
       role: worker
-  # Only for the nodes of these clusters.
-  clusters: [lab]
   timeZone: Europe/Berlin
   weekly:
     - days: [Sat]

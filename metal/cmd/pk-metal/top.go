@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -52,7 +53,9 @@ terminal height leaves room for. Without it, top works the same against real
 hardware.
 
 With --workload-kubeconfig the panel also shows whether the node is Ready in
-the workload cluster itself.
+the workload cluster itself. A workload cluster that does not answer yet, for
+example while its first control plane installs, does not stop top: top asks
+it again every 5 seconds.
 
 keys:
   tab, arrows  select a machine
@@ -138,8 +141,7 @@ func fleetStateURL(raw string) (string, error) {
 type watchSource struct {
 	mgmt      cache.Cache
 	informers map[string]cache.Informer // by kind, only kinds the cluster has
-	workload  cache.Cache
-	nodes     cache.Informer
+	workload  *workloadWatch            // nil without --workload-kubeconfig
 	fleetURL  string
 	http      *http.Client
 }
@@ -191,24 +193,75 @@ func newWatchSource(ctx context.Context, cfg *rest.Config, workloadKubeconfig, f
 		if err != nil {
 			return nil, fmt.Errorf("--workload-kubeconfig: %w", err)
 		}
-		sch := runtime.NewScheme()
-		if err := scheme.AddToScheme(sch); err != nil {
-			return nil, err
-		}
-		s.workload, err = cache.New(wcfg, cache.Options{Scheme: sch})
-		if err != nil {
-			return nil, fmt.Errorf("cannot watch the workload cluster: %w", err)
-		}
-		s.nodes, err = s.workload.GetInformer(ctx, &corev1.Node{}, cache.BlockUntilSynced(false))
-		if err != nil {
-			return nil, fmt.Errorf("cannot watch the workload cluster's Nodes: %w", err)
-		}
-		if _, err := s.nodes.AddEventHandler(notify); err != nil {
-			return nil, err
-		}
-		go func() { _ = s.workload.Start(ctx) }()
+		s.workload = &workloadWatch{}
+		go s.workload.run(ctx, func(ctx context.Context) (cache.Cache, cache.Informer, error) {
+			return watchNodes(ctx, wcfg, notify)
+		}, workloadRetry)
 	}
 	return s, nil
+}
+
+// workloadRetry is how long top waits before it asks a workload cluster that
+// did not answer again.
+const workloadRetry = 5 * time.Second
+
+// workloadWatch watches the workload cluster's Nodes. That cluster may not
+// answer when top starts: the lab installs it while top runs, and a lab that
+// was reset keeps the kubeconfig of the cluster it installs again. So top
+// does not wait for it and does not give up: it asks again until the cluster
+// answers, and shows the Nodes from then on.
+type workloadWatch struct {
+	mu    sync.Mutex
+	cache cache.Cache
+	nodes cache.Informer
+}
+
+// run calls connect until it succeeds or ctx ends, every retry.
+func (w *workloadWatch) run(ctx context.Context, connect func(context.Context) (cache.Cache, cache.Informer, error), retry time.Duration) {
+	for {
+		c, inf, err := connect(ctx)
+		if err == nil {
+			w.mu.Lock()
+			w.cache, w.nodes = c, inf
+			w.mu.Unlock()
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(retry):
+		}
+	}
+}
+
+// get is the cache and the Node informer; both nil until the cluster
+// answered.
+func (w *workloadWatch) get() (cache.Cache, cache.Informer) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.cache, w.nodes
+}
+
+// watchNodes starts a watch of the Nodes of the cluster cfg names. It fails
+// while the cluster does not answer: the informer needs its API discovery.
+func watchNodes(ctx context.Context, cfg *rest.Config, notify toolscache.ResourceEventHandler) (cache.Cache, cache.Informer, error) {
+	sch := runtime.NewScheme()
+	if err := scheme.AddToScheme(sch); err != nil {
+		return nil, nil, err
+	}
+	c, err := cache.New(cfg, cache.Options{Scheme: sch})
+	if err != nil {
+		return nil, nil, err
+	}
+	inf, err := c.GetInformer(ctx, &corev1.Node{}, cache.BlockUntilSynced(false))
+	if err != nil {
+		return nil, nil, err
+	}
+	if _, err := inf.AddEventHandler(notify); err != nil {
+		return nil, nil, err
+	}
+	go func() { _ = c.Start(ctx) }()
+	return c, inf, nil
 }
 
 // poke tells the screen something changed; one pending poke is enough.
@@ -251,14 +304,18 @@ func (s *watchSource) Read(ctx context.Context) topInput {
 	in.Clusters = lists["TalosCluster"].(*osv1alpha1.TalosClusterList).Items
 	in.Rollouts = lists["TalosRollout"].(*osv1alpha1.TalosRolloutList).Items
 
-	if s.nodes != nil {
+	if s.workload != nil {
+		c, inf := s.workload.get()
 		nodes := &corev1.NodeList{}
-		if s.nodes.HasSynced() && s.workload.List(ctx, nodes) == nil {
+		switch {
+		case inf == nil:
+			in.Loading = append(in.Loading, "workload Nodes (the cluster does not answer yet)")
+		case inf.HasSynced() && c.List(ctx, nodes) == nil:
 			in.K8sNodes = nodes.Items
 			if in.K8sNodes == nil {
 				in.K8sNodes = []corev1.Node{}
 			}
-		} else {
+		default:
 			in.Loading = append(in.Loading, "workload Nodes")
 		}
 	}

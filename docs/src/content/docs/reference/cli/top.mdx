@@ -48,7 +48,7 @@ The command takes no arguments. It needs a terminal. In a script, use [](cli:sta
   <dt>With [`--fleet`](cli:top#--fleet)</dt>
   <dd>The state of the simulated BMC: power, media, boot override and the last Redfish call. Also the state of the virtual machine and the last console lines. The console fills the remaining height of the terminal.</dd>
   <dt>With [`--workload-kubeconfig`](cli:top#--workload-kubeconfig)</dt>
-  <dd>The Ready condition of each node in the workload cluster.</dd>
+  <dd>The Ready condition of each node in the workload cluster. If the workload cluster does not answer yet, for example while its first control plane installs, the program does not stop. It tries again every 5 seconds.</dd>
 </dl>
 
 Without `--fleet`, the command works the same with real hardware.

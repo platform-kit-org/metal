@@ -20,7 +20,7 @@ machines:
       bmcMAC: "02:77:00:00:01:01"
       nicMACs: ["52:54:00:77:00:11"]
     backend: qemu
-    qemu: { tap: pktap1, memoryMiB: 4096, cpus: 2, diskGiB: 20, diskSerial: pklab-disk-1 }
+    qemu: { tap: pktap1, memoryMiB: 4096, cpus: 2, diskGiB: 20, diskSerial: pklab-disk-1, arch: amd64, accel: kvm }
   - name: node-2 # controlplane
     listen: 10.77.0.1:8442
     personality: generic
@@ -31,7 +31,7 @@ machines:
       bmcMAC: "02:77:00:00:01:02"
       nicMACs: ["52:54:00:77:00:12"]
     backend: qemu
-    qemu: { tap: pktap2, memoryMiB: 4096, cpus: 2, diskGiB: 20, diskSerial: pklab-disk-2 }
+    qemu: { tap: pktap2, memoryMiB: 4096, cpus: 2, diskGiB: 20, diskSerial: pklab-disk-2, arch: amd64, accel: kvm }
   - name: node-3 # controlplane
     listen: 10.77.0.1:8443
     personality: supermicro-x12
@@ -42,7 +42,7 @@ machines:
       bmcMAC: "02:77:00:00:01:03"
       nicMACs: ["52:54:00:77:00:13"]
     backend: qemu
-    qemu: { tap: pktap3, memoryMiB: 4096, cpus: 2, diskGiB: 20, diskSerial: pklab-disk-3 }
+    qemu: { tap: pktap3, memoryMiB: 4096, cpus: 2, diskGiB: 20, diskSerial: pklab-disk-3, arch: amd64, accel: kvm }
   - name: node-4 # worker
     listen: 10.77.0.1:8444
     personality: generic
@@ -53,7 +53,7 @@ machines:
       bmcMAC: "02:77:00:00:01:04"
       nicMACs: ["52:54:00:77:00:14"]
     backend: qemu
-    qemu: { tap: pktap4, memoryMiB: 2048, cpus: 2, diskGiB: 20, diskSerial: pklab-disk-4 }
+    qemu: { tap: pktap4, memoryMiB: 2048, cpus: 2, diskGiB: 20, diskSerial: pklab-disk-4, arch: amd64, accel: kvm }
   - name: node-5 # worker
     listen: 10.77.0.1:8445
     personality: generic
@@ -64,4 +64,4 @@ machines:
       bmcMAC: "02:77:00:00:01:05"
       nicMACs: ["52:54:00:77:00:15"]
     backend: qemu
-    qemu: { tap: pktap5, memoryMiB: 2048, cpus: 2, diskGiB: 20, diskSerial: pklab-disk-5 }
+    qemu: { tap: pktap5, memoryMiB: 2048, cpus: 2, diskGiB: 20, diskSerial: pklab-disk-5, arch: amd64, accel: kvm }

@@ -27,7 +27,7 @@ var (
 func TestArgs(t *testing.T) {
 	dir := t.TempDir()
 	m := New(Options{
-		Name: "vm1", Dir: dir, InstallerISO: "/isos/talos.iso",
+		Name: "vm1", Dir: dir, InstallerISO: "/isos/talos.iso", Arch: ArchAMD64,
 		OVMFCode: "/fw/CODE.fd", DiskSerial: "e2e-disk",
 		HostIP: "127.42.0.10", ForwardPorts: []int{50000, 6443},
 	})
@@ -37,6 +37,7 @@ func TestArgs(t *testing.T) {
 	require.NoError(t, err)
 	line := strings.Join(args, " ")
 
+	assert.Contains(t, line, "-machine q35")
 	assert.Contains(t, line, "-accel kvm", "kvm is the default accelerator")
 	assert.Contains(t, line, "-cpu host")
 	assert.Contains(t, line, "-m 4096", "memory defaults")
@@ -65,12 +66,85 @@ func TestArgs(t *testing.T) {
 }
 
 func TestArgsTCG(t *testing.T) {
-	m := New(Options{Name: "vm1", Dir: t.TempDir(), OVMFCode: "/fw/CODE.fd", Accel: "tcg"})
+	m := New(Options{Name: "vm1", Dir: t.TempDir(), OVMFCode: "/fw/CODE.fd", Arch: ArchAMD64, Accel: AccelTCG})
 	args, _, err := m.args()
 	require.NoError(t, err)
 	line := strings.Join(args, " ")
 	assert.Contains(t, line, "-accel tcg")
-	assert.Contains(t, line, "-cpu max", "no host CPU passthrough without kvm")
+	assert.Contains(t, line, "-cpu max ", "no host CPU passthrough without kvm")
+}
+
+// An arm64 machine is a virt board: no AHCI, so its CDs share one
+// virtio-scsi controller, and the boot order rides on the same bootindex.
+func TestArgsARM64(t *testing.T) {
+	dir := t.TempDir()
+	m := New(Options{
+		Name: "vm1", Dir: dir, InstallerISO: "/isos/talos.iso", Arch: ArchARM64, Accel: AccelTCG,
+		OVMFCode: "/fw/AAVMF_CODE.fd", DiskSerial: "e2e-disk",
+	})
+	require.NoError(t, m.SetMedia(context.Background(), []sim.Media{{SlotID: "2", Data: []byte("cfg")}}))
+
+	args, _, err := m.args()
+	require.NoError(t, err)
+	line := strings.Join(args, " ")
+	assert.Contains(t, line, "-machine virt,gic-version=max")
+	assert.Contains(t, line, "-cpu max,pauth-impdef=on", "the cheap pointer authentication under tcg")
+	assert.Contains(t, line, "-device virtio-scsi-pci,id=scsi0")
+	assert.Contains(t, line, "scsi-cd,drive=install,id=cdi,bus=scsi0.0,bootindex=2")
+	assert.Contains(t, line, "scsi-cd,drive=media0,id=cd0,bus=scsi0.0,bootindex=3")
+	assert.NotContains(t, line, "ide-cd")
+	assert.Contains(t, line, "virtio-blk-pci,drive=disk0,id=hd0,bootindex=1,serial=e2e-disk")
+
+	// Without a CD, no controller either.
+	m.DetachInstaller()
+	require.NoError(t, m.SetMedia(context.Background(), nil))
+	args, _, err = m.args()
+	require.NoError(t, err)
+	assert.NotContains(t, strings.Join(args, " "), "virtio-scsi-pci")
+
+	// Under kvm the guest gets the host CPU.
+	m = New(Options{Name: "vm1", Dir: dir, Arch: ArchARM64, OVMFCode: "/fw/AAVMF_CODE.fd"})
+	args, _, err = m.args()
+	require.NoError(t, err)
+	assert.Contains(t, strings.Join(args, " "), "-cpu host")
+}
+
+func TestCheckArch(t *testing.T) {
+	other := ArchARM64
+	if HostArch() == ArchARM64 {
+		other = ArchAMD64
+	}
+	assert.NoError(t, checkArch(other, AccelTCG), "tcg runs any architecture")
+	assert.ErrorContains(t, checkArch(other, AccelKVM), "use accel tcg", "kvm runs only the host's architecture")
+	assert.ErrorContains(t, checkArch("riscv64", AccelTCG), "not one of [amd64 arm64]")
+	if _, ok := archSpecs[HostArch()]; ok {
+		assert.NoError(t, checkArch(HostArch(), AccelKVM))
+	}
+}
+
+func TestDefaults(t *testing.T) {
+	m := New(Options{Dir: t.TempDir()})
+	assert.Equal(t, HostArch(), m.o.Arch, "the host's architecture by default")
+	assert.Equal(t, AccelKVM, m.o.Accel)
+	assert.Equal(t, "ttyS0", Console(ArchAMD64))
+	assert.Equal(t, "ttyAMA0", Console(ArchARM64))
+}
+
+func TestFindFirmware(t *testing.T) {
+	t.Setenv("PK_METAL_OVMF_CODE", "")
+	t.Setenv("PK_METAL_OVMF_VARS", "")
+	code, vars, err := findFirmware(ArchARM64, "/fw/CODE.fd", "/fw/VARS.fd")
+	require.NoError(t, err)
+	assert.Equal(t, [2]string{"/fw/CODE.fd", "/fw/VARS.fd"}, [2]string{code, vars}, "explicit options win")
+
+	t.Setenv("PK_METAL_OVMF_CODE", "/env/CODE.fd")
+	t.Setenv("PK_METAL_OVMF_VARS", "/env/VARS.fd")
+	code, vars, err = findFirmware(ArchARM64, "", "")
+	require.NoError(t, err)
+	assert.Equal(t, [2]string{"/env/CODE.fd", "/env/VARS.fd"}, [2]string{code, vars}, "then the environment")
+
+	assert.Equal(t, "/usr/share/AAVMF/AAVMF_CODE.fd", firmwarePairs(ArchARM64)[0][0], "arm64 probes AAVMF")
+	assert.Equal(t, "/usr/share/edk2/ovmf/OVMF_CODE.fd", firmwarePairs(ArchAMD64)[0][0], "amd64 probes OVMF")
 }
 
 func TestSetMediaReplacesTheSet(t *testing.T) {
@@ -152,13 +226,19 @@ func TestQMP(t *testing.T) {
 // far enough to prove spawn, QMP control, reset, and teardown against the
 // genuine article. Skips where qemu or OVMF are not available.
 func TestSpawn(t *testing.T) {
-	if _, err := exec.LookPath("qemu-system-x86_64"); err != nil {
-		t.Skip("qemu-system-x86_64 not on PATH")
+	for _, arch := range Arches() {
+		t.Run(arch, func(t *testing.T) { testSpawn(t, arch) })
+	}
+}
+
+func testSpawn(t *testing.T, arch string) {
+	if _, err := exec.LookPath(archSpecs[arch].binary); err != nil {
+		t.Skip(archSpecs[arch].binary + " not on PATH")
 	}
 	if _, err := exec.LookPath("qemu-img"); err != nil {
 		t.Skip("qemu-img not on PATH")
 	}
-	if _, _, err := findOVMF("", ""); err != nil {
+	if _, _, err := findFirmware(arch, "", ""); err != nil {
 		t.Skip(err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
@@ -166,7 +246,7 @@ func TestSpawn(t *testing.T) {
 
 	m := New(Options{
 		Name: "pk-spawn-test", Dir: filepath.Join(t.TempDir(), "vm"),
-		Accel: "tcg", MemoryMiB: 256, CPUs: 1, DiskGiB: 1,
+		Arch: arch, Accel: AccelTCG, MemoryMiB: 256, CPUs: 1, DiskGiB: 1,
 	})
 	require.NoError(t, m.Ensure(ctx))
 	require.NoError(t, m.Start(ctx))
@@ -188,7 +268,7 @@ func TestSpawn(t *testing.T) {
 
 func TestQEMUBinaryHonoursOverride(t *testing.T) {
 	t.Setenv("PK_METAL_QEMU", "/opt/qemu/bin/qemu-kvm")
-	if got := qemuBinary(); got != "/opt/qemu/bin/qemu-kvm" {
+	if got := qemuBinary(ArchARM64); got != "/opt/qemu/bin/qemu-kvm" {
 		t.Fatalf("qemuBinary() = %q, want the PK_METAL_QEMU value", got)
 	}
 }

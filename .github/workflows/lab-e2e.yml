@@ -113,6 +113,9 @@ jobs:
       # A hosted runner promises 14 GB of free disk. The lab's sparse disks, the
       # installer image and the container images stay well below that.
       PK_LAB_MIN_FREE_GIB: "10"
+      # KVM or nothing: a runner without it fails doctor, instead of a round
+      # under tcg that runs out of time.
+      PK_LAB_ACCEL: kvm
       PK_LAB_WAIT_TIMEOUT: "2400"
       # A graceful Talos shutdown takes well under a minute; the manager forces
       # the machine off after five. Ten minutes covers both.
@@ -227,6 +230,9 @@ jobs:
     timeout-minutes: 90
     env:
       PK_LAB_MIN_FREE_GIB: "10"
+      # KVM or nothing: a runner without it fails doctor, instead of a round
+      # under tcg that runs out of time.
+      PK_LAB_ACCEL: kvm
       PK_LAB_WAIT_TIMEOUT: "2400"
       PK_LAB_NODES: "1cp+0w"
       PK_LAB_WORKLOAD: "1cp+0w"
@@ -297,6 +303,9 @@ jobs:
     timeout-minutes: 90
     env:
       PK_LAB_MIN_FREE_GIB: "10"
+      # KVM or nothing: a runner without it fails doctor, instead of a round
+      # under tcg that runs out of time.
+      PK_LAB_ACCEL: kvm
       PK_LAB_WAIT_TIMEOUT: "2400"
       PK_LAB_NODES: "1cp+0w"
     steps:
@@ -368,6 +377,9 @@ jobs:
     timeout-minutes: 150
     env:
       PK_LAB_MIN_FREE_GIB: "10"
+      # KVM or nothing: a runner without it fails doctor, instead of a round
+      # under tcg that runs out of time.
+      PK_LAB_ACCEL: kvm
       PK_LAB_WAIT_TIMEOUT: "2400"
       PK_LAB_NODES: "3cp+2w"
     steps:
@@ -448,6 +460,9 @@ jobs:
     timeout-minutes: 120
     env:
       PK_LAB_MIN_FREE_GIB: "10"
+      # KVM or nothing: a runner without it fails doctor, instead of a round
+      # under tcg that runs out of time.
+      PK_LAB_ACCEL: kvm
       PK_LAB_WAIT_TIMEOUT: "2400"
       PK_LAB_ROLLOUT_TIMEOUT: "3000"
       # The lab comes up one patch release behind the spec; lab:upgrade

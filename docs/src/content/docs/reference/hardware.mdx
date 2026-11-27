@@ -40,7 +40,7 @@ No test in the repository runs against a real BMC without a person, and no resul
 
 | Requirement | Detail | Tested |
 | --- | --- | --- |
-| Architecture | x86-64. The operator asks the image factory and the imager for `amd64` images only. | In the lab |
+| Architecture | x86-64 or ARM64, one for each operator. The manager flag `--machine-arch` (default `amd64`) selects the images that the operator asks the image factory and the imager for. | x86-64 in the lab. ARM64 servers are not tested. |
 | Boot mode | UEFI. The operator sets the one-time boot in UEFI mode. | In the lab. Legacy mode is not tested. |
 | Secure Boot | The lab does not use it. | Not tested |
 | BMC protocol | Redfish over HTTPS. The operator logs in with a Redfish session, or with HTTP Basic authentication if the BMC has no sessions. IPMI is not used. | In the lab |

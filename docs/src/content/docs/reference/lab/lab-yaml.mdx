@@ -50,9 +50,13 @@ import Callout from '../../../../components/Callout.astro';
 | `nodes.<name>` | `node-3: { personality: supermicro-x12 }` | Values for one machine: `personality`, `memoryMiB`, `cpus`. |
 | `patches[].inline` | Time and DNS patches | Talos configuration documents. They go into the TalosCluster as they are. |
 | `workload` | None | A second cluster for [](lab:pivot): `name`, `vip`, `controlPlanes`, `workers`. |
+| `arch` | None | The CPU architecture of the machines: `amd64` or `arm64`. Without it, the architecture of the workstation. |
+| `accel` | None | How QEMU runs the machines: `kvm` or `tcg`. Without it, `kvm` when `/dev/kvm` is usable, else `tcg`. [`PK_LAB_ACCEL`](#other-variables) replaces it. |
 
 The renderer ignores an entry below `nodes` for a machine that the size does not include.
 The smallest memory for a machine is 1024 MiB.
+The renderer refuses `accel: kvm` when the workstation has no usable `/dev/kvm`, or when `arch` is not the architecture of the workstation.
+With `arch: arm64`, the TalosCluster gets `console=ttyAMA0` instead of `console=ttyS0`.
 
 ## What comes from the machine number
 
@@ -80,7 +84,7 @@ The renderer derives all identity values from the number `n`, so the files alway
 | `manifests/30-claims.yaml` | One [](kind:HostClaim) for each machine | The operator |
 | `taps` | The tap names | [lab/net.sh](lab:page/network) |
 | `ledger.yaml` | BMC MAC address to BMC URL | The operator. See [](concept:ledger). |
-| `lab.env` | Names and counts for `lab/lab.sh` | The lab tasks |
+| `lab.env` | Names, counts, the architecture and the accelerator for `lab/lab.sh` | The lab tasks |
 | `workload/` | The TalosCluster, TalosNodes and HostClaims of the second cluster | [](lab:pivot) |
 
 <Callout type="note">
@@ -133,6 +137,7 @@ A Talos release that replaces `cluster.talosVersion`, for example `v1.14.5`.
 | `PK_LAB_DIR` | `<repo>/.lab` | The directory for the state of the lab. |
 | `PK_LAB_SPEC` | `<repo>/lab/lab.yaml` | The lab spec. |
 | `PK_LAB_KIND_CONFIG` | `<repo>/lab/kind.yaml` | The definition of the kind cluster. |
+| `PK_LAB_ACCEL` | The `accel` field | `kvm` or `tcg`. [](lab:doctor), [](lab:render) and [](lab:up) read it. The CI sets `kvm`, so that a runner without KVM fails the doctor. |
 | `PK_LAB_MIN_FREE_GIB` | `15` | The free disk that the doctor asks for. |
 | `PK_LAB_WAIT_TIMEOUT` | `2400` | Seconds for [](lab:wait), [](lab:scale), [](lab:pivot) and [](lab:backup-restore). |
 | `PK_LAB_RELEASE_TIMEOUT` | `900` | Seconds for [](lab:release). |
@@ -142,7 +147,7 @@ A Talos release that replaces `cluster.talosVersion`, for example `v1.14.5`.
 | `PK_LAB_ADDRESS` | `10.77.0.1/24` | The address of the workstation on the bridge. Read by `lab/net.sh`. |
 | `PK_LAB_TAP_USER` | The user that starts the lab | The owner of the taps. Read by `lab/net.sh`. |
 | `PK_METAL_QEMU` | Found on the `PATH` | The QEMU binary. |
-| `PK_METAL_OVMF_CODE`, `PK_METAL_OVMF_VARS` | Found in the system | The firmware pair for the machines. |
+| `PK_METAL_OVMF_CODE`, `PK_METAL_OVMF_VARS` | Found in the system | The UEFI firmware pair for the machines: OVMF for `amd64`, AAVMF for `arm64`. |
 
 <Callout type="caution">
 Do not change `PK_LAB_ADDRESS` only. The renderer and `lab/kind.yaml` use the fixed address `10.77.0.1`.

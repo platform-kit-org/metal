@@ -75,6 +75,7 @@ func (r *BootAssetReconciler) embed(ctx context.Context, ba *osv1alpha1.BootAsse
 		Image:        image,
 		KernelArgs:   imagerKernelArgs(ba.Spec.Schematic),
 		Extensions:   extensions,
+		Arch:         r.Imager.buildArch(),
 	}
 	key := in.key()
 	jobName := imagerJobName(ba.Name, key)

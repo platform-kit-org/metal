@@ -46,8 +46,7 @@ func Pull(ctx context.Context, hc *http.Client, ref string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	raw, err := fetch(ctx, hc, "https://"+host+"/v2/"+repo+"/manifests/"+want.String(), want,
-		"application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json")
+	raw, err := fetch(ctx, hc, "https://"+host+"/v2/"+repo+"/manifests/"+want.String(), want, imageManifestTypes)
 	if err != nil {
 		return nil, fmt.Errorf("oci: manifest %s: %w", ref, err)
 	}

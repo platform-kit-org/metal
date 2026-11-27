@@ -15,11 +15,14 @@ import (
 	"github.com/opencontainers/go-digest"
 )
 
+// imageManifestTypes are the media types of a single image manifest.
+const imageManifestTypes = "application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json"
+
 // manifestTypes are the manifest media types a tag may point at: an index
 // (a multi-platform installer) or a single manifest. The digest of whichever
 // the registry serves is what the tag means.
 const manifestTypes = "application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, " +
-	"application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json"
+	imageManifestTypes
 
 // Resolve pins a tagged image reference (host/repo:tag) to the digest the
 // registry serves for it now, and returns host/repo:tag@sha256:<hex>. A

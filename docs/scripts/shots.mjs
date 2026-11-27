@@ -37,7 +37,7 @@ const defaults = [
   'learn/lab-first-cluster/',
   'concepts/approval/',
   'workflows/rack-to-node/',
-  'operate/day-2/upgrade-talos/',
+  'operate/day-2/roll-out-a-change/',
   'operate/runbooks/host-mismatch/',
   'reference/kinds/host/',
   'reference/kinds/hostoperation/',

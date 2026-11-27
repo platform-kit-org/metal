@@ -12,7 +12,6 @@ sources:
 ---
 
 import Day2Change from '../../../components/explainers/Day2Change.astro';
-import Callout from '../../../components/Callout.astro';
 
 A change to a cluster in use goes to the machines one node at a time.
 A [](kind:TalosRollout) holds the plan, a person approves it, and the operator makes one [](kind:HostOperation) for each node.
@@ -34,32 +33,9 @@ A [](kind:TalosRollout) holds the plan, a person approves it, and the operator m
 8. Before each node, the rollout reads etcd and the Kubernetes nodes again.
 9. The rollout is `Complete`.
 
-## Rollout kinds
+## Commands
 
-| Kind | Proposed by | Actions on each node | Reboot |
-| --- | --- | --- | --- |
-| `TalosUpgrade` | The operator, when a node runs another version | [](act:Drain), [](act:TalosUpgrade), [](act:WaitNodeReady), [](act:Uncordon) | Yes |
-| `KubernetesUpgrade` | The operator, when the API server runs another version | [](act:TalosApplyConfig), [](act:WaitNodeReady) | Only if Talos needs it |
-| `Config` | The operator, when a node drifts | [](act:TalosApplyConfig), [](act:WaitNodeReady) | Only if Talos needs it |
-| `Reboot` | You | [](act:Drain), [](act:TalosReboot), [](act:WaitNodeReady), [](act:Uncordon) | Yes |
-
-A control plane also gets [](act:WaitEtcdHealthy) before the uncordon.
-A node that does not reboot is not drained.
-
-## Control the rollout
-
-| You want to | Command |
-| --- | --- |
-| See the plan | `pk-metal rollout show <rollout>` |
-| Approve | `pk-metal rollout approve <rollout>` |
-| Continue after the pause | `pk-metal rollout resume <rollout>` |
-| Stop before the next node | `pk-metal rollout pause <rollout>` |
-| Stop for all time | `pk-metal rollout abort <rollout>` |
-
-<Callout type="caution">
-Do not change the spec of the TalosCluster again while a rollout waits for approval.
-The plan then differs, and the rollout ends with reason `PlanChanged`.
-</Callout>
+[](howto:roll-out-a-change) gives the commands for each kind of rollout. [Kinds of rollout](kind:TalosRollout#kinds-of-rollout) lists the actions on each node.
 
 ## Other day-2 changes
 

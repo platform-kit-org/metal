@@ -45,7 +45,7 @@ Do not ask for a Talos minor release that is newer than the Talos library of you
 The operator cannot plan that upgrade, and the rollout shows `PlanBlocked`.
 </Callout>
 
-1. Build and install an operator whose `machinery` version in `metal/go.mod` is the new Talos minor release, or later.
+1. Build and install an operator whose `machinery` version in `metal/go.mod` is the new Talos minor release, or later. See [](howto:upgrade-operator). Use `pk-metal` from the same commit: [](cli:upgrade) does the same check.
 2. Then set the new release with [](cli:upgrade).
 
 One-slot BMCs add a second rule. The operator knows the digest of the imager image for one Talos release only: v1.14.6.
@@ -73,5 +73,5 @@ For a different release, give the manager `--imager-digest=<version>=sha256:<dig
 ## Related
 
 - [](ref:status)
-- [](howto:upgrade-talos) and [](howto:upgrade-kubernetes)
+- [](howto:roll-out-a-change)
 - [](concept:talos-rendering)

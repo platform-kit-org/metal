@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-logr/logr/funcr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
@@ -19,6 +20,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
@@ -569,6 +571,43 @@ func TestWipeAfterReplaceIsProposed(t *testing.T) {
 	assert.Empty(t, ops.Items, "a machine that runs its claim's node is not wiped")
 }
 
+// TestWipeNotProposedSaysWhy: each pass that proposes no wipe says why in
+// the manager log, which the DiskWiped condition points to.
+func TestWipeNotProposedSaysWhy(t *testing.T) {
+	for name, tc := range map[string]struct {
+		change func(*metalv1alpha1.Host, *osv1alpha1.BootAsset, *metalv1alpha1.ManagementEndpoint)
+		why    string
+	}{
+		"maintenance": {func(h *metalv1alpha1.Host, _ *osv1alpha1.BootAsset, _ *metalv1alpha1.ManagementEndpoint) {
+			h.Annotations[metalv1alpha1.AnnotationMaintenance] = "disk swap"
+		}, "maintenance"},
+		"failed image": {func(_ *metalv1alpha1.Host, a *osv1alpha1.BootAsset, _ *metalv1alpha1.ManagementEndpoint) {
+			a.Status.Conditions[0].Status, a.Status.Conditions[0].Message = metav1.ConditionFalse, "no such version"
+		}, "no such version"},
+		"slots not read": {func(_ *metalv1alpha1.Host, _ *osv1alpha1.BootAsset, ep *metalv1alpha1.ManagementEndpoint) {
+			ep.Status.Conditions[0].Status = metav1.ConditionFalse
+		}, "media slots"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			w, cl, a := wipeLab(t, wipeAsked())
+			host, ep := &metalv1alpha1.Host{}, &metalv1alpha1.ManagementEndpoint{}
+			require.NoError(t, cl.Get(t.Context(), client.ObjectKey{Name: "host-a"}, host))
+			require.NoError(t, cl.Get(t.Context(), client.ObjectKey{Name: "bmc"}, ep))
+			tc.change(host, a, ep)
+			require.NoError(t, cl.Update(t.Context(), host))
+			require.NoError(t, cl.Update(t.Context(), ep))
+			require.NoError(t, cl.Status().Update(t.Context(), a))
+			var lines []string
+			ctx := logf.IntoContext(t.Context(), funcr.New(func(_, args string) { lines = append(lines, args) }, funcr.Options{}))
+			_, err := w.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKey{Name: "host-a"}})
+			require.NoError(t, err)
+			require.Len(t, lines, 1)
+			assert.Contains(t, lines[0], "wipe not proposed")
+			assert.Contains(t, lines[0], tc.why)
+		})
+	}
+}
+
 func TestNotWipedHostTakesNoOtherInstall(t *testing.T) {
 	host := &metalv1alpha1.Host{ObjectMeta: metav1.ObjectMeta{Name: "host-a",
 		Annotations: map[string]string{metalv1alpha1.AnnotationDiskNotWiped: "lab/w-1"}}}
@@ -579,6 +618,10 @@ func TestNotWipedHostTakesNoOtherInstall(t *testing.T) {
 	c := meta.FindStatusCondition(host.Status.Conditions, metalv1alpha1.ConditionDiskWiped)
 	require.NotNil(t, c)
 	assert.Equal(t, metalv1alpha1.ReasonInstalledNodeRemains, c.Reason)
+	host.Annotations[metalv1alpha1.AnnotationWipe] = "v1.14.6"
+	projectDiskWiped(host)
+	c = meta.FindStatusCondition(host.Status.Conditions, metalv1alpha1.ConditionDiskWiped)
+	assert.Contains(t, c.Message, "manager log", "a wipe that no operation carries yet says where to look")
 }
 
 // TestClaimHeldForEtcdLooksAgain: what a claim held for etcd waits for (a

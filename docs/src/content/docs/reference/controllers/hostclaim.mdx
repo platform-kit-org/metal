@@ -122,6 +122,8 @@ It acts only on a Host with the annotation `metal.platform-kit.org/wipe`, which 
 4. Propose a wipe operation: eject all slots, insert the image, set a one-time boot override, power cycle. It always needs approval.
 5. When the operation succeeded, remove both annotations.
 
+Each pass that proposes no wipe writes `wipe not proposed` and the reason to the log.
+
 ## Guards and decisions
 
 <dl>

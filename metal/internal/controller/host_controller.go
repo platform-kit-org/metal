@@ -163,8 +163,8 @@ func projectDiskWiped(host *metalv1alpha1.Host) {
 		"Nothing is installed on it and no BIOS change powers it on until it is wiped: pk-metal wipe %s", node, host.Name)
 	if v, asked := host.Annotations[metalv1alpha1.AnnotationWipe]; asked {
 		reason = metalv1alpha1.ReasonWipeRequested
-		msg = fmt.Sprintf("a wipe with Talos %s was asked for; it waits for its operation (pk-metal approve). The disk may still hold node %s",
-			v, node)
+		msg = fmt.Sprintf("a wipe with Talos %s was asked for: approve its operation (pk-metal approve). "+
+			"When none is proposed, the manager log says why (wipe not proposed). The disk may still hold node %s", v, node)
 	}
 	setCondition(&host.Status.Conditions, host.Generation, metalv1alpha1.ConditionDiskWiped, metav1.ConditionFalse, reason, msg)
 }

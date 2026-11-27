@@ -84,36 +84,46 @@ func (r *hostWipeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		}
 		return ctrl.Result{}, nil
 	}
-	if _, maint := inMaintenance(host); maint {
+	// The DiskWiped condition points a person to the log for why.
+	notProposed := func(why string) (ctrl.Result, error) {
+		logf.FromContext(ctx).Info("wipe not proposed", "host", host.Name, "why", why)
 		return ctrl.Result{}, nil
+	}
+	if _, maint := inMaintenance(host); maint {
+		return notProposed("the host is in maintenance")
 	}
 	if here, err := r.installedHere(ctx, host); err != nil {
 		return ctrl.Result{}, err
 	} else if here {
 		// A claim runs a node on it: that is no leftover, and a wipe would
 		// destroy it. The claim's own removal or reinstall resets it.
-		logf.FromContext(ctx).Info("wipe not proposed: a claim runs a node on the host", "host", host.Name)
-		return ctrl.Result{}, nil
+		return notProposed("a claim runs a node on the host")
 	}
-	if msg, err := r.Self.Check(ctx, host); err != nil || msg != "" {
+	if msg, err := r.Self.Check(ctx, host); err != nil {
 		return ctrl.Result{}, err
+	} else if msg != "" {
+		return notProposed(msg)
 	}
 	asset, err := r.ensureWipeAsset(ctx, version)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	if installerPending(asset) != "" {
+	if msg := installerPending(asset); msg != "" {
 		// The asset's watch brings the host back when it is ready.
-		return ctrl.Result{}, nil
+		return notProposed(msg)
 	}
 	shape, err := r.endpointShape(ctx, host)
-	if err != nil || !shape.known || len(shape.bootSlots) == 0 {
+	switch {
+	case err != nil:
 		return ctrl.Result{}, err
+	case !shape.known:
+		return notProposed("no reachable management path has read the media slots")
+	case len(shape.bootSlots) == 0:
+		return notProposed("no media slot boots an ISO")
 	}
 	target, err := boot.PickTarget(shape.targets)
 	if err != nil {
-		logf.FromContext(ctx).Info("wipe not proposed", "host", host.Name, "why", err.Error())
-		return ctrl.Result{}, nil
+		return notProposed(err.Error())
 	}
 	op := wipeOp(r.OperationsNamespace, r.Proposer, host.Name, name, asset, shape, target)
 	// The wipe mark asked for it (pk-metal wipe names its caller).

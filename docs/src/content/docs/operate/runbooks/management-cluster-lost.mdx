@@ -74,7 +74,7 @@ The operator, its records and its view of the machines are gone. The workload cl
 4. Download the newest snapshot from the bucket with your S3 client. Decrypt it.
 
    ```sh
-   pk-metal backup decrypt --in mgmt.db.age --identity ~/.config/age/keys.txt -o mgmt.db
+   pk-metal backup decrypt --in mgmt.db.age --identity ~/.config/age/keys.txt --plaintext-file mgmt.db
    ```
 
 5. On each control plane that still runs etcd, wipe its etcd data.

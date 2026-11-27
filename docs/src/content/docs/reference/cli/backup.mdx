@@ -61,7 +61,7 @@ The `STATE` column is `Taking`, `Failed`, `Unverified` or `Verified`.
 
 ### get
 
-`pk-metal backup get <snapshot> -o <file>`
+`pk-metal backup get <snapshot> --to-file <file>`
 
 <CliFlags cmd="backup" sub="get" />
 
@@ -70,7 +70,7 @@ It cannot read a snapshot on the backup volume of the operator (a `pvc` sink). C
 
 ### decrypt
 
-`pk-metal backup decrypt (<snapshot> | --in <file.age>) --identity <file> [-o <file.db>]`
+`pk-metal backup decrypt (<snapshot> | --in <file.age>) --identity <file> [--plaintext-file <file.db>]`
 
 <CliFlags cmd="backup" sub="decrypt" />
 
@@ -78,7 +78,7 @@ It cannot read a snapshot on the backup volume of the operator (a `pvc` sink). C
 2. It decrypts the snapshot, from the sink or from the file of `--in`.
 3. It makes sure that the result is an intact etcd snapshot.
 4. For a snapshot from the sink, it compares the SHA-256 with the record in the EtcdSnapshot.
-5. With `-o`, it also writes the plaintext.
+5. With `--plaintext-file`, it also writes the plaintext.
 
 <Callout type="warning">
 Delete the plaintext file when the work is complete. It holds each Secret of the cluster. The command writes it with mode `0600` and does not replace a file that exists.
@@ -107,7 +107,7 @@ text={`
 Download a snapshot and decrypt the file later.
 
 ```sh
-pk-metal backup get lab-daily-20261124-060000 -o lab.db.age
+pk-metal backup get lab-daily-20261124-060000 --to-file lab.db.age
 pk-metal backup decrypt --in lab.db.age --identity ~/.config/age/keys.txt
 ```
 

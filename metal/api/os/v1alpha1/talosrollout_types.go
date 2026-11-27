@@ -45,19 +45,18 @@ const LabelRollout = "os.platform-kit.org/rollout"
 // plan by stamping spec.approval with their name and the planHash they saw.
 // From then on the plan is frozen: the operator runs exactly it, or nothing.
 //
-// +kubebuilder:validation:XValidation:rule="self.clusterRef == oldSelf.clusterRef && self.kind == oldSelf.kind",message="clusterRef and kind are frozen after creation"
 // +kubebuilder:validation:XValidation:rule="(!has(self.target) && !has(oldSelf.target)) || (has(self.target) && has(oldSelf.target) && self.target == oldSelf.target)",message="target is frozen after creation"
 // +kubebuilder:validation:XValidation:rule="(!has(self.nodes) && !has(oldSelf.nodes)) || (has(self.nodes) && has(oldSelf.nodes) && self.nodes == oldSelf.nodes)",message="nodes are frozen after creation"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.proposedBy) || (has(self.proposedBy) && self.proposedBy == oldSelf.proposedBy)",message="proposedBy is frozen after creation"
 // +kubebuilder:validation:XValidation:rule="has(self.requestedBy) == has(oldSelf.requestedBy) && (!has(self.requestedBy) || self.requestedBy == oldSelf.requestedBy)",message="requestedBy is frozen after creation"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.abort) || !oldSelf.abort || (has(self.abort) && self.abort)",message="an abort cannot be taken back"
-// +kubebuilder:validation:XValidation:rule="(has(self.maxUnavailableWorkers) ? self.maxUnavailableWorkers : 1) == (has(oldSelf.maxUnavailableWorkers) ? oldSelf.maxUnavailableWorkers : 1)",message="maxUnavailableWorkers is frozen after creation"
-// +kubebuilder:validation:XValidation:rule="(has(self.drainTimeoutSeconds) ? self.drainTimeoutSeconds : 900) == (has(oldSelf.drainTimeoutSeconds) ? oldSelf.drainTimeoutSeconds : 900)",message="drainTimeoutSeconds is frozen after creation"
 type TalosRolloutSpec struct {
 	// ClusterRef names the TalosCluster whose nodes this rollout changes.
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="clusterRef is frozen after creation"
 	ClusterRef Reference `json:"clusterRef"`
 
 	// Kind is what changes on each node.
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="kind is frozen after creation"
 	Kind RolloutKind `json:"kind"`
 
 	// Target is where the rollout takes the nodes: the Talos version of a
@@ -79,6 +78,7 @@ type TalosRolloutSpec struct {
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:Maximum=100
 	// +kubebuilder:default=1
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="maxUnavailableWorkers is frozen after creation"
 	// +optional
 	MaxUnavailableWorkers int32 `json:"maxUnavailableWorkers,omitempty"`
 
@@ -88,6 +88,7 @@ type TalosRolloutSpec struct {
 	// +kubebuilder:validation:Minimum=30
 	// +kubebuilder:validation:Maximum=86400
 	// +kubebuilder:default=900
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="drainTimeoutSeconds is frozen after creation"
 	// +optional
 	DrainTimeoutSeconds int32 `json:"drainTimeoutSeconds,omitempty"`
 

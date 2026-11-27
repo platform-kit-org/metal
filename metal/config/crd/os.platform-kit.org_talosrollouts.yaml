@@ -80,6 +80,9 @@ spec:
                   required:
                     - name
                   type: object
+                  x-kubernetes-validations:
+                    - message: clusterRef is frozen after creation
+                      rule: self == oldSelf
                 drainTimeoutSeconds:
                   default: 900
                   description: DrainTimeoutSeconds bounds the drain of each node that is drained (an upgrade, a reboot, a config that needs a reboot). It is part of what is approved, so it is frozen after creation.
@@ -87,6 +90,9 @@ spec:
                   maximum: 86400
                   minimum: 30
                   type: integer
+                  x-kubernetes-validations:
+                    - message: drainTimeoutSeconds is frozen after creation
+                      rule: self == oldSelf
                 kind:
                   description: Kind is what changes on each node.
                   enum:
@@ -95,6 +101,9 @@ spec:
                     - KubernetesUpgrade
                     - Reboot
                   type: string
+                  x-kubernetes-validations:
+                    - message: kind is frozen after creation
+                      rule: self == oldSelf
                 maxUnavailableWorkers:
                   default: 1
                   description: MaxUnavailableWorkers is how many workers may be in the middle of the change at once. Control planes always go one at a time, and only while etcd keeps every member healthy.
@@ -102,6 +111,9 @@ spec:
                   maximum: 100
                   minimum: 1
                   type: integer
+                  x-kubernetes-validations:
+                    - message: maxUnavailableWorkers is frozen after creation
+                      rule: self == oldSelf
                 nodes:
                   description: Nodes limits the rollout to these TalosNodes. Empty means every node of the cluster that needs the change.
                   items:
@@ -141,8 +153,6 @@ spec:
                 - proposedBy
               type: object
               x-kubernetes-validations:
-                - message: clusterRef and kind are frozen after creation
-                  rule: self.clusterRef == oldSelf.clusterRef && self.kind == oldSelf.kind
                 - message: target is frozen after creation
                   rule: (!has(self.target) && !has(oldSelf.target)) || (has(self.target) && has(oldSelf.target) && self.target == oldSelf.target)
                 - message: nodes are frozen after creation
@@ -153,10 +163,6 @@ spec:
                   rule: has(self.requestedBy) == has(oldSelf.requestedBy) && (!has(self.requestedBy) || self.requestedBy == oldSelf.requestedBy)
                 - message: an abort cannot be taken back
                   rule: '!has(oldSelf.abort) || !oldSelf.abort || (has(self.abort) && self.abort)'
-                - message: maxUnavailableWorkers is frozen after creation
-                  rule: '(has(self.maxUnavailableWorkers) ? self.maxUnavailableWorkers : 1) == (has(oldSelf.maxUnavailableWorkers) ? oldSelf.maxUnavailableWorkers : 1)'
-                - message: drainTimeoutSeconds is frozen after creation
-                  rule: '(has(self.drainTimeoutSeconds) ? self.drainTimeoutSeconds : 900) == (has(oldSelf.drainTimeoutSeconds) ? oldSelf.drainTimeoutSeconds : 900)'
             status:
               description: TalosRolloutStatus is the plan and how far it got.
               properties:

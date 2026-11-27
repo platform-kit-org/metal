@@ -25,7 +25,8 @@ set -euo pipefail
 # shellcheck source=lab/distro.sh
 source "$(dirname "$0")/distro.sh"
 
-SCRIPT=${0##*/}
+# The path from the repository root, where a fix line is typed.
+SCRIPT=lab/net.sh
 HELP="usage: $SCRIPT up [tap...] | down | status [tap...]
 
   up      create the bridge, the named taps and the firewall rules (idempotent)
@@ -207,7 +208,7 @@ up_firewalld() {
       as_root firewall-cmd --quiet --zone=trusted --add-interface="$bridge"
       ;;
     *) die "firewalld has $bridge in the zone $zone, which drops the lab's traffic.
-  Move it: sudo firewall-cmd --zone=trusted --change-interface=$bridge, then rerun: $SCRIPT up" ;;
+  Move it: sudo firewall-cmd --zone=trusted --change-interface=$bridge, then rerun: mise run lab:up" ;;
   esac
 }
 

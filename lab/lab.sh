@@ -1111,7 +1111,7 @@ wait_converged() {
     [[ -z $failed ]] || die "something failed and waits for a person:
 $failed
   Look at it: mise run lab:status; collect the evidence: mise run lab:collect;
-  retry it: metal/bin/pk-metal retry <claim>"
+  retry it: metal/bin/pk-metal --kubeconfig $KUBECONFIG retry <namespace>/<operation> (named above)"
     (( SECONDS < deadline )) || die "the lab did not converge within ${timeout}s. Last state: $line
   Look at it: mise run lab:status; collect the evidence: mise run lab:collect;
   or wait longer: PK_LAB_WAIT_TIMEOUT=3600 mise run lab:wait"
@@ -1179,8 +1179,8 @@ release() {
 guard_lift() {
   local why=$1 user
   user=$(kubectl auth whoami --output jsonpath='{.status.userInfo.username}') \
-    || die "kubectl auth whoami did not answer, so the lab cannot name who lifts the guard. Check the cluster: kubectl cluster-info"
-  [[ -n $user ]] || die "the cluster reports no username for $KUBECONFIG, so the lab cannot name who lifts the guard. Check it: kubectl auth whoami"
+    || die "kubectl auth whoami did not answer, so the lab cannot name who lifts the guard. Check the cluster: kubectl --kubeconfig $KUBECONFIG cluster-info"
+  [[ -n $user ]] || die "the cluster reports no username for $KUBECONFIG, so the lab cannot name who lifts the guard. Check it: kubectl --kubeconfig $KUBECONFIG auth whoami"
   printf '%s: %s' "$user" "$why"
 }
 
@@ -1276,11 +1276,11 @@ day2_reboot_node() {
         message=$(kubectl -n "$namespace" get hostoperation "$name" --output json | jq -r '
           (.status.conditions // [])[] | select(.type == "Executed") | "\(.reason): \(.message)"')
         die "operation $ref ended $phase: $message
-  Look at it: metal/bin/pk-metal status; collect the evidence: mise run lab:collect"
+  Look at it: mise run lab:status; collect the evidence: mise run lab:collect"
         ;;
     esac
     (( SECONDS < deadline )) || die "the reboot of $node did not finish within ${timeout}s (operation $ref is ${phase:-unknown}).
-  Look at it: metal/bin/pk-metal status; or wait longer: PK_LAB_DAY2_TIMEOUT=2400 mise run lab:day2"
+  Look at it: mise run lab:status; or wait longer: PK_LAB_DAY2_TIMEOUT=2400 mise run lab:day2"
     sleep 10
   done
 }
@@ -1537,7 +1537,7 @@ rollout_wait_proposed() {
       fi
     fi
     (( SECONDS < deadline )) || die "the operator proposed no fully planned $kind rollout for cluster $cluster_name within ${timeout}s.
-  See its conditions: kubectl get taloscluster $cluster_name -o yaml; and the nodes': kubectl get talosnodes -o wide"
+  See its conditions: kubectl --kubeconfig $KUBECONFIG get taloscluster $cluster_name -o yaml; and the nodes': kubectl --kubeconfig $KUBECONFIG get talosnodes -o wide"
     sleep 10
   done
 }
@@ -1584,7 +1584,7 @@ $("$root/metal/bin/pk-metal" rollout show "$name")"
     if grep -q '^Complete=False/' <<<"$conditions"; then
       die "rollout $name did not complete:
 $("$root/metal/bin/pk-metal" rollout show "$name")
-  The failed operation says why: kubectl -n $NAMESPACE get hostoperations -l os.platform-kit.org/rollout=$name"
+  The failed operation says why: kubectl --kubeconfig $KUBECONFIG -n $NAMESPACE get hostoperations -l os.platform-kit.org/rollout=$name"
     fi
     if (( resumed == 0 )) && grep -qx 'Paused=True/PausedAfterFirstNode' <<<"$conditions"; then
       # The pause is the moment a person looks at the first node. The run
@@ -1662,7 +1662,7 @@ day2_config_change() {
   cluster_name=$(lab_value "$gen" TALOS_CLUSTER)
   kubeconfig_fetch "$cluster_name" "$lab_dir/workload.kubeconfig" "$lab_dir/talosconfig" \
     || die "TalosCluster $cluster_name has published no kubeconfig yet. Let the lab converge first: mise run lab:wait"
-  [[ -z $(rollout_open "$cluster_name" Config) ]] || die "a Config rollout for $cluster_name is open already: metal/bin/pk-metal rollout list"
+  [[ -z $(rollout_open "$cluster_name" Config) ]] || die "a Config rollout for $cluster_name is open already: metal/bin/pk-metal --kubeconfig $KUBECONFIG rollout list"
   stamp=$(date +%s)
   before=$(boot_ids "$lab_dir/workload.kubeconfig")
   step "day 2: label every node lab.platform-kit.org/day2=$stamp (a change that needs no reboot)"
@@ -1745,7 +1745,7 @@ observe_views() {
     || die "a node is not Ready: $(jq -c '[.nodes[] | {name, ready, message}]' <<<"$report")"
 
   step "operator metrics: the domain series are served"
-  metrics=$(metrics_text) || die "cannot read the operator's metrics from service pk-metal-metrics in namespace $NAMESPACE. Look at: kubectl --namespace $NAMESPACE logs deployment/$DEPLOYMENT; kubectl get clusterrolebinding pk-metal-lab-metrics-reader"
+  metrics=$(metrics_text) || die "cannot read the operator's metrics from service pk-metal-metrics in namespace $NAMESPACE. Look at: kubectl --kubeconfig $KUBECONFIG --namespace $NAMESPACE logs deployment/$DEPLOYMENT; kubectl --kubeconfig $KUBECONFIG get clusterrolebinding pk-metal-lab-metrics-reader"
   local series
   for series in pk_metal_host_phase pk_metal_talosnode_ready pk_metal_taloscluster_available \
     pk_metal_bmc_reachable pk_metal_credentials_expiry_timestamp_seconds \
@@ -1818,7 +1818,7 @@ YAML
   done
   started=$(kubectl -n "$NAMESPACE" get hostoperation "$op" --output jsonpath='{.status.baseline.capturedAt}')
   echo "operation $op: $phase, started $started, window opened $opens" >&2
-  [[ $phase == Succeeded ]] || die "operation $op failed after the window opened; see: kubectl -n $NAMESPACE describe hostoperation $op"
+  [[ $phase == Succeeded ]] || die "operation $op failed after the window opened; see: kubectl --kubeconfig $KUBECONFIG -n $NAMESPACE describe hostoperation $op"
   [[ ! $started < $opens ]] || die "operation $op started at $started, before its window opened at $opens"
   kubectl delete maintenancewindow lab-window-probe >&2
   kubectl -n "$NAMESPACE" delete hostoperation "$op" >&2
@@ -2069,7 +2069,7 @@ EOF
   kubectl -n "$namespace" exec etcd-backup-reader -- cat "/backups/$key" >"$out"
   kubectl -n "$namespace" delete pod etcd-backup-reader --wait=false >&2
   [[ -s $out ]] || die "copied nothing from /backups/$key on the backup volume (deployment $deployment). Look at it:
-  kubectl -n $namespace get etcdsnapshots; mise run lab:collect"
+  kubectl --kubeconfig $KUBECONFIG -n $namespace get etcdsnapshots; mise run lab:collect"
 }
 
 # The total-loss round on the lab's first cluster: back it up to the backup
@@ -2115,11 +2115,11 @@ spec:
       - $recipient
 EOF
   marker_set "$lab_dir/workload.kubeconfig" dr-before
-  "$cli" backup now "$policy" >&2 || die "the snapshot did not complete. Look at it: kubectl get etcdsnapshots; kubectl describe etcdbackuppolicy $policy"
+  "$cli" backup now "$policy" >&2 || die "the snapshot did not complete. Look at it: kubectl --kubeconfig $KUBECONFIG get etcdsnapshots; kubectl --kubeconfig $KUBECONFIG describe etcdbackuppolicy $policy"
   snap=$(kubectl get etcdsnapshots --selector "os.platform-kit.org/etcd-backup-policy=$policy" --output json \
     | jq -r '[.items[] | select(any(.status.conditions[]?; .type == "Verified" and .status == "True"))]
       | sort_by(.status.takenAt) | last | .metadata.name // empty')
-  [[ -n $snap ]] || die "no verified snapshot of policy $policy. Look at it: kubectl get etcdsnapshots -o yaml"
+  [[ -n $snap ]] || die "no verified snapshot of policy $policy. Look at it: kubectl --kubeconfig $KUBECONFIG get etcdsnapshots -o yaml"
   key=$(kubectl get etcdsnapshot "$snap" --output jsonpath='{.status.key}')
   "$cli" backup list "$cluster_name" >&2
   marker_set "$lab_dir/workload.kubeconfig" dr-after
@@ -2127,14 +2127,14 @@ EOF
   step "losing etcd: wiping EPHEMERAL on every control plane of $cluster_name"
   addrs=$(kubectl get talosnodes --output json | jq -r --arg c "$cluster_name" '
     .items[] | select(.spec.clusterRef.name == $c and .spec.role == "controlplane") | .status.address // .spec.address // empty')
-  [[ -n $addrs ]] || die "TalosCluster $cluster_name lists no control-plane address. Look at it: kubectl get talosnodes -o wide"
+  [[ -n $addrs ]] || die "TalosCluster $cluster_name lists no control-plane address. Look at it: kubectl --kubeconfig $KUBECONFIG get talosnodes -o wide"
   for addr in $addrs; do
     talosctl --talosconfig "$lab_dir/talosconfig" --endpoints "$addr" --nodes "$addr" \
       reset --graceful=false --reboot --system-labels-to-wipe EPHEMERAL --wait=false >&2
   done
   while ! bootstrapped_is "$cluster_name" False EtcdDataLost; do
     (( SECONDS < deadline )) || die "TalosCluster $cluster_name did not report EtcdDataLost within ${timeout}s. Look at it:
-  kubectl describe taloscluster $cluster_name"
+  kubectl --kubeconfig $KUBECONFIG describe taloscluster $cluster_name"
     sleep 10
   done
   echo "  the operator sees the loss and does not bootstrap: $(kubectl get taloscluster "$cluster_name" \

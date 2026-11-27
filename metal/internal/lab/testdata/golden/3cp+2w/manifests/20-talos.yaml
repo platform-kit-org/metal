@@ -47,8 +47,9 @@ spec:
   schematic:
     customization:
       extraKernelArgs:
-        # The simulated BMC records the machine's serial console; without this
-        # the boot is invisible in .lab/state/<machine>/console.log.
+        # The simulated BMC records the machine's serial console (ttyS0 on
+        # an amd64 machine); without this the boot is invisible in
+        # .lab/state/<machine>/console.log.
         - console=ttyS0
   # Talos machine configuration documents from the spec, merged into every
   # node's configuration. The operator adds nothing here on its own.

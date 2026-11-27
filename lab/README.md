@@ -77,17 +77,25 @@ follow [Day 2](https://metal.platform-kit.org/operate/day-2/).
 
 ## Prerequisites
 
-Linux on x86-64 with KVM, cgroup v2, Docker Engine, QEMU with OVMF, `ip`,
-`iptables`, `curl`, `sudo`, about 12 GiB of free memory (for the default
-three machines) and 15 GiB of free disk. macOS does not work (no KVM, and
-Docker Desktop cannot reach the lab bridge); WSL2 and distributions other
-than the three below are not tested.
+Linux on x86-64 or ARM64 with cgroup v2, Docker Engine, QEMU with UEFI
+firmware (OVMF on x86-64, AAVMF on ARM64), `ip`, `iptables`, `curl`, `sudo`,
+about 12 GiB of free memory (for the default three machines) and 15 GiB of
+free disk. The machines take the workstation's architecture, and KVM where
+`/dev/kvm` is usable; without it QEMU emulates them (tcg), and a boot takes
+minutes. `arch` and `accel` in `lab/lab.yaml`, or `PK_LAB_ACCEL`, choose
+otherwise. macOS does not work on its own (no KVM, and Docker Desktop cannot
+reach the lab bridge): on Apple silicon, run the lab in an ARM64 Linux VM,
+for example in UTM ("Apple silicon" on the prerequisites page of the
+documentation site). The full lab on ARM64 is not tested; WSL2 and
+distributions other than the three below are not tested.
 [mise](https://mise.jdx.dev/getting-started.html) brings go, kind, kubectl,
 talosctl, yq and jq at the versions the repository pins.
 
 ```sh
 # Debian, Ubuntu
 sudo apt-get install qemu-system-x86 qemu-utils ovmf curl iproute2 iptables
+# Debian, Ubuntu on ARM64
+sudo apt-get install qemu-system-arm qemu-utils qemu-efi-aarch64 curl iproute2 iptables
 # Fedora
 sudo dnf install qemu-system-x86-core qemu-img edk2-ovmf curl iproute iptables-nft
 # RHEL 9, Rocky, Alma: QEMU comes as /usr/libexec/qemu-kvm, which the fleet
@@ -558,8 +566,8 @@ DNS"), Talos cannot pull its installer or set its clock.
 before it tries a boot option: the console log then holds only screen-clear
 sequences and no text. Rarely the installer's boot manager runs its
 countdown, clears the screen, and no kernel follows. The fleet watches for
-both. When a VM's console gains nothing readable for 90 seconds after a
-power-on, before the kernel banner (`Linux version`), the fleet power-cycles
+both. When a VM's console gains nothing readable for 90 seconds (3 minutes
+under tcg) after a power-on, before the kernel banner (`Linux version`), the fleet power-cycles
 it and logs `FIRMWARE HANG` or `LOADER HANG` in `.lab/fleet.log`; the state
 endpoint counts it as `backend.hangCycles`. It tries up to three times per
 power-on, and never after the kernel started, so a running system is never

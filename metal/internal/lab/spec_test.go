@@ -52,6 +52,8 @@ func TestSpecRejects(t *testing.T) {
 		"workload vip a node": {minimal + "workload: { name: work, vip: 10.77.0.14, controlPlanes: 1 }\n", "workload.vip 10.77.0.14 is the address of node-4"},
 		"workload even":       {minimal + "workload: { name: work, vip: 10.77.0.9, controlPlanes: 2 }\n", "workload.controlPlanes is 2"},
 		"workload too many":   {minimal + "workload: { name: work, vip: 10.77.0.9, controlPlanes: 1, workers: 97 }\n", "101 machines"},
+		"arch":                {minimal + "arch: x86_64\n", `arch "x86_64" is not one of [amd64 arm64]`},
+		"accel":               {minimal + "accel: hvf\n", `accel "hvf" is not one of kvm, tcg`},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := lab.Parse([]byte(tc.spec))
@@ -107,6 +109,7 @@ func TestPatchesRoundTrip(t *testing.T) {
 	s, err := lab.Parse([]byte(minimal))
 	require.NoError(t, err)
 	s.Patches = []lab.Patch{{Inline: odd}, {Inline: "a: 1\n"}}
+	require.NoError(t, s.Resolve(lab.Host{Arch: "amd64", KVM: true}))
 	files, err := lab.Render(s, "spec")
 	require.NoError(t, err)
 
@@ -130,4 +133,41 @@ func TestSetWorkload(t *testing.T) {
 	assert.Equal(t, lab.DefaultWorkload.ControlPlanes, 1, "the default is not changed")
 	require.Error(t, s.SetWorkload("2cp+0w"))
 	require.Error(t, s.SetWorkload("1cp"))
+}
+
+// Resolve picks the best the workstation offers: its own architecture, and
+// kvm where /dev/kvm is usable. What the spec names wins, and kvm that the
+// workstation cannot give is refused before anything starts.
+func TestResolve(t *testing.T) {
+	resolve := func(spec string, host lab.Host) (*lab.Spec, error) {
+		t.Helper()
+		s, err := lab.Parse([]byte(minimal + spec))
+		require.NoError(t, err)
+		return s, s.Resolve(host)
+	}
+	for name, tc := range map[string]struct {
+		spec              string
+		host              lab.Host
+		wantArch, wantAcc string
+	}{
+		"x86 with kvm":           {"", lab.Host{Arch: "amd64", KVM: true}, "amd64", "kvm"},
+		"x86 without kvm":        {"", lab.Host{Arch: "amd64"}, "amd64", "tcg"},
+		"M1 in UTM":              {"", lab.Host{Arch: "arm64"}, "arm64", "tcg"},
+		"M3 with nested kvm":     {"", lab.Host{Arch: "arm64", KVM: true}, "arm64", "kvm"},
+		"tcg on purpose":         {"accel: tcg\n", lab.Host{Arch: "amd64", KVM: true}, "amd64", "tcg"},
+		"another arch, emulated": {"arch: amd64\n", lab.Host{Arch: "arm64", KVM: true}, "amd64", "tcg"},
+		"the spec names it all":  {"arch: arm64\naccel: kvm\n", lab.Host{Arch: "arm64", KVM: true}, "arm64", "kvm"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s, err := resolve(tc.spec, tc.host)
+			require.NoError(t, err)
+			assert.Equal(t, tc.wantArch, s.Arch)
+			assert.Equal(t, tc.wantAcc, s.Accel)
+		})
+	}
+
+	_, err := resolve("accel: kvm\n", lab.Host{Arch: "arm64"})
+	assert.ErrorContains(t, err, "needs a usable /dev/kvm")
+	_, err = resolve("arch: amd64\naccel: kvm\n", lab.Host{Arch: "arm64", KVM: true})
+	assert.ErrorContains(t, err, "workstation's architecture (arm64), not amd64")
 }

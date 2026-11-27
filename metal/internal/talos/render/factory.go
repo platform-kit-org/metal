@@ -17,6 +17,16 @@ import (
 // cannot reach it runs its own — same API, so it is a matter of configuration.
 const PublicFactory = "factory.talos.dev"
 
+// The CPU architectures the factory builds boot media for, named as Talos
+// names them.
+const (
+	ArchAMD64 = "amd64"
+	ArchARM64 = "arm64"
+)
+
+// Arches lists the architectures the operator installs.
+func Arches() []string { return []string{ArchAMD64, ArchARM64} }
+
 // Factory addresses a Talos image factory: it computes the URLs of the images
 // that factory serves, and tells it about the schematics those URLs name.
 //
@@ -26,6 +36,10 @@ const PublicFactory = "factory.talos.dev"
 type Factory struct {
 	// RegistryURL is the factory's host[:port]. Empty selects PublicFactory.
 	RegistryURL string
+	// Arch is the CPU architecture of the machines the boot media are for,
+	// one of Arches. Empty selects ArchAMD64. The installer image is a
+	// multi-architecture index and does not depend on it.
+	Arch string
 	// HTTPClient talks to it. Nil selects one with a bounded timeout: a
 	// reconciler must not be able to block on someone else's server forever.
 	HTTPClient *http.Client
@@ -65,7 +79,14 @@ func (f *Factory) ISOURL(s *osv1alpha1.Schematic, talosVersion string) (string, 
 	if err != nil {
 		return "", fmt.Errorf("compute schematic id: %w", err)
 	}
-	return "https://" + f.host() + "/image/" + id + "/" + talosVersion + "/metal-amd64.iso", nil
+	return "https://" + f.host() + "/image/" + id + "/" + talosVersion + "/metal-" + f.arch() + ".iso", nil
+}
+
+func (f *Factory) arch() string {
+	if f.Arch == "" {
+		return ArchAMD64
+	}
+	return f.Arch
 }
 
 // InstallerImage is the installer reference for a schematic: the same factory

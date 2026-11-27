@@ -59,6 +59,8 @@ environment variables:
                         (default: the counts in the spec); read by doctor, render and up
   PK_LAB_WORKLOAD       a second cluster for the pivot round, as <cp>cp+<w>w, e.g. 1cp+0w
                         (default: the spec's workload section, usually none)
+  PK_LAB_ACCEL          how QEMU runs the machines: kvm or tcg (default: the spec's accel;
+                        without one, kvm where /dev/kvm is usable, else tcg)
   PK_LAB_WAIT_TIMEOUT   seconds wait gives the lab to converge (default: 2400)
   PK_LAB_RELEASE_TIMEOUT
                         seconds release gives a machine to come back (default: 900)
@@ -79,6 +81,7 @@ LAB_DIR=$(realpath -m "${PK_LAB_DIR:-$ROOT/.lab}")
 SPEC=$(realpath -m "${PK_LAB_SPEC:-$ROOT/lab/lab.yaml}")
 SIZE=${PK_LAB_NODES:-}
 WORKLOAD=${PK_LAB_WORKLOAD:-}
+ACCEL=${PK_LAB_ACCEL:-}
 # Everything rendered from the spec. Generated, never edited, never committed.
 GEN=$LAB_DIR/generated
 FLEET=$GEN/fleet.yaml
@@ -134,8 +137,8 @@ render_into() {
   [[ -r $spec ]] || die "the lab spec $spec is not readable. Point PK_LAB_SPEC at one, or unset it to use lab/lab.yaml"
   have go || die "go is not on the PATH. Run the lab through mise (mise run lab:up), which puts it there"
   mkdir -p "$out"
-  (cd "$root/metal" && go run ./hack/labrender --spec "$spec" --out "$out" --nodes "$size" --workload "$workload" --source "${spec#"$root"/}") \
-    || die "the lab spec does not render. The message above names what to fix in $spec${size:+ or in PK_LAB_NODES=$size}${workload:+ or in PK_LAB_WORKLOAD=$workload}"
+  (cd "$root/metal" && go run ./hack/labrender --spec "$spec" --out "$out" --nodes "$size" --workload "$workload" --accel "$ACCEL" --source "${spec#"$root"/}") \
+    || die "the lab spec does not render. The message above names what to fix in $spec${size:+ or in PK_LAB_NODES=$size}${workload:+ or in PK_LAB_WORKLOAD=$workload}${ACCEL:+ or in PK_LAB_ACCEL=$ACCEL}"
 }
 
 render() {
@@ -228,41 +231,81 @@ kvm_usable() { [[ -r /dev/kvm && -w /dev/kvm ]]; }
 
 net_tools_present() { have ip && have iptables; }
 
-# The fleet runs $PK_METAL_QEMU, else qemu-system-x86_64 from the PATH, else
+# The workstation's CPU architecture as Go and Talos name it.
+host_arch() {
+  case "$(uname -m)" in
+    x86_64) echo amd64 ;;
+    aarch64 | arm64) echo arm64 ;;
+    *) uname -m ;;
+  esac
+}
+
+# The QEMU system emulator for the machines' architecture.
+qemu_binary() {
+  case "$1" in
+    arm64) echo qemu-system-aarch64 ;;
+    *) echo qemu-system-x86_64 ;;
+  esac
+}
+
+# The fleet runs $PK_METAL_QEMU, else the emulator for the machines'
+# architecture from the PATH, else, for the workstation's own architecture,
 # /usr/libexec/qemu-kvm, where RHEL and its rebuilds install QEMU.
 qemu_present() {
+  local arch=$1
   if [[ -n "${PK_METAL_QEMU:-}" ]]; then [[ -x "$PK_METAL_QEMU" ]]; return; fi
-  have qemu-system-x86_64 || [[ -x /usr/libexec/qemu-kvm ]]
+  have "$(qemu_binary "$arch")" || { [[ $arch == "$(host_arch)" ]] && [[ -x /usr/libexec/qemu-kvm ]]; }
 }
 
 qemu_fix() {
+  local arch=$1
   if [[ -n "${PK_METAL_QEMU:-}" ]]; then
     echo "PK_METAL_QEMU=$PK_METAL_QEMU is not an executable file; point it at the QEMU system emulator or unset it"
+  elif [[ $arch == arm64 ]]; then
+    install_hint "qemu-system-arm qemu-utils" "qemu-kvm qemu-img" "qemu-system-aarch64-core qemu-img"
   else
     install_hint "qemu-system-x86 qemu-utils" "qemu-kvm qemu-img" "qemu-system-x86-core qemu-img"
   fi
 }
 
-# The firmware pairs the QEMU driver probes (metal/internal/machine/qemu), in
-# its order: Fedora and RHEL (edk2-ovmf), Debian and Ubuntu (ovmf), Arch.
-OVMF_PAIRS=(
-  "/usr/share/edk2/ovmf/OVMF_CODE.fd /usr/share/edk2/ovmf/OVMF_VARS.fd"
-  "/usr/share/OVMF/OVMF_CODE.fd /usr/share/OVMF/OVMF_VARS.fd"
-  "/usr/share/OVMF/OVMF_CODE_4M.fd /usr/share/OVMF/OVMF_VARS_4M.fd"
-  "/usr/share/edk2-ovmf/x64/OVMF_CODE.fd /usr/share/edk2-ovmf/x64/OVMF_VARS.fd"
-)
+# The UEFI firmware pairs the QEMU driver probes (metal/internal/machine/qemu),
+# in its order. amd64 (OVMF): Fedora and RHEL (edk2-ovmf), Debian and Ubuntu
+# (ovmf), Arch. arm64 (AAVMF): Debian and Ubuntu (qemu-efi-aarch64), Fedora
+# and RHEL (edk2-aarch64), Arch (edk2-aarch64).
+firmware_pairs() {
+  case "$1" in
+    arm64)
+      echo "/usr/share/AAVMF/AAVMF_CODE.fd /usr/share/AAVMF/AAVMF_VARS.fd"
+      echo "/usr/share/edk2/aarch64/QEMU_EFI-pflash.raw /usr/share/edk2/aarch64/vars-template-pflash.raw"
+      echo "/usr/share/edk2/aarch64/QEMU_CODE.fd /usr/share/edk2/aarch64/QEMU_VARS.fd"
+      ;;
+    *)
+      echo "/usr/share/edk2/ovmf/OVMF_CODE.fd /usr/share/edk2/ovmf/OVMF_VARS.fd"
+      echo "/usr/share/OVMF/OVMF_CODE.fd /usr/share/OVMF/OVMF_VARS.fd"
+      echo "/usr/share/OVMF/OVMF_CODE_4M.fd /usr/share/OVMF/OVMF_VARS_4M.fd"
+      echo "/usr/share/edk2-ovmf/x64/OVMF_CODE.fd /usr/share/edk2-ovmf/x64/OVMF_VARS.fd"
+      ;;
+  esac
+}
 
-ovmf_present() {
-  local pair code vars
+firmware_present() {
+  local arch=$1 code vars
   if [[ -n ${PK_METAL_OVMF_CODE:-} ]]; then
     [[ -r $PK_METAL_OVMF_CODE && -r ${PK_METAL_OVMF_VARS:-} ]]
     return
   fi
-  for pair in "${OVMF_PAIRS[@]}"; do
-    read -r code vars <<<"$pair"
+  while read -r code vars; do
     [[ -r $code && -r $vars ]] && return 0
-  done
+  done < <(firmware_pairs "$arch")
   return 1
+}
+
+firmware_fix() {
+  if [[ $1 == arm64 ]]; then
+    echo "$(install_hint qemu-efi-aarch64 edk2-aarch64), or point PK_METAL_OVMF_CODE and PK_METAL_OVMF_VARS at a firmware pair (a CODE file and its VARS template, e.g. under /usr/share/AAVMF or /usr/share/edk2/aarch64)"
+  else
+    echo "$(install_hint ovmf edk2-ovmf), or point PK_METAL_OVMF_CODE and PK_METAL_OVMF_VARS at a firmware pair (a CODE file and its VARS template, e.g. under /usr/share/edk2/ovmf or /usr/share/OVMF)"
+  fi
 }
 
 # The lab is built on Docker Engine on the host itself: kind's node sits on a
@@ -339,7 +382,21 @@ enough_disk() {
 
 doctor() {
   local root=$1 lab_dir=$2 spec=$3 size=$4 workload=$5 min_free_gib=$6 kind_config=$7
-  local missing=0 need_mib tool preview problem
+  local missing=0 need_mib tool preview problem rendered=0 arch accel
+
+  # The spec is rendered into a scratch directory first: it says which
+  # machines the lab runs (architecture, accelerator, memory), and so what to
+  # check. doctor changes nothing, and a lab that is up keeps the files it was
+  # rendered from. The subshell keeps render_into's die from ending doctor.
+  preview=$(mktemp -d)
+  if problem=$( (render_into "$root" "$spec" "$size" "$workload" "$preview") 2>&1 ); then
+    rendered=1
+    arch=$(lab_value "$preview" ARCH)
+    accel=$(lab_value "$preview" ACCEL)
+  else
+    arch=$(host_arch)
+    accel=kvm
+  fi
 
   for tool in go kind kubectl talosctl yq jq; do
     check "$tool" "mise install (the version is pinned in mise.toml)" have "$tool" || missing=$((missing + 1))
@@ -369,14 +426,19 @@ doctor() {
       "boot with systemd.unified_cgroup_hierarchy=1, or run an older Kubernetes: copy lab/kind.yaml, set image: kindest/node:v1.34.0, and point PK_LAB_KIND_CONFIG at the copy" \
       cgroup_v2 || missing=$((missing + 1))
   fi
-  check "/dev/kvm is usable by $(id -un)" \
-    "enable virtualization in the firmware setup, load the module (sudo modprobe kvm_intel || sudo modprobe kvm_amd) and join the group: sudo usermod -aG kvm \$USER (then log in again)" \
-    kvm_usable || missing=$((missing + 1))
-  check "QEMU (qemu-system-x86_64, /usr/libexec/qemu-kvm or \$PK_METAL_QEMU)" "$(qemu_fix)" qemu_present || missing=$((missing + 1))
+  if [[ $accel == kvm ]]; then
+    check "/dev/kvm is usable by $(id -un)" \
+      "enable virtualization in the firmware setup, load the module (sudo modprobe kvm_intel || sudo modprobe kvm_amd) and join the group: sudo usermod -aG kvm \$USER (then log in again). Or run the machines without KVM: set accel: tcg in $spec" \
+      kvm_usable || missing=$((missing + 1))
+  elif [[ $arch == "$(host_arch)" ]]; then
+    note "the $arch machines run under tcg: QEMU emulates their CPU without KVM, and a boot takes minutes. Once /dev/kvm is usable, the lab uses KVM."
+  else
+    note "the $arch machines run under tcg: QEMU emulates their CPU, which is not the $(host_arch) CPU of this workstation, and a boot takes minutes."
+  fi
+  check "QEMU for $arch machines ($(qemu_binary "$arch")$([[ $arch == "$(host_arch)" ]] && echo ", /usr/libexec/qemu-kvm") or \$PK_METAL_QEMU)" \
+    "$(qemu_fix "$arch")" qemu_present "$arch" || missing=$((missing + 1))
   check "qemu-img" "$(install_hint qemu-utils qemu-img)" have qemu-img || missing=$((missing + 1))
-  check "OVMF (UEFI firmware for the machines)" \
-    "$(install_hint ovmf edk2-ovmf), or point PK_METAL_OVMF_CODE and PK_METAL_OVMF_VARS at a firmware pair (a CODE file and its VARS template, e.g. under /usr/share/edk2/ovmf or /usr/share/OVMF)" \
-    ovmf_present || missing=$((missing + 1))
+  check "UEFI firmware for $arch machines" "$(firmware_fix "$arch")" firmware_present "$arch" || missing=$((missing + 1))
   check "ip and iptables" "$(install_hint "iproute2 iptables" "iproute iptables-nft")" \
     net_tools_present || missing=$((missing + 1))
   # sudo -v only refreshes sudo's timestamp and runs nothing as root, but it can
@@ -408,13 +470,10 @@ doctor() {
     "the machines pull from ghcr.io and registry.k8s.io through this host. Behind a proxy, give them one too (lab/README.md, 'Behind a proxy')" \
     reachable https://ghcr.io/ || missing=$((missing + 1))
 
-  # The spec is rendered into a scratch directory: doctor changes nothing, and
-  # a lab that is up keeps the files it was rendered from.
-  # Its own messages are the fix, so they are shown instead of a generic one.
-  # The subshell keeps render_into's die from ending doctor.
-  preview=$(mktemp -d)
-  if problem=$( (render_into "$root" "$spec" "$size" "$workload" "$preview") 2>&1 ); then
-    echo "ok    the lab spec renders${size:+ at size $size}" >&2
+  # The render's own messages are the fix, so they are shown instead of a
+  # generic one.
+  if (( rendered )); then
+    echo "ok    the lab spec renders${size:+ at size $size}: $arch machines under $accel" >&2
     # The machines' memory, summed over the machines this size renders, plus
     # room for the kind node and the fleet process.
     need_mib=$(($(lab_value "$preview" MEMORY_MIB) + 3072))
@@ -565,6 +624,12 @@ write_deploy_dir() {
 
   base=$(realpath --relative-to="$dir" "$root/metal/config/lab")
   proxy_patch=$(write_proxy_patch "$dir")
+  # The operator builds the boot media for the machines' architecture.
+  cat > "$dir/arch.yaml" <<EOF
+- op: add
+  path: /spec/template/spec/containers/0/args/-
+  value: --machine-arch=$(lab_value "$gen" ARCH)
+EOF
   cat > "$dir/kustomization.yaml" <<EOF
 # Generated by $SCRIPT. Do not edit; rerun: mise run lab:load
 apiVersion: kustomize.config.k8s.io/v1beta1
@@ -601,8 +666,17 @@ EOF
       disableNameSuffixHash: true
 EOF
   fi
+  cat >> "$dir/kustomization.yaml" <<EOF
+patches:
+  - path: arch.yaml
+    target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: $DEPLOYMENT
+EOF
   if [[ -n $proxy_patch ]]; then
-    printf 'patches:\n  - path: %s\n' "$proxy_patch" >> "$dir/kustomization.yaml"
+    printf '  - path: %s\n' "$proxy_patch" >> "$dir/kustomization.yaml"
     echo "  the manager gets this shell's proxy settings ($dir/$proxy_patch)" >&2
   fi
 }

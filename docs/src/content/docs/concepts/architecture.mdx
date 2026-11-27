@@ -55,15 +55,12 @@ It reads the objects that you write and changes the machines through their BMCs.
 
 ## Two API groups
 
-| Group | Kinds | About |
-| --- | --- | --- |
-| `metal.platform-kit.org` | [](kind:Asset), [](kind:ManagementEndpoint), [](kind:Host), [](kind:HostClaim), [](kind:HostOperation), profiles, [](kind:MaintenanceWindow) | Hardware and its changes |
-| `os.platform-kit.org` | [](kind:TalosCluster), [](kind:TalosNode), [](kind:BootAsset), [](kind:TalosRollout), [](kind:EtcdBackupPolicy), [](kind:EtcdSnapshot) | The installed system |
+The kinds are in two API groups: `metal.platform-kit.org` for the hardware and its changes, `os.platform-kit.org` for the installed system. See [](kind:index).
 
 ## Principles
 
 1. You write what must be true. The operator writes what it finds. See [](concept:assert-vs-observe).
-2. A person approves each change to a machine. See [](concept:approval).
+2. A person approves each change that disrupts a machine, or the admin group decides it in advance. See [](concept:approval).
 3. The operator boots from virtual media, not from PXE. See [](concept:virtual-media-boot).
 4. The operator does not take down the cluster that it runs on. See [](concept:self-protection).
 
@@ -96,19 +93,10 @@ It reads the objects that you write and changes the machines through their BMCs.
 | Control planes in a rollout | One at a time, and only while etcd is healthy | No |
 | Workers in a rollout | `spec.maxUnavailableWorkers`, default 1 | Yes, on the [](kind:TalosRollout) |
 | Read of each BMC | Each 5 minutes | `--poll-interval` |
-| Approvals | One for each install, one for each rollout plan | See [](concept:approval) |
 
 ### Reads from the API server
 
-Some checks read from the API server and not from the cache of the manager, because the cache can be late. The API server filters these reads where it can.
-
-| Check | What it reads | When |
-| --- | --- | --- |
-| The start of an operation | The operations of its host | One time, before the first step |
-| A rollout step, a rollout proposal | The rollouts of the cluster | Each pass |
-| The guard of the operator's own cluster | The Host, the TalosNodes and the Kubernetes node of the manager. For the node of the manager and the control planes of its cluster, also all Hosts and all operations. | Before each reboot and each power-off |
-| The release of a claim | All Hosts | Each pass of a claim that you deleted |
-| The protection of an endpoint | All Hosts | Before the finalizer comes off the endpoint |
+Decisions that a later pass cannot undo read from the API server, not from the cache of the manager, because the cache can be late. Some of them list all Hosts, all HostClaims or all operations on each pass. The API server filters the other reads where it can.
 
 ### What is tested
 

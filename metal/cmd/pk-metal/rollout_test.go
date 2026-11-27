@@ -270,6 +270,16 @@ func TestUpgrade(t *testing.T) {
 		assert.Equal(t, "v1.14.6", c.Spec.TalosVersion)
 		assert.Equal(t, "v1.36.2", c.Spec.KubernetesVersion)
 	})
+	t.Run("waits for a complete plan", func(t *testing.T) {
+		blocked := planned()
+		blocked.Status.Conditions[0] = metav1.Condition{Type: osv1alpha1.ConditionPlanned, Status: metav1.ConditionFalse,
+			Reason: osv1alpha1.ReasonPlanBlocked, Message: "node worker-1 has no fresh dry run"}
+		cl := fakeClientAs("bob", cluster(), blocked)
+		var out bytes.Buffer
+		err := upgrade(ctx, cl, "talos", "lab", "v1.14.7", 5*time.Millisecond, time.Millisecond, &out)
+		require.ErrorContains(t, err, "no fresh dry run")
+		assert.NotContains(t, out.String(), "pk-metal rollout approve", "rollout approve refuses a plan that is blocked")
+	})
 	t.Run("times out when nothing is proposed", func(t *testing.T) {
 		cl := fakeClientAs("bob", cluster())
 		var out bytes.Buffer

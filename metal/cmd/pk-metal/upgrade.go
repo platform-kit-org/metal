@@ -141,12 +141,17 @@ func upgrade(ctx context.Context, cl client.Client, what, name, version string, 
 		if err != nil {
 			return err
 		}
-		if ro != nil && ro.Status.PlanHash != "" {
-			fmt.Fprint(w, "\n"+renderRollout(ro))
-			if ro.Spec.Approval.ApprovedBy == "" {
-				fmt.Fprintf(w, "\nNothing runs until someone approves it: pk-metal rollout approve %s\n", ro.Name)
+		// The wait ends when the plan can be approved: the operator writes
+		// the plan hash before it knows that every node can take the plan.
+		var notPlanned error
+		if ro != nil {
+			if notPlanned = approvableRollout(ro); notPlanned == nil || ro.Spec.Approval.ApprovedBy != "" {
+				fmt.Fprint(w, "\n"+renderRollout(ro))
+				if notPlanned == nil {
+					fmt.Fprintf(w, "\nNothing runs until someone approves it: pk-metal rollout approve %s\n", ro.Name)
+				}
+				return nil
 			}
-			return nil
 		}
 		if !said {
 			// The operator proposes and plans the rollout on its own
@@ -156,6 +161,9 @@ func upgrade(ctx context.Context, cl client.Client, what, name, version string, 
 				"(interrupting stops only the wait; see it later with: pk-metal rollout list)\n", shortDuration(wait))
 		}
 		if time.Now().After(deadline) {
+			if notPlanned != nil {
+				return fmt.Errorf("after %s: %w", shortDuration(wait), notPlanned)
+			}
 			return fmt.Errorf("no rollout planned for %s %s on cluster %s after %s; the operator proposes one once it "+
 				"has seen every node's version and no other rollout of the cluster is open. See: pk-metal rollout list, "+
 				"and the cluster's conditions",

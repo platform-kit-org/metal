@@ -155,22 +155,19 @@ The operator copies these names into the rollout, and a person in the list canno
    metal/bin/pk-metal rollout list
    ```
 
-3. Read the plan. Use the name from the list.
-
-   ```sh
-   metal/bin/pk-metal rollout show <rollout>
-   ```
-
-   Each step of the plan shows `no reboot`.
-
-4. Approve the plan.
+3. Read the plan and approve it. Use the name from the list. The command shows the plan and asks. Each step shows `no reboot`.
 
    ```sh
    metal/bin/pk-metal rollout approve <rollout>
    ```
 
-5. The rollout pauses after the first node. Make sure that the node is `Ready`.
-6. Continue the rollout.
+4. Wait until `metal/bin/pk-metal rollout list` shows the state `PausedAfterFirstNode`. Make sure that the node is `Ready`.
+
+   ```sh
+   kubectl --kubeconfig .lab/workload.kubeconfig get nodes
+   ```
+
+5. Continue the rollout.
 
    ```sh
    metal/bin/pk-metal rollout resume <rollout>
@@ -202,25 +199,20 @@ kubectl --kubeconfig .lab/workload.kubeconfig get nodes -L lab.platform-kit.org/
 
    The command sets the annotation `metal.platform-kit.org/requested-by` of the [](kind:TalosCluster) to its user. If the admin sets the release, the admin cannot approve the rollout, as in step 3.
    Then the command waits until the operator proposes a rollout and makes its plan. This can take some minutes. Then the command shows the plan.
+   Each step of the plan shows `v1.14.5 -> v1.14.6` and `REBOOTS`. The last line names the rollout.
    The operator proposes no rollout while the rollout of step 3 is not complete. If the wait ends without a plan, the release stays set. Examine the rollouts:
 
    ```sh
    metal/bin/pk-metal rollout list
    ```
 
-2. Read the plan. Each step shows `v1.14.5 -> v1.14.6` and `REBOOTS`.
-
-   ```sh
-   metal/bin/pk-metal rollout show <rollout>
-   ```
-
-3. Approve the plan.
+2. Approve the plan.
 
    ```sh
    metal/bin/pk-metal rollout approve <rollout>
    ```
 
-4. Show the operations of the rollout. The first one is for `node-1`, the only control plane.
+3. Show the operations of the rollout. The first one is for `node-1`, the only control plane.
 
    ```sh
    kubectl -n pk-metal get hostoperations -l os.platform-kit.org/rollout=<rollout> -o wide
@@ -228,7 +220,7 @@ kubectl --kubeconfig .lab/workload.kubeconfig get nodes -L lab.platform-kit.org/
 
    The column `BLOCKED` shows `ClusterDisruption`. The [cluster guard](concept:cluster-guard) holds the operation, because the cluster has no second control plane.
 
-5. Lift the guard for this operation with your reason. The API server writes your username in front of it. Use the name of the operation from step 4.
+4. Lift the guard for this operation with your reason. The API server writes your username in front of it. Use the name of the operation from step 3.
 
    ```sh
    kubectl -n pk-metal annotate hostoperation <operation> \
@@ -237,13 +229,13 @@ kubectl --kubeconfig .lab/workload.kubeconfig get nodes -L lab.platform-kit.org/
 
    The Kubernetes API of the lab cluster does not answer while `node-1` restarts.
 
-6. After the first node, the rollout pauses. Make sure that all nodes are `Ready`.
+5. After the first node, the rollout pauses. Make sure that all nodes are `Ready`.
 
    ```sh
    kubectl --kubeconfig .lab/workload.kubeconfig get nodes
    ```
 
-7. Continue the rollout.
+6. Continue the rollout.
 
    ```sh
    metal/bin/pk-metal rollout resume <rollout>
@@ -263,7 +255,7 @@ The pause is there so that a bad release stops at one node.
 
 <Checkpoint>
 `kubectl get talosnodes -o wide` shows the release `v1.14.6` for each node.
-`pk-metal rollout list` shows the rollout as complete.
+`pk-metal rollout list` shows the state `Succeeded`.
 </Checkpoint>
 
 ## What you learned

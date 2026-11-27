@@ -6,7 +6,6 @@ xref: { cat: tut, id: lab-first-cluster }
 sidebar:
   order: 1
 sources:
-  - /repo/lab/README.md
   - /repo/lab/lab.sh
 ---
 
@@ -32,11 +31,9 @@ The result is a Kubernetes cluster that the operator installed through simulated
 
 <dl class="pk-glance">
   <dt>Time</dt>
-  <dd>About 15 minutes. The first start downloads the images and takes more time.</dd>
+  <dd>About 15 minutes. The first start takes more time. It downloads the Go modules, builds the operator two times, and pulls the images `golang` and `kindest/node` and the Talos installer.</dd>
   <dt>Workstation</dt>
   <dd>Linux with KVM, Docker Engine, 12 GiB of free memory and 15 GiB of free disk.</dd>
-  <dt>Packages</dt>
-  <dd>See [](lab:page/prerequisites).</dd>
   <dt>Repository</dt>
   <dd>A clone of the repository. Run all commands in its root directory.</dd>
 </dl>
@@ -45,59 +42,8 @@ The result is a Kubernetes cluster that the operator installed through simulated
 
 ### 1. Check the workstation
 
-1. Install [mise](https://mise.jdx.dev/getting-started.html). It installs the tools at the versions that the repository pins.
-
-2. Trust the configuration of the repository.
-
-   ```sh
-   mise trust
-   ```
-
-3. Install the pinned tools.
-
-   ```sh
-   mise install
-   ```
-
-4. Put the tools on the `PATH` of this terminal. Do this in each new terminal.
-
-   ```sh
-   eval "$(mise activate bash)"
-   ```
-
-   Without this step, `kubectl`, `talosctl`, `kind` and `yq` are available only in `mise run` tasks.
-
-5. Build `pk-metal` into `metal/bin/`, and put it on the `PATH` of this terminal.
-
-   ```sh
-   mise run build
-   export PATH="$PWD/metal/bin:$PATH"
-   ```
-
-   To keep `pk-metal` on the `PATH` in each new terminal, add the line to `~/.bashrc`. The line has the full path of your clone.
-
-   ```sh
-   echo "export PATH=\"$PWD/metal/bin:\$PATH\"" >> ~/.bashrc
-   ```
-
-   After this step, `pk-metal` and `metal/bin/pk-metal` are the same program.
-
-6. Optional: install the completion of the `tab` key. It completes the commands, the flags, and the names of operations, claims and nodes from the cluster. The bash script needs the `bash-completion` package. For zsh and fish, see [](cli:completion).
-
-   ```sh
-   source <(pk-metal completion bash)
-   echo 'source <(pk-metal completion bash)' >> ~/.bashrc
-   ```
-
-   The completion reads the cluster that `--kubeconfig` on the same line selects. When the lab is up, `pk-metal --kubeconfig .lab/kubeconfig approve <tab>` shows the operations that wait for approval.
-
-7. Run the doctor. The doctor can ask for your `sudo` password. It runs nothing as root.
-
-   ```sh
-   mise run lab:doctor
-   ```
-
-8. If a line starts with `MISS`, do what its `fix:` line says. Then run the doctor again.
+1. Do the steps in [Install the packages](lab:page/prerequisites#install-the-packages). The last step runs the doctor. The doctor can ask for your `sudo` password. It runs nothing as root.
+2. If a line starts with `MISS`, do what its `fix:` line says. Then run the doctor again.
 
 <Checkpoint>
 The last line is `the workstation has what the lab needs`.
@@ -113,79 +59,61 @@ The last line is `the workstation has what the lab needs`.
 
 2. Type your password if `sudo` asks for it. Only the network part uses `sudo`.
 
+`lab:up` also builds `pk-metal` into `metal/bin/`. The other lab tutorials use it.
+
 <TermReplay src="casts/lab-up.json" caption="A replay with example data. Your output has more lines." />
 
 <Checkpoint>
-The output ends with `The lab is up.` and three commands.
+The output ends with `The lab is up.` and two commands.
 No machine changed until now. See [](lab:up).
 </Checkpoint>
 
-### 3. Read the proposals
-
-1. Show the state of the rack.
-
-   ```sh
-   mise run lab:status
-   ```
-
-2. Find the three operations with the phase `AwaitingApproval`.
-3. Read the plan of each operation.
-
-   ```sh
-   metal/bin/pk-metal --kubeconfig .lab/kubeconfig approve
-   ```
-
-   Without a name, the command lists the operations that wait. It approves nothing.
-
-<Checkpoint>
-Each [](kind:Host) is `Assigned`, and each one has a [](kind:HostOperation) that waits for you.
-The operator found each BMC, compared the serial numbers, and bound each [](kind:HostClaim).
-</Checkpoint>
-
-### 4. Approve the installs
+### 3. Approve the installs
 
 <Callout type="warning">
 Do not approve an operation before you read its plan.
 An install overwrites the install disk of the machine. In the lab, the disk is a file in `.lab/state/`.
 </Callout>
 
-1. Open the live view in a second terminal.
+1. Open the live view.
 
    ```sh
    mise run lab:top
    ```
 
-2. Select a machine with `tab`.
-3. Press `a`. Read the plan.
-4. Press `y` to approve.
-5. Do steps 2 to 4 again for the other two machines.
-6. If an operation fails at `insertMedia`, select the machine and press `r`.
+   Wait until the line `needs a person` at the top shows `3`, and each tile shows `Assigned`.
+   The operator found each BMC, compared the serial numbers, and bound each [](kind:HostClaim). Each machine has a [](kind:HostOperation) that waits for you.
+
+2. Press `a`. The view selects `node-1` first. Read the plan.
+3. Press `y` to approve.
+4. Press `tab` to select the next machine. Do steps 2 and 3 again for each machine.
 
 <Shot src="top-2-approve.png" alt="The approval dialog of pk-metal top. It shows nine steps: eject media, mount the installer and the machine config, set the boot device, power cycle, wait for the node, eject media." caption="The plan of one install in lab:top. A mock screen with example data." width={1600} height={614} />
 
 To approve all operations at one time, you can use `mise run lab:approve`. See [](lab:approve).
+For a snapshot of the state, run `mise run lab:status`.
 
 <Checkpoint>
 The line `needs a person` at the top of the view shows `0`.
 Each machine has an operation that runs, and its BMC shows mounted media.
 </Checkpoint>
 
-### 5. Watch the installs
+### 4. Watch the installs
 
 1. Keep the live view open. Each tile shows the step of its operation, for example `7/9 awaitCheckIn`.
 2. Wait until each Host is `Provisioned`. This takes about three minutes after the approval.
-3. If an operation fails, press `r` in the live view to try it again. [](cli:retry) does the same.
+3. If an operation fails, see [](lab:page/troubleshooting). After the fix, select the machine and press `r`. The operator proposes the operation again. Press `a`, read the plan, and press `y`. [](cli:retry) does the same as `r`.
 
 <TermReplay src="casts/top.json" caption="A replay of lab:top with example data." />
 
-The control plane, `node-1`, installs first. The workers join after the control plane is bootstrapped.
+The operator starts each install when you approve it. The workers join the cluster after the control plane is bootstrapped.
 [](flow:rack-to-node) explains each step.
 
 <Checkpoint>
 Each tile shows `Provisioned` and `Ready`. The cluster line shows `Bootstrapped` and `Available`.
 </Checkpoint>
 
-### 6. Use the cluster
+### 5. Use the cluster
 
 1. Stop the live view with `q`.
 2. Write the access files.
@@ -217,7 +145,7 @@ Each tile shows `Provisioned` and `Ready`. The cluster line shows `Bootstrapped`
 Three nodes are `Ready`, and three Hosts are `Provisioned`.
 </Checkpoint>
 
-### 7. Stop the lab
+### 6. Stop the lab
 
 1. Stop the lab. The command uses `sudo` to remove the lab network.
 
@@ -233,7 +161,7 @@ Three nodes are `Ready`, and three Hosts are `Provisioned`.
 
 `lab:down` deletes the kind cluster, and with it all objects of the operator. It keeps the disks and the secrets bundle.
 If you do not delete the disks, the next `lab:up` starts the same machines, and the operator proposes the installs again.
-Each of the other lab tutorials starts a new lab of its own.
+Each of the other lab tutorials starts a new lab of its own. To remove all that the lab keeps on the workstation, see [Remove the lab](lab:page/troubleshooting#remove-the-lab).
 
 If a step does not give its checkpoint, see [](lab:page/troubleshooting). [](lab:collect) writes the state of the lab to a directory.
 

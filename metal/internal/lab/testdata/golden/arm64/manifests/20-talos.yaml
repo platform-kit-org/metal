@@ -19,9 +19,10 @@
 # The TalosCluster holds what every node shares (think group_vars, or the
 # %include part of a kickstart); each TalosNode holds what is per machine
 # (address, install disk, role). The operator renders one Talos machine
-# configuration per node from the two. A machine that is already installed does
-# not pick a change up by itself: push it with talosctl
-# (talosctl -n <address> patch machineconfig --patch @change.yaml).
+# configuration per node from the two. A change reaches a machine that is
+# installed through a rollout: the operator proposes it, and a person approves
+# it (pk-metal rollout list). Do not patch a machine with talosctl: the
+# operator sees the drift, and its next Config rollout undoes the patch.
 apiVersion: os.platform-kit.org/v1alpha1
 kind: TalosCluster
 metadata:

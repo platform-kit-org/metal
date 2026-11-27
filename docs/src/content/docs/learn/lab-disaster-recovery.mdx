@@ -27,8 +27,8 @@ The task [](lab:backup-restore) does the steps. You watch them and examine the r
     { title: 'Back up', caption: 'The operator takes an etcd snapshot, encrypts it for your age key and stores it on its backup volume.', code: 'pk-metal backup now lab-dr', state: { etcd: 'active', snap: 'active', take: 'flow', before: 'ok' } },
     { title: 'Write after the snapshot', caption: 'The task writes a second ConfigMap. The snapshot does not contain it.', code: 'kubectl create configmap dr-after', state: { etcd: 'active', snap: 'done', take: 'done', before: 'ok', after: 'active' } },
     { title: 'Lose etcd', caption: 'The task wipes the partition EPHEMERAL on each control plane. The cluster reports EtcdDataLost. The operator does not bootstrap it again.', code: 'talosctl reset --system-labels-to-wipe EPHEMERAL', state: { etcd: 'err', snap: 'done', take: 'done', before: 'err', after: 'err' } },
-    { title: 'Propose and approve', caption: 'One person proposes the restore. A person approves it.', code: 'pk-metal restore plan --snapshot <name> --propose lab', state: { etcd: 'err', snap: 'done', take: 'done', op: 'warn', you: 'active', approve: 'flow', before: 'err', after: 'err' } },
-    { title: 'Upload', caption: 'You decrypt the snapshot on the workstation and send it to the node.', code: 'pk-metal restore upload <operation> --identity identity.txt', state: { etcd: 'active', snap: 'active', take: 'done', op: 'active', you: 'done', approve: 'done', upload: 'flow', before: 'err', after: 'err' } },
+    { title: 'Propose and approve', caption: 'One person proposes the restore. Another person approves it.', code: 'pk-metal restore plan --snapshot <name> --propose lab', state: { etcd: 'err', snap: 'done', take: 'done', op: 'warn', you: 'active', approve: 'flow', before: 'err', after: 'err' } },
+    { title: 'Upload', caption: 'You decrypt the snapshot on the workstation and send it to the node.', code: 'pk-metal restore upload <operation> --identity identity.txt --from-file snapshot.db.age', state: { etcd: 'active', snap: 'active', take: 'done', op: 'active', you: 'done', approve: 'done', upload: 'flow', before: 'err', after: 'err' } },
     { title: 'Recovered', caption: 'etcd starts from the snapshot. The first ConfigMap is back. The second ConfigMap is not.', code: 'kubectl -n default get configmaps', state: { etcd: 'ok', snap: 'done', take: 'done', op: 'ok', you: 'done', approve: 'done', upload: 'done', before: 'ok' } },
   ]}
 >
@@ -116,7 +116,7 @@ It wipes the etcd data of each control plane. You lose all changes after the sna
 | `etcd backup volume` | The manager gets a volume for snapshots. | [](ctrl:manager) |
 | `EtcdBackupPolicy lab-dr, a snapshot, and markers around it` | The task makes an age key and a policy. It writes `dr-before`, takes a snapshot, and writes `dr-after`. | [](cli:backup) |
 | `losing etcd` | `talosctl reset` wipes `EPHEMERAL` on the control plane. The TalosCluster reports `EtcdDataLost`. | [](kind:TalosCluster) |
-| `restoring <snapshot>` | The user `lab-restorer` proposes the restore. The admin approves it. The task uploads the snapshot. | [](cli:restore) |
+| `restoring <snapshot>` | The user `lab-restorer` proposes the restore. The admin approves it. The task uploads the snapshot. The plan names the snapshot time. At a site, read it before you approve. | [](cli:restore) |
 | `waiting for <operation> and for etcd` | The operation with [](act:EtcdRecover) runs. etcd starts from the snapshot. | [](kind:HostOperation) |
 
 <Checkpoint>
@@ -142,7 +142,7 @@ The last line starts with `restored after` and ends with `dr-before is back, dr-
 3. Show the restore operation. Its phase is `Succeeded`.
 
    ```sh
-   kubectl --kubeconfig .lab/kubeconfig -n pk-metal get hostoperations
+   kubectl --kubeconfig .lab/kubeconfig -n pk-metal get hostoperations -l os.platform-kit.org/etcd-restore=lab
    ```
 
 4. Examine the files that the task kept.
@@ -158,7 +158,7 @@ The last line starts with `restored after` and ends with `dr-before is back, dr-
    | `restorer.kubeconfig` | The kubeconfig of the user `lab-restorer` |
 
 <Checkpoint>
-The cluster is `Bootstrapped` again in `mise run lab:status`, and its node is `Ready`.
+In `mise run lab:top`, the cluster line shows `● Bootstrapped` and `● Available`. The node is `Ready`.
 </Checkpoint>
 
 If a step does not give its checkpoint, see [](lab:page/troubleshooting).
@@ -166,11 +166,11 @@ If a step does not give its checkpoint, see [](lab:page/troubleshooting).
 ## What you learned
 
 - The operator sees the loss of etcd data, and it does not bootstrap the cluster again without a person.
-- A restore needs two persons and an approval, as each other change does: [](concept:approval).
+- A restore waits for an approval, as each other change does. The lab forbids self-approval, so a second person approves: [](concept:approval).
 - The operator stores only encrypted snapshots. You keep the key.
 - A restore brings back the state of the snapshot. You lose later changes.
 
 ## Next
 
 - [](tut:lab-pivot)
-- [](rb:node-not-ready)
+- [](howto:restore-etcd): the same restore on a real site.

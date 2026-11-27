@@ -64,11 +64,9 @@ Each task calls one verb of [lab/lab.sh](/repo/lab/lab.sh). mise puts the pinned
 ## The usual round
 
 1. Start the lab: `mise run lab:up`.
-2. Read the proposals: `mise run lab:status`.
-3. Approve the installs: `mise run lab:approve`.
-4. Look again until all Hosts are Provisioned: `mise run lab:status`.
-5. Get the access files: `mise run lab:kubeconfig`.
-6. Stop the lab: `mise run lab:down`.
+2. Read and approve each proposal in `mise run lab:top`. The key `a` shows the plan, and `y` approves it.
+3. Get the access files: `mise run lab:kubeconfig`.
+4. Stop the lab: `mise run lab:down`.
 
 [](tut:lab-first-cluster) shows this round with the expected output.
 
@@ -119,7 +117,7 @@ Starts the lab. You can run it again: it uses again what exists, and it applies 
   <dd>A different size while the fleet runs. A start after [`pivot`](#pivot), until you run [`down`](#down) and [`reset`](#reset).</dd>
 </dl>
 
-<TermReplay src="casts/lab-up.json" caption="A replay with example data." />
+<TermReplay src="casts/lab-up.json" caption="A replay with example data. The real output is longer. It starts with the lines of the doctor." />
 
 After `up`, the operator proposes one install for each machine. The installs wait for [`approve`](#approve).
 
@@ -450,13 +448,13 @@ Moves the operator from kind to the first Talos cluster, deletes kind, and insta
   <dt>Needs</dt>
   <dd>A second cluster in the spec (`PK_LAB_WORKLOAD`), and a first cluster with all nodes Ready.</dd>
   <dt>Uses</dt>
-  <dd>[](cli:pivot) with `--media-store ephemeral`</dd>
+  <dd>[](cli:pivot)</dd>
   <dt>Writes</dt>
   <dd>`.lab/second.kubeconfig`, `.lab/second.talosconfig` and the mark file `.lab/pivoted`</dd>
 </dl>
 
 1. It starts an image registry at `10.77.0.1:5000` and pushes the operator image.
-2. It runs `pk-metal pivot --to .lab/workload.kubeconfig`.
+2. It runs `pk-metal pivot --to .lab/workload.kubeconfig --image <registry>/<image> --media-url https://<node>:30443 --media-store ephemeral --timeout 600s --yes`.
 3. It deletes the kind cluster. `.lab/kubeconfig` now names the first Talos cluster.
 4. It applies `.lab/generated/workload/`, approves, and waits for the nodes of the second cluster.
 

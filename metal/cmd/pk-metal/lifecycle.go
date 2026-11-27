@@ -53,7 +53,9 @@ at two members in between, which needs --ack-etcd-risk.
 
 A TalosNode that names its install disk by serial or its network link by
 MAC address fits one machine only: edit those to the new machine's values
-before replace, or the install finds no disk and the node no link.
+before replace, or the install finds no disk and the node no link. If the old
+machine still answers, edit them after its release instead: an earlier edit
+makes the operator propose a Config rollout for the old machine.
 
 For hardware that still works, add the new node first and remove the old
 one after (see https://metal.platform-kit.org/workflows/add-and-remove-nodes/):

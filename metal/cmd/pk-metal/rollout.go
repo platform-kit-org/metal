@@ -404,8 +404,9 @@ func rolloutApprovalPatch(ro *osv1alpha1.TalosRollout, user string) []byte {
 	return patch
 }
 
-// resumeRollout clears spec.paused and lets the rollout past the pause after
-// its first node, for the plan it runs now.
+// resumeRollout clears spec.paused. Once the first node is done, it also lets
+// the rollout past the pause after it, for the plan it runs now; before that,
+// the controller would never take that pause.
 func resumeRollout(ctx context.Context, cl client.Client, name string, w io.Writer) error {
 	ro, err := getRollout(ctx, cl, name)
 	if err != nil {
@@ -417,15 +418,26 @@ func resumeRollout(ctx context.Context, cl client.Client, name string, w io.Writ
 	if ro.Status.PlanHash == "" {
 		return fmt.Errorf("rollout %s has no plan", name)
 	}
+	done := 0
+	for i, st := range ro.Status.Steps {
+		if i < len(ro.Status.Plan) && ro.Status.Plan[i].Kind == osv1alpha1.RolloutStepNode && st.State == osv1alpha1.RolloutNodeSucceeded {
+			done++
+		}
+	}
+	if done == 0 && !ro.Spec.Paused {
+		return fmt.Errorf("rollout %s has not finished its first node; it pauses after it. Follow it: pk-metal rollout show %s", name, name)
+	}
 	user, err := requester(ctx, cl)
 	if err != nil {
 		return err
 	}
+	annotations := map[string]any{metalv1alpha1.AnnotationRequestedBy: user}
+	if done > 0 {
+		annotations[osv1alpha1.AnnotationRolloutResume] = ro.Status.PlanHash
+	}
 	patch, _ := json.Marshal(map[string]any{
-		"metadata": map[string]any{"uid": ro.UID,
-			"annotations": map[string]any{osv1alpha1.AnnotationRolloutResume: ro.Status.PlanHash,
-				metalv1alpha1.AnnotationRequestedBy: user}},
-		"spec": map[string]any{"paused": nil},
+		"metadata": map[string]any{"uid": ro.UID, "annotations": annotations},
+		"spec":     map[string]any{"paused": nil},
 	})
 	if err := cl.Patch(ctx, ro, client.RawPatch(types.MergePatchType, patch)); err != nil {
 		return fmt.Errorf("resume rollout %s: %w", name, err)

@@ -37,16 +37,19 @@ has the details.
 ## Try it
 
 The virtual lab builds a three-node cluster on one workstation. It needs Linux
-with KVM, Docker, QEMU with OVMF, `sudo`, and about 12 GiB of free memory.
-All other tools come from [mise](https://mise.jdx.dev/).
+with KVM, Docker Engine (not Docker Desktop, podman or rootless Docker), QEMU
+with OVMF, `sudo`, and about 12 GiB of free memory. All other tools come from
+[mise](https://mise.jdx.dev/).
 
 ```sh
+mise trust             # once per clone: let mise read mise.toml
 mise install
 mise run lab:doctor    # check the prerequisites; changes nothing
 mise run lab:up        # start the virtual lab
+mise run lab:top       # read the plan of each install (a) and approve it (y)
 ```
 
-- Lab walkthrough: [lab/README.md](lab/README.md)
+- Lab walkthrough: [Your first cluster in the lab](https://metal.platform-kit.org/learn/lab-first-cluster/)
 - One real server: [First real server](https://metal.platform-kit.org/learn/first-real-server/)
 - Your own cluster: [Install the operator](https://metal.platform-kit.org/operate/day-1/install-operator/)
 

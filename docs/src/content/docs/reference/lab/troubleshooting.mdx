@@ -7,12 +7,9 @@ xref: { cat: lab, id: page/troubleshooting }
 sidebar:
   order: 9
 sources:
-  - /repo/lab/README.md
   - /repo/lab/lab.sh
   - /repo/lab/net.sh
 ---
-
-import Callout from '../../../../components/Callout.astro';
 
 Start with [](lab:status). The column `BLOCKED` shows what each Host, operation and endpoint waits for.
 Then collect the logs with [](lab:collect).
@@ -186,6 +183,8 @@ export TALOSCONFIG=$PWD/.lab/talosconfig
 | `talosctl -n 10.77.0.12 get addresses` | The addresses. Also: `get links`, `get routes`, `get disks` |
 | `talosctl -n 10.77.0.12 --insecure get disks` | The disks of a machine in maintenance mode |
 
+On a real machine, the console is the serial-over-LAN of the BMC, for example `ipmitool -I lanplus -H <bmc> -U <user> sol activate`.
+
 To examine the management cluster, use the kubeconfig of the lab:
 
 ```sh
@@ -232,10 +231,29 @@ For a real site, see [](howto:collect-diagnostics).
    mise run lab:up
    ```
 
-<Callout type="note">
-Delete the directory `.lab/` only if you also want a new Talos secrets bundle and an empty image cache.
-The next start then downloads the installer image again.
-</Callout>
+## Remove the lab
+
+`lab:down` and `lab:reset` keep the directory `.lab/` and the container images on the workstation.
+
+1. Stop the lab and delete the disks.
+
+   ```sh
+   mise run lab:down && mise run lab:reset
+   ```
+
+2. Delete the directory `.lab/`. The next start makes a new Talos secrets bundle and downloads the installer image again.
+
+   ```sh
+   rm -rf .lab
+   ```
+
+3. Delete the operator images. The lab builds a new image after each change of the source code.
+
+   ```sh
+   docker image ls --format '{{.Repository}}:{{.Tag}}' | grep -E '(^|/)pk-metal:' | xargs -r docker image rm
+   ```
+
+Other projects can use the build cache of Docker and the images `kindest/node`, `golang` and `registry`. Remove them only if no other project uses them.
 
 ## Related pages
 

@@ -72,7 +72,8 @@ environment variables:
                         seconds a day-2 rollout may take (default: 2400)
   PK_LAB_KIND_CONFIG    the kind cluster definition (default: <repo>/lab/kind.yaml);
                         a copy with another node image is how a host still on
-                        cgroup v1 runs the lab, see lab/README.md"
+                        cgroup v1 runs the lab, see
+                        https://metal.platform-kit.org/reference/lab/troubleshooting/#the-kind-cluster-does-not-start"
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 # shellcheck source=lab/distro.sh
@@ -473,7 +474,7 @@ doctor() {
     check "NO_PROXY includes the lab network 10.77.0.0/24 (a proxy is set)" \
       "export NO_PROXY=\"\${NO_PROXY:+\$NO_PROXY,}10.77.0.0/24,localhost,127.0.0.1,.local\"; export no_proxy=\"\$NO_PROXY\" (add the kind network too: docker network inspect kind --format '{{range .IPAM.Config}}{{.Subnet}} {{end}}')" \
       no_proxy_covers_lab || missing=$((missing + 1))
-    note "a proxy is set. The operator in kind gets it from lab:up; the Talos machines do not: see 'Behind a proxy' in lab/README.md."
+    note "a proxy is set. The operator in kind gets it from lab:up; the Talos machines do not: see https://metal.platform-kit.org/reference/lab/network/#behind-a-proxy"
   fi
   reach "$root" "$spec" || missing=$((missing + 1))
 
@@ -896,9 +897,8 @@ up() {
   cat >&2 <<EOF
 
 The lab is up. The operator now enrolls the machines and proposes to boot them.
-  watch it:      mise run lab:status
-  let it happen: mise run lab:approve     (the one human step)
-  afterwards:    mise run lab:kubeconfig
+  watch and approve: mise run lab:top   (a shows a plan, y approves it)
+  afterwards:        mise run lab:kubeconfig
 EOF
 }
 
@@ -956,7 +956,7 @@ approve() {
   require_cluster "$lab_dir"
   count=$(approve_pending "$root" "$lab_dir")
   if (( count == 0 )); then
-    echo "no operation waits for approval" >&2
+    echo "no operation waits for approval yet. Run it again when mise run lab:status shows AwaitingApproval (or approve in mise run lab:top)." >&2
   else
     echo "approved $count operation(s)" >&2
   fi
@@ -1848,7 +1848,7 @@ registry_up() {
     echo "  runs, reusing it" >&2
     return 0
   fi
-  docker rm --force "$REGISTRY_CONTAINER" >/dev/null 2>&1 || true
+  docker rm --force --volumes "$REGISTRY_CONTAINER" >/dev/null 2>&1 || true
   docker run --detach --name "$REGISTRY_CONTAINER" \
     --publish "127.0.0.1:$port:5000" --publish "$registry:5000" "$REGISTRY_IMAGE" >&2 \
     || die "docker could not start the registry ($REGISTRY_IMAGE). Its message above says why.
@@ -1857,7 +1857,7 @@ registry_up() {
 
 registry_down() {
   if have docker; then
-    docker rm --force "$REGISTRY_CONTAINER" >/dev/null 2>&1 || true
+    docker rm --force --volumes "$REGISTRY_CONTAINER" >/dev/null 2>&1 || true
   fi
 }
 
@@ -2138,9 +2138,12 @@ EOF
   backup_volume_copy "$namespace" "$deployment" "$key" "$dir/snapshot.db.age"
   "$cli" backup decrypt --in "$dir/snapshot.db.age" --identity "$dir/identity.txt" >&2
   impersonating_kubeconfig "$lab_dir/kubeconfig" "$dir/restorer.kubeconfig" lab-restorer
+  # The restore operations have fixed names and stay after they finish. The
+  # plan refuses to propose over those of an earlier round, so delete them.
+  kubectl -n "$namespace" delete hostoperations --selector "os.platform-kit.org/etcd-restore=$cluster_name" >&2
   # A control plane comes back from the reset some time after; until every
-  # one answers, the plan may propose nothing. Proposing again is harmless:
-  # an operation that exists is left as it is.
+  # one answers, the plan may propose nothing. Proposing again keeps the
+  # operation that an earlier pass proposed.
   while true; do
     KUBECONFIG=$dir/restorer.kubeconfig "$cli" restore plan --snapshot "$snap" --propose "$cluster_name" >&2 || true
     op=$(kubectl -n "$namespace" get hostoperations --selector "os.platform-kit.org/etcd-restore=$cluster_name" --output json \

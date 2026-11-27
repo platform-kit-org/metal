@@ -130,7 +130,7 @@ talosctl --nodes 10.77.0.11 etcd members
    mise run lab:approve
    ```
 
-4. Do step 3 again until `mise run lab:status` shows no operation that waits. The control planes leave one at a time.
+4. Do step 3 again until etcd has one member, as the checkpoint below shows. The operator proposes the second removal only when the first one is complete.
 
 <Callout type="warning">
 Do not remove a control plane from a cluster that has data you must keep, before you have a backup.
@@ -240,6 +240,7 @@ You move `node-2` from the Host `pklab0002` to the free Host `pklab0005`, as you
    ```
 
 5. Change the disk and the network link of the [](kind:TalosNode) to the values of the new machine, as the admin.
+   The old machine still answers, so do this after its release. An earlier change makes the operator propose a Config rollout for the old machine.
    The API server sets the annotation `metal.platform-kit.org/requested-by` to `lab-admin`.
 
    ```sh

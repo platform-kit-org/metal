@@ -20,6 +20,10 @@
    "out": "[[b|== pk-metal pivot to TalosCluster lab]]"
   },
   {
+   "at": 4.65,
+   "out": "  the manager on admin@lab settled: no new operation in 1m30s"
+  },
+  {
    "at": 4.95,
    "out": "[[b|== deleting the kind cluster pk-metal]]"
   },

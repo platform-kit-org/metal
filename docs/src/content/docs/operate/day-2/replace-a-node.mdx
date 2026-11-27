@@ -44,6 +44,7 @@ Run a node on other hardware, with the same node name.
 <Steps>
 
 1. Edit the TalosNode to the values of the new machine: `installDiskSelector` and the link `hardwareAddr`.
+   If the old machine still answers, do this step when its release is complete, before step 4. An earlier change makes the operator propose a Config rollout for the old machine.
 
    ```sh
    kubectl apply -f nodes/cp-2.yaml

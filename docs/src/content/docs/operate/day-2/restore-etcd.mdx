@@ -13,9 +13,7 @@ sources:
 
 import { Steps } from '@astrojs/starlight/components';
 import Callout from '../../../../components/Callout.astro';
-import Explainer from '../../../../components/Explainer.astro';
-import Box from '../../../../components/diagram/Box.astro';
-import Edge from '../../../../components/diagram/Edge.astro';
+import DisasterRecovery from '../../../../components/explainers/DisasterRecovery.astro';
 
 ## Goal
 
@@ -74,34 +72,7 @@ Repair one member at a time. With three control planes, a second lost member is 
 
 ## Majority lost
 
-<Explainer
-  title="Restore from a snapshot"
-  steps={[
-    { title: 'Plan', caption: 'The plan picks the newest verified snapshot and one control plane. It shows when the snapshot was taken.', code: 'pk-metal restore plan prod --propose', state: { you: 'active', snap: 'active' } },
-    { title: 'Reset', caption: 'An approved reset wipes the etcd data on each control plane that runs a stuck etcd.', code: 'prod-etcd-reset-cp-2, prod-etcd-reset-cp-3', state: { cp2: 'warn', cp3: 'warn' }, text: { 'cp2-s': 'reset', 'cp3-s': 'reset' } },
-    { title: 'Upload', caption: 'After the approval, you decrypt the snapshot on your workstation and stream it to cp-1. The plain data never touches a disk.', code: 'pk-metal restore upload pk-metal/prod-etcd-recover-cp-1 --identity ~/.config/age/keys.txt', state: { you: 'active', up: 'flow', cp1: 'active', snap: 'done' }, text: { 'cp2-s': 'no etcd', 'cp3-s': 'no etcd', 'cp1-s': 'snapshot received' } },
-    { title: 'Recover', caption: 'etcdRecover starts etcd on cp-1 from the snapshot, one time.', state: { cp1: 'ok' }, text: { 'cp1-s': 'etcd running', 'cp2-s': 'no etcd', 'cp3-s': 'no etcd' } },
-    { title: 'Join', caption: 'The other control planes join the restored member. Bootstrapped is True again.', state: { cp1: 'ok', cp2: 'ok', cp3: 'ok', j2: 'flow', j3: 'flow' }, text: { 'cp1-s': 'etcd running', 'cp2-s': 'joined', 'cp3-s': 'joined' } },
-  ]}
->
-  <svg viewBox="0 0 720 220" role="img" aria-labelledby="ex-rs-t" xmlns="http://www.w3.org/2000/svg" class="pk-stage-svg">
-    <title id="ex-rs-t">A restore resets the stuck members and uploads the snapshot to one control plane. etcd starts there and the others join.</title>
-    <defs>
-      <marker id="pk-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-        <path d="M0 0 10 5 0 10z" fill="context-stroke"></path>
-      </marker>
-    </defs>
-    <Box node="snap" x={20} y={20} w={180} h={50} label="EtcdSnapshot" sub="Verified" cat="kind" href="/reference/kinds/etcdsnapshot/" />
-    <Box node="you" x={20} y={130} w={180} h={50} label="Your workstation" sub="age identity" variant="soft" />
-    <Box node="cp1" x={300} y={130} w={130} h={50} label="cp-1" sub="no quorum" text="cp1-s" />
-    <Box node="cp2" x={450} y={130} w={120} h={50} label="cp-2" sub="no quorum" text="cp2-s" />
-    <Box node="cp3" x={590} y={130} w={120} h={50} label="cp-3" sub="no quorum" text="cp3-s" />
-    <Edge node="up" points={[[200, 155], [300, 155]]} label="upload" at={[250, 148]} />
-    <Edge node="j2" points={[[510, 130], [510, 100], [380, 100], [380, 130]]} label="join" at={[445, 94]} />
-    <Edge node="j3" points={[[650, 130], [650, 86], [400, 86], [400, 130]]} />
-    <Edge points={[[110, 70], [110, 130]]} variant="muted" label="download" at={[118, 104]} anchor="start" />
-  </svg>
-</Explainer>
+<DisasterRecovery start={4} />
 
 <Steps>
 
@@ -214,7 +185,7 @@ Give the file to `pk-metal restore upload --from-file`, or decrypt it with `pk-m
 
 ## Verify
 
-- `kubectl get taloscluster prod` shows `Bootstrapped=True` and `Available=True`.
+- `pk-metal status` shows `EtcdRunning` in `ETCD` and `ClusterAvailable` in `AVAILABLE` for `prod`.
 - `pk-metal restore plan prod` reports that each member is healthy.
 
 ## If it fails

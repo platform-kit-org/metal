@@ -36,6 +36,10 @@
    "out": "[[b|== restoring lab-dr-manual-20260115-101502]]"
   },
   {
+   "at": 8.3,
+   "out": "note: restores snapshot lab-dr-manual-20260115-101502 (taken 2026-01-15T10:15:02Z from node-1, sha256:3f9a...); every change made to the cluster after it is lost"
+  },
+  {
    "at": 9.1,
    "out": "[[b|== waiting for lab-etcd-recover-node-1 and for etcd]]"
   },

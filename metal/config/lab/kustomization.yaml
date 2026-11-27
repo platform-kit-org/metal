@@ -10,7 +10,7 @@ resources:
   - admins.yaml
   - metrics_reader.yaml
 # The lab can install a machine behind a one-slot BMC, which needs the media
-# store (lab/README.md).
+# store (https://metal.platform-kit.org/reference/lab/simulated-bmc/#one-slot-bmc).
 components:
   - ../media-store
 patches:

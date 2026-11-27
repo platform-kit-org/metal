@@ -50,7 +50,7 @@ Each alert links to one runbook in its `runbook_url` annotation.
 | `Aborted` | Operation phase | [](rb:operation-failed) |
 | `OperationQueued`, `OutsideMaintenanceWindow`, `ClusterDisruption`, `SelfDisruption` | Operation `BLOCKED` | [](rb:operation-held) |
 | `HeldByUser`, `HostInMaintenance`, `EtcdJoinWaiting`, `EtcdRiskRefused`, `RemovalWaiting` | Claim `BLOCKED` | [](rb:operation-held) |
-| `RolloutRefused` | Operation `Executed=False` | [](rb:operation-held) |
+| `RolloutRefused`, `WaiverRefused`, `HostNotClaimed` | Operation `Failed` | [](rb:operation-failed) |
 | A drain step failed, the node stays cordoned | Operation message | [](rb:drain-stuck) |
 | `Running` in the same step for hours | Operation, `pk_metal_operation_running_seconds` | [](rb:operation-stuck) |
 

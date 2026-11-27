@@ -15,7 +15,7 @@ import Callout from '../../../../components/Callout.astro';
 
 <dl>
   <dt>[](kind:HostOperation) phase</dt>
-  <dd>`Failed`. The condition `Executed=False` has the reason `StepFailed`.</dd>
+  <dd>`Failed`. The condition `Executed=False` has the reason `StepFailed`. When no step ran, the reason is `RolloutRefused`, `WaiverRefused` or `HostNotClaimed`.</dd>
   <dt>Claim</dt>
   <dd>`BLOCKED` shows `OperationFailed` or `ReleaseFailed`.</dd>
   <dt>Host</dt>
@@ -56,6 +56,7 @@ The operation stopped at the failed step. Steps before it stay done. The operato
 | [](act:TalosUpgrade) | "did not take": Talos went back to the old image | Read the node console. |
 | [](act:FlashFirmware), [](act:ApplyBios) | The BMC refused the change, or reported success and did not change (`ConvergenceFailed`) | Check the firmware image and the vendor notes. |
 | [](act:WaitEtcdHealthy) | etcd did not become healthy | [](rb:etcd-unhealthy) |
+| No step ran: `RolloutRefused`, `WaiverRefused`, `HostNotClaimed` | The message says why. The machine did not change. | For `RolloutRefused`, see [](rb:rollout-paused). |
 
 ## Fix
 

@@ -44,7 +44,7 @@ spec:
         - alert: PkMetalOperationBlocked
           # Queued behind another operation or waiting for a maintenance
           # window is the plan working. Every other reason waits for a person:
-          # the cluster guard, the manager's own node, a rollout's refusal.
+          # the cluster guard, the manager's own node.
           expr: max by (namespace, operation, host, reason) (pk_metal_operation_blocked{reason!~"OperationQueued|OutsideMaintenanceWindow"}) == 1
           for: 1h
           labels:

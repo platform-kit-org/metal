@@ -93,7 +93,7 @@ metadata:
 spec:
   cid: "ASSET-07"
   serial: "SIMHW2288V5000397"
-  bmcMac: "02:00:48:0b:74:83"
+  bmcMac: "0c:c4:7a:12:34:56"
   vlan: 100
   credentialsRef:
     name: ibmc-factory
@@ -111,7 +111,7 @@ stringData:
 The ledger must have a line for the MAC address:
 
 ```yaml
-"02:00:48:0b:74:83": https://[2001:db8:0:100::14]
+"0c:c4:7a:12:34:56": https://[2001:db8:0:100::14]
 ```
 
 ## Make sure that an Asset has its endpoint
@@ -127,8 +127,8 @@ The ledger must have a line for the MAC address:
    ```console
    $ kubectl get assets
    NAME       CID        SERIAL              BMC MAC             ENDPOINT               AGE
-   asset-07   ASSET-07   SIMHW2288V5000397   02:00:48:0b:74:83   EndpointMaterialized   2m
-   asset-08   ASSET-08   SIMHW2288V5000398   02:00:48:0b:74:84   NoLedgerEntry          2m
+   asset-07   ASSET-07   SIMHW2288V5000397   0c:c4:7a:12:34:56   EndpointMaterialized   2m
+   asset-08   ASSET-08   SIMHW2288V5000398   0c:c4:7a:12:34:59   NoLedgerEntry          2m
    ```
 
 3. If the reason is not `EndpointMaterialized`, read the message.

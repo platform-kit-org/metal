@@ -10,7 +10,7 @@ metadata:
 spec:
   cid: "ASSET-07"
   serial: "SIMHW2288V5000397"
-  bmcMac: "02:00:48:0b:74:83"
+  bmcMac: "0c:c4:7a:12:34:56"
   vlan: 100
   credentialsRef:
     name: ibmc-factory

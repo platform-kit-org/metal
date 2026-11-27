@@ -10,7 +10,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
-	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
 )
 
 // clusterStatus is one TalosCluster row of -o json.
@@ -86,15 +85,15 @@ func backedUp(policies []osv1alpha1.EtcdBackupPolicy, cluster string) (state, ms
 	return clusterCond([]metav1.Condition{*worst}, osv1alpha1.ConditionBackedUp)
 }
 
-// addClusters fills the cluster and node tables. Hosts give the NODE table
-// its HOST column (the Host whose spec.os names the node); the backup
-// policies its BACKUP column.
-func addClusters(rep *statusReport, clusters []osv1alpha1.TalosCluster, nodes []osv1alpha1.TalosNode, hosts []metalv1alpha1.Host,
+// addClusters fills the cluster and node tables. The HOST rows give the
+// NODE table its HOST column, so that both tables join a host and its node
+// the same way; the backup policies give the BACKUP column.
+func addClusters(rep *statusReport, clusters []osv1alpha1.TalosCluster, nodes []osv1alpha1.TalosNode,
 	policies []osv1alpha1.EtcdBackupPolicy) {
 	hostOf := map[string]string{}
-	for _, h := range hosts {
-		if h.Spec.OS != nil {
-			hostOf[h.Spec.OS.NodeRef.Name] = h.Name
+	for _, h := range rep.Hosts {
+		if h.Node != nil {
+			hostOf[h.Node.Name] = h.Name
 		}
 	}
 	running := map[string][]string{}
@@ -165,12 +164,6 @@ func addClusters(rep *statusReport, clusters []osv1alpha1.TalosCluster, nodes []
 	slices.SortFunc(rep.Nodes, func(a, b talosNodeStatus) int {
 		return cmpJoin(a.Cluster, a.Name, b.Cluster, b.Name)
 	})
-	for _, r := range rep.Clusters {
-		rep.NeedsAttention = rep.NeedsAttention || r.NeedsAttention
-	}
-	for _, r := range rep.Nodes {
-		rep.NeedsAttention = rep.NeedsAttention || r.NeedsAttention
-	}
 }
 
 func cmpJoin(a1, a2, b1, b2 string) int {
@@ -180,40 +173,29 @@ func cmpJoin(a1, a2, b1, b2 string) int {
 	return strings.Compare(a2, b2)
 }
 
-// renderClusters prints the CLUSTER and NODE tables, or nothing when there
-// is no cluster and no node (a rack without the OS kinds in use).
-func renderClusters(rep statusReport, section func(string, [][]string, []string)) {
-	if len(rep.Clusters) > 0 {
-		var rows [][]string
-		var notes []string
-		for _, c := range rep.Clusters {
-			running := strings.Join(c.TalosVersionsRunning, ",")
-			bootstrapped := "-"
-			if c.BootstrappedAt != "" {
-				bootstrapped = c.BootstrappedAt
-			}
-			rows = append(rows, []string{c.Name,
-				orDash(c.TalosVersion) + " / " + orDash(running),
-				orDash(c.KubernetesVersion) + " / " + orDash(c.KubernetesVersionRunning),
-				fmt.Sprintf("%d/%d", c.ReadyControlPlanes, c.ControlPlanes),
-				fmt.Sprintf("%d/%d", c.ReadyWorkers, c.Workers),
-				orDash(c.Etcd), bootstrapped, orDash(c.Backup), orDash(c.Available)})
-			if c.NeedsAttention {
-				notes = append(notes, note(c.Name, c.Message, "needs attention"))
-			}
+// clusterTables are the CLUSTER and NODE tables; each is empty when there is
+// no cluster or no node (a rack without the OS kinds in use).
+func clusterTables(rep statusReport) []table {
+	clusters := table{header: "CLUSTER\tTALOS WANT/RUN\tK8S WANT/RUN\tCP\tWORKERS\tETCD\tBOOTSTRAPPED\tBACKUP\tAVAILABLE"}
+	for _, c := range rep.Clusters {
+		running := strings.Join(c.TalosVersionsRunning, ",")
+		bootstrapped := "-"
+		if c.BootstrappedAt != "" {
+			bootstrapped = c.BootstrappedAt
 		}
-		section("CLUSTER\tTALOS WANT/RUN\tK8S WANT/RUN\tCP\tWORKERS\tETCD\tBOOTSTRAPPED\tBACKUP\tAVAILABLE", rows, notes)
+		clusters.row(c.Name,
+			orDash(c.TalosVersion)+" / "+orDash(running),
+			orDash(c.KubernetesVersion)+" / "+orDash(c.KubernetesVersionRunning),
+			fmt.Sprintf("%d/%d", c.ReadyControlPlanes, c.ControlPlanes),
+			fmt.Sprintf("%d/%d", c.ReadyWorkers, c.Workers),
+			orDash(c.Etcd), bootstrapped, orDash(c.Backup), orDash(c.Available))
+		clusters.noteIf(c.NeedsAttention, c.Name, c.Message, "needs attention")
 	}
-	if len(rep.Nodes) > 0 {
-		var rows [][]string
-		var notes []string
-		for _, n := range rep.Nodes {
-			rows = append(rows, []string{n.Name, orDash(n.Cluster), orDash(n.Role), orDash(n.Host), orDash(n.Address),
-				orDash(n.Version), orDash(n.Stage), orDash(n.Ready)})
-			if n.NeedsAttention {
-				notes = append(notes, note(n.Name, n.Message, "not Ready"))
-			}
-		}
-		section("NODE\tCLUSTER\tROLE\tHOST\tADDRESS\tVERSION\tSTAGE\tREADY", rows, notes)
+	nodes := table{header: "NODE\tCLUSTER\tROLE\tHOST\tADDRESS\tVERSION\tSTAGE\tREADY"}
+	for _, n := range rep.Nodes {
+		nodes.row(n.Name, orDash(n.Cluster), orDash(n.Role), orDash(n.Host), orDash(n.Address),
+			orDash(n.Version), orDash(n.Stage), orDash(n.Ready))
+		nodes.noteIf(n.NeedsAttention, n.Name, n.Message, "not Ready")
 	}
+	return []table{clusters, nodes}
 }

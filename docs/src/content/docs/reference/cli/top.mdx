@@ -38,7 +38,7 @@ The command takes no arguments. It needs a terminal. In a script, use [](cli:sta
 
 <dl>
   <dt>Header</dt>
-  <dd>Each [](kind:TalosCluster) and the number of its nodes that are Ready.</dd>
+  <dd>The number of nodes that are Ready, each [](kind:TalosCluster), and each [](kind:TalosRollout) that did not succeed. The count `needs a person` is the number of machines, BMCs, claims, clusters and rollouts that need a person in [](cli:status). This command does not read [](kind:EtcdBackupPolicy) objects, so only [](cli:status) shows a backup that is too old.</dd>
   <dt>Tile</dt>
   <dd>One machine in four lines. The lines show its name and a mark for each step from the BMC to the node. They also show the phase of the [](kind:Host), its block, and the operation or the node.</dd>
   <dt>Detail panel</dt>
@@ -60,7 +60,7 @@ Without `--fleet`, the command works the same with real hardware.
 | <kbd>Tab</kbd>, arrows | Select a machine. |
 | <kbd>a</kbd> | Show the plan of the operation that waits for approval. Then <kbd>y</kbd> approves it. All other keys change nothing. |
 | <kbd>h</kbd> | Hold the claim of the machine, or remove the hold. |
-| <kbd>r</kbd> | Retry the failed operation of the machine. |
+| <kbd>r</kbd> | Retry the failed or aborted operation of the machine. |
 | <kbd>q</kbd>, <kbd>Escape</kbd> | Stop the program. |
 
 The key <kbd>a</kbd> follows the rules of [](cli:approve).
@@ -92,7 +92,7 @@ In the lab, [](lab:up) prints this command with the correct paths.
 | Object | Access | Purpose |
 | --- | --- | --- |
 | [](kind:Host), [](kind:ManagementEndpoint), [](kind:HostClaim), [](kind:HostOperation) | list, watch | The tiles. |
-| [](kind:TalosCluster), [](kind:TalosNode) | list, watch | The header and the node line. |
+| [](kind:TalosCluster), [](kind:TalosNode), [](kind:TalosRollout) | list, watch | The header. |
 | [](kind:HostOperation) | patch, delete | The keys <kbd>a</kbd> and <kbd>r</kbd>. |
 | [](kind:HostClaim) | patch | The key <kbd>h</kbd>. |
 | Nodes of the workload cluster | list, watch | Only with [`--workload-kubeconfig`](cli:top#--workload-kubeconfig). |

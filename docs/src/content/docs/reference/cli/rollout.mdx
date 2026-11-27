@@ -34,7 +34,7 @@ The operator proposes a rollout. It does not start one. A person approves the pl
 
 | Subcommand | Effect |
 | --- | --- |
-| `list` | Shows each rollout with its cluster, kind, target, progress and state. The newest is last. |
+| `list` | Shows each rollout by name, with its cluster, kind, target, progress and state. The state is the same as in [](cli:status). |
 | `show` | Shows the plan: each node in order, the change, if the node reboots, and the progress. |
 | `approve` | Shows the plan, asks, and approves this plan. |
 | `resume` | Continues after a pause. |
@@ -55,7 +55,7 @@ The plan puts control planes first, one at a time. Workers follow.
 ### approve
 
 1. The command asks the API server for your user name.
-2. It reads the rollout. It refuses a rollout that has an approval, that a person aborted, or that has no plan. It also refuses a rollout that you proposed if your site forbids self-approval and you can read the ConfigMap `hostoperation-approval`. Otherwise the API server decides.
+2. It reads the rollout. It refuses a rollout that has an approval, that ended, that a person aborted, or that has no plan. It also refuses a rollout that you proposed if your site forbids self-approval and you can read the ConfigMap `hostoperation-approval`. Otherwise the API server decides.
 3. It prints the plan and asks `Approve plan <hash> as <user>? [y/N]`. The question waits five minutes.
 4. After a yes, it reads the rollout again. The object and the hash of the plan must be the same, and you must still be able to approve it.
 5. It writes your user name and the hash of the plan into `spec.approval`. The patch names the object (`uid`) and its version (`resourceVersion`), so the API server refuses it if the rollout changed after the read.
@@ -91,8 +91,8 @@ replay
 mark={['Approve plan']}
 text={`
     $ pk-metal rollout list
-    ROLLOUT                    CLUSTER  KIND          TARGET         NODES  STATE             APPROVED BY  AGE
-    lab-talosupgrade-1a2b3c4d  lab      TalosUpgrade  Talos v1.14.7  0/5    AwaitingApproval  -            2m
+    ROLLOUT                    CLUSTER  KIND          TARGET         NODES  STATE             APPROVED  AGE
+    lab-talosupgrade-1a2b3c4d  lab      TalosUpgrade  Talos v1.14.7  0/5    AwaitingApproval  -         2m
     $ pk-metal rollout approve lab-talosupgrade-1a2b3c4d
     rollout lab-talosupgrade-1a2b3c4d: TalosUpgrade on cluster lab to Talos v1.14.7
       proposed by system:serviceaccount:pk-metal:pk-metal

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -42,8 +43,10 @@ func planned() *osv1alpha1.TalosRollout {
 				step("worker-1", "pk0003", osv1alpha1.RoleWorker),
 			},
 			PlanHash: planHash,
-			Conditions: []metav1.Condition{{Type: osv1alpha1.ConditionPlanned, Status: metav1.ConditionTrue,
-				Reason: osv1alpha1.ReasonPlanReady, Message: "3 nodes"}},
+			Conditions: []metav1.Condition{
+				{Type: osv1alpha1.ConditionPlanned, Status: metav1.ConditionTrue, Reason: osv1alpha1.ReasonPlanReady, Message: "3 nodes"},
+				{Type: osv1alpha1.ConditionApproved, Status: metav1.ConditionFalse, Reason: osv1alpha1.ReasonAwaitingApproval},
+			},
 		},
 	}
 }
@@ -58,13 +61,26 @@ func TestRenderRollout(t *testing.T) {
 	assert.Less(t, strings.Index(out, "cp-2"), strings.Index(out, "worker-1"), "the order is the plan's order")
 }
 
+// rollout list says what status and the metric say: an abort that waits for
+// a running step reads as the controller's reason, Aborted.
 func TestListRollouts(t *testing.T) {
-	cl := fakeClient(planned())
-	var out bytes.Buffer
-	require.NoError(t, listRollouts(context.Background(), cl, &out, time.Date(2030, 1, 1, 13, 0, 0, 0, time.UTC)))
-	assert.Contains(t, out.String(), "lab-talosupgrade-1a2b3c4d")
-	assert.Contains(t, out.String(), "0/3")
-	assert.Contains(t, out.String(), "AwaitingApproval")
+	aborting := planned()
+	aborting.Name, aborting.UID, aborting.Spec.Abort = "lab-talosupgrade-0f0f0f0f", "u0", true
+	aborting.Spec.Approval = osv1alpha1.RolloutApproval{ApprovedBy: "alice", PlanHash: planHash}
+	aborting.Status.Conditions = append(aborting.Status.Conditions[:1], metav1.Condition{Type: osv1alpha1.ConditionProgressing,
+		Status: metav1.ConditionTrue, Reason: osv1alpha1.ReasonRolloutAborted, Message: "waiting for 1 running step(s)"})
+	now := time.Date(2030, 1, 1, 13, 0, 0, 0, time.UTC)
+	var out, errOut bytes.Buffer
+	require.NoError(t, listRollouts(context.Background(), fakeClient(), &out, &errOut, now))
+	assert.Empty(t, out.String(), "a script that reads the rows gets none")
+	assert.Equal(t, "no rollouts\n", errOut.String())
+
+	cl := fakeClient(planned(), aborting)
+	require.NoError(t, listRollouts(context.Background(), cl, &out, io.Discard, now))
+	assert.Regexp(t, `(?m)^ROLLOUT\s+CLUSTER\s+KIND\s+TARGET\s+NODES\s+STATE\s+APPROVED\s+AGE$`, out.String())
+	assert.Regexp(t, `(?m)^lab-talosupgrade-0f0f0f0f\s+lab\s+TalosUpgrade\s+Talos v1.14.7\s+0/3\s+Aborted\s+alice\s+1h\n`+
+		`lab-talosupgrade-1a2b3c4d\s+lab\s+TalosUpgrade\s+Talos v1.14.7\s+0/3\s+AwaitingApproval\s+-\s+1h$`, out.String(),
+		"by name, as status sorts")
 }
 
 func TestApproveRollout(t *testing.T) {
@@ -100,6 +116,10 @@ func TestApproveRollout(t *testing.T) {
 		done := planned()
 		done.Spec.Approval = osv1alpha1.RolloutApproval{ApprovedBy: "bob", PlanHash: planHash}
 		assert.ErrorContains(t, approvableRollout(done), "already approved by bob")
+		moved := planned()
+		moved.Status.Conditions = append(moved.Status.Conditions, metav1.Condition{Type: osv1alpha1.ConditionComplete,
+			Status: metav1.ConditionFalse, Reason: osv1alpha1.ReasonPlanChanged, Message: "the plan changed before approval"})
+		assert.ErrorContains(t, approvableRollout(moved), "has ended (PlanChanged: the plan changed before approval)")
 	})
 	t.Run("no terminal and no --yes", func(t *testing.T) {
 		cl := fakeClient(planned())
@@ -255,6 +275,41 @@ func TestUpgrade(t *testing.T) {
 		require.NoError(t, cl.Get(ctx, client.ObjectKey{Name: "lab"}, c))
 		assert.Equal(t, "v1.14.6", c.Spec.TalosVersion)
 		assert.Equal(t, "v1.36.2", c.Spec.KubernetesVersion)
+	})
+	t.Run("waits for a complete plan", func(t *testing.T) {
+		blocked := planned()
+		blocked.Status.Conditions[0] = metav1.Condition{Type: osv1alpha1.ConditionPlanned, Status: metav1.ConditionFalse,
+			Reason: osv1alpha1.ReasonPlanBlocked, Message: "node worker-1 has no fresh dry run"}
+		cl := fakeClientAs("bob", cluster(), blocked)
+		var out bytes.Buffer
+		err := upgrade(ctx, cl, "talos", "lab", "v1.14.7", 5*time.Millisecond, time.Millisecond, &out)
+		require.ErrorContains(t, err, "no fresh dry run")
+		assert.NotContains(t, out.String(), "pk-metal rollout approve", "rollout approve refuses a plan that is blocked")
+	})
+	t.Run("shows the ended rollout of a version that the cluster asks for already", func(t *testing.T) {
+		asks := func() *osv1alpha1.TalosCluster {
+			c := cluster()
+			c.Spec.TalosVersion = "v1.14.7"
+			return c
+		}
+		ended := func(s metav1.ConditionStatus, reason string) *osv1alpha1.TalosRollout {
+			ro := planned()
+			ro.Status.Conditions = append(ro.Status.Conditions, metav1.Condition{Type: osv1alpha1.ConditionComplete,
+				Status: s, Reason: reason, Message: "3 of 3 steps"})
+			return ro
+		}
+		var out bytes.Buffer
+		start := time.Now()
+		require.NoError(t, upgrade(ctx, fakeClientAs("bob", asks(), ended(metav1.ConditionTrue, osv1alpha1.ReasonRolloutSucceeded)),
+			"talos", "lab", "v1.14.7", time.Second, time.Millisecond, &out))
+		assert.Less(t, time.Since(start), 500*time.Millisecond, "a rollout that ended is not waited for")
+		assert.Contains(t, out.String(), "state "+osv1alpha1.ReasonRolloutSucceeded)
+
+		out.Reset()
+		err := upgrade(ctx, fakeClientAs("bob", asks(), ended(metav1.ConditionFalse, osv1alpha1.ReasonRolloutFailed)),
+			"talos", "lab", "v1.14.7", time.Second, time.Millisecond, &out)
+		require.ErrorContains(t, err, "delete it to get a new proposal: kubectl delete talosrollout lab-talosupgrade-1a2b3c4d")
+		assert.Contains(t, out.String(), "state "+osv1alpha1.ReasonRolloutFailed)
 	})
 	t.Run("times out when nothing is proposed", func(t *testing.T) {
 		cl := fakeClientAs("bob", cluster())

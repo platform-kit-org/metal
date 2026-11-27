@@ -96,9 +96,9 @@ text={`
     requested snapshot lab-daily-manual-20261124-093000 of cluster lab (policy lab-daily)
     stored and verified: s3://backups/lab/lab-daily-manual-20261124-093000.db.age, 18.4MiB, from cp-1, sha256:3d1f0a9c5b7e42d86a1c0f9e8b7d6c5a4f3e2d1c0b9a8f7e6d5c4b3a29180716
     $ pk-metal backup list lab
-    NAME                              CLUSTER  TAKEN    FROM  SIZE     STATE     LOCATION
-    lab-daily-manual-20261124-093000  lab      12s ago  cp-1  18.4MiB  Verified  s3://backups/lab/lab-daily-manual-20261124-093000.db.age
-    lab-daily-20261124-060000         lab      3h ago   cp-2  18.3MiB  Verified  s3://backups/lab/lab-daily-20261124-060000.db.age
+    NAME                              CLUSTER  TAKEN    FROM  SIZE     STATE     RECIPIENTS  LOCATION
+    lab-daily-manual-20261124-093000  lab      12s ago  cp-1  18.4MiB  Verified  …q8r7s6t5   s3://backups/lab/lab-daily-manual-20261124-093000.db.age
+    lab-daily-20261124-060000         lab      3h ago   cp-2  18.3MiB  Verified  …q8r7s6t5   s3://backups/lab/lab-daily-20261124-060000.db.age
     $ pk-metal backup decrypt lab-daily-20261124-060000 --identity ~/.config/age/keys.txt
     intact etcd snapshot: 18.3MiB, sha256:8a7b6c5d4e3f20112233445566778899aabbccddeeff00112233445566778899, bbolt transaction 48213
 `}

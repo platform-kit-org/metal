@@ -5,10 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -23,8 +26,7 @@ import (
 // rack is a small cluster: one healthy host, one host whose install failed,
 // two BMCs (one dead), a bound claim, a claim that lost the race for its
 // machine, and operations in every phase status shows differently.
-func rack() ([]metalv1alpha1.Host, []metalv1alpha1.ManagementEndpoint, []metalv1alpha1.HostClaim,
-	[]metalv1alpha1.HostOperation, []osv1alpha1.TalosNode) {
+func rack() topInput {
 	hosts := []metalv1alpha1.Host{
 		{
 			ObjectMeta: metav1.ObjectMeta{Name: "simx12b000001"},
@@ -134,12 +136,12 @@ func rack() ([]metalv1alpha1.Host, []metalv1alpha1.ManagementEndpoint, []metalv1
 		ObjectMeta: metav1.ObjectMeta{Name: "node-2"},
 		Spec:       osv1alpha1.TalosNodeSpec{Role: osv1alpha1.RoleWorker, Address: "10.0.0.12"},
 	}}
-	return hosts, eps, claims, ops, nodes
+	return topInput{Hosts: hosts, Endpoints: eps, Claims: claims, Ops: ops, Nodes: nodes}
 }
 
 func TestRenderStatus(t *testing.T) {
-	hosts, eps, claims, ops, nodes := rack()
-	rep := buildReport(hosts, eps, claims, ops, nodes)
+	in := rack()
+	rep := buildStatus(in, nil)
 	out := renderReport(rep)
 
 	// Column content, not tabwriter's widths, is the contract: assert row shapes.
@@ -170,15 +172,15 @@ func TestRenderStatus(t *testing.T) {
 	assert.True(t, rep.NeedsAttention)
 
 	// No unbound claims → no claims section; no unfinished ops → no operations section.
-	out = renderReport(buildReport(hosts, eps, claims[:1], ops[1:2], nodes))
+	in.Claims, in.Ops = in.Claims[:1], in.Ops[1:2]
+	out = renderReport(buildStatus(in, nil))
 	assert.NotContains(t, out, "\nCLAIM")
 	assert.NotContains(t, out, "OPERATION")
 }
 
 // TestStatusJSONShape pins the documented -o json keys: scripts depend on them.
 func TestStatusJSONShape(t *testing.T) {
-	hosts, eps, claims, ops, nodes := rack()
-	b, err := json.Marshal(buildReport(hosts, eps, claims, ops, nodes))
+	b, err := json.Marshal(buildStatus(rack(), nil))
 	require.NoError(t, err)
 
 	var doc map[string]any
@@ -198,8 +200,8 @@ func TestStatusJSONShape(t *testing.T) {
 	assert.Equal(t, true, doc["needsAttention"])
 	assert.ElementsMatch(t, []string{"name", "asset", "vendor", "phase", "claim", "node", "pathsUp", "pathsTotal",
 		"blockedOn", "message", "needsAttention"}, keys(first("hosts")))
-	assert.ElementsMatch(t, []string{"namespace", "name", "host", "phase", "approvedBy", "blockedOn", "message",
-		"needsAttention"}, keys(first("operations")))
+	assert.ElementsMatch(t, []string{"namespace", "name", "host", "phase", "approvedBy", "awaitsApproval", "blockedOn", "message",
+		"needsAttention", "rollout"}, keys(first("operations")))
 	assert.ElementsMatch(t, []string{"name", "asset", "vendor", "phase", "address", "blockedOn", "message",
 		"needsAttention"}, keys(first("endpoints")))
 	assert.ElementsMatch(t, []string{"namespace", "name", "asset", "host", "phase", "blockedOn", "message", "onHold",
@@ -213,35 +215,35 @@ func TestStatusJSONShape(t *testing.T) {
 	assert.Len(t, doc["operations"], 3, "json lists every operation, succeeded ones too")
 
 	// An empty cluster still has every list, as [] and not null.
-	b, err = json.Marshal(buildReport(nil, nil, nil, nil, nil))
+	b, err = json.Marshal(buildStatus(topInput{}, nil))
 	require.NoError(t, err)
 	assert.JSONEq(t, `{"version":1,"needsAttention":false,"hosts":[],"operations":[],"endpoints":[],"claims":[],"clusters":[],"nodes":[],"rollouts":[]}`, string(b))
 }
 
 func TestStatusExitCodes(t *testing.T) {
 	ctx := context.Background()
-	hosts, eps, claims, ops, nodes := rack()
+	in := rack()
 
-	healthy := fakeClient(&hosts[0], &eps[2])
+	healthy := fakeClient(&in.Hosts[0], &in.Endpoints[2])
 	var out bytes.Buffer
 	code, err := runStatus(ctx, healthy, "table", &out)
 	require.NoError(t, err)
 	assert.Equal(t, exitOK, code, out.String())
 
 	var objs []client.Object
-	for i := range hosts {
-		objs = append(objs, &hosts[i])
+	for i := range in.Hosts {
+		objs = append(objs, &in.Hosts[i])
 	}
-	for i := range eps {
-		objs = append(objs, &eps[i])
+	for i := range in.Endpoints {
+		objs = append(objs, &in.Endpoints[i])
 	}
-	for i := range claims {
-		objs = append(objs, &claims[i])
+	for i := range in.Claims {
+		objs = append(objs, &in.Claims[i])
 	}
-	for i := range ops {
-		objs = append(objs, &ops[i])
+	for i := range in.Ops {
+		objs = append(objs, &in.Ops[i])
 	}
-	objs = append(objs, &nodes[0])
+	objs = append(objs, &in.Nodes[0])
 	out.Reset()
 	code, err = runStatus(ctx, fakeClient(objs...), "json", &out)
 	require.NoError(t, err)
@@ -251,7 +253,7 @@ func TestStatusExitCodes(t *testing.T) {
 	assert.True(t, rep.NeedsAttention)
 
 	// Waiting for approval alone needs a person too.
-	code, err = runStatus(ctx, fakeClient(&hosts[0], &eps[2], &ops[0]), "table", &out)
+	code, err = runStatus(ctx, fakeClient(&in.Hosts[0], &in.Endpoints[2], &in.Ops[0]), "table", &out)
 	require.NoError(t, err)
 	assert.Equal(t, exitAttention, code)
 
@@ -265,11 +267,83 @@ func TestStatusExitCodes(t *testing.T) {
 	assert.Equal(t, exitError, code)
 }
 
+// Status says that an operation waits for approval exactly when pk-metal
+// approve lists it: a proposal that the controller did not read yet waits,
+// and an approved operation whose status is old does not.
+func TestStatusAwaitsApprovalAsApproveDoes(t *testing.T) {
+	fresh := metalv1alpha1.HostOperation{ObjectMeta: metav1.ObjectMeta{Namespace: "pk-metal", Name: "fresh"},
+		Spec: metalv1alpha1.HostOperationSpec{HostRef: metalv1alpha1.Reference{Name: "simx12b000001"}}}
+	approved := *fresh.DeepCopy()
+	approved.Name, approved.Spec.Approval.ApprovedBy = "approved", "alice"
+	approved.Status = metalv1alpha1.HostOperationStatus{Phase: metalv1alpha1.OperationAwaitingApproval,
+		BlockedOn: metalv1alpha1.ReasonAwaitingApproval}
+	rep := buildStatus(topInput{Ops: []metalv1alpha1.HostOperation{fresh, approved}}, nil)
+	require.Len(t, rep.Operations, 2)
+	assert.False(t, rep.Operations[0].AwaitsApproval)
+	assert.True(t, rep.Operations[1].AwaitsApproval)
+	assert.True(t, rep.Operations[1].NeedsAttention, "a proposal with no status yet needs a person")
+	out := renderReport(rep)
+	assert.Contains(t, out, "pk-metal/fresh: waits for approval; see the plan and approve: pk-metal approve pk-metal/fresh")
+	assert.NotContains(t, out, "approve pk-metal/approved", "alice approved it already")
+}
+
+// A running operation says which step it is at and what that step waits
+// for, in the controller's words.
+func TestStatusShowsWhyARunningOperationWaits(t *testing.T) {
+	msg := "step 5/9 powerCycle: BMC unavailable, retrying: connection refused"
+	op := metalv1alpha1.HostOperation{ObjectMeta: metav1.ObjectMeta{Namespace: "pk-metal", Name: "run"},
+		Spec: metalv1alpha1.HostOperationSpec{HostRef: metalv1alpha1.Reference{Name: "simx12b000001"},
+			Approval: metalv1alpha1.OperationApproval{ApprovedBy: "alice"}},
+		Status: metalv1alpha1.HostOperationStatus{Phase: metalv1alpha1.OperationRunning, Conditions: []metav1.Condition{{
+			Type: metalv1alpha1.ConditionExecuted, Status: metav1.ConditionUnknown, Reason: metalv1alpha1.ReasonExecuting, Message: msg}}},
+	}
+	rep := buildStatus(topInput{Ops: []metalv1alpha1.HostOperation{op}}, nil)
+	assert.Equal(t, msg, rep.Operations[0].Message)
+	assert.False(t, rep.NeedsAttention, "a running operation is the plan working")
+	assert.Contains(t, renderReport(rep), "\n  pk-metal/run: "+msg+"\n")
+}
+
+// A step of a rollout that failed or was aborted sends the person to the
+// rollout: pk-metal retry deletes the step, and the rollout does not make
+// it again.
+func TestStatusSendsAFailedRolloutStepToTheRollout(t *testing.T) {
+	op := metalv1alpha1.HostOperation{ObjectMeta: metav1.ObjectMeta{Namespace: "pk-metal", Name: "upgrade-cp-1"},
+		Spec: metalv1alpha1.HostOperationSpec{HostRef: metalv1alpha1.Reference{Name: "simx12b000001"},
+			RolloutRef: &metalv1alpha1.RolloutReference{Name: "lab-talosupgrade-1a2b3c4d"}},
+		Status: metalv1alpha1.HostOperationStatus{Phase: metalv1alpha1.OperationFailed}}
+	aborted := *op.DeepCopy()
+	aborted.Name, aborted.Status.Phase = "upgrade-cp-2", metalv1alpha1.OperationAborted
+	rep := buildStatus(topInput{Ops: []metalv1alpha1.HostOperation{op, aborted}}, nil)
+	assert.Equal(t, "lab-talosupgrade-1a2b3c4d", rep.Operations[0].Rollout)
+	out := renderReport(rep)
+	assert.Contains(t, out, "pk-metal/upgrade-cp-1: failed; a step of rollout lab-talosupgrade-1a2b3c4d: pk-metal rollout show lab-talosupgrade-1a2b3c4d\n")
+	assert.Contains(t, out, "pk-metal/upgrade-cp-2: aborted; a step of rollout lab-talosupgrade-1a2b3c4d: pk-metal rollout show lab-talosupgrade-1a2b3c4d\n")
+	assert.NotContains(t, out, "pk-metal retry")
+}
+
+// A kind that the caller may not read fails the command: an empty ROLLOUT
+// table or BACKUP column would read as nothing to do.
+func TestStatusFailsOnAKindItMayNotRead(t *testing.T) {
+	for _, kind := range []client.ObjectList{&osv1alpha1.TalosRolloutList{}, &osv1alpha1.EtcdBackupPolicyList{}} {
+		cl := fake.NewClientBuilder().WithScheme(newScheme()).WithInterceptorFuncs(interceptor.Funcs{
+			List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+				if fmt.Sprintf("%T", list) == fmt.Sprintf("%T", kind) {
+					return apierrors.NewForbidden(schema.GroupResource{Group: "os.platform-kit.org"}, "", errors.New("no rule"))
+				}
+				return c.List(ctx, list, opts...)
+			},
+		}).Build()
+		code, err := runStatus(context.Background(), cl, "json", io.Discard)
+		assert.ErrorContains(t, err, "forbidden", "%T", kind)
+		assert.Equal(t, exitError, code, "%T", kind)
+	}
+}
+
 // TestStatusWithoutOSKinds: a cluster without the TalosNode kind installed
 // still has a status; only the NODE address stays empty.
 func TestStatusWithoutOSKinds(t *testing.T) {
-	hosts, eps, _, _, _ := rack()
-	cl := fake.NewClientBuilder().WithScheme(newScheme()).WithObjects(&hosts[0], &eps[2]).
+	in := rack()
+	cl := fake.NewClientBuilder().WithScheme(newScheme()).WithObjects(&in.Hosts[0], &in.Endpoints[2]).
 		WithInterceptorFuncs(interceptor.Funcs{
 			List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
 				if _, ok := list.(*osv1alpha1.TalosNodeList); ok {

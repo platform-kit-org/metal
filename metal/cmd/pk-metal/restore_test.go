@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -286,7 +287,11 @@ func TestBackupNowAndList(t *testing.T) {
 	require.ErrorContains(t, err, "no EtcdBackupPolicy")
 
 	out.Reset()
-	require.NoError(t, listSnapshots(ctx, cl, "dr", now, &out))
+	var errOut bytes.Buffer
+	require.NoError(t, listSnapshots(ctx, cl, "nope", now, &out, &errOut))
+	assert.Empty(t, out.String(), "a script that reads the rows gets none")
+	assert.Equal(t, "no etcd snapshots\n", errOut.String())
+	require.NoError(t, listSnapshots(ctx, cl, "dr", now, &out, io.Discard))
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
 	require.Len(t, lines, 3)
 	assert.Contains(t, lines[1], "dr-daily-manual-20261124-120000")

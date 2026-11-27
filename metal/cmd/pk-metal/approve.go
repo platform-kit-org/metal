@@ -43,6 +43,9 @@ another person must approve. The operator's own identity never approves.
 Operations live in the operator's namespace, pk-metal. You can give the name
 as it appears in pk-metal status (pk-metal/<name>) or use -n.
 
+Without a name, approve lists the operations that wait for approval, in every
+namespace or only in -n, and approves none. --yes needs a name.
+
 With several names, approve shows the plan of each in turn and asks about
 each one on its own. A no leaves that operation as it is and goes on with the
 next. The exit status is 1 if any of them was not approved.
@@ -71,7 +74,7 @@ func approveCmd(args []string) {
 	yes := fs.Bool("yes", false, "approve without asking (for scripts); the plan is still printed")
 	addGlobalFlags(fs)
 	parseFlags(fs, args)
-	refs, err := approveRefs(fs.Args(), *ns, flagGiven(fs, "n"))
+	refs, err := approveRefs(fs.Args(), *ns, flagGiven(fs, "n"), *yes)
 	if err != nil {
 		badUsage(fs, err.Error())
 	}
@@ -83,7 +86,11 @@ func approveCmd(args []string) {
 	defer stop()
 
 	if len(refs) == 0 {
-		if err := listPending(ctx, cl, os.Stdout, time.Now()); err != nil {
+		listNS := ""
+		if flagGiven(fs, "n") {
+			listNS = *ns
+		}
+		if err := listPending(ctx, cl, listNS, os.Stdout, os.Stderr, time.Now()); err != nil {
 			die(err)
 		}
 		return
@@ -97,14 +104,19 @@ func approveCmd(args []string) {
 	in := oneByteAtATime{os.Stdin}
 	if err := approveAll(ctx, cl, refs, approval{
 		User: user, Yes: *yes, In: in, Interactive: isTerminal(os.Stdin), Out: os.Stdout,
-	}); err != nil {
+	}, os.Stderr); err != nil {
 		die(err)
 	}
 }
 
 // approveRefs reads the operations the command line names, in order, each
 // once. A wrong name stops the command before any plan is shown.
-func approveRefs(args []string, ns string, nsGiven bool) ([]types.NamespacedName, error) {
+func approveRefs(args []string, ns string, nsGiven, yes bool) ([]types.NamespacedName, error) {
+	if len(args) == 0 && yes {
+		// An empty $OP in a script must not list and exit 0.
+		return nil, errors.New("--yes approves only the operations that you name; " +
+			"pk-metal status lists the ones that wait for approval")
+	}
 	var refs []types.NamespacedName
 	for _, arg := range args {
 		namespace, name, err := splitRef(arg, ns, nsGiven)
@@ -123,8 +135,9 @@ func approveRefs(args []string, ns string, nsGiven bool) ([]types.NamespacedName
 // one on its own: one plan, one answer. A no, or an operation that cannot be
 // approved, leaves that one as it is and goes on with the next. A question
 // that cannot be asked at all (no terminal, no answer in time, interrupted)
-// ends the run: the plans not yet shown are not approved.
-func approveAll(ctx context.Context, cl client.Client, refs []types.NamespacedName, tmpl approval) error {
+// ends the run: the plans not yet shown are not approved. The reason that
+// one was not approved goes to errOut, away from the plans.
+func approveAll(ctx context.Context, cl client.Client, refs []types.NamespacedName, tmpl approval, errOut io.Writer) error {
 	var notApproved []string
 	for i, ref := range refs {
 		if i > 0 {
@@ -140,7 +153,7 @@ func approveAll(ctx context.Context, cl client.Client, refs []types.NamespacedNa
 			return err
 		}
 		notApproved = append(notApproved, ref.String())
-		fmt.Fprintf(tmpl.Out, "%s: %v\n", ref, err)
+		fmt.Fprintf(errOut, "%s: %v\n", ref, err)
 		if errors.Is(err, errCannotAsk) || errors.Is(err, errNoAnswer) || ctx.Err() != nil {
 			for _, rest := range refs[i+1:] {
 				notApproved = append(notApproved, rest.String())
@@ -389,15 +402,16 @@ func finished(op *metalv1alpha1.HostOperation) bool { return op.Finished() }
 // waitsForApproval: the operation needs a person and nobody has approved it.
 func waitsForApproval(op *metalv1alpha1.HostOperation) bool { return op.AwaitsApproval() }
 
-// listPending prints one line for each operation that waits for approval.
-func listPending(ctx context.Context, cl client.Client, w io.Writer, now time.Time) error {
+// listPending prints one line for each operation that waits for approval,
+// in namespace (every namespace when empty). The notes go to errOut.
+func listPending(ctx context.Context, cl client.Client, namespace string, w, errOut io.Writer, now time.Time) error {
 	ops := &metalv1alpha1.HostOperationList{}
-	if err := cl.List(ctx, ops); err != nil {
+	if err := cl.List(ctx, ops, client.InNamespace(namespace)); err != nil {
 		return fmt.Errorf("list operations: %w", err)
 	}
 	pending := slices.DeleteFunc(ops.Items, func(op metalv1alpha1.HostOperation) bool { return !waitsForApproval(&op) })
 	if len(pending) == 0 {
-		fmt.Fprintln(w, "no operation waits for approval")
+		fmt.Fprintln(errOut, "no operation waits for approval")
 		return nil
 	}
 	slices.SortFunc(pending, func(a, b metalv1alpha1.HostOperation) int {
@@ -415,7 +429,7 @@ func listPending(ctx context.Context, cl client.Client, w io.Writer, now time.Ti
 	}
 	_ = tw.Flush()
 	first := pending[0].Namespace + "/" + pending[0].Name
-	fmt.Fprintf(w, "\nNothing was approved. Name the operations to see their plans and approve them, for example:\n"+
+	fmt.Fprintf(errOut, "\nNothing was approved. Name the operations to see their plans and approve them, for example:\n"+
 		"  pk-metal approve %s\n", first)
 	return nil
 }

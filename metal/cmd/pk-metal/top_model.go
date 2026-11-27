@@ -134,8 +134,10 @@ func newTopModel(src topSource, act topActions, changes <-chan struct{}, every t
 	return topModel{src: src, act: act, changes: changes, every: every}
 }
 
+// Init starts the one tick loop: each tick reads and schedules the next. A
+// read that a change or a key starts schedules no tick of its own.
 func (m topModel) Init() tea.Cmd {
-	return tea.Batch(m.read(), m.waitChange())
+	return tea.Batch(func() tea.Msg { return topTickMsg{} }, m.waitChange())
 }
 
 // read fetches a new topInput, unless a read is under way.
@@ -181,9 +183,9 @@ func (m topModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.sel >= len(m.data.Tiles) {
 			m.sel = max(0, len(m.data.Tiles)-1)
 		}
-		return m, m.tick()
+		return m, nil
 	case topTickMsg:
-		return m, m.read()
+		return m, tea.Batch(m.read(), m.tick())
 	case topChangeMsg:
 		return m, tea.Batch(m.read(), m.waitChange())
 	case topPlanMsg:
@@ -298,7 +300,7 @@ func (m topModel) key(k string) (tea.Model, tea.Cmd) {
 		})
 	case "r":
 		if t.Op == nil || !t.Op.Failed {
-			m.setStatus(t.Title+": no failed operation to retry", false)
+			m.setStatus(t.Title+": no failed or aborted operation to retry", false)
 			return m, nil
 		}
 		ns, name := t.Op.Namespace, t.Op.Name
@@ -660,8 +662,12 @@ func (t tile) clusterFields() []field {
 		fs = append(fs,
 			field{label: "op", text: t.Op.state().style().Render(t.Op.Step + ", " + t.Op.Approval)},
 			field{text: styleDim.Render(t.Op.Namespace + "/" + t.Op.Name)})
-		if t.Op.Failed && t.Op.Message != "" {
-			fs = append(fs, field{text: styleBad.Render(t.Op.Message), wrap: true})
+		if t.Op.Message != "" {
+			style := styleDim
+			if t.Op.Failed {
+				style = styleBad
+			}
+			fs = append(fs, field{text: style.Render(t.Op.Message), wrap: true})
 		}
 	}
 

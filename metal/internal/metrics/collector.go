@@ -35,7 +35,7 @@ var (
 	descOperations = desc("operations",
 		"HostOperations by phase and action; an operation counts once for each distinct action it carries.", "phase", "action")
 	descOperationFailed = desc("operation_failed",
-		"1 for each HostOperation that failed and still waits for a person (retry or delete).", "namespace", "operation", "host", "reason")
+		"1 for each HostOperation that failed and still waits for a person (retry or delete); a rollout's step reports through rollout_condition.", "namespace", "operation", "host", "reason")
 	descAwaitingApproval = desc("operation_awaiting_approval_seconds",
 		"How long each HostOperation has been waiting for approval.", "namespace", "operation", "host", "reason")
 	descOperationBlocked = desc("operation_blocked",
@@ -170,7 +170,11 @@ func (c *Collector) operations(ctx context.Context, ch chan<- prometheus.Metric,
 		labels := []string{op.Namespace, op.Name, op.Spec.HostRef.Name, op.Spec.Reason}
 		switch {
 		case op.Status.Phase == metalv1alpha1.OperationFailed:
-			gauge(ch, descOperationFailed, 1, labels...)
+			// A rollout's step ends the rollout, and the rollout's series
+			// reports it: pk-metal retry cannot redo the step.
+			if op.Spec.RolloutRef == nil {
+				gauge(ch, descOperationFailed, 1, labels...)
+			}
 		case op.AwaitsApproval():
 			gauge(ch, descAwaitingApproval, now.Sub(op.CreationTimestamp.Time).Seconds(), labels...)
 		case op.Status.BlockedOn != "":

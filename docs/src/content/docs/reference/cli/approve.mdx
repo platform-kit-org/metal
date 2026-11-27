@@ -29,7 +29,7 @@ The operator does not act on a machine before a person approves the plan.
 
 <dl>
   <dt>No argument</dt>
-  <dd>The command lists the operations that wait for approval.</dd>
+  <dd>The command lists the operations that wait for approval and approves none. It lists all namespaces, or only the namespace of `-n`. The table goes to stdout and the notes go to stderr. If you give [`--yes`](cli:approve#--yes) without a name, the command gives code 1.</dd>
   <dt>`<operation>`</dt>
   <dd>The name of the operation, as [](cli:status) prints it: `pk-metal/<name>`, or the name only with `-n`.</dd>
   <dt>`<operation> ...`</dt>
@@ -50,7 +50,7 @@ The operator does not act on a machine before a person approves the plan.
    - The operation has a result.
    - The operation needs no approval.
    - You proposed the operation, and your site forbids self-approval. The command can see this only if you can read the ConfigMap `hostoperation-approval`. If you cannot, the API server refuses the approval.
-3. It reads the [](kind:Host), its BMC paths, the boot assets and the TalosNodes that the plan names. If your rights do not let you read one of them, the plan starts with `INCOMPLETE` and names the kinds. The role `pk-metal-approver` reads them all.
+3. It reads the [](kind:Host), its BMC paths, the boot assets and the TalosNodes that the plan names. If your rights do not let you read one of them, the plan shows a line `INCOMPLETE` that names the kinds. The role `pk-metal-approver` reads them all.
 4. It prints the plan: the machine, the BMC, each [action](act:index) in order, the media and the boot target.
    For an install, the plan also shows the node, its address and the disk that the install overwrites.
    If an annotation lifts a guard for the operation, the plan shows the annotation, its reason and the rule that it lifts.
@@ -98,6 +98,7 @@ It stops when it cannot ask: in a script without [`--yes`](cli:approve#--yes), a
 It then shows no more plans and approves no more operations.
 
 At the end, the command names each operation that it did not approve.
+The plans go to stdout. The reason for each operation that the command did not approve goes to stderr.
 
 ### Without a terminal
 
@@ -186,8 +187,6 @@ pk-metal approve --yes provision-simhw2288v5000397-1a2b3c4d
 | [](kind:Host), [](kind:ManagementEndpoint) | get | Shows the machine and its BMC paths in the plan. |
 | [](kind:BootAsset), [](kind:TalosNode) | get | Shows the media, the node, its address and its install disk. |
 | ConfigMap `pk-metal/hostoperation-approval` | get, optional | Only for your own proposal: reads `selfApproval`. Without access, the API server decides. |
-
-If you have no permission to read one of the last four kinds, the plan says that the object is not found.
 
 ## Exit status
 

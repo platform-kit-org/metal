@@ -9,6 +9,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
@@ -42,6 +43,37 @@ type topInput struct {
 	Consoles map[string][]string
 	// Loading names what is not read yet (a watch that has not synced).
 	Loading []string
+}
+
+// kindList is one kind that status and top read: its name, an object of it
+// for a watch, and the list a read fills. A cluster may lack an optional
+// kind: the OS kinds may not be installed.
+type kindList struct {
+	name     string
+	obj      client.Object
+	list     client.ObjectList
+	optional bool
+}
+
+// kinds are the kinds of the input, each with an empty list to read into;
+// fill copies what was read into the input.
+func (in *topInput) kinds() (kinds []kindList, fill func()) {
+	hosts, eps := &metalv1alpha1.HostList{}, &metalv1alpha1.ManagementEndpointList{}
+	claims, ops := &metalv1alpha1.HostClaimList{}, &metalv1alpha1.HostOperationList{}
+	nodes, clusters, rollouts := &osv1alpha1.TalosNodeList{}, &osv1alpha1.TalosClusterList{}, &osv1alpha1.TalosRolloutList{}
+	kinds = []kindList{
+		{"Host", &metalv1alpha1.Host{}, hosts, false},
+		{"ManagementEndpoint", &metalv1alpha1.ManagementEndpoint{}, eps, false},
+		{"HostClaim", &metalv1alpha1.HostClaim{}, claims, false},
+		{"HostOperation", &metalv1alpha1.HostOperation{}, ops, false},
+		{"TalosNode", &osv1alpha1.TalosNode{}, nodes, true},
+		{"TalosCluster", &osv1alpha1.TalosCluster{}, clusters, true},
+		{"TalosRollout", &osv1alpha1.TalosRollout{}, rollouts, true},
+	}
+	return kinds, func() {
+		in.Hosts, in.Endpoints, in.Claims, in.Ops = hosts.Items, eps.Items, claims.Items, ops.Items
+		in.Nodes, in.Clusters, in.Rollouts = nodes.Items, clusters.Items, rollouts.Items
+	}
 }
 
 // state is how a dashboard fact reads at a glance.
@@ -142,19 +174,20 @@ type opLine struct {
 	Step            string // "5/9 setBootOverride"
 	Approval        string
 	Waits           bool // waits for a person's approval
-	Failed          bool
+	Failed          bool // failed or aborted: pk-metal retry runs it again
 	Message         string
 }
 
 // buildTop joins the cluster's objects and the fleet's machines into tiles.
 // Hosts and fleet machines are matched by serial, then by BMC address.
 func buildTop(in topInput) topData {
-	rep := buildReport(in.Hosts, in.Endpoints, in.Claims, in.Ops, in.Nodes)
-	d := topData{Loading: in.Loading}
+	rep := buildStatus(in, nil)
+	d := topData{Loading: in.Loading, Attention: len(attentionKeys(rep)),
+		Rollouts: slices.DeleteFunc(slices.Clone(rep.Rollouts), rolloutStatus.history)}
 
-	talosReady := map[string]*metav1.Condition{}
-	for i := range in.Nodes {
-		talosReady[in.Nodes[i].Name] = meta.FindStatusCondition(in.Nodes[i].Status.Conditions, osv1alpha1.ConditionReady)
+	nodeConds := map[string][]metav1.Condition{}
+	for _, n := range in.Nodes {
+		nodeConds[n.Name] = n.Status.Conditions
 	}
 	k8sReady := map[string]bool{}
 	for _, n := range in.K8sNodes {
@@ -174,25 +207,12 @@ func buildTop(in topInput) topData {
 		d.Clusters = append(d.Clusters, cl)
 	}
 	ready := 0
-	for _, n := range in.Nodes {
-		if c := talosReady[n.Name]; c != nil && c.Status == metav1.ConditionTrue {
+	for _, n := range rep.Nodes {
+		if n.Ready == "Ready" {
 			ready++
 		}
 	}
-	d.NodeLine = fmt.Sprintf("TalosNodes Ready %d/%d", ready, len(in.Nodes))
-
-	// Rollouts, read as pk-metal status reads them.
-	var ros statusReport
-	addRollouts(&ros, in.Rollouts)
-	for _, r := range ros.Rollouts {
-		if r.State == osv1alpha1.ReasonRolloutSucceeded || r.State == osv1alpha1.ReasonNothingToDo {
-			continue
-		}
-		d.Rollouts = append(d.Rollouts, r)
-		if r.NeedsAttention {
-			d.Attention++
-		}
-	}
+	d.NodeLine = fmt.Sprintf("TalosNodes Ready %d/%d", ready, len(rep.Nodes))
 	if in.K8sNodes != nil {
 		k := 0
 		for _, r := range k8sReady {
@@ -218,17 +238,18 @@ func buildTop(in topInput) topData {
 	for i := range in.Hosts {
 		hostByName[in.Hosts[i].Name] = &in.Hosts[i]
 	}
+	rowByName := map[string]hostStatus{}
+	for _, r := range rep.Hosts {
+		rowByName[r.Name] = r
+	}
 	held := map[string]bool{}
 	for _, c := range rep.Claims {
 		held[nsName(c.Namespace, c.Name)] = c.OnHold
 	}
 
 	hostTile := func(row hostStatus) tile {
-		t := tile{Title: row.Name, HostName: row.Name, Phase: row.Phase, BlockedOn: row.BlockedOn,
+		t := tile{Title: row.Name, Subtitle: row.Vendor, HostName: row.Name, Phase: row.Phase, BlockedOn: row.BlockedOn,
 			Message: row.Message, Attention: row.NeedsAttention}
-		if row.Vendor != "" {
-			t.Subtitle = row.Vendor
-		}
 		if ns, name, ok := strings.Cut(row.Claim, "/"); ok {
 			t.ClaimNS, t.ClaimName, t.OnHold = ns, name, held[row.Claim]
 		}
@@ -241,7 +262,7 @@ func buildTop(in topInput) topData {
 		}
 		if row.Node != nil {
 			t.NodeName, t.NodeAddress = row.Node.Name, row.Node.Address
-			t.TalosReady, t.TalosWhy = condState(nodeConds(in.Nodes, row.Node.Name), osv1alpha1.ConditionReady, "")
+			t.TalosReady, t.TalosWhy = condState(nodeConds[row.Node.Name], osv1alpha1.ConditionReady, "")
 			if r, ok := k8sReady[row.Node.Name]; ok {
 				t.K8sKnown = true
 				t.K8sReady = map[bool]state{true: stOK, false: stBad}[r]
@@ -257,10 +278,10 @@ func buildTop(in topInput) topData {
 	if in.Fleet != nil {
 		for _, m := range in.Fleet.Machines {
 			var t tile
-			if row, ok := matchHost(m, rep.Hosts, in.Hosts, epByName, used); ok {
-				t = hostTile(row)
-				t.Title = row.Name + " · " + m.Name
-				used[row.Name] = true
+			if name := matchHost(m, in.Hosts, epByName, used); name != "" {
+				t = hostTile(rowByName[name])
+				t.Title = name + " · " + m.Name
+				used[name] = true
 			} else {
 				t = tile{Title: m.Name, Phase: "no Host yet"}
 			}
@@ -276,20 +297,8 @@ func buildTop(in topInput) topData {
 	}
 	for i := range d.Tiles {
 		d.Tiles[i].Flow = flow(&d.Tiles[i])
-		if d.Tiles[i].Attention || (d.Tiles[i].Op != nil && (d.Tiles[i].Op.Waits || d.Tiles[i].Op.Failed)) {
-			d.Attention++
-		}
 	}
 	return d
-}
-
-func nodeConds(nodes []osv1alpha1.TalosNode, name string) []metav1.Condition {
-	for _, n := range nodes {
-		if n.Name == name {
-			return n.Status.Conditions
-		}
-	}
-	return nil
 }
 
 // condState reads one condition: True is OK, False bad, Unknown on its way,
@@ -312,20 +321,16 @@ func condState(conds []metav1.Condition, t, why string) (state, string) {
 	return stWait, why
 }
 
-// matchHost finds the Host behind a fleet machine: by serial, else by the
-// BMC address its endpoint names.
-func matchHost(m fleet.MachineState, rows []hostStatus, hosts []metalv1alpha1.Host,
-	eps map[string]*metalv1alpha1.ManagementEndpoint, used map[string]bool) (hostStatus, bool) {
-	byName := map[string]hostStatus{}
-	for _, r := range rows {
-		byName[r.Name] = r
-	}
+// matchHost names the Host behind a fleet machine: by serial, else by the
+// BMC address its endpoint names; "" when none matches.
+func matchHost(m fleet.MachineState, hosts []metalv1alpha1.Host,
+	eps map[string]*metalv1alpha1.ManagementEndpoint, used map[string]bool) string {
 	for _, h := range hosts {
 		if used[h.Name] || h.Status.Identity == nil || m.Serial == "" {
 			continue
 		}
 		if strings.EqualFold(h.Status.Identity.Serial, m.Serial) {
-			return byName[h.Name], true
+			return h.Name
 		}
 	}
 	for _, h := range hosts {
@@ -334,11 +339,11 @@ func matchHost(m fleet.MachineState, rows []hostStatus, hosts []metalv1alpha1.Ho
 		}
 		for _, p := range h.Status.ManagedBy {
 			if ep := eps[p.EndpointRef.Name]; ep != nil && hostPort(ep.Spec.Address) == hostPort(m.BMC) {
-				return byName[h.Name], true
+				return h.Name
 			}
 		}
 	}
-	return hostStatus{}, false
+	return ""
 }
 
 // hostPort reduces https://10.0.0.1:8441/redfish/v1 and 10.0.0.1:8441 alike
@@ -414,7 +419,8 @@ func shortPath(p string) string {
 }
 
 // currentOp is the operation to show for a host: the oldest unfinished one,
-// else the newest one if it failed. Succeeded ones are history.
+// else the newest one if it failed or was aborted. Succeeded ones are
+// history.
 func currentOp(ops []metalv1alpha1.HostOperation, host string) *opLine {
 	var mine []metalv1alpha1.HostOperation
 	for _, op := range ops {
@@ -435,7 +441,11 @@ func currentOp(ops []metalv1alpha1.HostOperation, host string) *opLine {
 			break
 		}
 	}
-	if pick == nil && len(mine) > 0 && opPhase(&mine[len(mine)-1]) == metalv1alpha1.OperationFailed {
+	ended := func(op *metalv1alpha1.HostOperation) bool {
+		p := opPhase(op)
+		return p == metalv1alpha1.OperationFailed || p == metalv1alpha1.OperationAborted
+	}
+	if pick == nil && len(mine) > 0 && ended(&mine[len(mine)-1]) {
 		pick = &mine[len(mine)-1]
 	}
 	if pick == nil {
@@ -443,11 +453,11 @@ func currentOp(ops []metalv1alpha1.HostOperation, host string) *opLine {
 	}
 	op := pick
 	l := &opLine{Namespace: op.Namespace, Name: op.Name, Phase: orDash(string(opPhase(op))),
-		Waits: waitsForApproval(op), Failed: opPhase(op) == metalv1alpha1.OperationFailed}
+		Waits: waitsForApproval(op), Failed: ended(op)}
 	done, total := len(op.Status.Steps), len(op.Spec.Actions)
 	switch {
 	case l.Failed && done > 0:
-		l.Step = fmt.Sprintf("%d/%d %s failed", done, total, op.Status.Steps[done-1].Action)
+		l.Step = fmt.Sprintf("%d/%d %s %s", done, total, op.Status.Steps[done-1].Action, strings.ToLower(string(opPhase(op))))
 	case done < total:
 		l.Step = fmt.Sprintf("%d/%d %s", done+1, total, actionKey(op.Spec.Actions[done]))
 	default:
@@ -463,7 +473,7 @@ func currentOp(ops []metalv1alpha1.HostOperation, host string) *opLine {
 	default:
 		l.Approval = "not approved"
 	}
-	l.Message = explain(op.Status.Conditions, op.Status.BlockedOn, metalv1alpha1.ConditionExecuted)
+	l.Message = opMessage(op)
 	return l
 }
 

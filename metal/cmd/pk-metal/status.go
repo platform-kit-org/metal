@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -10,7 +11,6 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -47,27 +47,10 @@ Tables:
              and who approved it
 Under each table, every blocked or failed row gets a line that says why, in
 the operator's own words, and what to run next when there is a command for it.
+A running operation gets a line with its step and what that step waits for.
 
--o json prints the same facts as one JSON object, for scripts:
-  {"version": 1, "needsAttention": bool,
-   "hosts":      [{"name", "asset", "vendor", "phase", "claim",
-                   "node": {"name", "address"} or null,
-                   "pathsUp", "pathsTotal", "blockedOn", "message", "needsAttention"}],
-   "operations": [{"namespace", "name", "host", "phase", "approvedBy",
-                   "blockedOn", "message", "needsAttention"}],
-   "endpoints":  [{"name", "asset", "vendor", "phase", "address",
-                   "blockedOn", "message", "needsAttention"}],
-   "claims":     [{"namespace", "name", "asset", "host", "phase",
-                   "blockedOn", "message", "onHold", "needsAttention"}],
-   "clusters":   [{"name", "talosVersion", "talosVersionsRunning",
-                   "kubernetesVersion", "kubernetesVersionRunning",
-                   "controlPlanes", "readyControlPlanes", "workers",
-                   "readyWorkers", "available", "etcd", "bootstrappedAt",
-                   "backup", "backupMessage", "message", "needsAttention"}],
-   "nodes":      [{"name", "cluster", "role", "host", "address", "version",
-                   "stage", "ready", "message", "needsAttention"}],
-   "rollouts":   [{"name", "cluster", "kind", "nodesDone", "nodesTotal",
-                   "state", "approvedBy", "message", "needsAttention"}]}
+-o json prints the same facts as one JSON object, for scripts. The reference
+page of pk-metal status lists the keys of each row.
   Every key is always present; a missing value is "" (or null for node).
   "operations", "claims" and "rollouts" list all of them, also succeeded and
   bound ones.
@@ -114,37 +97,17 @@ func statusCmd(args []string) {
 
 // runStatus reads the cluster, prints the report and returns the exit code.
 func runStatus(ctx context.Context, cl client.Client, format string, w io.Writer) (int, error) {
-	hosts := &metalv1alpha1.HostList{}
-	eps := &metalv1alpha1.ManagementEndpointList{}
-	claims := &metalv1alpha1.HostClaimList{}
-	ops := &metalv1alpha1.HostOperationList{}
-	for _, list := range []client.ObjectList{hosts, eps, claims, ops} {
-		if err := cl.List(ctx, list); err != nil {
-			return exitError, fmt.Errorf("read the cluster: %w", err)
-		}
-	}
-	// The OS kinds fill the NODE column and the CLUSTER and NODE tables: a
-	// cluster without them installed still has a status.
-	nodes := &osv1alpha1.TalosNodeList{}
-	clusters := &osv1alpha1.TalosClusterList{}
-	for _, list := range []client.ObjectList{nodes, clusters} {
-		if err := cl.List(ctx, list); err != nil && !meta.IsNoMatchError(err) {
-			return exitError, fmt.Errorf("read the cluster: %w", err)
-		}
-	}
-	// The BACKUP column comes from the backup policies. A person whose role
-	// may not read them (an approver) sees "-" there, not an error.
+	var in topInput
+	kinds, fill := in.kinds()
+	// The BACKUP column comes from the backup policies, which top does not show.
 	policies := &osv1alpha1.EtcdBackupPolicyList{}
-	if err := cl.List(ctx, policies); err != nil && !meta.IsNoMatchError(err) && !apierrors.IsForbidden(err) {
-		return exitError, fmt.Errorf("read the cluster: %w", err)
+	for _, k := range append(kinds, kindList{name: "EtcdBackupPolicy", list: policies, optional: true}) {
+		if err := cl.List(ctx, k.list); err != nil && (!k.optional || !meta.IsNoMatchError(err)) {
+			return exitError, fmt.Errorf("read the cluster: %w", err)
+		}
 	}
-	rollouts := &osv1alpha1.TalosRolloutList{}
-	if err := cl.List(ctx, rollouts); err != nil && !meta.IsNoMatchError(err) && !apierrors.IsForbidden(err) {
-		return exitError, fmt.Errorf("read the cluster: %w", err)
-	}
-	rep := buildReport(hosts.Items, eps.Items, claims.Items, ops.Items, nodes.Items)
-	addClusters(&rep, clusters.Items, nodes.Items, hosts.Items, policies.Items)
-	addRollouts(&rep, rollouts.Items)
+	fill()
+	rep := buildStatus(in, policies.Items)
 	switch format {
 	case "json":
 		enc := json.NewEncoder(w)
@@ -201,9 +164,11 @@ type opStatus struct {
 	Host           string `json:"host"`
 	Phase          string `json:"phase"`
 	ApprovedBy     string `json:"approvedBy"`
+	AwaitsApproval bool   `json:"awaitsApproval"`
 	BlockedOn      string `json:"blockedOn"`
 	Message        string `json:"message"`
 	NeedsAttention bool   `json:"needsAttention"`
+	Rollout        string `json:"rollout"` // the TalosRollout that this operation is a step of
 }
 
 type epStatus struct {
@@ -215,6 +180,7 @@ type epStatus struct {
 	BlockedOn      string `json:"blockedOn"`
 	Message        string `json:"message"`
 	NeedsAttention bool   `json:"needsAttention"`
+	host           string // a Host that this BMC manages
 }
 
 type claimStatus struct {
@@ -256,29 +222,89 @@ func explain(conds []metav1.Condition, blockedOn string, failTypes ...string) st
 	return ""
 }
 
+// opMessage is the controller's sentence for an operation: why it is
+// blocked or failed, else, while it runs, the step it is at and what that
+// step waits for, for example "step 5/9 powerCycle: BMC unavailable,
+// retrying: ...".
+func opMessage(op *metalv1alpha1.HostOperation) string {
+	if m := explain(op.Status.Conditions, op.Status.BlockedOn, metalv1alpha1.ConditionExecuted); m != "" {
+		return m
+	}
+	if c := meta.FindStatusCondition(op.Status.Conditions, metalv1alpha1.ConditionExecuted); c != nil &&
+		c.Status == metav1.ConditionUnknown && c.Reason == metalv1alpha1.ReasonExecuting {
+		return c.Message
+	}
+	return ""
+}
+
 func nsName(namespace, name string) string { return namespace + "/" + name }
 
-// buildReport is the pure part of status: objects in, report out, sorted by
-// name so that two runs on the same cluster print the same thing.
-func buildReport(hosts []metalv1alpha1.Host, eps []metalv1alpha1.ManagementEndpoint, claims []metalv1alpha1.HostClaim,
-	ops []metalv1alpha1.HostOperation, nodes []osv1alpha1.TalosNode) statusReport {
+// buildStatus is the pure part of status and top: objects in, report out,
+// sorted by name so that two runs on the same cluster print the same thing.
+// top reads no backup policies.
+func buildStatus(in topInput, policies []osv1alpha1.EtcdBackupPolicy) statusReport {
 	rep := statusReport{Version: 1, Hosts: []hostStatus{}, Operations: []opStatus{}, Endpoints: []epStatus{}, Claims: []claimStatus{},
 		Clusters: []clusterStatus{}, Nodes: []talosNodeStatus{}, Rollouts: []rolloutStatus{}}
+	addMachines(&rep, in)
+	addClusters(&rep, in.Clusters, in.Nodes, policies)
+	addRollouts(&rep, in.Rollouts)
+	rep.NeedsAttention = len(attentionKeys(rep)) > 0
+	return rep
+}
 
+// attentionKeys names each thing in the report that needs a person, once: a
+// machine (its Host, its operations, its bound claim and its node are one
+// machine), a BMC that no Host lists, a claim without a machine, a cluster,
+// a node without a Host, and a rollout. status exits 2 when there is one; top
+// counts them.
+func attentionKeys(rep statusReport) map[string]bool {
+	keys := map[string]bool{}
+	add := func(yes bool, host, own string) {
+		if yes {
+			keys[cmp.Or(host, own)] = true
+		}
+	}
+	for _, r := range rep.Hosts {
+		add(r.NeedsAttention, r.Name, "")
+	}
+	for _, r := range rep.Operations {
+		add(r.NeedsAttention, r.Host, "operation/"+nsName(r.Namespace, r.Name))
+	}
+	for _, r := range rep.Endpoints {
+		add(r.NeedsAttention, r.host, "endpoint/"+r.Name)
+	}
+	for _, r := range rep.Claims {
+		add(r.NeedsAttention, r.Host, "claim/"+nsName(r.Namespace, r.Name))
+	}
+	for _, r := range rep.Clusters {
+		add(r.NeedsAttention, "", "cluster/"+r.Name)
+	}
+	for _, r := range rep.Nodes {
+		add(r.NeedsAttention, r.Host, "node/"+r.Name)
+	}
+	for _, r := range rep.Rollouts {
+		add(r.NeedsAttention, "", "rollout/"+r.Name)
+	}
+	return keys
+}
+
+// addMachines fills the HOST, OPERATION, ENDPOINT and CLAIM rows.
+func addMachines(rep *statusReport, in topInput) {
 	epByName := map[string]*metalv1alpha1.ManagementEndpoint{}
-	for i := range eps {
-		epByName[eps[i].Name] = &eps[i]
+	for i := range in.Endpoints {
+		epByName[in.Endpoints[i].Name] = &in.Endpoints[i]
 	}
 	claimByRef := map[string]*metalv1alpha1.HostClaim{}
-	for i := range claims {
-		claimByRef[nsName(claims[i].Namespace, claims[i].Name)] = &claims[i]
+	for i := range in.Claims {
+		claimByRef[nsName(in.Claims[i].Namespace, in.Claims[i].Name)] = &in.Claims[i]
 	}
 	nodeByName := map[string]*osv1alpha1.TalosNode{}
-	for i := range nodes {
-		nodeByName[nodes[i].Name] = &nodes[i]
+	for i := range in.Nodes {
+		nodeByName[in.Nodes[i].Name] = &in.Nodes[i]
 	}
+	hostOfEp := map[string]string{}
 
-	for _, h := range hosts {
+	for _, h := range in.Hosts {
 		row := hostStatus{Name: h.Name, Phase: string(h.Status.Phase), BlockedOn: h.Status.BlockedOn,
 			PathsTotal: len(h.Status.ManagedBy)}
 		if h.Status.Identity != nil {
@@ -292,6 +318,7 @@ func buildReport(hosts []metalv1alpha1.Host, eps []metalv1alpha1.ManagementEndpo
 			if ep := epByName[p.EndpointRef.Name]; ep != nil {
 				paths = append(paths, *ep)
 			}
+			hostOfEp[p.EndpointRef.Name] = h.Name
 		}
 		row.Asset = strings.Join(assetsOf(paths), ",")
 		row.Message = explain(h.Status.Conditions, h.Status.BlockedOn,
@@ -327,21 +354,26 @@ func buildReport(hosts []metalv1alpha1.Host, eps []metalv1alpha1.ManagementEndpo
 		rep.Hosts = append(rep.Hosts, row)
 	}
 
-	for _, op := range ops {
+	for _, op := range in.Ops {
 		row := opStatus{Namespace: op.Namespace, Name: op.Name, Host: op.Spec.HostRef.Name,
-			Phase: string(op.Status.Phase), ApprovedBy: op.Spec.Approval.ApprovedBy, BlockedOn: op.Status.BlockedOn}
-		row.Message = explain(op.Status.Conditions, op.Status.BlockedOn, metalv1alpha1.ConditionExecuted)
+			Phase: string(op.Status.Phase), ApprovedBy: op.Spec.Approval.ApprovedBy,
+			AwaitsApproval: op.AwaitsApproval(), BlockedOn: op.Status.BlockedOn}
+		row.Message = opMessage(&op)
+		if op.Spec.RolloutRef != nil {
+			row.Rollout = op.Spec.RolloutRef.Name
+		}
 		// Queued behind another operation or waiting for its maintenance
 		// window is the plan working, not something a person must do.
-		row.NeedsAttention = op.Status.Phase == metalv1alpha1.OperationFailed || op.Status.Phase == metalv1alpha1.OperationAborted ||
+		row.NeedsAttention = row.AwaitsApproval ||
+			op.Status.Phase == metalv1alpha1.OperationFailed || op.Status.Phase == metalv1alpha1.OperationAborted ||
 			(op.Status.BlockedOn != "" && op.Status.BlockedOn != metalv1alpha1.ReasonOperationQueued &&
 				op.Status.BlockedOn != metalv1alpha1.ReasonOutsideMaintenanceWindow)
 		rep.Operations = append(rep.Operations, row)
 	}
 
-	for _, ep := range eps {
+	for _, ep := range in.Endpoints {
 		row := epStatus{Name: ep.Name, Asset: ep.Spec.AssetRef.Name, Vendor: ep.Status.Vendor,
-			Phase: string(ep.Status.Phase), Address: ep.Spec.Address, BlockedOn: ep.Status.BlockedOn}
+			Phase: string(ep.Status.Phase), Address: ep.Spec.Address, BlockedOn: ep.Status.BlockedOn, host: hostOfEp[ep.Name]}
 		row.Message = explain(ep.Status.Conditions, ep.Status.BlockedOn,
 			metalv1alpha1.ConditionReachable, metalv1alpha1.ConditionVerified)
 		row.NeedsAttention = row.BlockedOn != "" || ep.Status.Phase == metalv1alpha1.EndpointUnreachable ||
@@ -349,7 +381,7 @@ func buildReport(hosts []metalv1alpha1.Host, eps []metalv1alpha1.ManagementEndpo
 		rep.Endpoints = append(rep.Endpoints, row)
 	}
 
-	for _, c := range claims {
+	for _, c := range in.Claims {
 		row := claimStatus{Namespace: c.Namespace, Name: c.Name, Asset: c.Spec.AssetRef.Name,
 			Phase: string(c.Status.Phase), BlockedOn: c.Status.BlockedOn}
 		if c.Status.HostRef != nil {
@@ -369,21 +401,6 @@ func buildReport(hosts []metalv1alpha1.Host, eps []metalv1alpha1.ManagementEndpo
 	slices.SortFunc(rep.Claims, func(a, b claimStatus) int {
 		return strings.Compare(nsName(a.Namespace, a.Name), nsName(b.Namespace, b.Name))
 	})
-
-	attention := func(yes bool) { rep.NeedsAttention = rep.NeedsAttention || yes }
-	for _, r := range rep.Hosts {
-		attention(r.NeedsAttention)
-	}
-	for _, r := range rep.Operations {
-		attention(r.NeedsAttention)
-	}
-	for _, r := range rep.Endpoints {
-		attention(r.NeedsAttention)
-	}
-	for _, r := range rep.Claims {
-		attention(r.NeedsAttention)
-	}
-	return rep
 }
 
 // renderReport prints the tables: hosts first (the machines), unfinished
@@ -392,23 +409,7 @@ func buildReport(hosts []metalv1alpha1.Host, eps []metalv1alpha1.ManagementEndpo
 // every row that needs a person.
 func renderReport(rep statusReport) string {
 	var sb strings.Builder
-	section := func(header string, rows [][]string, notes []string) {
-		if sb.Len() > 0 {
-			sb.WriteString("\n")
-		}
-		w := tabwriter.NewWriter(&sb, 2, 0, 2, ' ', 0)
-		fmt.Fprintln(w, header)
-		for _, r := range rows {
-			fmt.Fprintln(w, strings.Join(r, "\t"))
-		}
-		_ = w.Flush()
-		for _, n := range notes {
-			fmt.Fprintf(&sb, "  %s\n", n)
-		}
-	}
-
-	var rows [][]string
-	var notes []string
+	hosts := table{header: "HOST\tASSET\tVENDOR\tPHASE\tCLAIM\tNODE\tPATHS\tBLOCKED"}
 	for _, h := range rep.Hosts {
 		node := "-"
 		if h.Node != nil {
@@ -417,48 +418,49 @@ func renderReport(rep statusReport) string {
 				node += " (" + h.Node.Address + ")"
 			}
 		}
-		rows = append(rows, []string{h.Name, orDash(h.Asset), orDash(h.Vendor), orDash(h.Phase), orDash(h.Claim), node,
-			fmt.Sprintf("%d/%d", h.PathsUp, h.PathsTotal), h.BlockedOn})
-		if h.NeedsAttention {
-			notes = append(notes, note(h.Name, h.Message, h.BlockedOn))
-		}
+		hosts.row(h.Name, orDash(h.Asset), orDash(h.Vendor), orDash(h.Phase), orDash(h.Claim), node,
+			fmt.Sprintf("%d/%d", h.PathsUp, h.PathsTotal), h.BlockedOn)
+		hosts.noteIf(h.NeedsAttention, h.Name, h.Message, h.BlockedOn)
 	}
-	section("HOST\tASSET\tVENDOR\tPHASE\tCLAIM\tNODE\tPATHS\tBLOCKED", rows, notes)
+	hosts.write(&sb, true)
 
 	// Succeeded operations are history, not state of the rack; failures stay
 	// visible until someone retries them.
-	rows, notes = nil, nil
+	ops := table{header: "OPERATION\tHOST\tPHASE\tAPPROVED\tBLOCKED"}
 	for _, op := range rep.Operations {
 		if op.Phase == string(metalv1alpha1.OperationSucceeded) {
 			continue
 		}
 		ref := nsName(op.Namespace, op.Name)
-		rows = append(rows, []string{ref, op.Host, orDash(op.Phase), orDash(op.ApprovedBy), op.BlockedOn})
+		ops.row(ref, op.Host, orDash(op.Phase), orDash(op.ApprovedBy), op.BlockedOn)
+		ended := op.Phase == string(metalv1alpha1.OperationFailed) || op.Phase == string(metalv1alpha1.OperationAborted)
 		switch {
+		case ended && op.Rollout != "":
+			// retry deletes the step, and the rollout does not make it again.
+			ops.notes = append(ops.notes, note(ref, op.Message, strings.ToLower(op.Phase))+
+				"; a step of rollout "+op.Rollout+": pk-metal rollout show "+op.Rollout)
 		case op.Phase == string(metalv1alpha1.OperationFailed):
-			notes = append(notes, note(ref, op.Message, "failed")+"; to try again: pk-metal retry "+ref)
+			ops.notes = append(ops.notes, note(ref, op.Message, "failed")+"; to try again: pk-metal retry "+ref)
 		case op.Phase == string(metalv1alpha1.OperationAborted):
-			notes = append(notes, note(ref, op.Message, "aborted")+"; to run it again: pk-metal retry "+ref)
-		case op.Phase == string(metalv1alpha1.OperationAwaitingApproval) || (op.ApprovedBy == "" && op.BlockedOn == metalv1alpha1.ReasonAwaitingApproval):
-			notes = append(notes, ref+": waits for approval; see the plan and approve: pk-metal approve "+ref)
-		case op.NeedsAttention:
-			notes = append(notes, note(ref, op.Message, op.BlockedOn))
+			ops.notes = append(ops.notes, note(ref, op.Message, "aborted")+"; to run it again: pk-metal retry "+ref)
+		case op.AwaitsApproval:
+			ops.notes = append(ops.notes, ref+": waits for approval; see the plan and approve: pk-metal approve "+ref)
+		case op.Phase == string(metalv1alpha1.OperationRunning) && op.Message != "":
+			ops.notes = append(ops.notes, ref+": "+op.Message)
+		default:
+			ops.noteIf(op.NeedsAttention, ref, op.Message, op.BlockedOn)
 		}
 	}
-	if len(rows) > 0 {
-		section("OPERATION\tHOST\tPHASE\tAPPROVED\tBLOCKED", rows, notes)
-	}
+	ops.write(&sb, false)
 
-	rows, notes = nil, nil
+	eps := table{header: "ENDPOINT\tASSET\tVENDOR\tPHASE\tADDRESS\tBLOCKED"}
 	for _, ep := range rep.Endpoints {
-		rows = append(rows, []string{ep.Name, orDash(ep.Asset), orDash(ep.Vendor), orDash(ep.Phase), ep.Address, ep.BlockedOn})
-		if ep.NeedsAttention {
-			notes = append(notes, note(ep.Name, ep.Message, ep.Phase))
-		}
+		eps.row(ep.Name, orDash(ep.Asset), orDash(ep.Vendor), orDash(ep.Phase), ep.Address, ep.BlockedOn)
+		eps.noteIf(ep.NeedsAttention, ep.Name, ep.Message, ep.Phase)
 	}
-	section("ENDPOINT\tASSET\tVENDOR\tPHASE\tADDRESS\tBLOCKED", rows, notes)
+	eps.write(&sb, true)
 
-	rows, notes = nil, nil
+	claims := table{header: "CLAIM\tASSET\tPHASE\tBLOCKED"}
 	for _, c := range rep.Claims {
 		if c.Phase == string(metalv1alpha1.ClaimBound) {
 			continue
@@ -468,17 +470,52 @@ func renderReport(rep statusReport) string {
 		if c.OnHold {
 			blocked = strings.TrimSpace(blocked + " (on hold)")
 		}
-		rows = append(rows, []string{ref, c.Asset, orDash(c.Phase), blocked})
-		if c.NeedsAttention {
-			notes = append(notes, note(ref, c.Message, c.BlockedOn))
-		}
+		claims.row(ref, c.Asset, orDash(c.Phase), blocked)
+		claims.noteIf(c.NeedsAttention, ref, c.Message, c.BlockedOn)
 	}
-	if len(rows) > 0 {
-		section("CLAIM\tASSET\tPHASE\tBLOCKED", rows, notes)
+	claims.write(&sb, false)
+	for _, t := range clusterTables(rep) {
+		t.write(&sb, false)
 	}
-	renderClusters(rep, section)
-	renderRollouts(rep, section)
+	rolloutTable(rep).write(&sb, false)
 	return sb.String()
+}
+
+// table is one table of the report: its header, its rows, and under it a
+// line for each row that needs a person.
+type table struct {
+	header string
+	rows   [][]string
+	notes  []string
+}
+
+func (t *table) row(cells ...string) { t.rows = append(t.rows, cells) }
+
+// noteIf adds the line of a row that needs a person.
+func (t *table) noteIf(yes bool, name, message, fallback string) {
+	if yes {
+		t.notes = append(t.notes, note(name, message, fallback))
+	}
+}
+
+// write prints the table below what sb holds. A table without rows prints
+// nothing, unless always is set.
+func (t table) write(sb *strings.Builder, always bool) {
+	if len(t.rows) == 0 && !always {
+		return
+	}
+	if sb.Len() > 0 {
+		sb.WriteString("\n")
+	}
+	w := tabwriter.NewWriter(sb, 2, 0, 2, ' ', 0)
+	fmt.Fprintln(w, t.header)
+	for _, r := range t.rows {
+		fmt.Fprintln(w, strings.Join(r, "\t"))
+	}
+	_ = w.Flush()
+	for _, n := range t.notes {
+		fmt.Fprintf(sb, "  %s\n", n)
+	}
 }
 
 // note is the "why" line under a table: the controller's sentence, or the bare

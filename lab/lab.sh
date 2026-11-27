@@ -921,15 +921,12 @@ status() {
   kubectl get hostclaims,hostoperations --all-namespaces
 }
 
-# Prints "<namespace> <name>" for every operation that waits for a person: the
-# approval is required, nobody has given it, and the operation has not finished.
+# Prints "<namespace> <name>" for every operation that waits for approval, as
+# pk-metal status says. Status exits 2 when one waits: that is no error here.
 pending_operations() {
-  kubectl get hostoperations --all-namespaces --output json | jq -r '
-    .items[]
-    | select(.spec.approval.required != false)
-    | select((.spec.approval.approvedBy // "") == "")
-    | select((.status.phase // "") as $p | ["Succeeded", "Failed", "Aborted"] | index($p) | not)
-    | "\(.metadata.namespace) \(.metadata.name)"'
+  local root=$1
+  { "$root/metal/bin/pk-metal" status -o json || (( $? == 2 )); } | jq -r '
+    .operations[] | select(.awaitsApproval) | "\(.namespace) \(.name)"'
 }
 
 # Approves every pending operation as the kubeconfig's user and prints how many
@@ -938,7 +935,7 @@ approve_pending() {
   local root=$1 lab_dir=$2
   local namespace name pending count=0
   # A cluster that does not answer has nothing to approve; the callers poll.
-  pending=$(pending_operations) || pending=""
+  pending=$(pending_operations "$root") || pending=""
   [[ -n $pending ]] || { echo 0; return 0; }
   while read -r namespace name; do
     [[ -n $name ]] || continue
@@ -1355,7 +1352,7 @@ $members"
       learners=-1 have=-1
     fi
     read -r total ready < <(workload_nodes "$lab_dir" || echo "-1 -1")
-    if (( learners == 0 && have == voters && total == nodes && ready == nodes )) && [[ -z $(pending_operations) ]]; then
+    if (( learners == 0 && have == voters && total == nodes && ready == nodes )) && [[ -z $(pending_operations "$root") ]]; then
       echo "  done after $((SECONDS - (deadline - timeout)))s: $have etcd voter(s), $ready Ready node(s)" >&2
       return 0
     fi

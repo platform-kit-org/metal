@@ -41,16 +41,14 @@ func TestStatusRolloutTable(t *testing.T) {
 	done := statusRollout("old", []osv1alpha1.RolloutNodeState{ok},
 		metav1.Condition{Type: osv1alpha1.ConditionComplete, Status: "True", Reason: osv1alpha1.ReasonRolloutSucceeded})
 
-	rep := buildReport(nil, nil, nil, nil, nil)
-	addRollouts(&rep, []osv1alpha1.TalosRollout{*health, *done})
+	rep := buildStatus(topInput{Rollouts: []osv1alpha1.TalosRollout{*health, *done}}, nil)
 	assert.False(t, rep.NeedsAttention, "waiting for health between nodes is the plan working; the alert covers a long wait")
 	out := renderReport(rep)
 	assert.Contains(t, out, "ROLLOUT")
 	assert.Contains(t, out, "WaitingForHealth")
 	assert.NotContains(t, out, "old ", "a succeeded rollout is history")
 
-	rep = buildReport(nil, nil, nil, nil, nil)
-	addRollouts(&rep, []osv1alpha1.TalosRollout{*canary, *health, *done})
+	rep = buildStatus(topInput{Rollouts: []osv1alpha1.TalosRollout{*canary, *health, *done}}, nil)
 	assert.True(t, rep.NeedsAttention, "a rollout paused after its first node waits for a person")
 	out = renderReport(rep)
 	assert.Regexp(t, `upgrade-1\s+lab\s+Upgrade\s+1/3\s+PausedAfterFirstNode\s+alice`, out)

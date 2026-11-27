@@ -88,7 +88,8 @@ text={`
 `}
 />
 
-A plan that the command cannot do shows the cause. [`--apply`](cli:scale#--apply) then changes nothing.
+A plan that the command cannot do shows the cause and changes nothing.
+The command then gives code 1, also without [`--apply`](cli:scale#--apply). A script can thus check the plan before it applies it.
 
 <Terminal
 title="pk-metal scale"
@@ -96,6 +97,7 @@ text={`
     $ pk-metal scale --control-planes 3 --workers 6 lab
     cluster lab: 3 control plane(s) and 4 worker(s) now, 3 and 6 wanted
     cannot: 2 more worker TalosNode(s) of cluster lab are needed: write them (address, disk, links) first
+    pk-metal: the plan cannot be carried out as it is; nothing was changed
 `}
 />
 

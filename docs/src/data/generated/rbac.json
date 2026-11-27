@@ -144,7 +144,7 @@
       "namespace": "",
       "source": "metal/config/rbac/approver_role.yaml",
       "generated": false,
-      "description": "The human side of the approval gate. An operation's target and actions are frozen at creation, so a patch cannot change what an operation does; it sets the approval, and the admission policy checks that an approver signs with their own name. Permission to patch IS permission to approve. A patch can also set annotations: abort, retry, and the guard overrides (override-cluster-guard, ignore-window), which let an approved operation run past the etcd quorum guard or outside a maintenance window. So this role also decides who may lift those guards. Bind it to the people (or the group) who may let a disruptive operation run. Nothing binds it by default, and the manager's own role has no patch on operations.\n\nThe same holds for a TalosRollout: what it changes, on which nodes, is frozen at creation and its plan is the operator's status, so a patch approves it, pauses or resumes it, or aborts it. One approval there covers every node's operation of the plan.\n\nIt reads what the plan of pk-metal approve names: the Host, its BMC endpoints (whether anybody checks the BMC's certificate), the boot assets (what the BMC mounts), and the clusters and nodes. A plan that the approver cannot read in full says so.",
+      "description": "The human side of the approval gate. An operation's target and actions are frozen at creation, so a patch cannot change what an operation does; it sets the approval, and the admission policy checks that an approver signs with their own name. Permission to patch IS permission to approve. A patch can also set annotations: abort, retry, and the guard overrides (override-cluster-guard, ignore-window), which let an approved operation run past the etcd quorum guard or outside a maintenance window. So this role also decides who may lift those guards. Bind it to the people (or the group) who may let a disruptive operation run. Nothing binds it by default, and the manager's own role has no patch on operations.\n\nThe same holds for a TalosRollout: what it changes, on which nodes, is frozen at creation and its plan is the operator's status, so a patch approves it, pauses or resumes it, or aborts it. One approval there covers every node's operation of the plan.\n\nIt reads what the plan of pk-metal approve names: the Host, its BMC endpoints (whether anybody checks the BMC's certificate), the boot assets (what the BMC mounts), and the clusters and nodes. A plan that the approver cannot read in full says so. It also reads the claims and the backup policies, so that pk-metal status and top work for an approver.",
       "rules": [
         {
           "apiGroups": [
@@ -166,7 +166,8 @@
           ],
           "resources": [
             "hosts",
-            "managementendpoints"
+            "managementendpoints",
+            "hostclaims"
           ],
           "verbs": [
             "get",
@@ -195,7 +196,8 @@
           "resources": [
             "talosclusters",
             "talosnodes",
-            "bootassets"
+            "bootassets",
+            "etcdbackuppolicies"
           ],
           "verbs": [
             "get",

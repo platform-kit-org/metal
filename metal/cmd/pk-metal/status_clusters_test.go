@@ -16,8 +16,9 @@ import (
 )
 
 // lab is a running three-node cluster: two control planes Ready on the
-// wanted version, one that stopped answering after it had run.
-func lab() ([]osv1alpha1.TalosCluster, []osv1alpha1.TalosNode, []metalv1alpha1.Host) {
+// wanted version, one that stopped answering after it had run. The host of
+// node-2 has no spec.os yet; its claim names the node.
+func lab() topInput {
 	at := metav1.NewTime(time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC))
 	ready := func(s metav1.ConditionStatus, reason, msg string) []metav1.Condition {
 		return []metav1.Condition{{Type: osv1alpha1.ConditionReady, Status: s, Reason: reason, Message: msg}}
@@ -50,14 +51,20 @@ func lab() ([]osv1alpha1.TalosCluster, []osv1alpha1.TalosNode, []metalv1alpha1.H
 	hosts := []metalv1alpha1.Host{{
 		ObjectMeta: metav1.ObjectMeta{Name: "simx12b000001"},
 		Spec:       metalv1alpha1.HostSpec{OS: &metalv1alpha1.HostOS{NodeRef: metalv1alpha1.Reference{Name: "node-1"}}},
+	}, {
+		ObjectMeta: metav1.ObjectMeta{Name: "simx12b000002"},
+		Spec:       metalv1alpha1.HostSpec{ClaimRef: &metalv1alpha1.ClaimReference{Namespace: "default", Name: "cp-2"}},
 	}}
-	return clusters, nodes, hosts
+	claims := []metalv1alpha1.HostClaim{{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "cp-2"},
+		Spec:       metalv1alpha1.HostClaimSpec{OS: &metalv1alpha1.ClaimOS{NodeRef: metalv1alpha1.Reference{Name: "node-2"}}},
+	}}
+	return topInput{Clusters: clusters, Nodes: nodes, Hosts: hosts, Claims: claims}
 }
 
 func TestStatusClusterTables(t *testing.T) {
-	clusters, nodes, hosts := lab()
-	rep := buildReport(hosts, nil, nil, nil, nodes)
-	addClusters(&rep, clusters, nodes, hosts, nil)
+	in := lab()
+	rep := buildStatus(in, nil)
 
 	require.Len(t, rep.Clusters, 1)
 	c := rep.Clusters[0]
@@ -70,6 +77,8 @@ func TestStatusClusterTables(t *testing.T) {
 
 	require.Len(t, rep.Nodes, 3)
 	assert.Equal(t, "simx12b000001", rep.Nodes[0].Host)
+	assert.Equal(t, "node-2", rep.Hosts[1].Node.Name, "the claim names the node of a host without spec.os")
+	assert.Equal(t, "simx12b000002", rep.Nodes[1].Host, "the NODE table joins as the HOST table does")
 	assert.False(t, rep.Nodes[0].NeedsAttention)
 	assert.True(t, rep.Nodes[2].NeedsAttention, "a node that ran and stopped answering needs a person")
 	assert.True(t, rep.NeedsAttention)
@@ -80,6 +89,7 @@ func TestStatusClusterTables(t *testing.T) {
 	assert.Contains(t, out, "node-3: no answer since 10:00")
 
 	// The backup policies' verdict counts once one reports it.
+	clusters := in.Clusters
 	clusters[0].Status.Conditions = append(clusters[0].Status.Conditions[:1],
 		metav1.Condition{Type: osv1alpha1.ConditionAvailable, Status: metav1.ConditionTrue, Reason: osv1alpha1.ReasonClusterAvailable})
 	policy := func(name, cluster string, s metav1.ConditionStatus, reason, msg string) osv1alpha1.EtcdBackupPolicy {
@@ -89,24 +99,22 @@ func TestStatusClusterTables(t *testing.T) {
 		return p
 	}
 	stale := policy("lab-daily", "lab", metav1.ConditionFalse, osv1alpha1.ReasonBackupTooOld, "newest snapshot is 30h old")
-	rep = buildReport(nil, nil, nil, nil, nil)
-	addClusters(&rep, clusters, nil, nil, []osv1alpha1.EtcdBackupPolicy{
+	rep = buildStatus(topInput{Clusters: clusters}, []osv1alpha1.EtcdBackupPolicy{
 		stale, policy("other-hourly", "other", metav1.ConditionTrue, osv1alpha1.ReasonSnapshotRecent, "")})
 	assert.Equal(t, osv1alpha1.ReasonBackupTooOld, rep.Clusters[0].Backup, "another cluster's policy does not speak for it")
 	assert.Equal(t, "newest snapshot is 30h old", rep.Clusters[0].Message)
 	assert.True(t, rep.NeedsAttention)
 
 	// A second policy that is backed up does.
-	rep = buildReport(nil, nil, nil, nil, nil)
-	addClusters(&rep, clusters, nil, nil, []osv1alpha1.EtcdBackupPolicy{
+	rep = buildStatus(topInput{Clusters: clusters}, []osv1alpha1.EtcdBackupPolicy{
 		stale, policy("lab-hourly", "lab", metav1.ConditionTrue, osv1alpha1.ReasonSnapshotRecent, "lab-hourly-1 taken at ...")})
 	assert.Equal(t, osv1alpha1.ReasonSnapshotRecent, rep.Clusters[0].Backup)
 	assert.False(t, rep.Clusters[0].NeedsAttention)
 }
 
 func TestStatusClustersInJSON(t *testing.T) {
-	clusters, nodes, hosts := lab()
-	cl := fakeClient(&clusters[0], &nodes[0], &nodes[1], &hosts[0])
+	in := lab()
+	cl := fakeClient(&in.Clusters[0], &in.Nodes[0], &in.Nodes[1], &in.Hosts[0])
 	var out bytes.Buffer
 	code, err := runStatus(context.Background(), cl, "json", &out)
 	require.NoError(t, err)

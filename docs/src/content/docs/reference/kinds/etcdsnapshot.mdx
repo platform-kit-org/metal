@@ -72,10 +72,9 @@ You can restore only a verified snapshot. `pk-metal restore` uses the newest one
 ## Example
 
 ```console
-$ pk-metal backup list lab
 $ kubectl get etcdsnapshots
 NAME                           CLUSTER   FROM     SIZE       COMPLETE   VERIFIED   TAKEN
-lab-offsite-20261124-060000    lab       node-2   48234496   True       True       2026-11-24T06:00:00Z
+lab-offsite-20261124-060000    lab       node-2   48234496   True       True       6h
 ```
 
 Decrypt on your own machine:

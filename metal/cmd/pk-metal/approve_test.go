@@ -528,13 +528,15 @@ func TestApproveSeveral(t *testing.T) {
 
 	t.Run("each operation gets its own question", func(t *testing.T) {
 		cl, ops, refs := three()
-		var out bytes.Buffer
+		var out, errOut bytes.Buffer
 		err := approveAll(ctx, cl, refs, approval{User: "alice", Interactive: true, Out: &out,
-			In: oneByteAtATime{strings.NewReader("y\nn\nyes\n")}})
+			In: oneByteAtATime{strings.NewReader("y\nn\nyes\n")}}, &errOut)
 		assert.EqualError(t, err, "1 of 3 operations not approved: pk-metal/op-b")
 		assert.Equal(t, 3, strings.Count(out.String(), "Approve as alice? [y/N] "))
 		assert.Equal(t, 3, strings.Count(out.String(), "steps, in this order:"))
-		assert.Contains(t, out.String(), "pk-metal/op-b: not approved; nothing changed\n")
+		assert.Equal(t, "pk-metal/op-b: not approved; nothing changed\n", errOut.String(),
+			"the reason goes to stderr, away from the plans")
+		assert.NotContains(t, out.String(), "pk-metal/op-b:")
 		assert.Equal(t, "alice", approvedBy(t, cl, ops[0]))
 		assert.Empty(t, approvedBy(t, cl, ops[1]))
 		assert.Equal(t, "alice", approvedBy(t, cl, ops[2]))
@@ -545,7 +547,7 @@ func TestApproveSeveral(t *testing.T) {
 		missing := types.NamespacedName{Namespace: "pk-metal", Name: "gone"}
 		var out bytes.Buffer
 		err := approveAll(ctx, cl, append([]types.NamespacedName{missing}, refs...),
-			approval{User: "alice", Yes: true, Out: &out})
+			approval{User: "alice", Yes: true, Out: &out}, io.Discard)
 		assert.EqualError(t, err, "1 of 4 operations not approved: pk-metal/gone")
 		for _, op := range ops {
 			assert.Equal(t, "alice", approvedBy(t, cl, op))
@@ -555,7 +557,7 @@ func TestApproveSeveral(t *testing.T) {
 	t.Run("without a terminal nothing is approved and the rest is not shown", func(t *testing.T) {
 		cl, ops, refs := three()
 		var out bytes.Buffer
-		err := approveAll(ctx, cl, refs, approval{User: "alice", Out: &out})
+		err := approveAll(ctx, cl, refs, approval{User: "alice", Out: &out}, io.Discard)
 		assert.EqualError(t, err, "3 of 3 operations not approved: pk-metal/op-a, pk-metal/op-b, pk-metal/op-c")
 		assert.Equal(t, 1, strings.Count(out.String(), "steps, in this order:"))
 		for _, op := range ops {
@@ -569,10 +571,10 @@ func TestApproveSeveral(t *testing.T) {
 		cancel()
 		never, w := io.Pipe()
 		defer w.Close()
-		var out bytes.Buffer
-		err := approveAll(cancelled, cl, refs, approval{User: "alice", Interactive: true, In: never, Out: &out})
+		var out, errOut bytes.Buffer
+		err := approveAll(cancelled, cl, refs, approval{User: "alice", Interactive: true, In: never, Out: &out}, &errOut)
 		assert.ErrorContains(t, err, "3 of 3 operations not approved")
-		assert.Contains(t, out.String(), "pk-metal/op-a: interrupted; nothing changed\n")
+		assert.Equal(t, "pk-metal/op-a: interrupted; nothing changed\n", errOut.String())
 		for _, op := range ops {
 			assert.Empty(t, approvedBy(t, cl, op))
 		}
@@ -582,21 +584,24 @@ func TestApproveSeveral(t *testing.T) {
 		cl, _, refs := three()
 		var out bytes.Buffer
 		err := approveAll(ctx, cl, refs[:1], approval{User: "alice", Interactive: true, Out: &out,
-			In: strings.NewReader("n\n")})
+			In: strings.NewReader("n\n")}, io.Discard)
 		assert.ErrorIs(t, err, errDeclined)
 	})
 }
 
 func TestApproveRefs(t *testing.T) {
-	refs, err := approveRefs([]string{"a", "pk-metal/b", "pk-metal/a"}, "pk-metal", false)
+	refs, err := approveRefs([]string{"a", "pk-metal/b", "pk-metal/a"}, "pk-metal", false, true)
 	require.NoError(t, err)
 	assert.Equal(t, []types.NamespacedName{{Namespace: "pk-metal", Name: "a"}, {Namespace: "pk-metal", Name: "b"}}, refs,
 		"in order, each once")
-	_, err = approveRefs([]string{"a", "x/y/z"}, "pk-metal", false)
+	_, err = approveRefs([]string{"a", "x/y/z"}, "pk-metal", false, false)
 	assert.ErrorContains(t, err, "not a name", "a wrong name stops the command before any plan")
-	refs, err = approveRefs(nil, "pk-metal", false)
+	refs, err = approveRefs(nil, "pk-metal", false, false)
 	require.NoError(t, err)
 	assert.Empty(t, refs)
+	_, err = approveRefs(nil, "pk-metal", false, true)
+	assert.ErrorContains(t, err, "--yes approves only the operations that you name",
+		"an empty name list in a script fails, and does not list and exit 0")
 }
 
 func TestListPending(t *testing.T) {
@@ -607,21 +612,32 @@ func TestListPending(t *testing.T) {
 	done := op.DeepCopy()
 	done.Name, done.ResourceVersion = "done", ""
 	done.Status.Conditions = append(done.Status.Conditions, executed(metav1.ConditionTrue))
-	cl := fakeClient(append(objs, auto, done)...)
+	elsewhere := op.DeepCopy()
+	elsewhere.Namespace, elsewhere.ResourceVersion = "elsewhere", ""
+	cl := fakeClient(append(objs, auto, done, elsewhere)...)
 
-	var out bytes.Buffer
-	require.NoError(t, listPending(context.Background(), cl, &out, op.CreationTimestamp.Add(90*time.Minute)))
+	now := op.CreationTimestamp.Add(90 * time.Minute)
+	var out, errOut bytes.Buffer
+	require.NoError(t, listPending(context.Background(), cl, "", &out, &errOut, now))
 	assert.Regexp(t, `(?m)^OPERATION\s+HOST\s+WHY\s+STEPS\s+PROPOSED BY\s+AGE$`, out.String())
 	assert.Regexp(t, `(?m)^pk-metal/provision-node1-1a2b3c4d\s+pk0001\s+Provisioning\s+9\s+`+operator+`\s+1h30m$`, out.String())
+	assert.Contains(t, out.String(), "elsewhere/provision-node1-1a2b3c4d", "without -n, every namespace")
 	assert.NotContains(t, out.String(), "auto", "an operation that needs no approval is not pending")
 	assert.NotContains(t, out.String(), "pk-metal/done")
-	assert.Contains(t, out.String(), "Nothing was approved. Name the operations to see their plans and approve them, "+
-		"for example:\n  pk-metal approve pk-metal/provision-node1-1a2b3c4d\n",
+	assert.NotContains(t, out.String(), "Nothing was approved", "stdout holds the header and the rows only")
+	assert.Equal(t, "\nNothing was approved. Name the operations to see their plans and approve them, "+
+		"for example:\n  pk-metal approve elsewhere/provision-node1-1a2b3c4d\n", errOut.String(),
 		"a list without a name says that it approved nothing, and how to approve")
 
 	out.Reset()
-	require.NoError(t, listPending(context.Background(), fakeClient(), &out, time.Now()))
-	assert.Equal(t, "no operation waits for approval\n", out.String())
+	require.NoError(t, listPending(context.Background(), cl, "pk-metal", &out, io.Discard, now))
+	assert.NotContains(t, out.String(), "elsewhere", "-n limits the list to its namespace")
+
+	out.Reset()
+	errOut.Reset()
+	require.NoError(t, listPending(context.Background(), fakeClient(), "", &out, &errOut, now))
+	assert.Empty(t, out.String())
+	assert.Equal(t, "no operation waits for approval\n", errOut.String())
 }
 
 func TestShortDuration(t *testing.T) {

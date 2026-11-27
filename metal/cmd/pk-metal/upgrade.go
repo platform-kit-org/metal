@@ -9,12 +9,12 @@ import (
 	"regexp"
 	"time"
 
-	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
+	"github.com/dennisklein/platform-kit/metal/internal/metrics"
 	"github.com/dennisklein/platform-kit/metal/internal/talos/render"
 )
 
@@ -109,7 +109,8 @@ func upgrade(ctx context.Context, cl client.Client, what, name, version string, 
 	if what == "kubernetes" {
 		field, current, kind = "kubernetesVersion", c.Spec.KubernetesVersion, osv1alpha1.RolloutKubernetesUpgrade
 	}
-	if current == version {
+	asks := current == version
+	if asks {
 		fmt.Fprintf(w, "cluster %s already asks for %s %s\n", name, what, version)
 	} else {
 		if err := upgradeCheck(c, what, version); err != nil {
@@ -137,16 +138,32 @@ func upgrade(ctx context.Context, cl client.Client, what, name, version string, 
 	}
 	deadline := time.Now().Add(wait)
 	for said := false; ; said = true {
-		ro, err := proposedRollout(ctx, cl, name, kind, version)
+		ro, err := proposedRollout(ctx, cl, name, kind, version, asks)
 		if err != nil {
 			return err
 		}
-		if ro != nil && ro.Status.PlanHash != "" {
-			fmt.Fprint(w, "\n"+renderRollout(ro))
-			if ro.Spec.Approval.ApprovedBy == "" {
-				fmt.Fprintf(w, "\nNothing runs until someone approves it: pk-metal rollout approve %s\n", ro.Name)
+		var notPlanned error
+		if ro != nil {
+			// The rollout of a version that the cluster asked for before has
+			// ended: the operator proposes no other until it is deleted.
+			if st := metrics.RolloutStateOf(ro); st.Ended || ro.Spec.Abort {
+				fmt.Fprint(w, "\n"+renderRollout(ro))
+				if !st.Succeeded {
+					return fmt.Errorf("rollout %s ended as %s; delete it to get a new proposal: kubectl delete talosrollout %s",
+						ro.Name, st.Reason, ro.Name)
+				}
+				return nil
 			}
-			return nil
+			// The wait ends when the plan can be approved: the operator
+			// writes the plan hash before it knows that every node can take
+			// the plan.
+			if notPlanned = approvableRollout(ro); notPlanned == nil || ro.Spec.Approval.ApprovedBy != "" {
+				fmt.Fprint(w, "\n"+renderRollout(ro))
+				if notPlanned == nil {
+					fmt.Fprintf(w, "\nNothing runs until someone approves it: pk-metal rollout approve %s\n", ro.Name)
+				}
+				return nil
+			}
 		}
 		if !said {
 			// The operator proposes and plans the rollout on its own
@@ -156,6 +173,9 @@ func upgrade(ctx context.Context, cl client.Client, what, name, version string, 
 				"(interrupting stops only the wait; see it later with: pk-metal rollout list)\n", shortDuration(wait))
 		}
 		if time.Now().After(deadline) {
+			if notPlanned != nil {
+				return fmt.Errorf("after %s: %w", shortDuration(wait), notPlanned)
+			}
 			return fmt.Errorf("no rollout planned for %s %s on cluster %s after %s; the operator proposes one once it "+
 				"has seen every node's version and no other rollout of the cluster is open. See: pk-metal rollout list, "+
 				"and the cluster's conditions",
@@ -169,26 +189,30 @@ func upgrade(ctx context.Context, cl client.Client, what, name, version string, 
 	}
 }
 
-// proposedRollout is the unfinished rollout of kind toward version on the
-// cluster, nil while there is none.
+// proposedRollout is the newest rollout of kind toward version on the
+// cluster that has not ended, nil while there is none. With ended set, it
+// may also be one that ended or that a person aborted.
 func proposedRollout(ctx context.Context, cl client.Client, cluster string, kind osv1alpha1.RolloutKind,
-	version string) (*osv1alpha1.TalosRollout, error) {
+	version string, ended bool) (*osv1alpha1.TalosRollout, error) {
 	list := &osv1alpha1.TalosRolloutList{}
 	if err := cl.List(ctx, list); err != nil {
 		return nil, fmt.Errorf("list rollouts: %w", err)
 	}
+	var newest *osv1alpha1.TalosRollout
 	for i := range list.Items {
 		ro := &list.Items[i]
-		if ro.Spec.ClusterRef.Name != cluster || ro.Spec.Kind != kind || ro.Spec.Target == nil || ro.Spec.Abort {
+		if ro.Spec.ClusterRef.Name != cluster || ro.Spec.Kind != kind || ro.Spec.Target == nil {
 			continue
 		}
 		if ro.Spec.Target.TalosVersion != version && ro.Spec.Target.KubernetesVersion != version {
 			continue
 		}
-		if c := meta.FindStatusCondition(ro.Status.Conditions, osv1alpha1.ConditionComplete); c != nil && c.Status != "Unknown" {
+		if !ended && (ro.Spec.Abort || metrics.RolloutStateOf(ro).Ended) {
 			continue
 		}
-		return ro, nil
+		if newest == nil || newest.CreationTimestamp.Before(&ro.CreationTimestamp) {
+			newest = ro
+		}
 	}
-	return nil, nil
+	return newest, nil
 }

@@ -274,6 +274,17 @@ type TalosRolloutStatus struct {
 	Steps []RolloutStepStatus `json:"steps,omitempty"`
 }
 
+// StepsSucceeded is the number of plan steps that succeeded.
+func (s *TalosRolloutStatus) StepsSucceeded() int {
+	n := 0
+	for _, st := range s.Steps {
+		if st.State == RolloutNodeSucceeded {
+			n++
+		}
+	}
+	return n
+}
+
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Cluster,categories=metal;os

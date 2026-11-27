@@ -1,6 +1,6 @@
 ---
 title: pk-metal status
-description: Shows the machines, the BMCs, the claims, the operations and the clusters, with the reason for each block.
+description: Shows the machines, the BMCs, the claims, the operations, the clusters and the rollouts, with the reason for each block.
 type: cli
 eyebrow: Command · pk-metal
 xref: { cat: cli, id: status }
@@ -8,6 +8,7 @@ sidebar: { label: status }
 sources:
   - /repo/metal/cmd/pk-metal/status.go
   - /repo/metal/cmd/pk-metal/status_clusters.go
+  - /repo/metal/cmd/pk-metal/status_rollouts.go
 ---
 
 import Callout from '../../../../components/Callout.astro';
@@ -21,6 +22,7 @@ import Terminal from '../../../../components/cli/Terminal.astro';
 
 `pk-metal status` shows the state of all machines in one view. It reads only.
 Below each table, it gives the reason for each row that has a block or a failure, and the command to run next.
+For a running operation, it gives the step and what the step waits for.
 
 ## Synopsis
 
@@ -49,9 +51,11 @@ The command takes no arguments.
 | `CLAIM` | Each [](kind:HostClaim) that has no machine | Asset, phase, block. A hold shows as `(on hold)`. |
 | `CLUSTER` | Each [](kind:TalosCluster) | Talos and Kubernetes versions (spec and nodes), ready nodes, etcd, backup, API |
 | `NODE` | Each [](kind:TalosNode) | Cluster, role, host, address, version, boot stage, readiness |
+| `ROLLOUT` | Each [](kind:TalosRollout) that did not succeed | Cluster, kind, nodes done of the plan, state, approver |
 
-The command shows `OPERATION` and `CLAIM` only when they have rows.
+The command shows `OPERATION`, `CLAIM`, `CLUSTER`, `NODE` and `ROLLOUT` only when they have rows.
 A failed operation stays in the table until you run [](cli:retry).
+The note of a failed step of a rollout names the rollout and not `pk-metal retry`. The rollout does not make the step again.
 
 ### Rows that need a person
 
@@ -59,7 +63,7 @@ A failed operation stays in the table until you run [](cli:retry).
   <dt>Host</dt>
   <dd>The Host or its claim has a block, or the phase is Failed.</dd>
   <dt>Operation</dt>
-  <dd>The phase is Failed or Aborted, or the operation has a block. This includes an operation that waits for approval.</dd>
+  <dd>The operation waits for approval, the phase is Failed or Aborted, or the operation has a block. An operation waits for approval when it needs one, nobody approved it, and it did not end. [](cli:approve) uses the same rule.</dd>
   <dt>Endpoint</dt>
   <dd>The endpoint has a block, or the phase is Unreachable or Mismatch.</dd>
   <dt>Claim</dt>
@@ -68,6 +72,8 @@ A failed operation stays in the table until you run [](cli:retry).
   <dd>The cluster is bootstrapped and its etcd or its Kubernetes API is not healthy. Or the backup is not current.</dd>
   <dt>Node</dt>
   <dd>The cluster is bootstrapped, the node reported a version, and the node is not Ready.</dd>
+  <dt>Rollout</dt>
+  <dd>The rollout waits for approval, cannot make a plan, has a changed plan, stopped after the first node, failed, or a person aborted it.</dd>
 </dl>
 
 Two blocks of an operation need no person: `OperationQueued` and `OutsideMaintenanceWindow`. The operator continues by itself.
@@ -81,7 +87,7 @@ text={`
     $ pk-metal status
     HOST               ASSET     VENDOR  PHASE        CLAIM         NODE              PATHS  BLOCKED
     simhw2288v5000397  asset-07  Huawei  Provisioned  default/cp-1  cp-1 (10.0.0.11)  1/1
-    simhw2288v5000398  asset-08  Huawei  Assigned     default/cp-2  cp-2 (10.0.0.12)  1/1    Approval(provision-simhw2288v5000398-5e6f7a8b)
+    simhw2288v5000398  asset-08  Huawei  Assigned     default/cp-2  cp-2 (10.0.0.12)  1/1    Approval(Provisioning)
     simhw2288v5000399  asset-09  Huawei  Available    -             -                 1/1
       simhw2288v5000398: operation provision-simhw2288v5000398-5e6f7a8b waits for approval
 
@@ -99,7 +105,7 @@ text={`
 
     NODE  CLUSTER  ROLE          HOST               ADDRESS    VERSION  STAGE    READY
     cp-1  lab      controlplane  simhw2288v5000397  10.0.0.11  v1.14.6  running  Ready
-    cp-2  lab      controlplane  -                  10.0.0.12  -        -        -
+    cp-2  lab      controlplane  simhw2288v5000398  10.0.0.12  -        -        -
     $ echo $?
     2
 `}
@@ -126,24 +132,24 @@ watch -n 10 pk-metal status
 | `version` | `1`. Keys do not change while the version is 1. New keys can come. |
 | `needsAttention` | `true` if one row or more needs a person. |
 | `hosts` | `name`, `asset`, `vendor`, `phase`, `claim`, `node` (`name`, `address`, or `null`), `pathsUp`, `pathsTotal`, `blockedOn`, `message`, `needsAttention` |
-| `operations` | `namespace`, `name`, `host`, `phase`, `approvedBy`, `blockedOn`, `message`, `needsAttention` |
+| `operations` | `namespace`, `name`, `host`, `phase`, `approvedBy`, `awaitsApproval`, `blockedOn`, `message`, `needsAttention`, `rollout` (the [](kind:TalosRollout) of a step) |
 | `endpoints` | `name`, `asset`, `vendor`, `phase`, `address`, `blockedOn`, `message`, `needsAttention` |
 | `claims` | `namespace`, `name`, `asset`, `host`, `phase`, `blockedOn`, `message`, `onHold`, `needsAttention` |
 | `clusters` | `name`, `talosVersion`, `talosVersionsRunning`, `kubernetesVersion`, `kubernetesVersionRunning`, `controlPlanes`, `readyControlPlanes`, `workers`, `readyWorkers`, `available`, `etcd`, `bootstrappedAt`, `backup`, `backupMessage`, `message`, `needsAttention` |
 | `nodes` | `name`, `cluster`, `role`, `host`, `address`, `version`, `stage`, `ready`, `message`, `needsAttention` |
+| `rollouts` | `name`, `cluster`, `kind`, `nodesDone`, `nodesTotal`, `state`, `approvedBy`, `message`, `needsAttention` |
 
 Each key is always there. An empty value is `""`.
-The lists `operations` and `claims` hold all objects, also the operations that succeeded and the claims that are bound.
+The lists `operations`, `claims` and `rollouts` hold all objects, also the operations and rollouts that succeeded and the claims that are bound.
 
 ## Objects
 
 | Object | Access | Purpose |
 | --- | --- | --- |
-| [](kind:Host), [](kind:ManagementEndpoint), [](kind:HostClaim), [](kind:HostOperation) | list | The first four tables. The command fails if it cannot read them. |
-| [](kind:TalosCluster), [](kind:TalosNode) | list | The cluster and node tables. A cluster without these kinds shows no such tables. |
-| [](kind:EtcdBackupPolicy) | list | The `BACKUP` column. Without permission, the column is empty. |
+| [](kind:Host), [](kind:ManagementEndpoint), [](kind:HostClaim), [](kind:HostOperation) | list | The first four tables. |
+| [](kind:TalosCluster), [](kind:TalosNode), [](kind:TalosRollout), [](kind:EtcdBackupPolicy) | list | The cluster, node and rollout tables, and the `BACKUP` column. A cluster without these kinds shows no such tables. |
 
-The command writes nothing.
+The command fails if it cannot read one of these kinds. It writes nothing.
 
 ## Exit status
 

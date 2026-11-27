@@ -48,7 +48,7 @@ Nothing on a machine changes until a person approves that plan.
    - A Talos upgrade from a release that Talos does not support as a source.
    - A pair of Talos and Kubernetes versions that Talos does not support.
 3. It writes the version into `spec.talosVersion` or `spec.kubernetesVersion`.
-4. It waits for the rollout, at most the time of [`--wait`](cli:upgrade#--wait). It prints one line when it starts to wait. If you stop the command during the wait, the version stays set.
+4. It waits until the rollout has a plan that a person can approve, at most the time of [`--wait`](cli:upgrade#--wait). It prints one line when it starts to wait. If you stop the command during the wait, the version stays set.
 5. It prints the plan of the rollout and the command that approves it.
 
 <dl>
@@ -59,6 +59,7 @@ Nothing on a machine changes until a person approves that plan.
 </dl>
 
 If the cluster already asks for the version, the command changes nothing and shows the rollout.
+If that rollout failed or a person aborted it, the command gives code 1 and tells you to delete the rollout. The operator then proposes a new one.
 With `--wait 0`, the command does not wait for the rollout.
 
 ## Examples
@@ -106,7 +107,7 @@ If you keep the TalosCluster in git, change the version there. The command and g
 
 <CliExit cmd="upgrade" />
 
-The command gives code 1 if no rollout has a plan when the time of [`--wait`](cli:upgrade#--wait) ends. The version in the spec stays.
+The command gives code 1 if no rollout has a complete plan when the time of [`--wait`](cli:upgrade#--wait) ends. The version in the spec stays.
 
 ## Related
 

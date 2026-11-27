@@ -77,6 +77,12 @@ func (f bmcFlags) config(endpoint, password string, readOnly bool, warn io.Write
 			return cfg, fmt.Errorf("--bmc-ca: %s holds no PEM certificate", *f.caFile)
 		}
 	}
+	// The BMC would count a login with an empty password as a failure.
+	if *f.user != "" && password == "" {
+		return cfg, fmt.Errorf("PK_METAL_BMC_PASSWORD is empty: set it to the password of BMC user %s "+
+			"(read -rs PK_METAL_BMC_PASSWORD && export PK_METAL_BMC_PASSWORD), "+
+			`or give --user "" for a BMC without accounts`, *f.user)
+	}
 	if *f.insecure {
 		fmt.Fprintln(warn, insecureWarning)
 	}
@@ -85,11 +91,15 @@ func (f bmcFlags) config(endpoint, password string, readOnly bool, warn io.Write
 
 // mustConnect opens the BMC session. ctx ends every request of the session
 // when it is cancelled (Ctrl-C); each request is also bounded on its own.
-func mustConnect(ctx context.Context, endpoint string, f bmcFlags, readOnly bool) bmc.Client {
+// dial, when set, opens the connections to the BMC (boot --relay).
+func mustConnect(ctx context.Context, endpoint string, f bmcFlags, readOnly bool,
+	dial func(ctx context.Context, network, addr string) (net.Conn, error),
+) bmc.Client {
 	cfg, err := f.config(endpoint, os.Getenv("PK_METAL_BMC_PASSWORD"), readOnly, os.Stderr)
 	if err != nil {
 		die(err)
 	}
+	cfg.Dial = dial
 	c, err := gofishclient.Connect(ctx, cfg)
 	if err != nil {
 		die(err)
@@ -118,7 +128,7 @@ func inventoryCmd(args []string) {
 
 	ctx, stop := signalContext()
 	defer stop()
-	c := mustConnect(ctx, endpoint, bf, true) // inventory is read-only by construction
+	c := mustConnect(ctx, endpoint, bf, true, nil) // inventory is read-only by construction
 	defer c.Close()
 	facts, err := inventory.Gather(ctx, c)
 	if err != nil {
@@ -139,7 +149,7 @@ func checkCmd(args []string) {
 	}
 	ctx, stop := signalContext()
 	defer stop()
-	c := mustConnect(ctx, fs.Arg(0), bf, true) // check is read-only by construction
+	c := mustConnect(ctx, fs.Arg(0), bf, true, nil) // check is read-only by construction
 	defer c.Close()
 
 	m, err := c.Manager(ctx)

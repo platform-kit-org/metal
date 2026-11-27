@@ -47,20 +47,17 @@ type testRelay struct {
 	dials         *dialRecorder
 }
 
-func startTestRelay(t testing.TB, rendezvous time.Duration, opts ...Option) *testRelay {
+func startTestRelay(t testing.TB, rendezvous time.Duration, allow Allow) *testRelay {
 	t.Helper()
 	tunnel, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	front, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	d := &dialRecorder{}
-	r := newRelay(front.Addr().String(), testSecret)
+	r := newRelay(front.Addr().String(), testSecret, allow)
 	r.dial = d.dial
 	r.handshakeTimeout = 200 * time.Millisecond
 	r.rendezvousTimeout = rendezvous
-	for _, opt := range opts {
-		opt(r)
-	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	loops := goroutinesIn("relay.acceptLoop(")
@@ -100,8 +97,9 @@ func register(t testing.TB, tunnel string) (net.Conn, *bufio.Reader) {
 // FuzzRelayFirstLine sends an arbitrary first line to the tunnel port, after
 // the greeting, either as it is or signed with the relay's secret. The relay
 // must answer or close within the handshake timeout, act only on a line that
-// carries a valid MAC, dial onward only for a signed DIAL, leave no
-// rendezvous behind, and stop every goroutine it started for the connection.
+// carries a valid MAC, dial onward only for a signed DIAL to a valid target,
+// leave no rendezvous behind, and stop every goroutine it started for the
+// connection.
 func FuzzRelayFirstLine(f *testing.F) {
 	for _, seed := range []string{
 		"REGISTER\n", "ACCEPT 0011223344556677\n", "ACCEPT\n", "DIAL 10.0.0.21:443\n", "DIAL\n",
@@ -112,7 +110,7 @@ func FuzzRelayFirstLine(f *testing.F) {
 		f.Add([]byte(seed), false)
 		f.Add([]byte(seed), true)
 	}
-	tr := startTestRelay(f, time.Second)
+	tr := startTestRelay(f, time.Second, anyTarget)
 	f.Fuzz(func(t *testing.T, line []byte, sign bool) {
 		baseline := relayGoroutines()
 		before := tr.dials.count()
@@ -152,7 +150,11 @@ func FuzzRelayFirstLine(f *testing.F) {
 		dialed := tr.dials.count() - before
 		switch {
 		case authed && verb == "DIAL":
-			assert.Equal(t, 1, dialed, "a signed DIAL must dial onward once")
+			want := 0
+			if _, err := anyTarget.target(context.Background(), nil, arg); err == nil {
+				want = 1
+			}
+			assert.Equal(t, want, dialed, "a signed DIAL to a valid target must dial onward once, another none")
 			assert.True(t, bytes.HasPrefix(got, []byte("ERR ")), "a refused dial answers ERR, got %q", got)
 		case !authed && hasLine && len(first) < maxLine:
 			assert.Zero(t, dialed, "first line %q dialed onward without the secret", first)
@@ -177,7 +179,7 @@ func FuzzRelayFirstLine(f *testing.F) {
 // TestFrontWithoutAccept: when the operator never picks a stream up, the
 // rendezvous is withdrawn and the front connection closed.
 func TestFrontWithoutAccept(t *testing.T) {
-	tr := startTestRelay(t, 50*time.Millisecond)
+	tr := startTestRelay(t, 50*time.Millisecond, anyTarget)
 	ctl, br := register(t, tr.tunnel)
 	defer ctl.Close()
 
@@ -206,7 +208,7 @@ func TestFrontWithoutAccept(t *testing.T) {
 // either spliced to the front or closed together with it, exactly once:
 // never a front closed while the operator's stream is left open.
 func TestAcceptRacingTimeout(t *testing.T) {
-	tr := startTestRelay(t, time.Millisecond)
+	tr := startTestRelay(t, time.Millisecond, anyTarget)
 	ctl, br := register(t, tr.tunnel)
 	defer ctl.Close()
 
@@ -253,7 +255,7 @@ func TestAcceptRacingTimeout(t *testing.T) {
 // TestConcurrentFrontsKeepStreamLinesIntact: fifty fronts at once announce
 // fifty whole, distinct STREAM lines on the control connection.
 func TestConcurrentFrontsKeepStreamLinesIntact(t *testing.T) {
-	tr := startTestRelay(t, 5*time.Second)
+	tr := startTestRelay(t, 5*time.Second, anyTarget)
 	ctl, br := register(t, tr.tunnel)
 	defer ctl.Close()
 
@@ -296,7 +298,7 @@ func TestConcurrentFrontsKeepStreamLinesIntact(t *testing.T) {
 // TestSecondRegisterClosesFirst: the last registration wins, and the
 // control connection it replaces is closed.
 func TestSecondRegisterClosesFirst(t *testing.T) {
-	tr := startTestRelay(t, time.Second)
+	tr := startTestRelay(t, time.Second, anyTarget)
 	first, _ := register(t, tr.tunnel)
 	defer first.Close()
 	second, _ := register(t, tr.tunnel)

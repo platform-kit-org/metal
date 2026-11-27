@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"slices"
 	"strings"
@@ -62,20 +64,30 @@ func TestLadderDirect(t *testing.T) {
 	}
 }
 
+var relaySecret = []byte("0123456789abcdef0123456789abcdef")
+
+// startRelay runs a relay on loopback and returns its tunnel and front
+// addresses.
+func startRelay(t *testing.T) (tunnel, front string) {
+	t.Helper()
+	tl, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	fl, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	// The ladder dials nothing onward: the allow list is empty.
+	go func() { _ = relay.Serve(ctx, tl, fl, "", relaySecret, nil) }()
+	return tl.Addr().String(), fl.Addr().String()
+}
+
 // TestLadderOverRelay is the media-fetch-traverses-relay gate: the asset server
 // has NO listener of its own — it serves purely over the tunnel, so the sim's
 // pull succeeding proves the traversal.
 func TestLadderOverRelay(t *testing.T) {
-	relaySecret := []byte("0123456789abcdef0123456789abcdef")
-	tunnel, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-	front, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	go func() { _ = relay.Serve(ctx, tunnel, front, "", relaySecret) }()
-
-	rc, err := relay.Dial(ctx, tunnel.Addr().String(), relaySecret)
+	ctx := context.Background()
+	tunnel, front := startRelay(t)
+	rc, err := relay.Dial(ctx, tunnel, relaySecret)
 	require.NoError(t, err)
 
 	st := simState(t, "supermicro-x12")
@@ -94,7 +106,69 @@ func TestLadderOverRelay(t *testing.T) {
 
 	u, err := url.Parse(res.ImageURL)
 	require.NoError(t, err)
-	assert.Equal(t, front.Addr().String(), u.Host, "the grant URL names the relay front")
+	assert.Equal(t, front, u.Host, "the grant URL names the relay front")
+}
+
+// TestLadderStopsWhenTheRelayIsTaken: a second boot that registers at the
+// relay takes the media traffic. The first boot then stops with an error
+// that names the cause. It does not hold the mount, or wait for the end of
+// the grant, with no server.
+func TestLadderStopsWhenTheRelayIsTaken(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	tunnel, _ := startRelay(t)
+	rc, err := relay.Dial(ctx, tunnel, relaySecret)
+	require.NoError(t, err)
+
+	st := simState(t, "supermicro-x12")
+	held := make(chan struct{})
+	errc := make(chan error, 1)
+	go func() {
+		_, err := boot.Run(ctx, boot.Options{
+			Client: st, NodeName: "w", Config: config, TTL: time.Minute, Relay: rc, Hold: true,
+			// The fixture's machine is on: this test boots it anyway.
+			AllowRestart: true,
+			Logf: func(format string, args ...any) {
+				t.Logf(format, args...)
+				if strings.HasPrefix(format, "boot: holding") {
+					close(held)
+				}
+			},
+		})
+		errc <- err
+	}()
+	<-held
+
+	second, err := relay.Dial(ctx, tunnel, relaySecret)
+	require.NoError(t, err)
+	defer func() { _ = second.Close() }()
+	assert.ErrorContains(t, <-errc, "another pk-metal boot registered at the relay")
+	media, err := st.Media(context.Background())
+	require.NoError(t, err)
+	for _, m := range media {
+		assert.False(t, m.Inserted, "the stop ejects the medium from %s", m.ID)
+	}
+}
+
+// TestLadderKeepsTheInstaller: without MediaID, the ladder mounts the config
+// on the slot after the boot slot, as the operator does, and leaves the
+// installer on the boot slot. The generic BMC lists its USB slot first and
+// its CD slot second.
+func TestLadderKeepsTheInstaller(t *testing.T) {
+	installer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.ServeContent(w, r, "installer.iso", time.Time{}, strings.NewReader("installer"))
+	}))
+	defer installer.Close()
+	ctx := context.Background()
+	st := simState(t, "generic") // the machine is off
+	require.NoError(t, st.InsertMedia(ctx, "2", installer.URL+"/installer.iso", nil))
+
+	res, err := boot.Run(ctx, boot.Options{
+		Client: st, NodeName: "w", Config: config, TTL: time.Minute, Listen: "127.0.0.1:0", Logf: t.Logf,
+	})
+	require.NoError(t, err)
+	assert.True(t, res.ReadComplete, "the machine read the config from the USB slot")
+	assert.Equal(t, []byte("installer"), st.BootImage("2"), "the installer stays on the CD slot")
 }
 
 // TestLadderVmmDialect runs the Huawei shape: single CD slot, credentials as
@@ -144,9 +218,9 @@ func TestLadderHold(t *testing.T) {
 	want, err := asset.BuildConfigISO(config)
 	require.NoError(t, err)
 	require.Eventually(t, func() bool {
-		return len(st.BootImage("VirtualMedia1")) > 0
+		return len(st.BootImage("VirtualMedia2")) > 0
 	}, 10*time.Second, 50*time.Millisecond, "the boot pull lands while holding")
-	assert.Equal(t, want, st.BootImage("VirtualMedia1"), "the sim booted the exact packed ISO")
+	assert.Equal(t, want, st.BootImage("VirtualMedia2"), "the sim booted the exact packed ISO")
 
 	media, err := st.Media(context.Background())
 	require.NoError(t, err)

@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"log"
+	"net"
 	"os"
 	"time"
 
@@ -27,9 +29,9 @@ boot mounts the config only, not the installer. A blank machine must boot
 a Talos installer from a second virtual media slot: the factory ISO of your
 Talos version with the kernel argument talos.config=metal-iso, which makes
 the installer read the config from boot's medium. Mount the installer
-yourself (for example from the BMC web console), and give boot the other
-slot with --media. A BMC with one slot cannot hold both media: install such
-a machine with the operator, which builds an installer with the config in it.
+yourself on the CD slot (for example from the BMC web console); boot takes
+the next slot. A BMC with one slot cannot hold both media: install such a
+machine with the operator, which builds an installer with the config in it.
 
 The BMC must reach the address boot serves on: give --listen with an address
 on the BMC network, or --relay to serve through pk-metal relay on a host that
@@ -39,7 +41,7 @@ $PK_METAL_BMC_PASSWORD only.
 
 example:
   PK_METAL_BMC_PASSWORD=... pk-metal boot --config clusterconfig/node-1.yaml \
-      --node node-1 --media 2 --listen 10.0.0.2:8443 https://10.0.0.11`
+      --node node-1 --listen 10.0.0.2:8443 https://10.0.0.11`
 }
 
 // bootCmd climbs the media ladder against one BMC — the CLI's first write verb.
@@ -50,7 +52,7 @@ func bootCmd(args []string) {
 	fs := newFlags("boot")
 	configPath := fs.String("config", "", "rendered machine config file (required)")
 	node := fs.String("node", "", "node name; names the served .iso (required)")
-	mediaID := fs.String("media", "", "virtual media slot id (default: the first one that can mount an image, CD first)")
+	mediaID := fs.String("media", "", "virtual media slot id (default: the slot after the boot slot, where the operator puts the config)")
 	system := fs.String("system", "", "system id (default: the BMC's only system)")
 	ttl := fs.Duration("ttl", 10*time.Minute, "how long the image is served, and so how long boot waits for the machine to read it")
 	listen := fs.String("listen", "", "address to serve the image on; the BMC must reach it (not with --relay)")
@@ -58,7 +60,6 @@ func bootCmd(args []string) {
 	relaySecretFile := fs.String("relay-secret-file", "", "file with the relay's shared secret (or set $"+relay.SecretEnv+")")
 	hold := fs.Bool("hold", false, "keep serving and keep the medium mounted until interrupted (Ctrl-C)")
 	yes := fs.Bool("yes", false, "allow a hard reset of a machine that is on")
-	forceRestart := fs.Bool("force-restart", false, "same as --yes")
 	noPower := fs.Bool("no-power", false, "mount the medium and set the next boot only; you restart the machine")
 	bf := connectFlags(fs)
 	parseFlags(fs, args)
@@ -71,8 +72,8 @@ func bootCmd(args []string) {
 	if *relaySecretFile != "" && *relayAddr == "" {
 		badUsage(fs, "--relay-secret-file goes with --relay")
 	}
-	if *noPower && (*yes || *forceRestart) {
-		badUsage(fs, "--no-power does not touch power, so --yes or --force-restart has no meaning with it")
+	if *noPower && *yes {
+		badUsage(fs, "--no-power does not touch power, so --yes has no meaning with it")
 	}
 
 	cfg, err := os.ReadFile(*configPath)
@@ -84,6 +85,7 @@ func bootCmd(args []string) {
 	defer stop()
 
 	var rc *relay.Client
+	var dial func(ctx context.Context, network, addr string) (net.Conn, error)
 	if *relayAddr != "" {
 		// Read, never created here: boot must hold the secret the relay has.
 		secret, err := relaySecret(*relaySecretFile, false)
@@ -94,9 +96,12 @@ func bootCmd(args []string) {
 			die(err)
 		}
 		log.Printf("boot: registered at relay %s, front %s", *relayAddr, rc.FrontAddr())
+		// The Redfish calls go through the relay too: this host may not
+		// reach the BMC network.
+		dial = func(ctx context.Context, _, addr string) (net.Conn, error) { return rc.DialOnward(ctx, addr) }
 	}
 
-	c := mustConnect(ctx, fs.Arg(0), bf, false) // the ladder mounts, overrides, powers
+	c := mustConnect(ctx, fs.Arg(0), bf, false, dial) // the ladder mounts, overrides, powers
 	defer c.Close()
 
 	res, err := boot.Run(ctx, boot.Options{
@@ -109,7 +114,7 @@ func bootCmd(args []string) {
 		Listen:       *listen,
 		Relay:        rc,
 		Hold:         *hold,
-		AllowRestart: *yes || *forceRestart,
+		AllowRestart: *yes,
 		NoPower:      *noPower,
 		Logf:         log.Printf,
 	})

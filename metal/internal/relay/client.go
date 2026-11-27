@@ -28,31 +28,18 @@ var _ net.Listener = (*Client)(nil)
 // replacing any previous registration. secret is the one the relay was
 // started with.
 func Dial(ctx context.Context, tunnelAddr string, secret []byte) (*Client, error) {
-	d := net.Dialer{Timeout: handshakeTimeout}
-	conn, err := d.DialContext(ctx, "tcp", tunnelAddr)
+	conn, line, err := open(ctx, tunnelAddr, secret, "REGISTER", "")
 	if err != nil {
-		return nil, fmt.Errorf("relay: dial tunnel: %w", err)
-	}
-	_ = conn.SetDeadline(time.Now().Add(handshakeTimeout))
-	if err := greet(conn, secret, "REGISTER", ""); err != nil {
-		_ = conn.Close()
 		return nil, fmt.Errorf("relay: register: %w", err)
-	}
-	line, err := readLine(conn)
-	if err != nil {
-		_ = conn.Close()
-		return nil, fmt.Errorf("relay: register: %w", err)
-	}
-	if why, refused := strings.CutPrefix(line, "ERR "); refused {
-		_ = conn.Close()
-		return nil, fmt.Errorf("relay: register refused: %s (this side and the relay hold different secrets)", why)
 	}
 	front, ok := strings.CutPrefix(line, "OK front=")
 	if !ok {
 		_ = conn.Close()
+		if why, refused := strings.CutPrefix(line, "ERR "); refused {
+			return nil, fmt.Errorf("relay: register refused: %s (this side and the relay hold different secrets)", why)
+		}
 		return nil, fmt.Errorf("relay: unexpected register reply %q", line)
 	}
-	_ = conn.SetDeadline(time.Time{})
 
 	c := &Client{
 		tunnelAddr: tunnelAddr,
@@ -130,27 +117,38 @@ func (a frontTCPAddr) Network() string { return "tcp" }
 func (a frontTCPAddr) String() string  { return string(a) }
 
 // DialOnward opens a TCP connection to hostport as dialed FROM the relay — the
-// operator's outbound Redfish path into the BMC network.
+// Redfish path of pk-metal boot into the BMC network.
 func (c *Client) DialOnward(ctx context.Context, hostport string) (net.Conn, error) {
-	d := net.Dialer{Timeout: handshakeTimeout}
-	conn, err := d.DialContext(ctx, "tcp", c.tunnelAddr)
+	conn, line, err := open(ctx, c.tunnelAddr, c.secret, "DIAL", hostport)
 	if err != nil {
-		return nil, fmt.Errorf("relay: dial tunnel: %w", err)
-	}
-	_ = conn.SetDeadline(time.Now().Add(handshakeTimeout))
-	if err := greet(conn, c.secret, "DIAL", hostport); err != nil {
-		_ = conn.Close()
-		return nil, fmt.Errorf("relay: dial onward: %w", err)
-	}
-	line, err := readLine(conn)
-	if err != nil {
-		_ = conn.Close()
 		return nil, fmt.Errorf("relay: dial onward: %w", err)
 	}
 	if line != "OK" {
 		_ = conn.Close()
 		return nil, fmt.Errorf("relay: dial onward %s: %s", hostport, strings.TrimPrefix(line, "ERR "))
 	}
-	_ = conn.SetDeadline(time.Time{})
 	return conn, nil
+}
+
+// open dials the tunnel, sends the signed line for verb and arg, and reads
+// the reply line, all within the handshake timeout. The caller checks the
+// reply and closes the connection when it refuses it.
+func open(ctx context.Context, tunnelAddr string, secret []byte, verb, arg string) (net.Conn, string, error) {
+	d := net.Dialer{Timeout: handshakeTimeout}
+	conn, err := d.DialContext(ctx, "tcp", tunnelAddr)
+	if err != nil {
+		return nil, "", fmt.Errorf("dial tunnel: %w", err)
+	}
+	_ = conn.SetDeadline(time.Now().Add(handshakeTimeout))
+	var line string
+	err = greet(conn, secret, verb, arg)
+	if err == nil {
+		line, err = readLine(conn)
+	}
+	if err != nil {
+		_ = conn.Close()
+		return nil, "", err
+	}
+	_ = conn.SetDeadline(time.Time{})
+	return conn, line, nil
 }

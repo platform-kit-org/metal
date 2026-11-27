@@ -32,8 +32,10 @@ type Options struct {
 	NodeName string
 	// Config is the rendered machine config to pack and serve.
 	Config []byte
-	// MediaID is the slot to mount on; empty picks the first insertable
-	// optical slot, or the first insertable slot when none is optical.
+	// MediaID is the slot to mount on. Empty picks the slot where the
+	// operator puts the config: the next insertable slot after the best boot
+	// slot (bmc.InsertableSlots), which stays free for the installer. A BMC
+	// with one insertable slot gets the config on it.
 	MediaID string
 	// SystemID is the system to boot; empty requires the endpoint to front
 	// exactly one.
@@ -157,8 +159,9 @@ func Run(ctx context.Context, o Options) (Result, error) {
 	}
 	m := newMeter(&asset.Server{Grants: grants}, int64(len(iso)))
 	srv := &http.Server{Handler: m}
+	served := make(chan error, 1)
 	go func() {
-		_ = srv.Serve(tls.NewListener(ln, &tls.Config{
+		served <- srv.Serve(tls.NewListener(ln, &tls.Config{
 			Certificates: []tls.Certificate{cert},
 			MinVersion:   tls.VersionTLS12,
 		}))
@@ -223,19 +226,35 @@ func Run(ctx context.Context, o Options) (Result, error) {
 		logf("boot: image read complete")
 	case <-time.After(o.TTL):
 		logf("boot: grant expired before a full read")
+	case err := <-served:
+		res.ServedBytes = m.total()
+		return res, cleanupAfter(ctx, o, grants, grant.Token, slot, servingStopped(err))
 	case <-ctx.Done():
 		res.ServedBytes = m.total()
 		return res, cleanupAfter(ctx, o, grants, grant.Token, slot, ctx.Err())
 	}
 	res.ServedBytes = m.total()
 
+	var cause error
 	if o.Hold {
 		logf("boot: holding mount and grant until interrupted")
-		<-ctx.Done()
+		select {
+		case err := <-served:
+			cause = servingStopped(err)
+		case <-ctx.Done():
+		}
 	}
-	err = cleanupAfter(ctx, o, grants, grant.Token, slot, nil)
+	err = cleanupAfter(ctx, o, grants, grant.Token, slot, cause)
 	res.ServedBytes = m.total()
 	return res, err
+}
+
+// servingStopped is the error when the image server stops before the boot
+// ends. Its listener closed: with a relay, that is the tunnel, the relay, or
+// a later registration at the relay.
+func servingStopped(err error) error {
+	return fmt.Errorf("boot: stopped serving the image: %w (with a relay: the tunnel or the relay closed, "+
+		"or another pk-metal boot registered at the relay; boot one machine at a time through one relay)", err)
 }
 
 // shortToken is the start of a grant token, enough to tell two grants apart
@@ -298,19 +317,13 @@ func pickSlot(ctx context.Context, c bmc.Client, want string) (string, bmc.Media
 	if err != nil {
 		return "", "", fmt.Errorf("boot: media: %w", err)
 	}
-	if slots := InsertableSlots(caps.MediaDialect, media); len(slots) > 0 {
-		return slots[0], caps.MediaDialect[slots[0]], nil
+	slots := bmc.InsertableSlots(media, caps)
+	if len(slots) == 0 {
+		return "", "", fmt.Errorf("boot: endpoint advertises no insertable media slot")
 	}
-	return "", "", fmt.Errorf("boot: endpoint advertises no insertable media slot")
-}
-
-// InsertableSlots lists the slots that advertise an insert mechanism, the best
-// boot slot first: optical slots lead, wherever they sit in the endpoint's
-// collection, the others follow in the endpoint's order (deterministic). Its
-// length is what decides whether an installer and a config medium can be
-// mounted side by side.
-func InsertableSlots(dialects map[string]bmc.MediaDialect, media []bmc.VirtualMedia) []string {
-	return bmc.InsertableSlots(media, bmc.Capabilities{MediaDialect: dialects})
+	// slots[0] is the best boot slot: the installer takes it.
+	slot := slots[min(1, len(slots)-1)]
+	return slot, caps.MediaDialect[slot], nil
 }
 
 func pickSystem(ctx context.Context, c bmc.Client, want string) (bmc.System, error) {

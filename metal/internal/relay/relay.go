@@ -2,7 +2,7 @@
 // network: it holds nothing and terminates nothing. The operator dials OUT to
 // the tunnel port and registers;
 // inbound BMC fetches on the front port are handed back over the tunnel, and the
-// operator's outbound Redfish dials are passed onward. TLS terminates at the
+// outbound Redfish dials of pk-metal boot are passed onward. TLS terminates at the
 // asset server, never here — the relay splices ciphertext, which is what makes it
 // acceptable to run on a box we don't own.
 //
@@ -18,7 +18,7 @@
 //
 //	REGISTER          -> OK front=<addr>    the control connection (last wins)
 //	ACCEPT <id>       picks up the front stream announced as "STREAM <id>"
-//	DIAL <host:port>  -> OK | ERR <why>     the operator's Redfish path onward,
+//	DIAL <host:port>  -> OK | ERR <why>     boot's Redfish path onward,
 //	                                        to targets in the allow list only
 //
 // Everything after a connection's first line is spliced payload. Without the
@@ -29,8 +29,6 @@ package relay
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"net"
@@ -48,26 +46,23 @@ const (
 // listener dies. advertise overrides the front address reported to the
 // registering operator (the address as BMCs reach it); empty means front.Addr().
 // secret is the shared secret every tunnel connection must prove it holds
-// (ParseSecret, LoadSecret); the relay refuses to run without one. Without
-// WithAllow, a DIAL may name any target.
-func Serve(ctx context.Context, tunnel, front net.Listener, advertise string, secret []byte, opts ...Option) error {
+// (ParseSecret, LoadSecret); the relay refuses to run without one. allow
+// limits the onward dials (ParseAllow); an empty list refuses each one.
+func Serve(ctx context.Context, tunnel, front net.Listener, advertise string, secret []byte, allow Allow) error {
 	if len(secret) < minSecret {
 		return fmt.Errorf("relay: a secret of at least %d characters is required", minSecret)
 	}
 	if advertise == "" {
 		advertise = front.Addr().String()
 	}
-	r := newRelay(advertise, secret)
-	for _, opt := range opts {
-		opt(r)
-	}
-	return r.serve(ctx, tunnel, front)
+	return newRelay(advertise, secret, allow).serve(ctx, tunnel, front)
 }
 
-func newRelay(advertise string, secret []byte) *relay {
+func newRelay(advertise string, secret []byte, allow Allow) *relay {
 	return &relay{
 		advertise:         advertise,
 		secret:            secret,
+		allow:             allow,
 		pending:           map[string]chan net.Conn{},
 		dial:              net.DialTimeout,
 		lookup:            lookupHost,
@@ -98,7 +93,7 @@ func (r *relay) serve(ctx context.Context, tunnel, front net.Listener) error {
 type relay struct {
 	advertise string
 	secret    []byte
-	// allow limits the onward dials; nil allows every target.
+	// allow limits the onward dials; an empty list refuses each one.
 	allow Allow
 	// dial, lookup and the two timeouts are fields so that tests can record onward
 	// dials and wait milliseconds, not seconds.
@@ -124,11 +119,7 @@ func acceptLoop(ln net.Listener, handle func(net.Conn)) error {
 
 func (r *relay) handleTunnel(c net.Conn) {
 	_ = c.SetDeadline(time.Now().Add(r.handshakeTimeout))
-	nonce, err := newNonce()
-	if err != nil {
-		_ = c.Close()
-		return
-	}
+	nonce := randomHex(16)
 	if _, err := io.WriteString(c, greeting+" "+nonce+"\n"); err != nil {
 		_ = c.Close()
 		return
@@ -168,25 +159,20 @@ func (r *relay) register(c net.Conn) {
 	}
 	r.control = c
 	r.mu.Unlock()
-	if _, err := fmt.Fprintf(c, "OK front=%s\n", r.advertise); err != nil {
+	defer func() {
 		r.mu.Lock()
 		if r.control == c {
 			r.control = nil
 		}
 		r.mu.Unlock()
 		_ = c.Close()
+	}()
+	if _, err := fmt.Fprintf(c, "OK front=%s\n", r.advertise); err != nil {
 		return
 	}
-
 	// The operator sends nothing further on the control connection; this read
 	// exists purely to notice it vanishing.
 	_, _ = io.Copy(io.Discard, c)
-	r.mu.Lock()
-	if r.control == c {
-		r.control = nil
-	}
-	r.mu.Unlock()
-	_ = c.Close()
 }
 
 // accept delivers an operator dial-back to the front handler waiting under the
@@ -239,11 +225,7 @@ func (r *relay) handleFront(c net.Conn) {
 		return
 	}
 
-	id, err := newID()
-	if err != nil {
-		_ = c.Close()
-		return
-	}
+	id := randomHex(8)
 	ch := make(chan net.Conn, 1)
 	r.mu.Lock()
 	r.pending[id] = ch
@@ -278,14 +260,6 @@ func (r *relay) forget(id string) bool {
 	}
 	delete(r.pending, id)
 	return true
-}
-
-func newID() (string, error) {
-	var b [8]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(b[:]), nil
 }
 
 // splice joins two streams — the relay's entire data plane. Each direction

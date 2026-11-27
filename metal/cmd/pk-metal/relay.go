@@ -69,7 +69,7 @@ func relayCmd(args []string) {
 		shown = frontLn.Addr().String()
 	}
 	log.Printf("relay: front %s (advertised %s), tunnel %s, onward dials to %s", frontLn.Addr(), shown, tunnelLn.Addr(), *allowFlag)
-	die(relay.Serve(context.Background(), tunnelLn, frontLn, *advertise, secret, relay.WithAllow(allow)))
+	die(relay.Serve(context.Background(), tunnelLn, frontLn, *advertise, secret, allow))
 }
 
 // relaySecret reads the relay's shared secret: from $PK_METAL_RELAY_SECRET

@@ -62,6 +62,10 @@ type Config struct {
 	// the answer. Zero is DefaultRequestTimeout. A request that uploads a
 	// large body (a firmware image) gets UploadTimeout instead.
 	RequestTimeout time.Duration
+	// Dial, when set, opens each connection of the session in place of a
+	// direct dial, and no proxy is used: pk-metal boot dials through its
+	// relay.
+	Dial func(ctx context.Context, network, addr string) (net.Conn, error)
 }
 
 // DefaultRequestTimeout bounds one Redfish request. A BMC that completes
@@ -155,6 +159,9 @@ func Connect(ctx context.Context, cfg Config) (bmc.Client, error) {
 	t := http.DefaultTransport.(*http.Transport).Clone()
 	t.ForceAttemptHTTP2 = true
 	t.TLSClientConfig = clientTLS(cfg)
+	if cfg.Dial != nil {
+		t.DialContext, t.Proxy = cfg.Dial, nil
+	}
 	timeout := cmp.Or(cfg.RequestTimeout, DefaultRequestTimeout)
 	// The header timeout starts after the request body is sent, so it also
 	// holds for an upload.

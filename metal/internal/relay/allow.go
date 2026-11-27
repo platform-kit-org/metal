@@ -18,9 +18,7 @@ const DefaultAllow = "*:443"
 // Allow is the set of targets the relay dials onward to. A DIAL whose target
 // matches no rule is answered with ERR and nothing is dialled, so a holder of
 // the secret cannot use the relay as a general TCP pivot into the network it
-// sits on. The nil Allow permits every target; Serve without WithAllow keeps
-// that for the library's own callers (tests, the simulator), while the CLI
-// always passes a list.
+// sits on. An empty Allow refuses every target.
 type Allow []allowRule
 
 type allowRule struct {
@@ -100,12 +98,8 @@ func lookupHost(ctx context.Context, host string) ([]netip.Addr, error) {
 
 // target decides a DIAL. It returns the address to dial, which for a host
 // name is one of its addresses that a rule allows, so the name is not looked
-// up a second time by the dial (and cannot answer differently then). A nil
-// Allow returns hostport unchanged.
+// up a second time by the dial (and cannot answer differently then).
 func (a Allow) target(ctx context.Context, lookup resolver, hostport string) (string, error) {
-	if a == nil {
-		return hostport, nil
-	}
 	host, portText, err := net.SplitHostPort(hostport)
 	if err != nil {
 		return "", fmt.Errorf("target %q is not host:port", hostport)
@@ -148,12 +142,4 @@ func (a Allow) allows(ip netip.Addr, port uint16) bool {
 		}
 	}
 	return false
-}
-
-// Option changes how Serve runs.
-type Option func(*relay)
-
-// WithAllow limits the onward dials to the targets a allows.
-func WithAllow(a Allow) Option {
-	return func(r *relay) { r.allow = a }
 }

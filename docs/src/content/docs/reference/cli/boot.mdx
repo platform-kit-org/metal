@@ -47,7 +47,7 @@ Give `--listen` or `--relay`, not the two. The BMC must reach the address that s
 The command mounts the machine configuration only. It does not mount an installer.
 A blank machine must start a Talos installer from a second virtual media slot.
 The installer must have the kernel argument `talos.config=metal-iso`, so that it reads the configuration from the medium of this command.
-Mount the installer yourself, and give the other slot with [`--media`](cli:boot#--media).
+Mount the installer yourself on the CD slot. The command uses the next slot.
 [](howto:bootstrap-without-operator) shows the steps.
 
 A BMC with one slot cannot hold the two media. Install such a machine with the operator. See [](concept:one-slot-bmc).
@@ -67,8 +67,8 @@ A BMC with one slot cannot hold the two media. Install such a machine with the o
 ### Options for the power step
 
 <dl>
-  <dt>`--yes`, [`--force-restart`](cli:boot#--force-restart)</dt>
-  <dd>Let the command do the hard reset of a machine that is on. The two flags are equal.</dd>
+  <dt>[`--yes`](cli:boot#--yes)</dt>
+  <dd>Let the command do the hard reset of a machine that is on.</dd>
   <dt>[`--no-power`](cli:boot#--no-power)</dt>
   <dd>The command does not touch the power. Restart the machine yourself, for example from the web console of the BMC. The command waits until the machine reads the image.</dd>
   <dt>[`--hold`](cli:boot#--hold)</dt>

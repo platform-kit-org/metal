@@ -67,9 +67,18 @@ func TestBMCFlagsRefuseBadInput(t *testing.T) {
 	require.ErrorContains(t, err, "not both")
 }
 
+// An empty password is refused before any request: the BMC would count
+// the login as a failure. A BMC without accounts takes --user "".
+func TestBMCFlagsRefuseAnEmptyPassword(t *testing.T) {
+	_, err := parseBMCFlags(t).config("https://bmc", "", true, io.Discard)
+	require.ErrorContains(t, err, "PK_METAL_BMC_PASSWORD is empty")
+	_, err = parseBMCFlags(t, "--user", "").config("https://bmc", "", true, io.Discard)
+	require.NoError(t, err)
+}
+
 func TestInsecureWarns(t *testing.T) {
 	var warn bytes.Buffer
-	cfg, err := parseBMCFlags(t, "--insecure").config("https://bmc", "", true, &warn)
+	cfg, err := parseBMCFlags(t, "--insecure").config("https://bmc", "secret", true, &warn)
 	require.NoError(t, err)
 	assert.True(t, cfg.Insecure)
 	assert.Contains(t, warn.String(), "--bmc-ca")

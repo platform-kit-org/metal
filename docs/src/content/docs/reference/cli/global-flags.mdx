@@ -76,7 +76,7 @@ Some commands read a secret from the environment. A secret is never a flag, so i
 | Variable | Used by | Content |
 | --- | --- | --- |
 | `KUBECONFIG` | All commands that talk to the cluster | The kubeconfig file, when [`--kubeconfig`](cli:global-flags#--kubeconfig) is not set. |
-| `PK_METAL_BMC_PASSWORD` | [](cli:check), [](cli:inventory), [](cli:boot) | The password of the BMC user. |
+| `PK_METAL_BMC_PASSWORD` | [](cli:check), [](cli:inventory), [](cli:boot) | The password of the BMC user. The commands refuse an empty password. For a BMC without accounts, give `--user ""`. |
 | `PK_METAL_RELAY_SECRET` | [](cli:relay), [](cli:boot) | The shared secret of the relay. |
 
 ## Related

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -16,10 +17,12 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
@@ -530,4 +533,43 @@ func TestMediaFetchesReachTheTrail(t *testing.T) {
 	assert.Equal(t, int64(len("config")), *lines[2].Bytes)
 	assert.Equal(t, "revoked", lines[2].Reason)
 	assert.NotContains(t, b.String(), g.Token)
+}
+
+// The release fences a boot that has not started: it deletes the boot at the
+// version that it read. When the executor wrote the baseline in between, the
+// API server refuses the delete, and the boot runs on. The trail then has no
+// deleted line for it. A delete that the API server accepts has its line.
+func TestTheFenceWritesDeletedOnlyForADelete(t *testing.T) {
+	claim := &metalv1alpha1.HostClaim{ObjectMeta: metav1.ObjectMeta{Name: "c", Namespace: "default", UID: "claim-uid"}}
+	boot := &metalv1alpha1.HostOperation{
+		ObjectMeta: metav1.ObjectMeta{Name: "boot", Namespace: "pk-metal", UID: "boot-uid",
+			Labels: map[string]string{labelClaimUID: "claim-uid", labelPurpose: purposeProvision}},
+		Spec: metalv1alpha1.HostOperationSpec{HostRef: metalv1alpha1.Reference{Name: "host-a"}},
+	}
+	for _, refused := range []bool{true, false} {
+		b := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(boot.DeepCopy())
+		if refused {
+			b = b.WithInterceptorFuncs(interceptor.Funcs{
+				Delete: func(_ context.Context, _ client.WithWatch, obj client.Object, _ ...client.DeleteOption) error {
+					return apierrors.NewConflict(schema.GroupResource{Group: metalv1alpha1.GroupVersion.Group, Resource: "hostoperations"},
+						obj.GetName(), errors.New("the object has been modified"))
+				},
+			})
+		}
+		cl := b.Build()
+		var buf bytes.Buffer
+		r := &HostClaimReconciler{Client: cl, OperationsNamespace: "pk-metal", Audit: audit.New(&buf, testOperator)}
+
+		ran, err := r.bootRanUncached(t.Context(), claim, "host-a")
+		assert.False(t, ran)
+		if refused {
+			assert.True(t, apierrors.IsConflict(err), "the pass reads it again: %v", err)
+			assert.Empty(t, trail(t, &buf), "the boot was not deleted")
+			continue
+		}
+		require.NoError(t, err)
+		lines := trail(t, &buf)
+		require.Equal(t, []string{"deleted"}, eventNames(lines))
+		assert.Equal(t, "Stopped", lines[0].Reason)
+	}
 }

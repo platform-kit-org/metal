@@ -1239,10 +1239,14 @@ func (r *HostClaimReconciler) bootRanUncached(ctx context.Context, claim *metalv
 		if op.Spec.HostRef.Name != hostName || op.Finished() {
 			continue
 		}
+		// The API server can refuse this delete by design, so its audit
+		// line comes after the delete and not before it (deleteOp).
 		uid, rv := op.UID, op.ResourceVersion
-		err := deleteOp(ctx, r.Client, r.Audit, op, audit.DeleteStopped,
-			"claim "+claim.Namespace+"/"+claim.Name+" releases host "+hostName+" before this boot started",
-			client.Preconditions{UID: &uid, ResourceVersion: &rv})
+		err := r.Delete(ctx, op, client.Preconditions{UID: &uid, ResourceVersion: &rv})
+		if err == nil {
+			r.Audit.Deleted(opObject(op), audit.DeleteStopped,
+				"claim "+claim.Namespace+"/"+claim.Name+" releases host "+hostName+" before this boot started")
+		}
 		if apierrors.IsConflict(err) {
 			return false, fmt.Errorf("boot operation %s/%s changed while the release read it; reading it again: %w",
 				op.Namespace, op.Name, err)

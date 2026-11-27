@@ -94,7 +94,7 @@ An event adds the fields in the table below. A line never holds a Secret, a cred
 | `step.finished` | A step succeeds. | `step`, `action`, `result` |
 | `step.failed` | A step fails. | `step`, `action`, `result`, `reason`, `message` |
 | `finished` | The operation or rollout ends. | `phase`, `reason`, `durationSeconds`, and `message` with the abort. For a rollout, the message names the person who aborted it. |
-| `deleted` | The operator deletes the object. The line comes before the delete request. | `reason`, `message` |
+| `deleted` | The operator deletes the object. The line comes before the delete request. For a delete at a fixed version (the release fence), the line comes after the API server accepts the delete. | `reason`, `message` |
 | `media.fetched` | A BMC fetches through a [media grant](ref:media-store#grants) of the operation for the first time. The grant is now bound to that address. | `grant` (the file name), `source` |
 | `media.refused` | The media service refuses a request with a wrong password, or from an address that is not the bound one. At most ten lines for each grant. | `grant`, `source`, `reason` |
 | `media.grantEnded` | A media grant ends. | `grant`, `source` (empty if nobody fetched), `reason` (`revoked` or `expired`), `requests`, `bytes`, `refused` |

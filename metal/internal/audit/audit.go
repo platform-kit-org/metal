@@ -360,7 +360,8 @@ func (l *Logger) Finished(o Object, phase, reason, message string, ran time.Dura
 
 // Deleted records that the operator is about to delete o. It is written
 // before the delete request, so that the record of the delete exists even
-// when the request is the last thing the process does.
+// when the request is the last thing the process does. A delete at a fixed
+// version (the release fence) gets its line after the API server accepts it.
 func (l *Logger) Deleted(o Object, reason DeleteReason, message string) {
 	l.write(o, EventDeleted, l.Operator(), func(x *Line) { x.Reason, x.Message = string(reason), clip(redact.String(message)) })
 }

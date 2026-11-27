@@ -299,7 +299,10 @@ func (r *EtcdBackupPolicyReconciler) reconcile(ctx context.Context, p *osv1alpha
 				continue
 			}
 			if err := sink.Delete(ctx, s.Status.Key); err != nil {
-				log.Error(err, "prune: delete stored snapshot", "snapshot", name)
+				// The rest is refused too: one line, and the records
+				// without a stored object are still pruned.
+				log.Error(err, "retention paused: the sink refused a delete; stored snapshots stay until it accepts", "snapshot", name)
+				sink = nil
 				continue
 			}
 		}

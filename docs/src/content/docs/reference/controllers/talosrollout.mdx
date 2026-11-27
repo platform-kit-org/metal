@@ -107,7 +107,7 @@ The TalosRollout lane changes a running cluster one node at a time: a Talos upgr
 
 1. A `TalosUpgrade` when a node runs another Talos version than the spec.
 2. A `KubernetesUpgrade` when the API runs another Kubernetes version.
-3. A `Config` rollout for the nodes whose dry run reports drift.
+3. A `Config` rollout for the nodes whose dry run reports drift. A dry run from before the last rollout step on the node does not count.
 
 The name comes from a hash of what it proposes, so the same need is not proposed twice. A failed or aborted rollout stays until a person deletes it.
 

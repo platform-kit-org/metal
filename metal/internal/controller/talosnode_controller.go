@@ -262,14 +262,14 @@ func (r *TalosNodeReconciler) checkin(ctx context.Context, node *osv1alpha1.Talo
 		r.observeVersion(node, cluster)
 		if st.Stage == "running" && st.Ready {
 			set(osv1alpha1.ConditionReady, metav1.ConditionTrue, osv1alpha1.ReasonNodeReady, "")
-			rolling, err := r.rolloutActive(ctx, node.Spec.ClusterRef.Name)
+			rolling, stale, err := r.rolloutState(ctx, node)
 			if err != nil {
 				return ctrl.Result{}, err
 			}
-			r.checkDrift(ctx, node, driftTalosconfig(cluster, bundle, endpoint), endpoint, rendered, rolling)
+			r.checkDrift(ctx, node, driftTalosconfig(cluster, bundle, endpoint), endpoint, rendered, rolling, stale)
 			if rolling {
-				// The health gates between the nodes of a rollout read
-				// this: a Ready polled two minutes ago is no gate (D7).
+				// The drift check runs each rollingDriftInterval while a
+				// rollout changes the nodes: the passes come as often.
 				return retry, nil
 			}
 			return ctrl.Result{RequeueAfter: cmp.Or(r.ReadyInterval, defaultReadyInterval)}, nil

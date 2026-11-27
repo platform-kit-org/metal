@@ -41,7 +41,8 @@ A BMC or a node that does not answer does not cause these alerts. The controller
 2. For a panic, read the stack.
 
    ```sh
-   kubectl -n pk-metal logs deploy/pk-metal-manager --since=1h | grep -A40 'Observed a panic'
+   kubectl -n pk-metal logs deploy/pk-metal-manager --since=1h \
+     | jq -rR 'fromjson? | select(.msg == "Observed a panic") | .panic, .stacktrace'
    ```
 
 3. Find the cause in the table.

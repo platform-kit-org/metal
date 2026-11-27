@@ -133,7 +133,7 @@ spec:
             severity: warning
           annotations:
             summary: "Controller {{ $labels.controller }} panicked in the last hour"
-            description: "The manager log has the stack: kubectl -n pk-metal logs deploy/pk-metal-manager --since=1h | grep -A40 'Observed a panic'."
+            description: "The manager log has the stack. The runbook gives the command that prints it."
             runbook_url: https://metal.platform-kit.org/operate/runbooks/reconcile-failing/
         - alert: PkMetalOperationWorkersBusy
           # Each operation worker has been busy for an hour. Approved

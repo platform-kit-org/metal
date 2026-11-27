@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"io"
@@ -157,10 +158,7 @@ func listRollouts(ctx context.Context, cl client.Client, w io.Writer, now time.T
 		return nil
 	}
 	slices.SortFunc(list.Items, func(a, b osv1alpha1.TalosRollout) int {
-		if c := a.CreationTimestamp.Compare(b.CreationTimestamp.Time); c != 0 {
-			return c
-		}
-		return strings.Compare(a.Name, b.Name)
+		return cmp.Or(a.CreationTimestamp.Compare(b.CreationTimestamp.Time), strings.Compare(a.Name, b.Name))
 	})
 	tw := tabwriter.NewWriter(w, 2, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ROLLOUT\tCLUSTER\tKIND\tTARGET\tNODES\tSTATE\tAPPROVED BY\tAGE")

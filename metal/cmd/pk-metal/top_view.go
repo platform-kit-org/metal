@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"fmt"
 	"net/url"
 	"slices"
@@ -421,10 +422,7 @@ func currentOp(ops []metalv1alpha1.HostOperation, host string) *opLine {
 		}
 	}
 	slices.SortFunc(mine, func(a, b metalv1alpha1.HostOperation) int {
-		if c := a.CreationTimestamp.Compare(b.CreationTimestamp.Time); c != 0 {
-			return c
-		}
-		return strings.Compare(a.Name, b.Name)
+		return cmp.Or(a.CreationTimestamp.Compare(b.CreationTimestamp.Time), strings.Compare(a.Name, b.Name))
 	})
 	var pick *metalv1alpha1.HostOperation
 	for i := range mine {

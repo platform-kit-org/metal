@@ -1,11 +1,7 @@
 package sim_test
 
 import (
-	"bytes"
-	"encoding/json"
-	"io"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -21,33 +17,21 @@ import (
 // an apply time the service does not list is refused.
 func TestBiosApplyTimeDialect(t *testing.T) {
 	ctx := t.Context()
-	setup := func(t *testing.T) (*sim.State, *httptest.Server) {
-		f, err := sim.LoadFixture("supermicro-x12") // open, no If-Match: raw PATCHes are enough
-		require.NoError(t, err)
-		f.Bios.ApplyTimeRequired = true
-		f.Bios.SupportedApplyTimes = []string{"OnReset", "AtMaintenanceWindowStart", "InMaintenanceWindowOnReset"}
-		st := sim.NewState(f)
-		srv := httptest.NewServer(sim.NewServer(st))
-		t.Cleanup(srv.Close)
-		return st, srv
+	setup := func(t *testing.T) (*wire, *sim.State) {
+		return newWire(t, "supermicro-x12", func(f *sim.Fixture) {
+			f.Bios.ApplyTimeRequired = true
+			f.Bios.SupportedApplyTimes = []string{"OnReset", "AtMaintenanceWindowStart", "InMaintenanceWindowOnReset"}
+		})
 	}
-	patch := func(t *testing.T, srv *httptest.Server, body map[string]any) int {
-		raw, err := json.Marshal(body)
-		require.NoError(t, err)
-		req, err := http.NewRequestWithContext(ctx, http.MethodPatch, srv.URL+"/redfish/v1/Systems/1/Bios/SD", bytes.NewReader(raw))
-		require.NoError(t, err)
-		req.Header.Set("Content-Type", "application/json")
-		resp, err := srv.Client().Do(req)
-		require.NoError(t, err)
-		_, _ = io.Copy(io.Discard, resp.Body)
-		resp.Body.Close()
+	patch := func(w *wire, body map[string]any) int {
+		resp, _ := w.patch("/redfish/v1/Systems/1/Bios/SD", body)
 		return resp.StatusCode
 	}
 	attrs := map[string]any{"QuietBoot": false}
 
 	t.Run("without an apply time nothing applies", func(t *testing.T) {
-		st, srv := setup(t)
-		require.Less(t, patch(t, srv, map[string]any{"Attributes": attrs}), 300)
+		w, st := setup(t)
+		require.Less(t, patch(w, map[string]any{"Attributes": attrs}), 300)
 		require.NoError(t, st.SetPower(ctx, "1", bmc.ActionForceRestart))
 		state, err := st.Bios(ctx, "1")
 		require.NoError(t, err)
@@ -55,7 +39,7 @@ func TestBiosApplyTimeDialect(t *testing.T) {
 		assert.Equal(t, false, state.Pending["QuietBoot"], "still pending after the reset")
 
 		// A later PATCH that asks for OnReset schedules the whole pending set.
-		require.Less(t, patch(t, srv, map[string]any{"Attributes": map[string]any{"CSMSupport": "Disabled"},
+		require.Less(t, patch(w, map[string]any{"Attributes": map[string]any{"CSMSupport": "Disabled"},
 			"@Redfish.SettingsApplyTime": map[string]any{"ApplyTime": "OnReset"}}), 300)
 		require.NoError(t, st.SetPower(ctx, "1", bmc.ActionForceRestart))
 		state, err = st.Bios(ctx, "1")
@@ -65,8 +49,8 @@ func TestBiosApplyTimeDialect(t *testing.T) {
 	})
 
 	t.Run("OnReset applies at the next reset", func(t *testing.T) {
-		st, srv := setup(t)
-		require.Less(t, patch(t, srv, map[string]any{"Attributes": attrs,
+		w, st := setup(t)
+		require.Less(t, patch(w, map[string]any{"Attributes": attrs,
 			"@Redfish.SettingsApplyTime": map[string]any{"ApplyTime": "OnReset"}}), 300)
 		require.NoError(t, st.SetPower(ctx, "1", bmc.ActionForceRestart))
 		state, err := st.Bios(ctx, "1")
@@ -75,8 +59,8 @@ func TestBiosApplyTimeDialect(t *testing.T) {
 	})
 
 	t.Run("an apply time not offered is refused", func(t *testing.T) {
-		_, srv := setup(t)
-		assert.Equal(t, http.StatusBadRequest, patch(t, srv, map[string]any{"Attributes": attrs,
+		w, _ := setup(t)
+		assert.Equal(t, http.StatusBadRequest, patch(w, map[string]any{"Attributes": attrs,
 			"@Redfish.SettingsApplyTime": map[string]any{"ApplyTime": "Immediate"}}))
 	})
 }

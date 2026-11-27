@@ -3,7 +3,6 @@ package sim_test
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -167,26 +166,6 @@ func TestFaultInjection(t *testing.T) {
 // exactly its own dialect (the standard action 404s on Huawei; VmmControl answers 202 +
 // a task URI that reports Completed).
 func TestHTTPTree(t *testing.T) {
-	get := func(t *testing.T, srv *httptest.Server, path string) map[string]any {
-		t.Helper()
-		resp, err := srv.Client().Get(srv.URL + path)
-		require.NoError(t, err)
-		defer resp.Body.Close()
-		require.Equal(t, http.StatusOK, resp.StatusCode, "GET %s", path)
-		var v map[string]any
-		require.NoError(t, json.NewDecoder(resp.Body).Decode(&v))
-		return v
-	}
-	post := func(t *testing.T, srv *httptest.Server, path string, body any) *http.Response {
-		t.Helper()
-		b, err := json.Marshal(body)
-		require.NoError(t, err)
-		resp, err := srv.Client().Post(srv.URL+path, "application/json", bytes.NewReader(b))
-		require.NoError(t, err)
-		resp.Body.Close()
-		return resp
-	}
-
 	// The sim fetches at mount time, so inserted URLs must really serve an image.
 	asset := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.ServeContent(w, r, "talos.iso", time.Time{}, bytes.NewReader(make([]byte, 2048)))
@@ -195,50 +174,44 @@ func TestHTTPTree(t *testing.T) {
 	img := asset.URL + "/talos.iso"
 
 	t.Run("supermicro-standard-insert", func(t *testing.T) {
-		f, err := sim.LoadFixture("supermicro-x12")
-		require.NoError(t, err)
-		srv := httptest.NewServer(sim.NewServer(sim.NewState(f)))
-		defer srv.Close()
+		w, _ := newWire(t, "supermicro-x12", nil)
 
-		root := get(t, srv, "/redfish/v1")
+		root := w.ok("/redfish/v1")
 		require.NotNil(t, root["Systems"], "ServiceRoot lacks Systems link")
 
-		sys := get(t, srv, "/redfish/v1/Systems/1")
+		sys := w.ok("/redfish/v1/Systems/1")
 		assert.Equal(t, "", sys["SerialNumber"], "X12 Systems/1 serial (the blind spot)")
 
-		chas := get(t, srv, "/redfish/v1/Chassis/1")
+		chas := w.ok("/redfish/v1/Chassis/1")
 		assert.Equal(t, "", chas["SerialNumber"], "X12 chassis SerialNumber lives in Oem")
 		oem, _ := chas["Oem"].(map[string]any)
 		smc, _ := oem["Supermicro"].(map[string]any)
 		assert.Equal(t, "SIMX12B000001", smc["BoardSerialNumber"])
 
-		resp := post(t, srv, "/redfish/v1/Managers/1/VirtualMedia/VirtualMedia1/Actions/VirtualMedia.InsertMedia",
+		resp, _ := w.post("/redfish/v1/Managers/1/VirtualMedia/VirtualMedia1/Actions/VirtualMedia.InsertMedia",
 			map[string]string{"Image": img})
 		assert.Equal(t, http.StatusNoContent, resp.StatusCode, "standard InsertMedia")
 
-		vm := get(t, srv, "/redfish/v1/Managers/1/VirtualMedia/VirtualMedia1")
+		vm := w.ok("/redfish/v1/Managers/1/VirtualMedia/VirtualMedia1")
 		assert.Equal(t, true, vm["Inserted"], "Inserted after InsertMedia")
 	})
 
 	t.Run("huawei-oem-only", func(t *testing.T) {
-		f, err := sim.LoadFixture("huawei-2288h-v5")
-		require.NoError(t, err)
-		srv := httptest.NewServer(sim.NewServer(sim.NewState(f)))
-		defer srv.Close()
+		w, _ := newWire(t, "huawei-2288h-v5", nil)
 
 		// The defining Huawei fact: the DMTF action is NOT there.
-		resp := post(t, srv, "/redfish/v1/Managers/1/VirtualMedia/CD/Actions/VirtualMedia.InsertMedia",
+		resp, _ := w.post("/redfish/v1/Managers/1/VirtualMedia/CD/Actions/VirtualMedia.InsertMedia",
 			map[string]string{"Image": img})
 		assert.Equal(t, http.StatusNotFound, resp.StatusCode, "standard InsertMedia on iBMC")
 
-		resp = post(t, srv, "/redfish/v1/Managers/1/VirtualMedia/CD/Oem/Huawei/Actions/VirtualMedia.VmmControl",
+		resp, _ = w.post("/redfish/v1/Managers/1/VirtualMedia/CD/Oem/Huawei/Actions/VirtualMedia.VmmControl",
 			map[string]string{"VmmControlType": "Connect", "Image": img})
 		require.Equal(t, http.StatusAccepted, resp.StatusCode, "VmmControl Connect")
 
-		task := get(t, srv, resp.Header.Get("Location"))
+		task := w.ok(resp.Header.Get("Location"))
 		assert.Equal(t, "Completed", task["TaskState"])
 
-		vm := get(t, srv, "/redfish/v1/Managers/1/VirtualMedia/CD")
+		vm := w.ok("/redfish/v1/Managers/1/VirtualMedia/CD")
 		assert.Equal(t, true, vm["Inserted"], "Inserted after VmmControl Connect")
 	})
 }

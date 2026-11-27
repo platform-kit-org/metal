@@ -27,9 +27,11 @@ type wire struct {
 	user, pass string
 }
 
-func genericWire(t *testing.T, tune func(*sim.Fixture)) (*wire, *sim.State) {
+// newWire serves the named fixture, after tune changes it. The wire logs in
+// with the first account of the fixture, if it has one.
+func newWire(t *testing.T, fixture string, tune func(*sim.Fixture)) (*wire, *sim.State) {
 	t.Helper()
-	f, err := sim.LoadFixture("generic")
+	f, err := sim.LoadFixture(fixture)
 	require.NoError(t, err)
 	if tune != nil {
 		tune(f)
@@ -37,12 +39,16 @@ func genericWire(t *testing.T, tune func(*sim.Fixture)) (*wire, *sim.State) {
 	st := sim.NewState(f)
 	srv := httptest.NewServer(sim.NewServer(st))
 	t.Cleanup(srv.Close)
-	return &wire{t: t, base: srv.URL, user: f.Accounts[0].Username, pass: f.Accounts[0].Password}, st
+	w := &wire{t: t, base: srv.URL}
+	if len(f.Accounts) > 0 {
+		w.user, w.pass = f.Accounts[0].Username, f.Accounts[0].Password
+	}
+	return w, st
 }
 
 func (w *wire) send(req *http.Request) (*http.Response, map[string]any) {
 	w.t.Helper()
-	if _, _, ok := req.BasicAuth(); !ok {
+	if _, _, ok := req.BasicAuth(); !ok && w.user != "" {
 		req.SetBasicAuth(w.user, w.pass)
 	}
 	resp, err := http.DefaultClient.Do(req)
@@ -62,6 +68,14 @@ func (w *wire) get(uri string) (*http.Response, map[string]any) {
 	req, err := http.NewRequest(http.MethodGet, w.base+uri, nil)
 	require.NoError(w.t, err)
 	return w.send(req)
+}
+
+// ok GETs uri and requires 200.
+func (w *wire) ok(uri string) map[string]any {
+	w.t.Helper()
+	resp, doc := w.get(uri)
+	require.Equal(w.t, http.StatusOK, resp.StatusCode, "GET %s", uri)
+	return doc
 }
 
 func (w *wire) post(uri string, body any) (*http.Response, map[string]any) {
@@ -109,6 +123,13 @@ func (w *wire) upload(uri string, params any, image []byte) (*http.Response, map
 	return w.send(req)
 }
 
+// errMessage is the message of an error body.
+func errMessage(body map[string]any) string {
+	e, _ := body["error"].(map[string]any)
+	msg, _ := e["message"].(string)
+	return msg
+}
+
 func messageID(body map[string]any) string {
 	e, _ := body["error"].(map[string]any)
 	info, _ := e["@Message.ExtendedInfo"].([]any)
@@ -121,7 +142,7 @@ func messageID(body map[string]any) string {
 }
 
 func TestGenericFirmwareTask(t *testing.T) {
-	w, _ := genericWire(t, func(f *sim.Fixture) { f.Protocol.TaskDuration = 400 * time.Millisecond })
+	w, _ := newWire(t, "generic", func(f *sim.Fixture) { f.Protocol.TaskDuration = 400 * time.Millisecond })
 
 	_, us := w.get("/redfish/v1/UpdateService")
 	push, _ := us["MultipartHttpPushUri"].(string)
@@ -167,7 +188,7 @@ func TestGenericFirmwareTask(t *testing.T) {
 }
 
 func TestGenericStagedUpdate(t *testing.T) {
-	w, _ := genericWire(t, func(f *sim.Fixture) { f.Protocol.TaskDuration = 0 })
+	w, _ := newWire(t, "generic", func(f *sim.Fixture) { f.Protocol.TaskDuration = 0 })
 	const start = "/redfish/v1/UpdateService/Actions/UpdateService.StartUpdate"
 
 	resp, _ := w.post(start, map[string]any{})
@@ -191,7 +212,7 @@ func TestGenericStagedUpdate(t *testing.T) {
 }
 
 func TestGenericAccountSlots(t *testing.T) {
-	w, _ := genericWire(t, nil)
+	w, _ := newWire(t, "generic", nil)
 	const accounts = "/redfish/v1/AccountService/Accounts"
 
 	_, coll := w.get(accounts)
@@ -226,7 +247,7 @@ func TestGenericAccountSlots(t *testing.T) {
 }
 
 func TestGenericVirtualMedia(t *testing.T) {
-	w, st := genericWire(t, nil)
+	w, st := newWire(t, "generic", nil)
 	asset := httptest.NewTLSServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		http.ServeContent(rw, r, "boot.iso", time.Time{}, bytes.NewReader(make([]byte, 4096)))
 	}))
@@ -311,7 +332,7 @@ func TestGenericVirtualMedia(t *testing.T) {
 }
 
 func TestGenericInventoryShape(t *testing.T) {
-	w, _ := genericWire(t, nil)
+	w, _ := newWire(t, "generic", nil)
 
 	_, sys := w.get("/redfish/v1/Systems/1")
 	for _, property := range []string{"SerialNumber", "UUID", "Manufacturer", "Model", "SKU", "PowerState", "LastResetTime"} {

@@ -1,14 +1,9 @@
 package sim_test
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
-	"mime/multipart"
 	"net/http"
-	"net/http/httptest"
-	"net/textproto"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -18,62 +13,11 @@ import (
 	"github.com/dennisklein/platform-kit/metal/internal/bmc/sim"
 )
 
-// upload POSTs a multipart firmware push the way curl -F does, with the given
-// UpdateParameters JSON. Returns the response (body closed).
-func upload(t *testing.T, srv *httptest.Server, params string, image []byte) *http.Response {
-	t.Helper()
-	var buf bytes.Buffer
-	mw := multipart.NewWriter(&buf)
-	ph := textproto.MIMEHeader{}
-	ph.Set("Content-Disposition", `form-data; name="UpdateParameters"`)
-	ph.Set("Content-Type", "application/json")
-	pw, err := mw.CreatePart(ph)
-	require.NoError(t, err)
-	_, err = pw.Write([]byte(params))
-	require.NoError(t, err)
-	fw, err := mw.CreateFormFile("UpdateFile", "firmware.bin")
-	require.NoError(t, err)
-	_, err = fw.Write(image)
-	require.NoError(t, err)
-	require.NoError(t, mw.Close())
-	resp, err := srv.Client().Post(srv.URL+"/redfish/v1/UpdateService/upload", mw.FormDataContentType(), &buf)
-	require.NoError(t, err)
-	resp.Body.Close()
-	return resp
-}
-
-func getJSON(t *testing.T, srv *httptest.Server, path string) map[string]any {
-	t.Helper()
-	resp, err := srv.Client().Get(srv.URL + path)
-	require.NoError(t, err)
-	defer resp.Body.Close()
-	require.Equal(t, http.StatusOK, resp.StatusCode, "GET %s", path)
-	var v map[string]any
-	require.NoError(t, json.NewDecoder(resp.Body).Decode(&v))
-	return v
-}
-
-func postJSON(t *testing.T, srv *httptest.Server, path string, body string) (*http.Response, string) {
-	t.Helper()
-	resp, err := srv.Client().Post(srv.URL+path, "application/json", strings.NewReader(body))
-	require.NoError(t, err)
-	defer resp.Body.Close()
-	var sb strings.Builder
-	var doc struct {
-		Error struct {
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	if json.NewDecoder(resp.Body).Decode(&doc) == nil {
-		sb.WriteString(doc.Error.Message)
-	}
-	return resp, sb.String()
-}
-
-const (
-	preserveParams = `{"Targets":["/redfish/v1/Managers/1"],"@Redfish.OperationApplyTime":"Immediate","Oem":{"Supermicro":{"BMC":{"PreserveCfg":true,"PreserveSdr":true,"PreserveSsl":true,"BackupBMC":true}}}}`
-	noPreserve     = `{"Targets":["/redfish/v1/Managers/1"],"@Redfish.OperationApplyTime":"Immediate"}`
-	stagedParams   = `{"Targets":["/redfish/v1/Managers/1"],"@Redfish.OperationApplyTime":"OnStartUpdateRequest","Oem":{"Supermicro":{"BMC":{"PreserveCfg":true}}}}`
+// The UpdateParameters part of a push, as raw JSON.
+var (
+	preserveParams = json.RawMessage(`{"Targets":["/redfish/v1/Managers/1"],"@Redfish.OperationApplyTime":"Immediate","Oem":{"Supermicro":{"BMC":{"PreserveCfg":true,"PreserveSdr":true,"PreserveSsl":true,"BackupBMC":true}}}}`)
+	noPreserve     = json.RawMessage(`{"Targets":["/redfish/v1/Managers/1"],"@Redfish.OperationApplyTime":"Immediate"}`)
+	stagedParams   = json.RawMessage(`{"Targets":["/redfish/v1/Managers/1"],"@Redfish.OperationApplyTime":"OnStartUpdateRequest","Oem":{"Supermicro":{"BMC":{"PreserveCfg":true}}}}`)
 )
 
 // TestWedgeLadder walks the recorded X12 failure ladder: a staged image wedges
@@ -81,55 +25,53 @@ const (
 // the wedge are covered — apply-time OnStartUpdateRequest and a missing
 // preserve block.
 func TestWedgeLadder(t *testing.T) {
-	for name, params := range map[string]string{"staged-apply-time": stagedParams, "missing-preserve": noPreserve} {
+	for name, params := range map[string]json.RawMessage{"staged-apply-time": stagedParams, "missing-preserve": noPreserve} {
 		t.Run(name, func(t *testing.T) {
-			f, err := sim.LoadFixture("supermicro-x12")
-			require.NoError(t, err)
-			srv := httptest.NewServer(sim.NewServer(sim.NewState(f)))
-			defer srv.Close()
+			w, _ := newWire(t, "supermicro-x12", nil)
+			const push = "/redfish/v1/UpdateService/upload"
 			image := []byte("SIMFW 88.00.00")
-			baseReset := getJSON(t, srv, "/redfish/v1/Managers/1")["LastResetTime"]
+			baseReset := w.ok("/redfish/v1/Managers/1")["LastResetTime"]
 
-			resp := upload(t, srv, params, image)
+			resp, _ := w.upload(push, params, image)
 			require.Equal(t, http.StatusAccepted, resp.StatusCode, "the wrong invocation is still ACCEPTED — that is the trap")
 
-			m := getJSON(t, srv, "/redfish/v1/Managers/1")
+			m := w.ok("/redfish/v1/Managers/1")
 			assert.Equal(t, "01.07.09", m["FirmwareVersion"], "nothing flashed")
 			assert.Equal(t, baseReset, m["LastResetTime"], "no BMC reboot")
-			staging := getJSON(t, srv, "/redfish/v1/UpdateService/FirmwareInventory/Staging_BMC")
+			staging := w.ok("/redfish/v1/UpdateService/FirmwareInventory/Staging_BMC")
 			assert.Equal(t, "88.00.00", staging["Version"], "the image landed in the staging slot")
 
 			// Wedged: a correct upload is now refused.
-			resp = upload(t, srv, preserveParams, image)
+			resp, _ = w.upload(push, preserveParams, image)
 			assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 
 			// StartUpdate cannot commit it — the recorded X12 truth.
-			resp, msg := postJSON(t, srv, "/redfish/v1/UpdateService/Actions/UpdateService.StartUpdate", "{}")
+			resp, body := w.post("/redfish/v1/UpdateService/Actions/UpdateService.StartUpdate", map[string]any{})
 			assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
-			assert.Contains(t, msg, "malformed JSON")
+			assert.Contains(t, errMessage(body), "malformed JSON")
 
 			// The OEM install answers success — and changes nothing.
-			resp, _ = postJSON(t, srv, "/redfish/v1/UpdateService/Actions/Oem/SmcUpdateService.Install",
-				`{"Targets":["/redfish/v1/Managers/1"],"InstallOptions":[]}`)
+			resp, _ = w.post("/redfish/v1/UpdateService/Actions/Oem/SmcUpdateService.Install",
+				map[string]any{"Targets": []string{"/redfish/v1/Managers/1"}, "InstallOptions": []string{}})
 			assert.Equal(t, http.StatusOK, resp.StatusCode)
-			assert.Equal(t, "01.07.09", getJSON(t, srv, "/redfish/v1/Managers/1")["FirmwareVersion"],
+			assert.Equal(t, "01.07.09", w.ok("/redfish/v1/Managers/1")["FirmwareVersion"],
 				"Install answered success without observable effect")
 
 			// GracefulRestart runs the attestation path and is refused mid-update.
-			resp, msg = postJSON(t, srv, "/redfish/v1/Managers/1/Actions/Manager.Reset", `{"ResetType":"GracefulRestart"}`)
+			resp, body = w.post("/redfish/v1/Managers/1/Actions/Manager.Reset", map[string]string{"ResetType": "GracefulRestart"})
 			assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
-			assert.Contains(t, msg, "FW update in progress")
+			assert.Contains(t, errMessage(body), "FW update in progress")
 
 			// ForceRestart discards the staging slot — the cure.
-			resp, _ = postJSON(t, srv, "/redfish/v1/Managers/1/Actions/Manager.Reset", `{"ResetType":"ForceRestart"}`)
+			resp, _ = w.post("/redfish/v1/Managers/1/Actions/Manager.Reset", map[string]string{"ResetType": "ForceRestart"})
 			require.Equal(t, http.StatusNoContent, resp.StatusCode)
-			staging = getJSON(t, srv, "/redfish/v1/UpdateService/FirmwareInventory/Staging_BMC")
+			staging = w.ok("/redfish/v1/UpdateService/FirmwareInventory/Staging_BMC")
 			assert.Equal(t, "01.07.09", staging["Version"], "staging discarded, mirrors current again")
 
 			// Unwedged: the correct recipe now flashes.
-			resp = upload(t, srv, preserveParams, image)
+			resp, _ = w.upload(push, preserveParams, image)
 			require.Equal(t, http.StatusAccepted, resp.StatusCode)
-			assert.Equal(t, "88.00.00", getJSON(t, srv, "/redfish/v1/Managers/1")["FirmwareVersion"])
+			assert.Equal(t, "88.00.00", w.ok("/redfish/v1/Managers/1")["FirmwareVersion"])
 		})
 	}
 }
@@ -185,24 +127,16 @@ func TestBiosStuck(t *testing.T) {
 // set is dropped at apply time with a message in @Redfish.Settings — staging
 // never proves convergence.
 func TestBiosApplyDropsDisallowed(t *testing.T) {
-	f, err := sim.LoadFixture("supermicro-x12")
-	require.NoError(t, err)
-	srv := httptest.NewServer(sim.NewServer(sim.NewState(f)))
-	defer srv.Close()
+	w, _ := newWire(t, "supermicro-x12", nil)
 
-	patch, err := http.NewRequest(http.MethodPatch, srv.URL+"/redfish/v1/Systems/1/Bios/SD",
-		strings.NewReader(`{"Attributes":{"CSMSupport":"Bogus","QuietBoot":false}}`))
-	require.NoError(t, err)
-	patch.Header.Set("Content-Type", "application/json")
-	resp, err := srv.Client().Do(patch)
-	require.NoError(t, err)
-	resp.Body.Close()
+	resp, _ := w.patch("/redfish/v1/Systems/1/Bios/SD",
+		map[string]any{"Attributes": map[string]any{"CSMSupport": "Bogus", "QuietBoot": false}})
 	require.Equal(t, http.StatusNoContent, resp.StatusCode, "a bad VALUE stages fine — validation waits for apply")
 
-	resp, _ = postJSON(t, srv, "/redfish/v1/Systems/1/Actions/ComputerSystem.Reset", `{"ResetType":"ForceRestart"}`)
+	resp, _ = w.post("/redfish/v1/Systems/1/Actions/ComputerSystem.Reset", map[string]string{"ResetType": "ForceRestart"})
 	require.Equal(t, http.StatusNoContent, resp.StatusCode)
 
-	bios := getJSON(t, srv, "/redfish/v1/Systems/1/Bios")
+	bios := w.ok("/redfish/v1/Systems/1/Bios")
 	attrs := bios["Attributes"].(map[string]any)
 	assert.Equal(t, "Disabled", attrs["CSMSupport"], "the disallowed value was dropped")
 	assert.Equal(t, false, attrs["QuietBoot"], "the valid one applied")
@@ -212,7 +146,7 @@ func TestBiosApplyDropsDisallowed(t *testing.T) {
 	require.Len(t, msgs, 1)
 	assert.Contains(t, msgs[0].(map[string]any)["Message"], "not in the list of acceptable values")
 
-	sd := getJSON(t, srv, "/redfish/v1/Systems/1/Bios/SD")
+	sd := w.ok("/redfish/v1/Systems/1/Bios/SD")
 	_, has := sd["Attributes"]
 	assert.False(t, has, "pending cleared — the capture shape omits the key entirely")
 }

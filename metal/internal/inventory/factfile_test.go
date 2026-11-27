@@ -36,20 +36,24 @@ func TestGolden(t *testing.T) {
 		f, err := sim.LoadFixture(name)
 		require.NoError(t, err)
 
-		clients := map[string]func(t *testing.T) bmc.Client{
-			"state": func(_ *testing.T) bmc.Client { return sim.NewState(f) },
-			"gofish": func(t *testing.T) bmc.Client {
+		// In this order: with -update, state writes the golden file that
+		// gofish then compares against.
+		for _, client := range []struct {
+			name string
+			mk   func(t *testing.T) bmc.Client
+		}{
+			{"state", func(_ *testing.T) bmc.Client { return sim.NewState(f) }},
+			{"gofish", func(t *testing.T) bmc.Client {
 				srv := httptest.NewServer(sim.NewServer(sim.NewState(f)))
 				t.Cleanup(srv.Close)
 				c, err := gofishclient.Connect(context.Background(), gofishclient.Config{Endpoint: srv.URL})
 				require.NoError(t, err)
 				t.Cleanup(func() { _ = c.Close() })
 				return c
-			},
-		}
-		for clientName, mk := range clients {
-			t.Run(name+"/"+clientName, func(t *testing.T) {
-				facts, err := inventory.Gather(context.Background(), mk(t))
+			}},
+		} {
+			t.Run(name+"/"+client.name, func(t *testing.T) {
+				facts, err := inventory.Gather(context.Background(), client.mk(t))
 				require.NoError(t, err)
 
 				var buf bytes.Buffer
@@ -60,13 +64,13 @@ func TestGolden(t *testing.T) {
 				require.NoError(t, yaml.Unmarshal(buf.Bytes(), &parsed), "output must be valid YAML")
 
 				golden := filepath.Join("testdata", name+".golden.yaml")
-				if *update && clientName == "state" {
+				if *update && client.name == "state" {
 					require.NoError(t, os.WriteFile(golden, buf.Bytes(), 0o644))
 					return
 				}
 				want, err := os.ReadFile(golden)
 				require.NoError(t, err, "run: go test ./internal/inventory -update")
-				assert.Equal(t, string(want), buf.String(), "fact file drifted from %s (%s client)", golden, clientName)
+				assert.Equal(t, string(want), buf.String(), "fact file drifted from %s (%s client)", golden, client.name)
 			})
 		}
 	}

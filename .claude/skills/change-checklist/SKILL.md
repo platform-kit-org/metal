@@ -21,19 +21,13 @@ Paths are from the repository root; the Go module is `metal/`.
 | A runbook step with `kubectl` | The on-call role allows it, and `TestOnCallRole` has the case. | envtest |
 | BMC behavior | The simulator (`metal/internal/bmc/sim`) for each fixture, a protocol knob in `fixture.go` if a vendor differs, a conformance check in `bmctest`. Rows in `reference/hardware.mdx` and `reference/lab/simulated-bmc.mdx`. | `bmctest.Run` for each fixture |
 | An admission policy (`metal/config/policy`, `metal/config/name-stamp`) | The envtest policy tests. `reference/security/admission-policies.mdx`. A stamp and the validating policy of the same field must agree. | envtest `TestNameStampMatchesTheValidatingPolicies` |
-| A function that the protocol model mirrors (see `mirrored` in `internal/controller/model_mirror_test.go`) | The pass of the model that mirrors it in `protocol_model_test.go`. Run `TestProtocolModel`, then record the new hash. | `TestModelMirrorsTheCode` |
-| A function that a TLA+ specification names (a `\* go:` line in `metal/spec/*/*.tla`) | The operator that names it, if the code does something new. Run `mise run spec`, then `go test ./spec -run TestSpecSync -update`. `concepts/protocol-model.mdx` if the steps change. | `TestSpecSync` |
+| A function that the protocol model mirrors (see `mirrored` in `metal/spec/mirror_test.go`) | The pass of the model that mirrors it in `internal/controller/protocol_model_test.go`. | `TestModelMirrorsTheCode`; its message says what to do |
+| A function that a TLA+ specification names (a `\* go:` line in `metal/spec/*/*.tla`) | The operator that names it, if the code does something new. `concepts/protocol-model.mdx` if the steps change. | `TestSpecSync`; its message says what to do |
 | A decision that a later pass cannot undo | Read its inputs through the API reader, mark the function `//pk:uncached`, add it to `mustBeUncached`, write a stale-cache test. A row in "Reads from the API server" of `concepts/architecture.mdx`. See the skill `stale-cache-fix`. | `mise run lint:reads` |
 | A new action of a HostOperation | The table "Add an action" of `project/develop.mdx`: eleven places, three of them with no check. | Partly unit tests |
 | A controller | Its page under `reference/controllers/`: watches, loop, writes, failure modes, tests. | `docs:check` for the links only |
 
 ## Before you commit
 
-```sh
-mise run lint
-mise run generate:check
-mise run test
-mise run docs:check   # when a page changed
-```
-
-Run `mise run envtest` for a change to a controller, a CRD, RBAC or a policy.
+Run the checks in "Before you commit" of
+`docs/src/content/docs/project/develop.mdx`.

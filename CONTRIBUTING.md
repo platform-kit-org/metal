@@ -7,9 +7,8 @@ you start a large change. The code is under the Apache License 2.0
 The [documentation site](https://metal.platform-kit.org/) explains
 the design. Start with the
 [architecture page](https://metal.platform-kit.org/concepts/architecture/).
-This file is the short version for a person who changes the repository; the
-[page for people who change the code](https://metal.platform-kit.org/project/develop/)
-has the long one.
+The [page for people who change the code](https://metal.platform-kit.org/project/develop/)
+has the rules. This file adds the rules for commits.
 
 ## Set up
 
@@ -23,101 +22,25 @@ Docker, QEMU, OVMF and shellcheck are system packages.
 
 Development happens on the `main` branch. Start your branch from it.
 
-## Layout
+## Where the rules are
 
-| Path | Contents |
-| --- | --- |
-| `metal/` | The Go module: API types (`api/`), commands (`cmd/`), controllers and libraries (`internal/`), manifests (`config/`) |
-| `lab/` | The virtual lab scripts |
-| `docs/` | The documentation site |
-
-## Tests
-
-Each tier needs more than the one before it. Run the lowest tier that covers
-your change, and let CI run the rest.
-
-| Tier | Task | What it needs | Where it runs |
-| --- | --- | --- | --- |
-| Unit | `mise run test` | Go | CI, every push and pull request |
-| Controllers (envtest) | `mise run envtest` | Go; downloads kube-apiserver and etcd | CI, every push and pull request |
-| Race detector | `mise run test:race` | cgo and a C compiler | CI, every push and pull request |
-| TLA+ model check | `mise run spec` | A Java runtime; downloads the TLA+ tools | CI, every push and pull request |
-| e2e, kind tier | `mise run e2e:kind` | Docker and a kind cluster | CI, pushes to `main` and `metal` (see `.github/workflows/ci.yml`) |
-| e2e, VM tier | `mise run e2e:qemu` | KVM, QEMU, OVMF | Your machine only |
-| Fuzz | `mise run fuzz` | Go | Your machine only |
-| Virtual lab | `mise run lab:up` and the other `lab:*` tasks | See [lab/README.md](lab/README.md) | The `lab-e2e` workflow: the install on pushes to `claude/**`, every round each night and by hand, not on pull requests (see `.github/workflows/lab-e2e.yml`) |
-
-A change to code comes with a test. BMC behavior goes in the simulator
-(`metal/internal/bmc/sim`). Controller behavior goes in
-`metal/internal/envtest`.
-
-The TLA+ specifications in `metal/spec` name the Go functions they model.
-`go test ./spec` fails when one of these functions changes. Then read the
-part of the specification above it, change it if needed, run
-`mise run spec`, and record the change with
-`go test ./spec -run TestSpecSync -update`.
-
-## Lint
-
-```sh
-mise run lint          # golangci-lint, typed checks, shellcheck, govulncheck
-```
-
-CI runs the five parts as separate steps: `lint:go`, `lint:phase`,
-`lint:reads`, `lint:shell` and `lint:vuln`. `lint:go` also fails on a file that `gofmt` or
-`goimports` would change; `golangci-lint fmt` in `metal/` writes the change.
-
-## Generated files
-
-Do not edit these by hand:
-
-- `metal/api/**/zz_generated.deepcopy.go`
-- `metal/config/crd/**`
-- `metal/config/rbac/role.yaml`
-- `docs/src/data/generated/**`
-
-After a change to the API types, the RBAC markers, the `pk-metal` commands or
-the glossary:
-
-```sh
-mise run generate
-```
-
-Commit the result with your change. CI runs `mise run generate:check` and
-fails on a difference.
-
-## Invariants
-
-A change must keep these rules.
-
-- Only `metal/internal/phase` writes `status.phase` and `status.blockedOn`.
-  Reconcilers do not read them. `mise run lint:phase` checks this.
-- A decision that a later pass cannot undo reads its inputs from the API
-  server, not from the cache. `mise run lint:reads` checks the functions
-  marked `//pk:uncached` and each removal of a finalizer.
-- Each writer of a status has its own server-side-apply field owner.
-- Every change to a machine goes through a HostOperation that a person
-  approved.
-- The operator does not invent facts. It reports what it read from the
-  machine, or it reports nothing.
-
-## Documentation
-
-The pages are in `docs/src/content/docs`. They use ASD-STE100 style: short
-sentences, active voice, one instruction in each step.
-
-```sh
-mise run docs:dev      # live preview at http://localhost:4321/platform-kit/
-mise run docs:check    # build, and check the links (CI runs this)
-mise run docs:lint     # check the prose with Vale
-```
+- [The test ladder](https://metal.platform-kit.org/project/develop/#the-test-ladder):
+  the test levels, and where a test goes.
+- [Before you commit](https://metal.platform-kit.org/project/develop/#before-you-commit):
+  the checks, and the generated files.
+- [The invariants](https://metal.platform-kit.org/project/develop/#the-invariants):
+  the rules that each change must keep.
+- [Write for this site](https://metal.platform-kit.org/project/develop/#write-for-this-site):
+  the pages and their writing rules.
+- [AGENTS.md](AGENTS.md): the rules that a test now holds.
 
 ## Commits
 
 Use [Conventional Commits](https://www.conventionalcommits.org/):
 `type(scope): subject`.
 
-- Types in use: `feat`, `fix`, `docs`, `test`, `ci`.
+- Types in use: `feat`, `fix`, `docs`, `test`, `ci`, `chore`, `build`,
+  `refactor`, `perf`.
 - The scope is the part you changed: `controller`, `bmc`, `talos`, `pk-metal`,
   `api`, `lab`, `site` (for the documentation site), and so on.
 - Write the subject in the imperative, in lower case, without a full stop.
@@ -127,16 +50,8 @@ Use [Conventional Commits](https://www.conventionalcommits.org/):
 
 ## Before you open a pull request
 
-```sh
-mise run build
-mise run test
-mise run envtest
-mise run lint
-mise run generate:check
-```
-
-If you changed the documentation, also run `mise run docs:check` and
-`mise run docs:lint`.
+Run the checks in
+[Before you commit](https://metal.platform-kit.org/project/develop/#before-you-commit).
 
 ## Security
 

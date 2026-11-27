@@ -1,6 +1,7 @@
 // Package spec holds the TLA+ specifications of the operator's protocols
-// (one directory each, model-checked by hack/tlc.sh) and the test that keeps
-// them in step with the Go code they describe.
+// (one directory each, model-checked by hack/tlc.sh) and the tests that keep
+// them, and the protocol model of internal/controller, in step with the Go
+// code they describe.
 package spec
 
 import (
@@ -79,7 +80,7 @@ func TestSpecSync(t *testing.T) {
 				}
 				pkg, name, want := m[1], m[2], m[3]
 				if funcs[pkg] == nil {
-					funcs[pkg] = fingerprints(t, pkg)
+					funcs[pkg] = fingerprints(t, filepath.Join("..", "internal", pkg))
 				}
 				got, ok := funcs[pkg][name]
 				switch {
@@ -104,14 +105,15 @@ func TestSpecSync(t *testing.T) {
 	}
 }
 
-// fingerprints returns, for each top-level function and method of
-// internal/pkg ("Name" or "Recv.Name"), a hash of its code without comments.
-func fingerprints(t *testing.T, pkg string) map[string]string {
+// fingerprints returns, for each top-level function and method of the
+// package in dir ("Name" or "Recv.Name"), a hash of its code without comments
+// and blank lines.
+func fingerprints(t *testing.T, dir string) map[string]string {
 	t.Helper()
 	fset := token.NewFileSet()
-	files, err := filepath.Glob(filepath.Join("..", "internal", pkg, "*.go"))
+	files, err := filepath.Glob(filepath.Join(dir, "*.go"))
 	if err != nil || len(files) == 0 {
-		t.Fatalf("no Go files in internal/%s: %v", pkg, err)
+		t.Fatalf("no Go files in %s: %v", dir, err)
 	}
 	out := map[string]string{}
 	for _, f := range files {
@@ -137,13 +139,18 @@ func fingerprints(t *testing.T, pkg string) map[string]string {
 					name = id.Name + "." + name
 				}
 			}
-			fd.Doc = nil
 			var b bytes.Buffer
 			if err := printer.Fprint(&b, fset, fd); err != nil {
 				t.Fatal(err)
 			}
-			sum := sha256.Sum256(b.Bytes())
-			out[name] = hex.EncodeToString(sum[:])[:12]
+			// The parser drops the comments, but a comment line leaves a blank line.
+			h := sha256.New()
+			for line := range strings.Lines(b.String()) {
+				if strings.TrimSpace(line) != "" {
+					h.Write([]byte(line))
+				}
+			}
+			out[name] = hex.EncodeToString(h.Sum(nil))[:12]
 		}
 	}
 	return out
@@ -185,5 +192,28 @@ func checkInvariantNames(t *testing.T, dir, goTest string) {
 	slices.Sort(code)
 	if !slices.Equal(spec, code) {
 		t.Errorf("%s checks %v, but %s checks %v: give both the same invariants", dir, spec, goTest, code)
+	}
+}
+
+// TestFingerprintsIgnoreComments: comment lines, also one inside an aligned
+// composite literal, and blank lines do not change a fingerprint.
+func TestFingerprintsIgnoreComments(t *testing.T) {
+	dir := t.TempDir()
+	fingerprint := func(body string) string {
+		t.Helper()
+		src := "package a\n\ntype R struct{}\n\nfunc (r *R) F() T {\n" + body + "}\n"
+		if err := os.WriteFile(filepath.Join(dir, "a.go"), []byte(src), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return fingerprints(t, dir)["R.F"]
+	}
+	base := fingerprint("\tx := T{\n\t\tA:    1,\n\t\tLong: 2,\n\t}\n\treturn x\n")
+	commented := fingerprint("\t// Build it.\n\tx := T{\n\t\tA: 1, // one\n\t\t// The long one.\n\t\tLong: 2,\n\t}\n\n\treturn x\n")
+	changed := fingerprint("\tx := T{\n\t\tA:    1,\n\t\tLong: 3,\n\t}\n\treturn x\n")
+	if commented != base {
+		t.Errorf("a comment changed the fingerprint: %s, without comments %s", commented, base)
+	}
+	if changed == base {
+		t.Errorf("a change of the code kept the fingerprint %s", base)
 	}
 }

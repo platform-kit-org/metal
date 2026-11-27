@@ -1130,13 +1130,11 @@ func (x *exec) close() {
 
 // dialHost connects to the host's first reachable management path with a
 // WRITE-capable client — one of the two places the read-only rail is
-// deliberately opened (the other is the convergence reconciler's read pass).
+// deliberately opened (the other is the endpoint convergence reconciler,
+// which writes the BMC's own settings).
 func (r *HostOperationReconciler) dialHost(ctx context.Context, host *metalv1alpha1.Host) (bmc.Client, string, string, string, error) {
-	cl, reason, msg := hostPathClient(ctx, r.Client, r.CredentialsNamespace, host, false)
-	if reason != "" {
-		return nil, "", reason, msg, nil
-	}
-	return cl, cl.(*pathClient).systemID, "", "", nil
+	cl, systemID, reason, msg := hostPathClient(ctx, r.Client, r.CredentialsNamespace, host, false)
+	return cl, systemID, reason, msg, nil
 }
 
 // observe reads the system's current view, of which an operation's baseline
@@ -1173,7 +1171,7 @@ func systemOf(ctx context.Context, cl bmc.Client, systemID string) (bmc.System, 
 // (read-only). ctx is the caller's pass-bounded context: gofish pins it to
 // the client's whole lifetime, so no narrower dial timeout here.
 // A path that fails is skipped; reason and msg say why none is left.
-func hostPathClient(ctx context.Context, c client.Client, credentialsNamespace string, host *metalv1alpha1.Host, readOnly bool) (cl bmc.Client, reason, msg string) {
+func hostPathClient(ctx context.Context, c client.Client, credentialsNamespace string, host *metalv1alpha1.Host, readOnly bool) (cl bmc.Client, systemID, reason, msg string) {
 	for _, path := range host.Status.ManagedBy {
 		if !path.Reachable {
 			continue
@@ -1184,21 +1182,15 @@ func hostPathClient(ctx context.Context, c client.Client, credentialsNamespace s
 		}
 		cfg, reason, err := endpointClientConfig(ctx, c, credentialsNamespace, ep, readOnly)
 		if err != nil {
-			return nil, reason, err.Error()
+			return nil, "", reason, err.Error()
 		}
 		cl, err := gofishclient.Connect(ctx, cfg)
 		if err != nil {
 			continue
 		}
-		return &pathClient{Client: cl, systemID: path.SystemID}, "", ""
+		return cl, path.SystemID, "", ""
 	}
-	return nil, metalv1alpha1.ReasonNoReachablePath, fmt.Sprintf("host %s has no reachable management path", host.Name)
-}
-
-// pathClient pins the chosen path's system id alongside the connection.
-type pathClient struct {
-	bmc.Client
-	systemID string
+	return nil, "", metalv1alpha1.ReasonNoReachablePath, fmt.Sprintf("host %s has no reachable management path", host.Name)
 }
 
 // implementedActions are the action keys step runs. The API defines more

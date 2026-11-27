@@ -42,11 +42,11 @@ const proposalTTL = int32(24 * 60 * 60)
 // depends on firmware). An unchanged planHash never spawns a second
 // operation: every hold below is alert-and-hold, unstuck by a profile edit.
 //
-// It holds its own read-only BMC session for the BIOS observation (attribute
-// maps are too big to cache on the endpoint), writes the Host's
-// FirmwareConverged/BiosConverged conditions and the firmware plan memory —
-// fields the HostReconciler leaves untouched — and is, with the executor, the
-// second deliberate opening of the read-only rail.
+// It reads the BMC only through a read-only session of its own, for the BIOS
+// observation (attribute maps are too big to cache on the endpoint). It
+// writes the Host's FirmwareConverged, SystemFirmwareConverged and
+// BiosConverged conditions and both firmware plan memories — fields the
+// HostReconciler leaves untouched.
 type ConvergenceReconciler struct {
 	client.Client
 	// Audit writes the audit trail; nil writes none.
@@ -566,17 +566,16 @@ func selectsByClaim(selectors []metav1.LabelSelector, claim *metalv1alpha1.HostC
 func (r *ConvergenceReconciler) observeBios(ctx context.Context, host *metalv1alpha1.Host) (bmc.BiosState, []bmc.BiosAttribute, error) {
 	cctx, cancel := context.WithTimeout(ctx, connectTimeout)
 	defer cancel()
-	cl, _, holdMsg := hostPathClient(cctx, r.Client, r.CredentialsNamespace, host, true)
+	cl, systemID, _, holdMsg := hostPathClient(cctx, r.Client, r.CredentialsNamespace, host, true)
 	if holdMsg != "" {
 		return bmc.BiosState{}, nil, errors.New(holdMsg)
 	}
 	defer cl.Close() //nolint:errcheck // read-only session
-	pc := cl.(*pathClient)
-	state, err := cl.Bios(cctx, pc.systemID)
+	state, err := cl.Bios(cctx, systemID)
 	if err != nil {
 		return bmc.BiosState{}, nil, err
 	}
-	schema, err := cl.BiosSchema(cctx, pc.systemID)
+	schema, err := cl.BiosSchema(cctx, systemID)
 	if err != nil {
 		return bmc.BiosState{}, nil, err
 	}

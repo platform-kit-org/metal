@@ -101,10 +101,10 @@ The overlay is a kustomize directory. It adds the values of your site to the bas
 5. Copy the sample overlay.
 
    ```sh
-   cp -r metal/config/samples/site-overlay overlays/site
+   mkdir -p overlays && cp -r metal/config/samples/site-overlay overlays/site
    ```
 
-6. In `overlays/site/kustomization.yaml`, correct the path of the base. From `overlays/site` in the repository root, it is `../../metal/config/default`.
+6. In `overlays/site/kustomization.yaml`, replace `../../` with `../../metal/config/` in the three paths: the base and the two components.
 
 7. In the same file, set `images`: `newName` and `newTag` from the image reference of step 2 or step 4.
 
@@ -116,9 +116,11 @@ The overlay is a kustomize directory. It adds the values of your site to the bas
 
 11. Replace `bmc-ca.crt` with the CA certificate of your BMCs. See [BMC certificates](#bmc-certificates).
 
-12. If a BMC has only one usable media slot, remove the comment mark from `../../media-store` in `components` of `kustomization.yaml`. See [One-slot BMCs](#one-slot-bmcs). On Kubernetes older than 1.36, remove `../../name-stamp` from `components`. See [](ref:admission-policies#requested-by-stamp).
+12. If a BMC has only one usable media slot, remove the comment mark from the component `media-store` in `kustomization.yaml`. See [One-slot BMCs](#one-slot-bmcs).
 
-13. In `networkpolicy.yaml`, set the CIDR of your BMC network. Only that network can fetch boot media. Until you set it, each mount fails with a connection error. Behind SNAT, add the node network too. See [](ref:media-store#network-policy).
+13. On Kubernetes older than 1.36, remove the component `name-stamp` from `kustomization.yaml`. See [](ref:admission-policies#requested-by-stamp).
+
+14. In `networkpolicy.yaml`, set the CIDR of your BMC network. Only that network can fetch boot media. Until you set it, each mount fails with a connection error. Behind SNAT, add the node network too. See [](ref:media-store#network-policy).
 
 </Steps>
 
@@ -126,19 +128,19 @@ The overlay is a kustomize directory. It adds the values of your site to the bas
 
 <Steps>
 
-14. Show what the overlay makes. Read the Deployment at the end.
+15. Show what the overlay makes. Read the Deployment at the end.
 
     ```sh
     kubectl kustomize overlays/site | less
     ```
 
-15. Apply the overlay. Server-side apply is necessary, because the CRDs are large.
+16. Apply the overlay. Server-side apply is necessary, because the CRDs are large.
 
     ```sh
     kubectl apply --server-side -k overlays/site
     ```
 
-16. Wait for the manager.
+17. Wait for the manager.
 
     ```sh
     kubectl -n pk-metal rollout status deployment/pk-metal-manager --timeout=180s

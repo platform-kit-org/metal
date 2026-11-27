@@ -13,7 +13,8 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   # The base: CRDs, admission policies, RBAC and the manager. If you copy this
-  # directory out of the repository, change the path, or name the repository:
+  # directory, change the three ../../ paths (the base and the components), or
+  # name the repository:
   #   - https://github.com/<owner>/<repository>//metal/config/default?ref=<commit>
   - ../../default
   - bindings.yaml

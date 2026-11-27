@@ -194,6 +194,10 @@ jobs:
           kubectl kustomize metal/config/lab > /dev/null
           kubectl kustomize metal/config/samples > /dev/null
           kubectl kustomize metal/config/samples/site-overlay > /dev/null
+          # The copy that the install how-to makes, with its three paths changed.
+          mkdir -p overlays && cp -r metal/config/samples/site-overlay overlays/site
+          sed -i 's#\.\./\.\./#../../metal/config/#' overlays/site/kustomization.yaml
+          kubectl kustomize overlays/site > /dev/null
       # What the change does to the operator's API, for the reviewer: kinds,
       # versions and fields that go, new required fields, narrower enums and
       # limits, new CEL rules. The API is v1alpha1 and may break, so this does

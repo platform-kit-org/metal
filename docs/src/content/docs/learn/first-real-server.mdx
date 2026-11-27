@@ -118,23 +118,23 @@ This stage is a short form of [](howto:install-operator). That page explains eac
 5. Copy the sample overlay.
 
    ```sh
-   cp -r metal/config/samples/site-overlay overlay
+   mkdir -p overlays && cp -r metal/config/samples/site-overlay overlays/site
    ```
 
-6. In `overlay/kustomization.yaml`, set the base to `../metal/config/default`. Set `images` to `newName: pk-metal` and `newTag` to your tag.
+6. In `overlays/site/kustomization.yaml`, replace `../../` with `../../metal/config/` in the three paths: the base and the two components. Set `images` to `newName: pk-metal` and `newTag` to your tag.
 
-7. In `overlay/manager_args.yaml`, set `--media-url=https://<workstation address>:30443`.
+7. In `overlays/site/manager_args.yaml`, set `--media-url=https://<workstation address>:30443`.
 
-8. In `overlay/ledger.yaml`, write one line: the BMC MAC and `https://192.0.2.21`. Delete the example lines.
+8. In `overlays/site/ledger.yaml`, write one line: the BMC MAC and `https://192.0.2.21`. Delete the example lines.
 
 9. Decide how the manager checks the BMC certificate. See [BMC certificates](howto:install-operator#bmc-certificates). For this first test on a closed BMC network, you can remove `--bmc-ca-secret=bmc-ca`. The manager then pins the key that the BMC shows at the first contact.
 
-10. If the BMC has one slot, remove the comment marks from `components` in `overlay/kustomization.yaml`.
+10. If the BMC has one slot, remove the comment mark from the component `media-store` in `overlays/site/kustomization.yaml`.
 
 11. Apply the overlay.
 
     ```sh
-    kubectl apply --server-side -k overlay
+    kubectl apply --server-side -k overlays/site
     ```
 
 </Steps>

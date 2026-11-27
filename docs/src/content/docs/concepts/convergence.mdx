@@ -36,7 +36,7 @@ The convergence controller merges the profiles for each Host, compares the resul
   <dt>Profile</dt>
   <dd>A class of desired state: [](kind:BiosProfile), [](kind:FirmwareProfile) or [](kind:EndpointProfile).</dd>
   <dt>Layer</dt>
-  <dd>The precedence of a profile. A higher layer overrides a lower one. Two profiles on the same layer that disagree are a conflict, and the operator holds the Host.</dd>
+  <dd>The precedence of a profile. A higher layer overrides a lower one. Two profiles on the same layer that disagree are a conflict, and the operator holds the Host or the endpoint.</dd>
   <dt>BiosSchema</dt>
   <dd>The attribute registry that the BMC reports. The operator checks each desired attribute against it. See [](kind:BiosSchema).</dd>
   <dt>Plan hash</dt>
@@ -50,6 +50,7 @@ The convergence controller merges the profiles for each Host, compares the resul
 3. On a machine that runs a node, the operator wraps the change. It drains the node, reboots it through Talos with a power cycle and waits for the node.
 4. A control plane also waits for a healthy etcd before and after.
 5. The operator proposes no change on a machine that it runs on, see [](concept:self-protection).
+6. An [](kind:EndpointProfile) changes the BMC, not the machine: the account, the time servers and the TLS certificate. It makes no HostOperation and needs no approval. Only the admin group writes it. A TLS push restarts the BMC. The [](kind:ManagementEndpoint) shows the result in the condition `Configured`.
 
 ## Conditions on the Host
 

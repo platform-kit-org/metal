@@ -372,5 +372,14 @@ func TestPauseWaitsForTheLease(t *testing.T) {
 	m := fakeMover(t, append(operatorObjects(1, nil), held), nil)
 	m.Options.Poll = time.Millisecond
 	m.Options.Timeout = 20 * time.Millisecond
-	require.ErrorContains(t, m.Pause(ctx), "leader lease")
+	err := m.Pause(ctx)
+	require.ErrorContains(t, err, "gave up after 20ms waiting for the leader lease")
+	require.ErrorContains(t, err, m.resumeSourceCommand(), "the source runs no manager now, and the error says how to start it again")
+
+	// Ctrl-C cancels the move, which is no timeout.
+	canceled, cancel := context.WithCancel(ctx)
+	cancel()
+	err = m.Pause(canceled)
+	require.ErrorIs(t, err, context.Canceled)
+	require.NotContains(t, err.Error(), "gave up")
 }

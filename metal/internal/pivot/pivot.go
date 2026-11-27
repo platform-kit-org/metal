@@ -23,6 +23,7 @@ package pivot
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"time"
@@ -35,6 +36,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/dennisklein/platform-kit/metal/internal/audit"
+	"github.com/dennisklein/platform-kit/metal/internal/poll"
 )
 
 // Markers on the operator namespace. They let a rerun continue a move, and a
@@ -202,26 +204,16 @@ func (m *Mover) logf(format string, args ...any) {
 }
 
 // wait polls cond until it reports done, an error, or the timeout passes.
-// what names the wait in the timeout error.
+// what names the wait in the timeout error. When ctx ends first (Ctrl-C),
+// the error is ctx's.
 func (m *Mover) wait(ctx context.Context, what string, cond func(context.Context) (bool, error)) error {
-	ctx, cancel := context.WithTimeout(ctx, m.Options.Timeout)
+	wctx, cancel := context.WithTimeout(ctx, m.Options.Timeout)
 	defer cancel()
-	t := time.NewTicker(m.Options.Poll)
-	defer t.Stop()
-	for {
-		done, err := cond(ctx)
-		if err != nil {
-			return err
-		}
-		if done {
-			return nil
-		}
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("gave up after %s waiting for %s", m.Options.Timeout, what)
-		case <-t.C:
-		}
+	err := poll.Until(wctx, poll.Every(m.Options.Poll), cond)
+	if errors.Is(err, context.DeadlineExceeded) && wctx.Err() != nil && ctx.Err() == nil {
+		return fmt.Errorf("gave up after %s waiting for %s", m.Options.Timeout, what)
 	}
+	return err
 }
 
 // defaultCredentialsNamespace is the manager's --credentials-namespace

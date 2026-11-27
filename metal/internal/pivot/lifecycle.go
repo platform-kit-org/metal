@@ -20,6 +20,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
+	"github.com/dennisklein/platform-kit/metal/internal/poll"
 )
 
 // Pause stops the source manager: its Deployment goes to zero replicas, and
@@ -47,20 +48,21 @@ func (m *Mover) Pause(ctx context.Context) error {
 	if err := scale(ctx, src, d, 0); err != nil {
 		return fmt.Errorf("scale the manager on %s to zero: %w", m.Source.Name, err)
 	}
+	// From here on the source runs no manager: each error says so.
 	if err := m.wait(ctx, "the manager pods on "+m.Source.Name+" to stop", func(ctx context.Context) (bool, error) {
 		n, err := managerPods(ctx, src, d)
 		return n == 0, err
 	}); err != nil {
-		return err
+		return m.stopped(err)
 	}
 	if err := m.wait(ctx, "the leader lease on "+m.Source.Name+" to be free", func(ctx context.Context) (bool, error) {
 		return leaseFree(ctx, src, o.Namespace, time.Now())
 	}); err != nil {
-		return err
+		return m.stopped(err)
 	}
 	ops := &metalv1alpha1.HostOperationList{}
 	if err := src.List(ctx, ops); err != nil {
-		return err
+		return m.stopped(err)
 	}
 	if problems := blockingOperations(ops.Items, true); len(problems) > 0 {
 		return fmt.Errorf("an operation started while the manager stopped:\n  - %s\n"+
@@ -216,23 +218,18 @@ func (m *Mover) Verify(ctx context.Context, rep *Report) (failures, pending []st
 func (m *Mover) Settle(ctx context.Context, rep *Report) error {
 	deadline := time.Now().Add(m.Options.Settle)
 	var pending []string
-	for {
+	if err := poll.Until(ctx, poll.Every(m.Options.Poll), func(ctx context.Context) (bool, error) {
 		failures, p, err := m.Verify(ctx, rep)
 		if err != nil {
-			return err
+			return false, err
 		}
 		if len(failures) > 0 {
-			return fmt.Errorf("the manager on %s does not settle as it should:\n  - %s", m.Target.Name, strings.Join(failures, "\n  - "))
+			return false, fmt.Errorf("the manager on %s does not settle as it should:\n  - %s", m.Target.Name, strings.Join(failures, "\n  - "))
 		}
 		pending = p
-		if time.Now().After(deadline) {
-			break
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(m.Options.Poll):
-		}
+		return time.Now().After(deadline), nil
+	}); err != nil {
+		return err
 	}
 	if len(pending) > 0 {
 		return fmt.Errorf("the manager on %s has not looked at everything within %s:\n  - %s\nRun the move again to keep watching",

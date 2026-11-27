@@ -141,7 +141,7 @@ Without a CA and without `insecureSkipVerify`, the manager pins the key of each 
 
 The first contact is the weak point: a device that poses as the BMC at that time gets pinned. Enroll a BMC only on a BMC network that you control. Compare the pinned key with the key that the BMC shows on its own console, if the vendor shows it.
 
-The identity lane of an EndpointProfile is in sync only when the BMC serves the certificate that the operator pushed. Same names and dates are not enough. Before a push, the operator checks two things. The issued certificate carries the key of its request. The next certificate in the chain signed it.
+The `tls` part of an EndpointProfile is in sync only when the BMC serves the certificate that the operator pushed. Same names and dates are not enough. Before a push, the operator checks two things. The issued certificate carries the key of its request. The next certificate in the chain signed it.
 
 `insecureSkipVerify` checks nothing, and pins nothing. Use it for simulated BMCs only. The approval plan of each operation on such a BMC says `TLS not checked`. The operator does not send a private key over it: the key-upload identity dialect stops with the reason `TLSNotVerified`.
 

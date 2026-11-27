@@ -55,6 +55,5 @@ pass reads one kind and then acts on another, and the act stays:
 2. Assert the safe outcome. Then set `APIReader` to nil, or revert the fix,
    and see the test fail. A test that passes either way proves nothing.
 3. Run `mise run lint:reads` and `go test ./internal/controller/`.
-4. Add a row to "Reads from the API server" in
-   `docs/src/content/docs/concepts/architecture.mdx`, and a sentence on the
-   controller page.
+4. Add a sentence on the controller page. The list of fixed decisions is
+   `mustBeUncached` in `internal/lint`; the docs do not copy it.

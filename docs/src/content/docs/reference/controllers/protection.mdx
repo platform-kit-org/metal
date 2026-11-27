@@ -107,7 +107,7 @@ If no TalosNode matches, for example on a kind cluster, the guard allows everyth
 | Any other node | Allowed | Allowed |
 
 The guard asks the other control planes through the Talos API, with a 5 second limit for each. A control plane that does not answer counts as down.
-The [](ctrl:hostclaim), [](ctrl:hostoperation) and [](ctrl:convergence) ask the self guard before they propose or start a power action. The [](ctrl:etcdbackup) uses only its location step, to find the cluster of the operator.
+The [](ctrl:hostclaim), [](ctrl:hostoperation) and [](ctrl:convergence) ask the self guard before they propose or start a step that takes a node down. The [](ctrl:etcdbackup) uses only its location step, to find the cluster of the operator.
 
 ## The cluster guard
 

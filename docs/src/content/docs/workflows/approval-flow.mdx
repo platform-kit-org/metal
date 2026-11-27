@@ -28,7 +28,7 @@ A controller proposes a [](kind:HostOperation), a person approves it, and only t
    1. an abort ends the operation;
    2. a [](kind:TalosRollout) must cover the operation, if it names one;
    3. only one operation runs on a Host at a time;
-   4. a Host in maintenance mode holds the operation;
+   4. a Host with the maintenance annotation holds the operation;
    5. a [](kind:MaintenanceWindow) holds it until a window opens;
    6. [](concept:self-protection) and the [](concept:cluster-guard) hold power actions.
 5. The executor runs the actions one at a time. See [](act:index).

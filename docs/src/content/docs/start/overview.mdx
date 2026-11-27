@@ -34,7 +34,7 @@ pk-metal has no release yet, and the automatic tests use simulated BMCs. Read []
 | Add, remove and replace nodes | You give the size or the new machine. The operator keeps the etcd majority. | [](concept:node-lifecycle) |
 | Release a machine | You delete the claim. The operator wipes the disk and frees the machine. | [](concept:release-and-wipe) |
 | BIOS settings, firmware, BMC accounts and certificates | Profiles for sets of machines. | [](concept:convergence) |
-| Limit changes to a schedule | Maintenance windows hold approved operations. | [](concept:maintenance-windows) |
+| Limit changes to a schedule | Maintenance windows hold approved operations. | [](kind:MaintenanceWindow) |
 | Move the operator onto a cluster that it built | One command copies the objects. No machine changes. | [](concept:pivot-model) |
 | Watch the fleet | Metrics, alert rules, a status command and a live view. | [](concept:observability) |
 
@@ -50,7 +50,8 @@ The operator never approves. Your site decides if a person can approve their own
 | Object | Written by | Read [](concept:assert-vs-observe) |
 | --- | --- | --- |
 | Asset, credentials Secret | You | What you assert |
-| [](kind:HostClaim), [](kind:TalosNode) | You | What you assert |
+| [](kind:HostClaim), [](kind:TalosCluster), [](kind:TalosNode) | You | What you assert |
+| Profiles, maintenance windows, backup policies | You | What you assert |
 | [](kind:ManagementEndpoint), [](kind:Host) | The operator | What it finds |
 | [](kind:HostOperation) | The operator; you approve it | What it plans |
 
@@ -61,14 +62,11 @@ The operator never approves. Your site decides if a person can approve their own
 | Operating system | Talos Linux only, v1.14.0 or later. See [](ref:versions). |
 | Architecture | x86-64 machines in UEFI boot mode. |
 | BMC | Redfish with virtual media. No IPMI, no PXE. See [](ref:hardware). |
-| Tested hardware | Simulated BMCs only. See [](ref:status). |
-| Machine selection | You name each machine. No replica count and no autoscaler. |
+| Machine selection | No replica count in the API and no autoscaler. [](cli:scale) picks free Hosts when you run it. |
 | Workloads | The operator installs the cluster. It does not install add-ons or applications. |
 | Operator replicas | One manager. See [Scale and sizing](concept:architecture#scale-and-sizing). |
-| Tested size | One cluster of five virtual machines. |
-| Release | None yet. The API is `v1alpha1` and can change. |
 
-[Compared with other tools](/start/compared-with/) maps pk-metal to tools that you possibly know.
+[](ref:compared-with) maps pk-metal to tools that you possibly know.
 
 ## Next
 

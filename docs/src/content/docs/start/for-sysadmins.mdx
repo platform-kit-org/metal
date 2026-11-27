@@ -38,19 +38,12 @@ It maps what you know to the objects of pk-metal.
 | Run the playbook again | Edit the TalosNode or TalosCluster. A rollout applies it. See [](concept:drift). |
 | Rolling reboot with a script | A TalosRollout of kind `Reboot`. See [](flow:day-2-change). |
 | `etcdctl snapshot save` in cron | [](kind:EtcdBackupPolicy). See [](concept:etcd-backup). |
-| Maintenance calendar | [](kind:MaintenanceWindow). See [](concept:maintenance-windows). |
+| Maintenance calendar | [](kind:MaintenanceWindow) |
 
 ## Where the state lives
 
 All state is API objects in the management cluster. No other database exists.
-
-<dl>
-  <dt>What you assert</dt>
-  <dd>Asset, credentials Secret, TalosCluster, TalosNode, HostClaim, profiles. Keep them in git.</dd>
-  <dt>What the operator found or did</dt>
-  <dd>ManagementEndpoint, Host, HostOperation, and the status of each object.</dd>
-</dl>
-
+[Who writes what](/start/overview/#who-writes-what) lists the objects that you write and the objects that the operator writes.
 If the two disagree, the operator stops and tells you. See [](concept:assert-vs-observe).
 
 ## Which name is which
@@ -80,7 +73,7 @@ HostOperations are in the namespace `pk-metal`. Give `-n pk-metal` to `kubectl`.
 
 <Callout type="warning">
 Do not delete a claim to remove a machine from the inventory.
-A GitOps tool that prunes a deleted file does the same. The release wipes the node.
+A GitOps tool that prunes a deleted file does the same. The release wipes the machine.
 </Callout>
 
 ## Next

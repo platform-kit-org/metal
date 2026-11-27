@@ -13,23 +13,7 @@ Each runbook has the same parts: symptoms, impact, diagnosis, fix and verificati
 
 ## Alerts
 
-Each alert links to one runbook in its `runbook_url` annotation.
-
-| Alert | Runbook |
-| --- | --- |
-| `PkMetalMetricsAbsent` | [](rb:management-cluster-lost) |
-| `PkMetalAdmissionGateDegraded` | [](rb:admission-gate-degraded) |
-| `PkMetalReconcileFailing`, `PkMetalReconcilePanicked` | [](rb:reconcile-failing) |
-| `PkMetalOperationWorkersBusy` | [](rb:workers-busy) |
-| `PkMetalOperationFailed` | [](rb:operation-failed) |
-| `PkMetalOperationStuck` | [](rb:operation-stuck) |
-| `PkMetalOperationBlocked`, `PkMetalApprovalWaiting` | [](rb:operation-held) |
-| `PkMetalBMCUnreachable` | [](rb:bmc-unreachable) |
-| `PkMetalNodeNotReady` | [](rb:node-not-ready) |
-| `PkMetalClusterUnavailable` | [](rb:cluster-unavailable) |
-| `PkMetalEtcdBackupStale`, `PkMetalEtcdBackupMissing` | [](rb:backup-failing) |
-| `PkMetalCredentialsExpiring` | [](rb:credentials-not-renewed) |
-| `PkMetalRolloutStalled`, `PkMetalRolloutFailed` | [](rb:rollout-paused) |
+Each alert links to one runbook in its `runbook_url` annotation. [Start the alerts](howto:monitor#start-the-alerts) lists each alert and its runbook.
 
 ## Machines and BMCs
 

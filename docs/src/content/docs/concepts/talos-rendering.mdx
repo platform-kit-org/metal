@@ -33,12 +33,8 @@ The operator renders the config of each node into a Secret.
 ## Terms
 
 <dl>
-  <dt>Machine config</dt>
-  <dd>The full configuration of one Talos node. It holds the keys of the cluster.</dd>
   <dt>Patch</dt>
   <dd>A part of a Talos config that you add on the TalosCluster or the TalosNode, for example `ResolverConfig`.</dd>
-  <dt>schematic</dt>
-  <dd>The kernel arguments and system extensions of the installer image. The image factory builds the image from it.</dd>
   <dt>Rendered for</dt>
   <dd>The Talos version that the operator renders a config for. Usually this is the version of the cluster. A node that runs an older version that the renderer supports keeps that version until a TalosUpgrade moves it.</dd>
 </dl>
@@ -52,13 +48,10 @@ The operator renders the config of each node into a Secret.
 5. A patch cannot change the install: the disk, the installer image, or the wipe. The TalosNode sets the disk in `spec.installDiskSelector` and the image in `spec.schematic`. The install never wipes the disk. Such a patch stops the render.
 6. The patches of the TalosCluster apply to each node. A document that Talos allows on control planes only, for example `KubeAuditPolicyConfig`, goes to the control planes only. In the patches of a worker TalosNode, such a document stops the render.
 
-## In the reference
+## Related
 
 - [](ctrl:talosnode), [](ctrl:taloscluster)
 - [`status.renderedFor`](kind:TalosNode#status.renderedFor)
 - [](cli:render): the same render without the operator
-
-## Do it
-
 - [](howto:define-a-cluster)
 - [](howto:change-machine-config)

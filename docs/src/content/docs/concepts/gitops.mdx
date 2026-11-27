@@ -28,17 +28,17 @@ The project has no test with a GitOps tool. The rules on this page come from the
 
 ## What goes into git
 
-| Kind | In git | Reason |
-| --- | --- | --- |
-| [](kind:Asset) | Yes | Your record of a machine. |
-| [](kind:EndpointProfile), [](kind:BiosProfile), [](kind:FirmwareProfile) | Yes | Your configuration for sets of machines. |
-| [](kind:MaintenanceWindow) | Yes | Your schedule. |
-| [](kind:TalosCluster), [](kind:TalosNode) | Yes | The cluster that you want. |
-| [](kind:HostClaim) | Yes, with care | It gives a machine to a node. To delete it is to release the machine. See [What a deletion does](#what-a-deletion-does). |
-| [](kind:EtcdBackupPolicy) | Yes | Your backup schedule. |
-| [](kind:BootAsset) | Only the ones that you write | The operator makes the others. |
-| The site overlay of the operator | Yes | The image, the flags, the ledger. See [](howto:install-operator). |
-| Secrets that you make: BMC credentials, the Talos secrets bundle, backup credentials | Only encrypted | They are keys. |
+| Kind | In git | Reason | Prune |
+| --- | --- | --- | --- |
+| [](kind:Asset) | Yes | Your record of a machine. | With a review |
+| [](kind:EndpointProfile), [](kind:BiosProfile), [](kind:FirmwareProfile) | Yes | Your configuration for sets of machines. | Safe |
+| [](kind:MaintenanceWindow) | Yes | Your schedule. | With a review |
+| [](kind:TalosCluster), [](kind:TalosNode) | Yes | The cluster that you want. | Off |
+| [](kind:HostClaim) | Yes, with care | It gives a machine to a node. To delete it is to release the machine. See [When you delete an object](kind:index#when-you-delete-an-object). | Off, or with a review of each deletion |
+| [](kind:EtcdBackupPolicy) | Yes | Your backup schedule. | With a review |
+| [](kind:BootAsset) | Only the ones that you write | The operator makes the others. | |
+| The site overlay of the operator | Yes | The image, the flags, the ledger. See [](howto:install-operator). | |
+| Secrets that you make: BMC credentials, the Talos secrets bundle, backup credentials | Only encrypted | They are keys. | |
 
 `metal/config/samples/kustomization.yaml` shows a directory with these kinds in the order of their dependencies.
 
@@ -70,11 +70,10 @@ The API server compares the name with the login. It refuses a person who approve
 
 ## The requester in git
 
-Each request that makes the operator propose work names its user in the annotation `metal.platform-kit.org/requested-by`. The kinds are TalosCluster, TalosNode, HostClaim, BiosProfile, FirmwareProfile, and ConfigMaps with the label `os.platform-kit.org/patch`. See [](howto:approval-permissions#who-asked-for-a-change).
+Each request that makes the operator propose work names its user in the annotation `metal.platform-kit.org/requested-by`. [Who asked for a change](howto:approval-permissions#who-asked-for-a-change) gives the rules, and why the review of the commit must be the second person.
 
-- The site can install [`requested-by-stamp`](ref:admission-policies#requested-by-stamp) (Kubernetes 1.36 or later). Then the API server writes the username of the service account of the tool at each create and each change of the spec. Thus the manifests do not need the annotation. On an older release, put the annotation in each manifest, for example `metal.platform-kit.org/requested-by: system:serviceaccount:flux-system:kustomize-controller`.
+- On Kubernetes 1.36 or later, install [`requested-by-stamp`](ref:admission-policies#requested-by-stamp). Else put the annotation with the name of the service account in each manifest, for example `metal.platform-kit.org/requested-by: system:serviceaccount:flux-system:kustomize-controller`.
 - A prune is a delete. The API server cannot stamp a delete, so under `selfApproval: Forbidden` the object must name the service account already. It does if the tool made the last change of its spec. If a person changed the object since, for example with a pk-metal command, the annotation names that person. Then the API server refuses the prune. That person deletes the object.
-- `spec.requestedBy` of the proposal names the service account, not the person who wrote the commit. Under `selfApproval: Forbidden`, the author of the commit can approve the result. The review of the commit must be the second person.
 
 ## The identity that applies
 
@@ -97,17 +96,7 @@ For a claim with `Automatic` approval, the second and the third option let a mer
 
 ## What a deletion does
 
-A GitOps tool with prune deletes an object when its file goes from git. For some kinds, a deletion changes a machine.
-
-| Kind | What the deletion does | Finalizer or owner | Prune |
-| --- | --- | --- | --- |
-| [](kind:HostClaim) | The operator releases the machine. A machine that runs its node gets a release operation: drain, leave etcd, reset the disk, power off. The operation waits for approval. | Finalizer `metal.platform-kit.org/release` holds the claim until the machine is free. | Off, or with a review of each deletion |
-| [](kind:TalosNode) | The finalizer holds the object until no claim, no operation and no etcd member uses the node. | Finalizer `os.platform-kit.org/member` | Off, or with a review |
-| [](kind:TalosCluster) | The object goes at once. Kubernetes deletes the Secrets that the cluster owns: the kubeconfig, the talosconfig and the record of the applied secrets bundle. The machines continue to run. | Owner of its credential Secrets | Off |
-| [](kind:Asset) | Kubernetes deletes its ManagementEndpoint. The operator keeps the endpoint and the Host while a claim holds the machine. | Owner of the endpoint. Finalizer `metal.platform-kit.org/claim-protection` on the endpoint. | With a review |
-| [](kind:EndpointProfile), [](kind:BiosProfile), [](kind:FirmwareProfile) | The operator stops the work for the profile. It does not undo a setting on a machine. | None | Safe |
-| [](kind:MaintenanceWindow) | The window does not limit operations any more. An approved operation can start at once. | None | With a review |
-| [](kind:EtcdBackupPolicy) | No new snapshots. The snapshots that exist stay. | None | With a review |
+A GitOps tool with prune deletes an object when its file goes from git. For some kinds, a deletion changes a machine. [When you delete an object](kind:index#when-you-delete-an-object) gives the effect for each kind. The Prune column of [What goes into git](#what-goes-into-git) says when a tool can prune it.
 
 <Callout type="warning">
 Do not let a tool prune HostClaims, TalosNodes or TalosClusters without a review by a person.
@@ -128,13 +117,9 @@ Some commands change the spec of an object that you keep in git. With a GitOps t
 | [](cli:hold), [](cli:unhold), [](cli:reinstall) | An annotation on a HostClaim | The command is enough if your tool does not remove annotations that are not in git. |
 | [](cli:approve), [](cli:rollout), [](cli:abort), [](cli:retry) | Objects of the operator | No conflict. These objects are not in git. |
 
-## Wait for a result
-
-A tool that waits for health needs a condition for each kind. [Wait for a kind](kind:index#wait-for-a-kind) has the list.
-Only the Asset has `status.observedGeneration`. For the other kinds, a tool cannot see that the status is as new as the spec.
-
 ## Related
 
 - [](concept:assert-vs-observe) explains the two sets of kinds.
 - [](concept:approval) and [](ref:admission-policies) have the rules of the approval.
 - [](kind:index) lists all kinds and who writes each.
+- [Wait for a kind](kind:index#wait-for-a-kind) gives the condition that a tool waits for.

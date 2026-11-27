@@ -5,7 +5,7 @@ type: howto
 day: 1
 xref: { cat: howto, id: install-operator }
 sidebar:
-  order: 0.5
+  order: 1
 sources:
   - /repo/metal/config/samples/site-overlay/kustomization.yaml
   - /repo/metal/config/samples/site-overlay/manager_args.yaml
@@ -26,7 +26,7 @@ Run the operator in a management cluster, with the values of your site.
 
 - You have a clone of the repository, and [mise](https://mise.jdx.dev/getting-started.html) with the pinned tools (`mise trust`, then `mise install`).
 - You have Docker Engine on the workstation. The image build uses it.
-- You have a Kubernetes cluster for the operator, or you make one with kind in step 3. The operator is tested on Kubernetes 1.36. See [](ref:versions).
+- You have a Kubernetes cluster for the operator, or you make one with kind in step 3. The operator needs Kubernetes 1.32 or later. Only 1.36 is tested. See [](ref:versions).
 - You know the address at which the BMCs reach the cluster. See row 2 of [](howto:network-checklist).
 
 <Callout type="note">
@@ -181,7 +181,7 @@ Without `--bmc-ca-secret`, the manager pins the key of each BMC on first use ins
 | --- | --- | --- |
 | Certificates from your CA | Give each BMC a certificate from your CA. Its subject alternative name is the address or name of the ledger URL. Put the CA certificate into `bmc-ca.crt`. | The recommended path. |
 | Key pinned on first use | Remove `--bmc-ca-secret=bmc-ca` from `manager_args.yaml`. The manager trusts the key that each BMC shows at the first contact. It refuses a different key until a person approves it. Enroll on a BMC network that you control. | Tested with simulated BMCs only. |
-| Certificates from cert-manager | Let the operator put a certificate on each BMC. See the `tls` lane of [](kind:EndpointProfile). The first connection needs one of the other paths, for example the key pin. | Tested with simulated BMCs only. |
+| Certificates from cert-manager | Let the operator put a certificate on each BMC. See the `tls` part of [](kind:EndpointProfile). The first connection needs one of the other paths, for example the key pin. | Tested with simulated BMCs only. |
 | Factory certificates | Put the certificate of each BMC into `bmc-ca.crt`. This works only if each certificate has the address of the ledger URL as a subject alternative name. | Not tested on real hardware. |
 | No check | Replace `--bmc-ca-secret=bmc-ca` with `--bmc-insecure` in `manager_args.yaml`. | For a lab with simulated BMCs only. |
 
@@ -193,7 +193,7 @@ Do not use it on a network that other persons can reach.
 ## The admin group and the approvers
 
 Two groups of persons have special rights. A ClusterRoleBinding gives rights to a group. It does not make a person a member.
-The API server gets the groups of a person from the login. The source is the `O=` fields of a client certificate, or a claim of your identity provider.
+The API server gets the groups of a person from the login. The source is the `O=` fields of a client certificate, or a group in the token of your identity provider.
 
 | Group | What only its members can do | Default name |
 | --- | --- | --- |
@@ -220,11 +220,11 @@ Impersonation is a shortcut for a lab. On a production cluster, give the group t
 A BMC with one usable media slot gets one install image with the machine config inside. The manager keeps these images in the media store.
 
 - [](howto:check-a-bmc) shows how to count the slots of a BMC.
-- The component `metal/config/media-store` adds a claim for a 10 GiB volume. The cluster needs a storage class. kind has one.
+- The component `metal/config/media-store` adds a PersistentVolumeClaim of 10 GiB. The cluster needs a storage class. kind has one.
 - The manager builds the image in a Job. The cluster must pull `ghcr.io/siderolabs/imager`, or a mirror that you set with `--imager-repository`.
 - The images hold the machine config, which has secrets. Use storage with encryption if your Secrets are encrypted.
 
-Without the media store, the install of such a machine waits with the reason `BuilderUnavailable`. See [](concept:one-slot-bmc).
+Without the media store, the install of such a machine waits with the reason `BuilderUnavailable`. See [One-slot BMCs](concept:virtual-media-boot#one-slot-bmcs).
 
 ## Verify
 

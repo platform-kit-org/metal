@@ -71,7 +71,7 @@ It records the facts in the status of the [](kind:ManagementEndpoint) and compar
   <dt>Read only</dt>
   <dd>The session has the read-only flag. Only the [](ctrl:hostoperation) and the [](ctrl:endpointconvergence) write to a BMC.</dd>
   <dt>Two origins</dt>
-  <dd>The Asset is what your organization says. Redfish is what the machine says. A mismatch is alert-and-hold: the phase stops and nothing destructive follows. See [](concept:identity).</dd>
+  <dd>The Asset is what your organization says. Redfish is what the machine says. A mismatch is alert-and-hold: the phase stops and nothing destructive follows. See [](concept:assert-vs-observe#the-identity-of-a-machine).</dd>
   <dt>Serial anchors</dt>
   <dd>The controller collects every serial that discovery gives: the board serial of the chassis and the serial of each system. The Asset serial must be one of them.</dd>
   <dt>A slot list is optional</dt>

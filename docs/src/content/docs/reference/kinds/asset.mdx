@@ -47,7 +47,7 @@ With the address, the controller makes the ManagementEndpoint. Through the BMC, 
 A [](kind:HostClaim) names the Asset to get that Host.
 
 The Asset holds only what you know. The other two kinds hold what the operator found. [](concept:assert-vs-observe) explains this rule.
-The operator compares the two sets of facts. If they do not agree, it stops. Read [](concept:identity).
+The operator compares the two sets of facts. If they do not agree, it stops. Read [](concept:assert-vs-observe#the-identity-of-a-machine).
 
 ## Lifecycle
 
@@ -148,7 +148,7 @@ If a value is wrong, the endpoint goes to the phase Mismatch and the operator do
 You cannot delete the endpoint of a machine that a claim holds. The operator keeps the Host and its endpoint until the claim releases the machine.
 </Callout>
 
-## Tasks
+## Related
 
 - [](howto:enroll-hosts)
 - [](rb:host-mismatch)

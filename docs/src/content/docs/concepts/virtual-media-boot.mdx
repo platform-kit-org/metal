@@ -1,33 +1,27 @@
 ---
 title: Virtual media boot
-description: The operator boots a machine from an image on the BMC. It does not use PXE.
+description: The operator boots a machine from an image on the BMC. It does not use PXE. A BMC with one slot gets one installer that holds the node configuration.
 type: concept
 xref: { cat: concept, id: virtual-media-boot }
+redirectFrom: [concepts/one-slot-bmc/]
 sidebar:
   order: 5
 sources:
   - /repo/metal/internal/controller/provisioning.go
+  - /repo/metal/internal/controller/bootasset_embedded.go
+  - /repo/metal/internal/controller/imager.go
 ---
 
 import Provision from '../../../components/explainers/Provision.astro';
+import Figure from '../../../components/diagram/Figure.astro';
+import Box from '../../../components/diagram/Box.astro';
+import Edge from '../../../components/diagram/Edge.astro';
+import Callout from '../../../components/Callout.astro';
 
 The operator does not use PXE, TFTP or DHCP to install a machine.
 It mounts the installer and the node configuration as virtual media on the BMC, and boots the machine from them one time.
 
 <Provision start={3} />
-
-## Terms
-
-<dl>
-  <dt>Virtual media slot</dt>
-  <dd>A virtual CD drive of the BMC. The BMC downloads an image URL of the media service into the slot.</dd>
-  <dt>Boot override</dt>
-  <dd>A one-time boot device that the BMC uses at the next start, here the virtual CD.</dd>
-  <dt>Grant</dt>
-  <dd>A random token in the media URL, for one operation only. The first BMC address that uses it owns it. A medium that carries a secret also gets a one-time user and password.</dd>
-  <dt>Check-in</dt>
-  <dd>The moment when the installed node runs its configuration and answers the operator over the Talos API.</dd>
-</dl>
 
 ## The sequence
 
@@ -42,12 +36,41 @@ It mounts the installer and the node configuration as virtual media on the BMC, 
 ## Why not PXE
 
 - No DHCP or TFTP server is necessary on the machine network.
-- The node configuration never goes over the network to a machine without a configuration.
+- A Talos machine without a configuration accepts one from each client that reaches it. The configuration holds the keys and tokens of the cluster. So it never goes over the network, only through the BMC.
 - The BMC gets the media, so the machine needs no route to the operator.
 
-A BMC with only one slot gets one installer with the configuration inside, see [](concept:one-slot-bmc).
+## One-slot BMCs
 
-## In the reference
+A normal install needs two media: the installer and the configuration.
+Some BMCs hold one medium only. For a blank machine behind such a BMC, the operator builds one installer for that node, with the configuration inside.
 
-- [](kind:BootAsset), [](kind:HostOperation)
+<Figure title="Two slots: installer and configuration ISO. One slot: an imager Job builds an embedded installer into the media store, and the BMC mounts it." caption="Two ways to the same boot. The configuration never goes over the network to the machine." width={720} height={230} wide>
+  <text class="t-small t-label" x={10} y={22}>two slots</text>
+  <Box x={10} y={32} w={170} h={50} label="Installer ISO" sub="downloaded, in the store" />
+  <Box x={200} y={32} w={170} h={50} label="Config ISO" sub="small, per node" />
+  <Box x={530} y={32} w={180} h={50} label="BMC, 2 slots" />
+  <Edge points={[[370, 57], [530, 57]]} label="mount both" at={[450, 49]} />
+  <text class="t-small t-label" x={10} y={132}>one slot</text>
+  <Box x={10} y={142} w={170} h={54} label="BootAsset" sub="<node>-embedded" cat="kind" href="/reference/kinds/bootasset/" />
+  <Box x={200} y={142} w={150} h={54} label="Imager Job" sub="no privileges" />
+  <Box x={370} y={142} w={140} h={54} label="Media store" sub="digest checked" />
+  <Box x={530} y={142} w={180} h={54} label="BMC, 1 slot" />
+  <Edge points={[[180, 169], [200, 169]]} />
+  <Edge points={[[350, 169], [370, 169]]} />
+  <Edge points={[[510, 169], [530, 169]]} label="mount" at={[520, 214]} />
+</Figure>
+
+The imager runs as a Job in the namespace `pk-metal`. It reads the configuration from a file, not from its arguments. Talos 1.12 or later reads such an embedded installer.
+The kustomize component `config/media-store` adds the media store. The [](kind:BootAsset) records the digest of each ISO, and the media service checks it each time a BMC downloads the file.
+
+The operator builds the ISO for a boot. It deletes the ISO when no boot of the claim runs: after the install, or after a failed boot. A machine that already runs Talos needs no embedded ISO. Its configuration goes into the one slot as a small ISO. See [](ref:media-store#media-that-carry-secrets).
+
+<Callout type="caution">
+Treat the media store volume like the Secret storage of the cluster.
+Each ISO holds a node configuration in plain text, readable only by the operator user.
+</Callout>
+
+## Related
+
+- [](kind:BootAsset), [](ctrl:bootasset), [](kind:HostOperation)
 - [](flow:rack-to-node)

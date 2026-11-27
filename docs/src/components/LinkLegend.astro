@@ -30,13 +30,12 @@ const shown = categories.filter((c) => c.id !== 'term');
   ) : (
     <table class="pk-legend-table">
       <thead>
-        <tr><th>Category</th><th>You write</th><th>You see</th></tr>
+        <tr><th>Category</th><th>You see</th></tr>
       </thead>
       <tbody>
         {categories.map((c) => (
           <tr>
             <td>{c.label}</td>
-            <td><code>{c.scheme ? `[](${c.scheme}:…)` : c.id === 'ext' ? '[text](https://…)' : '[](/repo/<path>)'}</code></td>
             <td>
               {c.id === 'term' ? (
                 <span class="gl pk-sample" data-domain="hw">{examples[c.id]}</span>

@@ -31,16 +31,10 @@ The operator never approves. A site setting tells if a person can approve their 
 ## Terms
 
 <dl>
-  <dt>Proposal</dt>
-  <dd>A [](kind:HostOperation) or a [](kind:TalosRollout) that waits in `AwaitingApproval`. It names its proposer in `spec.proposedBy`.</dd>
   <dt>Plan</dt>
   <dd>The list of actions, fixed when the operator proposes. A changed plan is a new proposal with a new name.</dd>
-  <dt>Approver</dt>
-  <dd>A person with the ClusterRole `pk-metal-approver`. If the site sets `selfApproval: Forbidden`, the approver is not the proposer.</dd>
   <dt>Self-approval</dt>
-  <dd>An approval by the person who proposed. The ConfigMap `hostoperation-approval` sets it: `Allowed` (the default) or `Forbidden`. See [](howto:approval-permissions).</dd>
-  <dt>Hold</dt>
-  <dd>The annotation `metal.platform-kit.org/hold` on a claim. While it is there, the operator proposes nothing for the claim.</dd>
+  <dd>An approval by the person who proposed. The ConfigMap `hostoperation-approval` sets it: `Allowed` (the default) or `Forbidden`. A proposal names its proposer in `spec.proposedBy`. See [](howto:approval-permissions).</dd>
   <dt>Automatic approval</dt>
   <dd>A claim setting, `spec.provisioning.approval: Automatic`. Only an admin can set it.</dd>
 </dl>
@@ -72,15 +66,12 @@ Only a member of the admin group can create or change an EndpointProfile. See []
 
 - [](cli:approve) approves only the plan that it printed. If the operation changed in the meantime, nothing is approved.
 - The approval names the uid and the resourceVersion that you read, so the API server refuses it if the object changed.
-- A gate after the approval can still hold the start, see [](concept:maintenance-windows) and [](concept:cluster-guard).
+- A gate after the approval can still hold the start, see [](kind:MaintenanceWindow) and [](concept:cluster-guard).
 
-## In the reference
+## Related
 
 - [](flow:approval-flow): the gate step by step
 - [](cli:approve), [](cli:hold), [](cli:retry), [](cli:abort)
 - [](kind:HostOperation#spec.approval)
-
-## Do it
-
 - [](howto:approve-hold-retry)
 - [](howto:approval-permissions)

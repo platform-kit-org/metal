@@ -37,8 +37,6 @@ A dry run on each node then tells whether the machine runs the current config.
   <dd>A config Secret named `machineconfig-<node>-<digest>`. Its name changes when its content changes.</dd>
   <dt>Dry run</dt>
   <dd>A question to Talos: what changes if this config is applied? Talos answers and changes nothing.</dd>
-  <dt>Drift</dt>
-  <dd>The machine does not run the config that the operator renders. [`status.drift`](kind:TalosNode#status.drift) gives the number of lines, the changed keys and whether a reboot is necessary. It never holds values.</dd>
 </dl>
 
 ## When the dry run runs
@@ -56,6 +54,8 @@ A dry run on each node then tells whether the machine runs the current config.
 | `False` | `ConfigDrift` | It does not. The operator proposes a `Config` rollout. |
 | `Unknown` | `DriftUnknown` | The dry run failed. The message says why. |
 
+[`status.drift`](kind:TalosNode#status.drift) gives the number of changed lines, the changed keys and whether a reboot is necessary. It never holds values.
+
 If Talos does not say whether a change needs a reboot, the operator assumes that it does.
 
 ## Which Secrets stay
@@ -71,11 +71,8 @@ The operator deletes the others.
 - An edit to a TalosCluster or TalosNode reaches the machines through a rollout.
 - A change made by hand with `talosctl` shows as drift, and the rollout undoes it.
 
-## In the reference
+## Related
 
 - [](kind:TalosNode), [](ctrl:talosnode)
 - [](act:TalosApplyConfig): the Secret must hash to the pinned digest
-
-## Do it
-
 - [](howto:change-machine-config)

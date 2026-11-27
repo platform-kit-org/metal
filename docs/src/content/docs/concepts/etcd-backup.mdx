@@ -35,8 +35,6 @@ Only a person with a private key can decrypt it, on that person's own machine.
 ## Terms
 
 <dl>
-  <dt>Sink</dt>
-  <dd>Where snapshots go: an S3 bucket, or a PersistentVolumeClaim of the operator.</dd>
   <dt>age recipient</dt>
   <dd>A public key `age1…` in the policy. Name at least two, for example two persons or one key in a safe.</dd>
   <dt>Verified</dt>
@@ -58,11 +56,8 @@ Delete a decrypted snapshot when you no longer need it.
 It holds each Secret of the cluster in plain text.
 </Callout>
 
-## In the reference
+## Related
 
 - [](kind:EtcdBackupPolicy), [](kind:EtcdSnapshot), [](ctrl:etcdbackuppolicy)
 - [](cli:backup), [](cli:restore)
-
-## Do it
-
 - [](howto:back-up-etcd)

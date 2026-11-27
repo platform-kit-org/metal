@@ -46,7 +46,7 @@ No test in the repository runs against a real BMC without a person, and no resul
 | BMC protocol | Redfish over HTTPS. The operator logs in with a Redfish session, or with HTTP Basic authentication if the BMC has no sessions. IPMI is not used. | In the lab |
 | Virtual media | The BMC can mount an ISO from an HTTPS URL. The BMC needs the license for this. | In the lab |
 | Boot override | The BMC can set a one-time boot from the virtual CD. | In the lab |
-| Media slots | Two usable slots, or one slot with the [media store](concept:one-slot-bmc). | In the lab, both shapes |
+| Media slots | Two usable slots, or one slot with the [media store](concept:virtual-media-boot#one-slot-bmcs). | In the lab, both shapes |
 | Network of the BMC | See [](howto:network-checklist). | |
 
 [](howto:check-a-bmc) reads these facts from one BMC and changes nothing.
@@ -110,4 +110,3 @@ Some vendors sell Redfish features as a license. The operator cannot see a licen
 
 - [](ref:status) for the maturity of the project.
 - [](lab:page/simulated-bmc) for the simulated models.
-- [](concept:protocol-model) for how the operator handles the differences between vendors.

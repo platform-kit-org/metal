@@ -11,8 +11,6 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
 const kinds = Object.keys(import.meta.glob('../data/generated/crds/*.json')).length;
 const pages = loadPages();
 const count = (type: string) => pages.filter((p) => p.data.type === type && p.data.xref?.id !== 'index' && !/^day-\d$/.test(p.data.xref?.id ?? '')).length;
-const real = pages.find((p) => p.slug === 'learn/first-real-server/');
-if (!real) throw new Error('NavCards: the page learn/first-real-server is missing');
 const n = (k: number, one: string, many = `${one}s`) => `${k} ${k === 1 ? one : many}`;
 const cards = [
   { cat: 'tut', title: 'Tutorials', href: '/learn/lab-first-cluster/', body: 'Make a Talos cluster in the virtual lab, step by step. No hardware is necessary.', more: n(count('tutorial'), 'tutorial') },
@@ -32,6 +30,3 @@ const cards = [
     </a>
   ))}
 </div>
-<p class="pk-cards-note not-content">
-  Real hardware? Start with the tutorial <a class="x" data-cat="tut" href={`${base}/${real.slug}`}>{real.data.title}</a>.
-</p>

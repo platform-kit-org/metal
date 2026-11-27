@@ -152,7 +152,7 @@ terms:
     kind: noun
     domain: hw
     forms: [media slot, media slots, virtual media slot, virtual media slots]
-    see: concept:one-slot-bmc
+    see: concept:virtual-media-boot#one-slot-bmcs
     related: [virtual-media, one-slot-bmc]
     def: >-
       One place on a BMC that holds one virtual media image. Most BMCs have two
@@ -163,7 +163,7 @@ terms:
     kind: noun
     domain: hw
     forms: [one-slot BMC, one-slot BMCs]
-    see: concept:one-slot-bmc
+    see: concept:virtual-media-boot#one-slot-bmcs
     related: [media-slot, embedded-installer, imager, media-store]
     def: >-
       A BMC that holds only one virtual media image at a time. For a blank
@@ -222,7 +222,7 @@ terms:
     kind: noun
     domain: redfish
     forms: [Redfish]
-    see: concept:protocol-model
+    see: ref:hardware
     related: [bmc, dialect]
     def: >-
       A standard HTTPS and JSON API to control servers through their BMC. The
@@ -233,7 +233,7 @@ terms:
     kind: noun
     domain: redfish
     forms: [dialect, dialects]
-    see: concept:protocol-model
+    see: cli:check
     related: [redfish, managementendpoint]
     def: >-
       The way a BMC vendor implements a Redfish function, for example the
@@ -260,9 +260,9 @@ terms:
     see: concept:virtual-media-boot
     related: [media-service, virtual-media]
     def: >-
-      A one-time user name and password for one boot image on the media
-      service. A BMC must have a grant to download the image. The grant stops
-      when the operation ends.
+      A random token in the media URL for one boot image. The first BMC
+      address that uses it owns it. The grant stops when the operation ends. A
+      medium that carries a secret also gets a one-time user name and password.
 
   - id: media-service
     term: media service
@@ -335,6 +335,17 @@ terms:
     def: >-
       One control loop in the manager. Each controller watches one primary
       kind and reconciles its objects.
+
+  - id: executor
+    term: executor
+    kind: noun
+    domain: k8s
+    forms: [executor]
+    see: ctrl:hostoperation
+    related: [controller, hostoperation, approval]
+    def: >-
+      The HostOperation controller. It runs the steps of an approved
+      HostOperation, one at a time.
 
   - id: reconcile
     term: reconcile
@@ -659,21 +670,10 @@ terms:
     forms: [ManagementEndpoint, ManagementEndpoints, endpoint, endpoints]
     guards: { not_after: '(cluster|API|Kubernetes)\s+$' }
     see: kind:ManagementEndpoint
-    related: [me, bmc, asset, host]
+    related: [bmc, asset, host]
     def: >-
       The kind for one BMC. The operator makes it from an Asset and the ledger,
       and keeps in it what the BMC reports.
-
-  - id: me
-    term: ME
-    abbr: ManagementEndpoint
-    kind: abbr
-    domain: k8s
-    forms: [ME]
-    see: kind:ManagementEndpoint
-    related: [managementendpoint]
-    def: >-
-      Short name for ManagementEndpoint. The kubectl short name is mep.
 
   - id: host
     term: Host
@@ -949,7 +949,7 @@ terms:
     related: [talosnode, host]
     def: >-
       A Kubernetes member that runs Talos. A node runs on a Host. Do not use
-      "node" for the hardware.
+      "node" for the hardware: write "machine".
 
   - id: control-plane
     term: control plane
@@ -1055,7 +1055,7 @@ terms:
     kind: noun
     domain: talos
     forms: [embedded installer, embedded installers]
-    see: concept:one-slot-bmc
+    see: concept:virtual-media-boot#one-slot-bmcs
     related: [one-slot-bmc, imager, bootasset]
     def: >-
       An installer ISO with the machine config of one node inside. The
@@ -1066,7 +1066,7 @@ terms:
     kind: noun
     domain: talos
     forms: [imager, Talos imager]
-    see: concept:one-slot-bmc
+    see: concept:virtual-media-boot#one-slot-bmcs
     related: [embedded-installer, media-store]
     def: >-
       The Talos tool that builds an ISO. The operator runs it as a Kubernetes
@@ -1077,7 +1077,7 @@ terms:
     kind: noun
     domain: talos
     forms: [media store]
-    see: concept:one-slot-bmc
+    see: concept:virtual-media-boot#one-slot-bmcs
     related: [embedded-installer, media-service]
     def: >-
       A volume of the operator that keeps the embedded installers. The files
@@ -1260,7 +1260,7 @@ terms:
     kind: noun
     domain: safety
     forms: [plan hash, planHash]
-    see: concept:approval
+    see: concept:convergence
     related: [approval, proposal, convergence]
     def: >-
       A hash of the wanted state that a proposal serves. An approval covers only
@@ -1366,7 +1366,7 @@ terms:
     kind: noun
     domain: safety
     forms: [identity]
-    see: concept:identity
+    see: concept:assert-vs-observe#the-identity-of-a-machine
     related: [asset, mismatch]
     def: >-
       The facts that name one machine: serial number and BMC MAC address. The
@@ -1382,8 +1382,9 @@ terms:
     related: [quorum, voter]
     def: >-
       The metal.platform-kit.org/ack-etcd-risk annotation on a HostClaim or a TalosNode.
-      Its value is your reason. It lets a removal go on that puts quorum at
-      risk.
+      It lets a removal go on that puts quorum at risk. Its value is
+      "<username>: <reason>". With config/name-stamp, the reason alone is
+      enough.
 
   - id: start-gate
     term: start gate

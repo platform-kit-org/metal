@@ -17,9 +17,9 @@ import Zone from '../../../components/diagram/Zone.astro';
 import Callout from '../../../components/Callout.astro';
 
 After a pivot, the operator runs on machines that it manages.
-A reboot of such a machine can stop the operator in the middle of an operation. So the operator holds these power actions.
+A reboot of such a machine can stop the operator in the middle of an operation. So the operator holds each step that takes such a machine down.
 
-<Figure title="The manager pod runs on w-1 of cluster mgmt. Power actions on w-1 and on the control planes cp-1, cp-2 and cp-3 are held. w-2 and other clusters are not held by self-protection." caption="Protected machines: the node of the manager pod, and each installed control plane of its own cluster." width={720} height={200} wide>
+<Figure title="The manager pod runs on w-1 of cluster mgmt. Steps that take a node down on w-1 and on the control planes cp-1, cp-2 and cp-3 are held. w-2 and other clusters are not held by self-protection." caption="Protected machines: the node of the manager pod, and each installed control plane of its own cluster." width={720} height={200} wide>
   <Zone x={10} y={10} w={460} h={180} label="cluster mgmt (the operator runs here)" />
   <Box x={30} y={45} w={130} h={54} label="cp-1" sub="held" variant="warn" />
   <Box x={180} y={45} w={130} h={54} label="cp-2" sub="held" variant="warn" />
@@ -32,9 +32,11 @@ A reboot of such a machine can stop the operator in the middle of an operation. 
 
 ## What is held
 
-- A power cycle or power off of the node where the manager pod runs.
-- A power cycle or power off of an installed control plane of the cluster of the operator. Installed means that the node answers now, or the claim records the hand-off.
-- This covers an install, a release, a BIOS change and the executor itself.
+- Each step that takes a node down, on the node where the manager pod runs.
+- The same steps on an installed control plane of the cluster of the operator. Installed means that the node answers now, or the claim records the hand-off.
+- This covers an install, a release, a BIOS change, a single operation, and each node of a rollout of the operator cluster.
+
+[](concept:cluster-guard#terms) lists the steps that take a node down.
 
 The claim or the operation shows reason `SelfDisruption`.
 
@@ -59,7 +61,7 @@ Remove `metal.platform-kit.org/allow-self-disruption` when you complete the work
 The safer way is to move the operator to another cluster first, see [](flow:pivot).
 </Callout>
 
-## In the reference
+## Related
 
 - [](ctrl:protection)
 - [](concept:cluster-guard): the same idea for each cluster

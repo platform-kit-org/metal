@@ -36,20 +36,17 @@ The convergence controller merges the profiles for each Host, compares the resul
   <dt>Profile</dt>
   <dd>A class of desired state: [](kind:BiosProfile), [](kind:FirmwareProfile) or [](kind:EndpointProfile).</dd>
   <dt>Layer</dt>
-  <dd>The precedence of a profile. A higher layer overrides a lower one. Two profiles on the same layer that disagree are a conflict, and the operator holds the Host.</dd>
-  <dt>BiosSchema</dt>
-  <dd>The attribute registry that the BMC reports. The operator checks each desired attribute against it. See [](kind:BiosSchema).</dd>
-  <dt>Plan hash</dt>
-  <dd>The hash of a proposed change. The same hash never gives a second operation.</dd>
+  <dd>The precedence of a profile. A higher layer overrides a lower one. Two profiles on the same layer that disagree are a conflict, and the operator holds the Host or the endpoint.</dd>
 </dl>
 
 ## Rules
 
 1. Firmware converges before BIOS, because the BIOS schema depends on the firmware.
-2. The operation carries the attributes. A later edit of the profile cannot change an approved operation.
+2. The operation carries the attributes and their plan hash. A later edit of the profile cannot change an approved operation. An unchanged plan hash never gives a second operation.
 3. On a machine that runs a node, the operator wraps the change. It drains the node, reboots it through Talos with a power cycle and waits for the node.
 4. A control plane also waits for a healthy etcd before and after.
 5. The operator proposes no change on a machine that it runs on, see [](concept:self-protection).
+6. An [](kind:EndpointProfile) changes the BMC, not the machine: the account, the time servers and the TLS certificate. It makes no HostOperation and needs no approval. Only the admin group writes it. A TLS push restarts the BMC. The [](kind:ManagementEndpoint) shows the result in the condition `Configured`.
 
 ## Conditions on the Host
 
@@ -59,12 +56,9 @@ The convergence controller merges the profiles for each Host, compares the resul
 | `SystemFirmwareConverged` | The BIOS, NIC and RAID firmware agree. |
 | `BiosConverged` | The BIOS attributes agree with the BiosSettings. |
 
-## In the reference
+## Related
 
 - [](ctrl:convergence)
 - [](act:ApplyBios), [](act:FlashFirmware), [](act:StageFirmware)
-
-## Do it
-
 - [](howto:apply-bios-settings)
 - [](howto:flash-firmware)

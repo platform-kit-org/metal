@@ -130,7 +130,7 @@ The Job runs without root and without a service account token, next to the manag
 
 ## Metrics
 
-All series have the prefix `pk_metal_`. They come from the cache at scrape time.
+All series have the prefix `pk_metal_`. Most come from the cache at scrape time.
 
 | Metric | Labels | Meaning |
 | --- | --- | --- |
@@ -140,14 +140,21 @@ All series have the prefix `pk_metal_`. They come from the cache at scrape time.
 | `operation_failed` | namespace, operation, host, reason | 1 for each failed operation that waits for a person. |
 | `operation_awaiting_approval_seconds` | namespace, operation, host, reason | How long an operation waits for approval. |
 | `operation_blocked` | namespace, operation, host, reason | 1 for each approved operation that did not start. |
+| `operation_running_seconds` | namespace, operation, host, step | How long an operation that runs is in its current step. |
 | `bmc_reachable` | endpoint | 1 when the BMC answers Redfish. |
 | `talosnode_ready` | node, cluster, role | 1 when a node is Ready. |
+| `talosnode_expected_ready` | node, cluster, role | 1 when a node must be Ready: the operator bootstrapped its cluster and the node reported a version. The same rule as [](cli:status). The alerts use it, so an install does not page. |
 | `talosnode_info` | node, cluster, version | The Talos version of a node. |
 | `taloscluster_available` | cluster | 1 when the API answers and all nodes are Ready. |
+| `taloscluster_expected_available` | cluster | 1 when a cluster must be available: the operator bootstrapped it. |
 | `taloscluster_nodes` | cluster, role, ready | Nodes by role and readiness. |
 | `credentials_expiry_timestamp_seconds` | cluster, kind | When a published credential expires. |
+| `credentials_issued_timestamp_seconds` | cluster, kind | When a published credential became valid. The alert divides by the lifetime, so it works for each TTL. |
 | `etcd_backup_last_success_timestamp_seconds` | cluster | Time of the newest verified snapshot. |
+| `etcd_backup_interval_seconds` | cluster | The shortest interval of the backup policies of the cluster. |
+| `rollout_condition` | rollout, cluster, reason | 1 for each rollout that did not succeed, with the reason where it stands. |
 | `rollout_nodes_done`, `rollout_nodes_total` | rollout, cluster | Progress of a rollout. |
+| `admission_gate_degraded` | policy | 1 while an admission policy of the approval gate is missing or does not deny, or nothing binds it. |
 
 <Callout type="note">
 `pk-metal pivot` scales the manager to zero and waits for the lease. The lease release on a clean stop keeps that wait short. See [](cli:pivot).

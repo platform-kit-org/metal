@@ -5,7 +5,7 @@ type: howto
 day: 2
 xref: { cat: howto, id: change-machine-config }
 sidebar:
-  order: 3
+  order: 7
 sources:
   - /repo/metal/internal/controller/talosrollout_proposer.go
   - /repo/metal/internal/controller/talosnode_day2.go
@@ -93,6 +93,7 @@ Revert the change in git and apply it. The operator proposes a new `Config` roll
 | No rollout appears, `ConfigInSync` is `Unknown` | The dry run failed. The message on `DriftUnknown` says why. |
 | `PlanChanged` | [](rb:rollout-paused) |
 | A node fails | [](rb:operation-failed) |
+| A node step waits with `SelfDisruption` or `ClusterDisruption` | [](rb:operation-held) |
 
 ## Related
 

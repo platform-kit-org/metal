@@ -4,6 +4,7 @@ description: The times when an approved operation can start on a set of machines
 type: kind
 eyebrow: Kind · metal.platform-kit.org/v1alpha1
 xref: { cat: kind, id: MaintenanceWindow }
+redirectFrom: [concepts/maintenance-windows/]
 sources:
   - /repo/metal/api/v1alpha1/maintenancewindow_types.go
   - /repo/metal/internal/controller/window.go
@@ -41,7 +42,7 @@ You write it. A person must still approve each change. The window only sets the 
 
 <WindowGate />
 
-The [executor](ctrl:hostoperation) examines the windows one time for each operation, before the first action.
+The executor examines the windows one time for each operation, before the first action.
 It calculates the result from the spec of each window. It does not read `status.open`.
 When you change a window, an operation that waits uses the new window in 5 minutes or less.
 
@@ -174,7 +175,7 @@ An operation that waits for its window does not count as a problem in [](cli:sta
 The metric `pk_metal_operation_blocked` lists these operations with the reason `OutsideMaintenanceWindow`.
 </Callout>
 
-## Tasks
+## Related
 
 - [](howto:approve-hold-retry)
 - [](howto:upgrade-talos)

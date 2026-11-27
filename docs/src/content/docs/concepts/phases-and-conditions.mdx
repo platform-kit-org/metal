@@ -15,7 +15,7 @@ import Box from '../../../components/diagram/Box.astro';
 import Edge from '../../../components/diagram/Edge.astro';
 
 Each object has conditions. A condition is one fact with a status, a reason and a message.
-The phase is one word that summarizes the conditions. Read the conditions to know why something waits.
+The phase is one word that summarizes the conditions. The package `internal/phase` derives it again on each pass, so it has no memory of the previous phase. Read the conditions to know why something waits.
 
 <Figure title="Controllers write conditions. One package derives the phase and blockedOn from the conditions. People and tables read the phase." caption="One direction only: the controllers never read the phase." width={720} height={130} wide>
   <Box x={10} y={40} w={150} h={54} label="Controllers" sub="observe" cat="ctrl" href="/reference/controllers/" />
@@ -26,19 +26,6 @@ The phase is one word that summarizes the conditions. Read the conditions to kno
   <Edge points={[[350, 67], [390, 67]]} label="read" at={[370, 59]} />
   <Edge points={[[540, 67], [580, 67]]} label="stamp" at={[560, 59]} />
 </Figure>
-
-## Terms
-
-<dl>
-  <dt>Condition</dt>
-  <dd>A fact with a type (for example `Verified`), a status (`True`, `False` or `Unknown`), a reason and a message in plain words.</dd>
-  <dt>Reason</dt>
-  <dd>One CamelCase word that a script can compare, for example `SerialMismatch`.</dd>
-  <dt>Phase</dt>
-  <dd>A summary of the conditions. The package `internal/phase` derives it again on each pass. It has no memory of the previous phase.</dd>
-  <dt>blockedOn</dt>
-  <dd>The reason of the condition that holds the object now. [](cli:status) shows it in the BLOCKED column.</dd>
-</dl>
 
 ## Rules
 

@@ -19,7 +19,7 @@ All state is API objects, so the move is a copy of objects in a fixed sequence. 
 
 <Figure title="The copy sequence: ConfigMaps and Secrets, then Assets and profiles, then Hosts, then HostClaims and HostOperations, then Talos objects and windows, then all other kinds of the two groups." caption="Owners and referenced objects go first. A second pass fills owners that come later." width={720} height={110} wide>
   <Box x={5} y={30} w={110} h={54} label="1 Secrets" sub="ConfigMaps" />
-  <Box x={125} y={30} w={110} h={54} label="2 Assets" sub="profiles, MEs" />
+  <Box x={125} y={30} w={110} h={54} label="2 Assets" sub="profiles, endpoints" />
   <Box x={245} y={30} w={110} h={54} label="3 Hosts" sub="claimRef" />
   <Box x={365} y={30} w={110} h={54} label="4 Claims" sub="operations" />
   <Box x={485} y={30} w={110} h={54} label="5 Talos" sub="windows" />

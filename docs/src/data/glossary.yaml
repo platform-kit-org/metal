@@ -260,9 +260,9 @@ terms:
     see: concept:virtual-media-boot
     related: [media-service, virtual-media]
     def: >-
-      A one-time user name and password for one boot image on the media
-      service. A BMC must have a grant to download the image. The grant stops
-      when the operation ends.
+      A random token in the media URL for one boot image. The first BMC
+      address that uses it owns it. The grant stops when the operation ends. A
+      medium that carries a secret also gets a one-time user name and password.
 
   - id: media-service
     term: media service
@@ -659,21 +659,10 @@ terms:
     forms: [ManagementEndpoint, ManagementEndpoints, endpoint, endpoints]
     guards: { not_after: '(cluster|API|Kubernetes)\s+$' }
     see: kind:ManagementEndpoint
-    related: [me, bmc, asset, host]
+    related: [bmc, asset, host]
     def: >-
       The kind for one BMC. The operator makes it from an Asset and the ledger,
       and keeps in it what the BMC reports.
-
-  - id: me
-    term: ME
-    abbr: ManagementEndpoint
-    kind: abbr
-    domain: k8s
-    forms: [ME]
-    see: kind:ManagementEndpoint
-    related: [managementendpoint]
-    def: >-
-      Short name for ManagementEndpoint. The kubectl short name is mep.
 
   - id: host
     term: Host
@@ -1382,8 +1371,9 @@ terms:
     related: [quorum, voter]
     def: >-
       The metal.platform-kit.org/ack-etcd-risk annotation on a HostClaim or a TalosNode.
-      Its value is your reason. It lets a removal go on that puts quorum at
-      risk.
+      It lets a removal go on that puts quorum at risk. Its value is
+      "<username>: <reason>". With config/name-stamp, the reason alone is
+      enough.
 
   - id: start-gate
     term: start gate

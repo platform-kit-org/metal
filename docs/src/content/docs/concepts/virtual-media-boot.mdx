@@ -23,19 +23,6 @@ It mounts the installer and the node configuration as virtual media on the BMC, 
 
 <Provision start={3} />
 
-## Terms
-
-<dl>
-  <dt>Virtual media slot</dt>
-  <dd>A virtual CD drive of the BMC. The BMC downloads an image URL of the media service into the slot.</dd>
-  <dt>Boot override</dt>
-  <dd>A one-time boot device that the BMC uses at the next start, here the virtual CD.</dd>
-  <dt>Grant</dt>
-  <dd>A random token in the media URL, for one operation only. The first BMC address that uses it owns it. A medium that carries a secret also gets a one-time user and password.</dd>
-  <dt>Check-in</dt>
-  <dd>The moment when the installed node runs its configuration and answers the operator over the Talos API.</dd>
-</dl>
-
 ## The sequence
 
 1. [](act:EjectMedia) on each slot.
@@ -73,16 +60,8 @@ Some BMCs hold one medium only. For a blank machine behind such a BMC, the opera
   <Edge points={[[510, 169], [530, 169]]} label="mount" at={[520, 214]} />
 </Figure>
 
-<dl>
-  <dt>Embedded installer</dt>
-  <dd>A Talos installer ISO with the configuration of one node inside. Talos 1.12 or later reads it.</dd>
-  <dt>imager</dt>
-  <dd>The Talos tool that builds the ISO. It runs as a Job in the namespace `pk-metal`. It reads the configuration from a file, not from its arguments.</dd>
-  <dt>Media store</dt>
-  <dd>A volume of the operator that holds the built ISOs. The kustomize component `config/media-store` adds it.</dd>
-  <dt>Digest</dt>
-  <dd>The hash of the ISO. The [](kind:BootAsset) records it. The media service checks it each time a BMC downloads the file.</dd>
-</dl>
+The imager runs as a Job in the namespace `pk-metal`. It reads the configuration from a file, not from its arguments. Talos 1.12 or later reads such an embedded installer.
+The kustomize component `config/media-store` adds the media store. The [](kind:BootAsset) records the digest of each ISO, and the media service checks it each time a BMC downloads the file.
 
 The operator builds the ISO for a boot. It deletes the ISO when no boot of the claim runs: after the install, or after a failed boot. A machine that already runs Talos needs no embedded ISO. Its configuration goes into the one slot as a small ISO. See [](ref:media-store#media-that-carry-secrets).
 

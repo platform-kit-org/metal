@@ -32,25 +32,12 @@ If the old disk boots, the machine comes back as a node that no longer belongs, 
   <Edge points={[[660, 140], [660, 74]]} variant="accent" />
 </Figure>
 
-## Terms
-
-<dl>
-  <dt>Release</dt>
-  <dd>The operation that the [](ctrl:hostclaim) proposes when you delete a claim.</dd>
-  <dt>Hand-off record</dt>
-  <dd>[`status.handOff`](kind:HostClaim#status.handOff) of the claim. It records that a node was installed on a machine. It decides whether a release needs approval.</dd>
-  <dt>Disk not wiped</dt>
-  <dd>The condition `DiskWiped=False` with reason `InstalledNodeRemains`, and the annotation `metal.platform-kit.org/disk-not-wiped`.</dd>
-  <dt>Wipe</dt>
-  <dd>An operation that boots a Talos image with `talos.experimental.wipe=system`. The machine ends in Talos maintenance mode with an empty disk.</dd>
-</dl>
-
 ## Rules
 
-1. A marked Host gets no install and no other operation that turns it on.
-2. [](cli:wipe) asks for the wipe. A person approves it.
+1. A Host with `DiskWiped=False` (reason `InstalledNodeRemains`) carries the annotation `metal.platform-kit.org/disk-not-wiped`. It gets no install and no other operation that turns it on.
+2. [](cli:wipe) asks for the wipe. A person approves it. The wipe boots a Talos image with `talos.experimental.wipe=system`. The machine ends in Talos maintenance mode with an empty disk.
 3. If you know that the disk is empty, remove the annotation and set `metal.platform-kit.org/wipe-waived` in the same request. See [](howto:wipe-and-decommission).
-4. The hand-off record changes only through [](cli:reinstall), [](cli:replace) or a removal. Each one resets the disk first.
+4. The hand-off record ([`status.handOff`](kind:HostClaim#status.handOff)) decides whether a release needs approval. It changes only through [](cli:reinstall), [](cli:replace) or a removal. Each one resets the disk first.
 
 ## Do it
 

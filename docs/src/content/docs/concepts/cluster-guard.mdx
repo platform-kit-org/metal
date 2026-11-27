@@ -44,10 +44,6 @@ The last member still needs the override.
 ## Terms
 
 <dl>
-  <dt>quorum</dt>
-  <dd>A majority of the etcd voting members. Three members tolerate one failure. Two members tolerate none.</dd>
-  <dt>learner</dt>
-  <dd>A new etcd member that copies data and has no vote yet.</dd>
   <dt>Steps that take a node down</dt>
   <dd>A power cycle, a power off, [](act:TalosReboot), [](act:TalosShutdown), [](act:TalosUpgrade), [](act:TalosReset), [](act:EtcdLeave), and [](act:TalosApplyConfig) in mode `Reboot` or `Auto`.</dd>
   <dt>ClusterDisruption</dt>

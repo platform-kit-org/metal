@@ -9,7 +9,7 @@ export const GET: APIRoute = () => {
   for (const [key, e] of loadRegistry(import.meta.env.BASE_URL)) {
     // A link to an alias carries the current id in data-xref, so the card needs no alias.
     if (e.cat === 'term' || e.alias) continue;
-    xrefs[key] = { cat: e.cat, title: e.title, description: e.description, planned: e.planned };
+    xrefs[key] = { cat: e.cat, title: e.title, description: e.description };
   }
   const { domains, terms } = loadGlossary();
   return new Response(

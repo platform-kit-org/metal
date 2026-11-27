@@ -5,8 +5,7 @@
 //      `xref.aliases` keeps the old ids of a renamed page working),
 //   2. the `anchors` frontmatter of a page: more ids, each at an anchor of that page
 //      (`act: [PowerCycle]` on the actions page is `#powercycle` there),
-//   3. src/data/xref-planned.yaml (pages that do not exist yet; optional),
-//   4. the glossary (`term:<id>`).
+//   3. the glossary (`term:<id>`).
 // An id that none of them knows is an error: scripts/xref.mjs stops the build.
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
@@ -16,22 +15,6 @@ import { loadGlossary } from './glossary-data.mjs';
 import { root } from './root.mjs';
 
 const contentDir = join(root, 'src/content/docs');
-const plannedFile = join(root, 'src/data/xref-planned.yaml');
-
-/** Where a planned id goes when the entry gives no path. */
-const pathRule = {
-  kind: (id) => `reference/kinds/${id.toLowerCase()}/`,
-  ctrl: (id) => `reference/controllers/${id}/`,
-  act: (id) => `reference/actions/#${id.toLowerCase()}`,
-  cli: (id) => `reference/cli/${id}/`,
-  lab: (id) => `reference/lab/tasks/#${id}`,
-  ref: (id) => `reference/${id}/`,
-  concept: (id) => `concepts/${id}/`,
-  flow: (id) => `workflows/${id}/`,
-  howto: (id) => `operate/${id}/`,
-  rb: (id) => `operate/runbooks/${id}/`,
-  tut: (id) => `learn/${id}/`,
-};
 
 function walk(dir) {
   if (!existsSync(dir)) return [];
@@ -97,7 +80,7 @@ let cache;
 
 /**
  * @param {string} base the site base, for example "" (root) or "/metal"
- * @returns {Map<string, {cat: string, id: string, href: string, title: string, description?: string, planned: boolean, file?: string}>}
+ * @returns {Map<string, {cat: string, id: string, href: string, title: string, description?: string, file?: string}>}
  */
 export function loadRegistry(base) {
   if (cache) return cache;
@@ -112,7 +95,7 @@ export function loadRegistry(base) {
     if (reg.has(key)) throw new Error(`xref: "${key}" is in ${reg.get(key).file} and in ${page.file}`);
     const entry = {
       cat: x.cat, id: String(x.id), href: `${b}/${page.slug}`, title: page.data.title,
-      description: page.data.description, planned: false, file: page.file,
+      description: page.data.description, file: page.file,
     };
     reg.set(key, entry);
     // The old ids of a renamed page resolve to the same entry, so a link that still
@@ -134,34 +117,13 @@ export function loadRegistry(base) {
       if (reg.has(key)) throw new Error(`xref: "${key}" is in ${reg.get(key).file} and in the anchors of ${page.file}`);
       reg.set(key, {
         cat, id, href: `${b}/${page.slug}#${anchor}`, title: title ?? id,
-        description: page.data.description, planned: false, file: page.file, anchor: true,
+        description: page.data.description, file: page.file, anchor: true,
       });
     }
   }
-  if (existsSync(plannedFile)) {
-    const planned = parse(readFileSync(plannedFile, 'utf8')) ?? {};
-    for (const [cat, ids] of Object.entries(planned)) {
-      if (!pathRule[cat]) throw new Error(`xref: ${plannedFile} has the unknown category "${cat}"`);
-      // An empty category ("kind:" with no ids) parses as null. Skip it.
-      if (ids === null || ids === undefined) continue;
-      if (typeof ids !== 'object') throw new Error(`xref: ${plannedFile}: "${cat}" must map ids to titles`);
-      for (const [id, v] of Object.entries(ids)) {
-        const key = `${cat}:${id}`;
-        if (reg.has(key)) continue;
-        const e = typeof v === 'string' ? { title: v } : v ?? { title: id };
-        const path = e.path ?? (id === 'index' ? pathRule[cat]('x').replace(/x\/$|#x$/, '') : pathRule[cat](id));
-        reg.set(key, {
-          cat, id, href: `${b}/${path}`, title: e.title,
-          description: e.description, planned: true,
-        });
-      }
-    }
-  }
-  const glossaryPage = loadPages().some((p) => p.slug === 'reference/glossary/');
   for (const t of loadGlossary().terms) {
     reg.set(`term:${t.id}`, {
-      cat: 'term', id: t.id, href: `${b}/reference/glossary/#${t.id}`, title: t.term,
-      description: t.def, planned: !glossaryPage,
+      cat: 'term', id: t.id, href: `${b}/reference/glossary/#${t.id}`, title: t.term, description: t.def,
     });
   }
   cache = reg;

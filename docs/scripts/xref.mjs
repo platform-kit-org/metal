@@ -48,7 +48,7 @@ export default function xref({ base }) {
         const c = byScheme.get(scheme);
         const entry = reg.get(`${c.id}:${id}`);
         if (!entry) {
-          throw new Error(`xref: unknown id "${scheme}:${id}" in ${where(ctx)}. Add the page (frontmatter xref), or list the id as planned in the optional file src/data/xref-planned.yaml (see scripts/registry.mjs).`);
+          throw new Error(`xref: unknown id "${scheme}:${id}" in ${where(ctx)}. Add the page (frontmatter xref).`);
         }
         const target = frag ? `${entry.href.split('#')[0]}#${frag}` : entry.href;
         ctx.setProperty(node, 'href', target);
@@ -59,7 +59,6 @@ export default function xref({ base }) {
           ctx.setProperty(node, 'dataCat', c.id);
           ctx.setProperty(node, 'dataXref', `${c.id}:${entry.id}`);
         }
-        if (entry.planned) ctx.setProperty(node, 'dataPlanned', '');
         if (!node.children.length) {
           // A field (#spec.x), a flag (#--yes) or a key shows as written; a heading
           // anchor (#what-the-doctor-checks) shows as words.

@@ -6,7 +6,6 @@
 // the expansion is there without JavaScript and for screen readers.
 // src/components/TermCard.astro shows the hover card.
 import { loadGlossary } from './glossary-data.mjs';
-import { loadPages } from './registry.mjs';
 
 const skipTags = new Set(['a', 'code', 'pre', 'kbd', 'svg', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'script', 'style', 'abbr', 'figure', 'th']);
 const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -19,7 +18,6 @@ export default function glossary({ base }) {
   forms.sort((x, y) => y.form.length - x.form.length);
   const byForm = new Map(forms.map((f) => [f.form, f.term]));
   const re = new RegExp(`(?<![\\w-])(${forms.map((f) => escape(f.form)).join('|')})(?![\\w-])`, 'g');
-  const page = loadPages().some((p) => p.slug === 'reference/glossary/');
   const scoped = new Set(terms.filter((t) => t.scope === 'page').map((t) => t.id));
 
   const link = (t, text) => {
@@ -32,7 +30,6 @@ export default function glossary({ base }) {
         className: ['gl'],
         dataGl: t.id,
         dataDomain: t.domain,
-        ...(page ? {} : { dataPlanned: '' }),
       },
       children: t.abbr ? [{ type: 'element', tagName: 'abbr', properties: { title: t.abbr }, children: [inner] }] : [inner],
     };

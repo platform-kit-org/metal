@@ -162,11 +162,6 @@ a.gl abbr {
   margin-top: 0.3rem !important;
   color: var(--pk-ink-2);
 }
-.pk-card-note {
-  margin-top: 0.4rem !important;
-  font-size: 0.75rem;
-  color: var(--pk-ink-3);
-}
 
 /* ---------- Eyebrow, page title ---------- */
 
@@ -998,17 +993,6 @@ a.box-g:hover .box {
 
 .pk-legend-table td:last-child {
   white-space: nowrap;
-}
-
-/* ---------- Sidebar: planned pages ---------- */
-
-#starlight__sidebar a[data-planned] {
-  opacity: 0.62;
-}
-#starlight__sidebar a[data-planned]::after {
-  content: '·';
-  margin-inline-start: 0.35rem;
-  color: var(--pk-ink-3);
 }
 
 /* ---------- Narrow screens ---------- */

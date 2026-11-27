@@ -1,17 +1,15 @@
-// Loads the glossary: src/data/glossary.yaml, or the sample file while that does not exist.
-import { existsSync, readFileSync } from 'node:fs';
+// Loads the glossary: src/data/glossary.yaml.
+import { readFileSync } from 'node:fs';
 import { parse } from 'yaml';
 
 import { root } from './root.mjs';
 
-const dataDir = `${root}/src/data/`;
+const file = `${root}/src/data/glossary.yaml`;
 let cache;
 
 /** @returns {{ domains: Record<string, {name: string, icon: string}>, terms: any[], file: string }} */
 export function loadGlossary() {
   if (cache) return cache;
-  const file = ['glossary.yaml', 'glossary-sample.yaml'].map((f) => dataDir + f).find((f) => existsSync(f));
-  if (!file) throw new Error('glossary: no src/data/glossary.yaml');
   const data = parse(readFileSync(file, 'utf8'));
   const seen = new Map();
   for (const t of data.terms) {

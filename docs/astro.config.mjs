@@ -6,13 +6,9 @@ import { satteri } from '@astrojs/markdown-satteri';
 import baseLinks from './scripts/base-links.mjs';
 import xref from './scripts/xref.mjs';
 import glossary from './scripts/glossary.mjs';
-import { loadRedirects, loadRegistry } from './scripts/registry.mjs';
+import { loadRedirects } from './scripts/registry.mjs';
 import { sidebar } from './scripts/sidebar.mjs';
 import { site, base, repoUrl, branch } from './scripts/site.mjs';
-
-// Links to planned pages (src/data/xref-planned.yaml, while it exists) resolve, but the
-// page is not there yet. The validator skips them.
-const planned = new Set([...loadRegistry(base).values()].filter((e) => e.planned).map((e) => e.href.split('#')[0]));
 
 // Anchors that components make: the validator sees only the anchors of Markdown headings.
 // scripts/check-xrefs.mjs checks these in dist/ instead.
@@ -62,11 +58,11 @@ export default defineConfig({
       customCss: [...fonts, './src/styles/tokens.css', './src/styles/components.css', './src/styles/theme.css'],
       expressiveCode: { themes: ['github-dark-default', 'github-light-default'] },
       components: overrides,
-      sidebar: sidebar({ base }),
+      sidebar: sidebar(),
       plugins: [
         starlightLinksValidator({
           errorOnRelativeLinks: false,
-          exclude: ({ link }) => planned.has(link.split('#')[0]) || componentAnchor.test(link),
+          exclude: ({ link }) => componentAnchor.test(link),
         }),
       ],
     }),

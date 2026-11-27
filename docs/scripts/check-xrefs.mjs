@@ -1,8 +1,7 @@
 // Checks the category links in the built site (mise run docs:links).
 //
 // Fails when
-//   - a category link points to a page or an anchor that is not in dist/
-//     (links to planned pages, data-planned, are counted but not checked),
+//   - a category link points to a page or an anchor that is not in dist/,
 //   - a link into reference/ has no category (write `[](kind:Host)`, not a path),
 //   - a reference page has no `xref` frontmatter,
 //   - an id of a page's `anchors` frontmatter has no anchor on that page,
@@ -36,7 +35,6 @@ const pages = walk(dist).map((file) => {
 });
 
 const errors = [];
-let planned = 0;
 let checked = 0;
 /** Category links in page content: target path -> pages that link it; page -> categories it links. */
 const inbound = new Map();
@@ -64,10 +62,6 @@ for (const { path, html } of pages) {
     const cat = /data-cat="([^"]*)"/.exec(attrs)?.[1];
     const inMarkdown = /class="[^"]*\b(x|gl)\b/.test(attrs);
     if (!inMarkdown) continue;
-    if (/data-planned/.test(attrs)) {
-      planned++;
-      continue;
-    }
     checked++;
     const [target, hash] = href.split('#');
     const t = ids.get(target);
@@ -106,5 +100,5 @@ for (const p of loadPages()) {
 for (const o of orphans) errors.push(`${o}: no other page links here (orphan); link it with its category id`);
 
 for (const e of errors) console.error(`check-xrefs: ${e}`);
-console.log(`check-xrefs: ${checked} links checked, ${planned} links to planned pages, ${errors.length} errors`);
+console.log(`check-xrefs: ${checked} links checked, ${errors.length} errors`);
 process.exit(errors.length ? 1 : 0);

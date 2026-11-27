@@ -67,7 +67,7 @@ A failed operation stays in the table until you run [](cli:retry).
   <dt>Cluster</dt>
   <dd>The cluster is bootstrapped and its etcd or its Kubernetes API is not healthy. Or the backup is not current.</dd>
   <dt>Node</dt>
-  <dd>The cluster is bootstrapped, the node reported a version, and the node is not Ready.</dd>
+  <dd>The cluster is bootstrapped, a claim records the [hand-off](kind:HostClaim#status.handOff) of the node to the Host that runs it, and the node is not Ready.</dd>
 </dl>
 
 Two blocks of an operation need no person: `OperationQueued` and `OutsideMaintenanceWindow`. The operator continues by itself.

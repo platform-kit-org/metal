@@ -33,7 +33,7 @@ A second controller in the same lane, `talosnode-member`, holds a deleted node u
   <dt>Requeue</dt>
   <dd>10 seconds while a machine converges. 2 minutes once it is Ready. 10 seconds during a rollout of its cluster. 30 seconds while a deletion waits.</dd>
   <dt>Drift check</dt>
-  <dd>Each 10 minutes for a Ready node, each 30 seconds during a rollout.</dd>
+  <dd>Each 10 minutes for a Ready node, each 30 seconds during a rollout. At once when a rollout step on the node ended after the last dry run.</dd>
 </dl>
 
 ## Watches

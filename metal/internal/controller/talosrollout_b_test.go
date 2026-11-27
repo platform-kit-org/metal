@@ -22,7 +22,7 @@ func TestPlanRefusesASkippedKubernetesMinor(t *testing.T) {
 		ClusterRef: osv1alpha1.Reference{Name: "c"}, Kind: osv1alpha1.RolloutKubernetesUpgrade,
 		Target: &osv1alpha1.RolloutTarget{KubernetesVersion: "v1.36.2"}}}
 
-	plan, why, err := r.plan(t.Context(), ro)
+	plan, why, err := r.plan(t.Context(), ro, cluster, nil)
 	require.NoError(t, err)
 	assert.Empty(t, plan)
 	assert.Contains(t, why, "one minor at a time")
@@ -39,15 +39,15 @@ func TestProposerHoldsConfigRolloutsWhileTheBundleIsHeld(t *testing.T) {
 	nodes := []osv1alpha1.TalosNode{{ObjectMeta: metav1.ObjectMeta{Name: "a"},
 		Status: osv1alpha1.TalosNodeStatus{Version: "v1.14.6", Conditions: drift, ConfigDigest: "sha256:1"}}}
 	hosts := map[string]string{"a": "box-a"}
-	require.NotNil(t, needed(cluster, nodes, hosts), "drift without a hold is proposed")
+	require.NotNil(t, needed(cluster, nodes, hosts, nil), "drift without a hold is proposed")
 
 	cluster.Status.Conditions = []metav1.Condition{{Type: osv1alpha1.ConditionSecretsBundleHeld, Status: metav1.ConditionTrue}}
-	assert.Nil(t, needed(cluster, nodes, hosts), "a held bundle proposes no Config rollout")
+	assert.Nil(t, needed(cluster, nodes, hosts, nil), "a held bundle proposes no Config rollout")
 	cluster.Status.KubernetesVersion = "v1.36.1"
-	assert.Nil(t, needed(cluster, nodes, hosts), "nor a KubernetesUpgrade, which applies configs too")
+	assert.Nil(t, needed(cluster, nodes, hosts, nil), "nor a KubernetesUpgrade, which applies configs too")
 
 	nodes[0].Status.Version = "v1.14.5"
-	ro := needed(cluster, nodes, hosts)
+	ro := needed(cluster, nodes, hosts, nil)
 	require.NotNil(t, ro)
 	assert.Equal(t, osv1alpha1.RolloutTalosUpgrade, ro.Spec.Kind, "a Talos upgrade applies no config")
 }
@@ -61,7 +61,7 @@ func TestPlanBlocksConfigWhileTheBundleIsHeld(t *testing.T) {
 	ro := &osv1alpha1.TalosRollout{Spec: osv1alpha1.TalosRolloutSpec{
 		ClusterRef: osv1alpha1.Reference{Name: "c"}, Kind: osv1alpha1.RolloutConfig}}
 
-	plan, why, err := r.plan(t.Context(), ro)
+	plan, why, err := r.plan(t.Context(), ro, cluster, nil)
 	require.NoError(t, err)
 	assert.Empty(t, plan)
 	assert.Contains(t, why, "SecretsBundleHeld=True")

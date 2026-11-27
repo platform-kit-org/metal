@@ -40,7 +40,7 @@ const (
 
 	defaultDriftInterval = 10 * time.Minute
 	// rollingDriftInterval is the drift cadence while a rollout of the
-	// node's cluster runs: a step is planned from it.
+	// node's cluster runs, so that ConfigInSync follows each apply.
 	rollingDriftInterval = 30 * time.Second
 	// driftSummaryKeys bounds how many changed keys the summary names.
 	driftSummaryKeys = 8
@@ -150,16 +150,8 @@ func (r *TalosNodeReconciler) collectConfigSecrets(ctx context.Context, node *os
 	if err := r.List(ctx, secrets, client.InNamespace(r.Namespace), client.MatchingLabels{labelConfigNode: node.Name}); err != nil {
 		return err
 	}
-	candidates := secrets.Items
-	// The single, rewritten Secret of earlier operator versions.
-	legacy := &corev1.Secret{}
-	if err := r.Get(ctx, client.ObjectKey{Namespace: r.Namespace, Name: "machineconfig-" + node.Name}, legacy); err == nil {
-		candidates = append(candidates, *legacy)
-	} else if client.IgnoreNotFound(err) != nil {
-		return err
-	}
-	for i := range candidates {
-		s := &candidates[i]
+	for i := range secrets.Items {
+		s := &secrets.Items[i]
 		if keep[s.Name] || !metav1.IsControlledBy(s, node) {
 			continue
 		}
@@ -195,7 +187,7 @@ func (r *TalosNodeReconciler) observeVersion(node *osv1alpha1.TalosNode, cluster
 // applied before: that is how AppliedConfigDigest is learned, and how a
 // change made behind the operator's back (talosctl apply-config) shows up.
 func (r *TalosNodeReconciler) checkDrift(ctx context.Context, node *osv1alpha1.TalosNode, tcfg []byte,
-	endpoint string, rendered []byte, rolling bool) {
+	endpoint string, rendered []byte, rolling, stale bool) {
 	if rendered == nil || tcfg == nil {
 		return
 	}
@@ -204,7 +196,7 @@ func (r *TalosNodeReconciler) checkDrift(ctx context.Context, node *osv1alpha1.T
 	if rolling {
 		interval = min(interval, rollingDriftInterval)
 	}
-	if d := node.Status.Drift; d != nil && d.ConfigDigest == cur && time.Since(d.ObservedAt.Time) < interval {
+	if d := node.Status.Drift; d != nil && d.ConfigDigest == cur && time.Since(d.ObservedAt.Time) < interval && !stale {
 		return
 	}
 	set := func(s metav1.ConditionStatus, reason, msg string) {
@@ -309,19 +301,34 @@ func shortDigest(d string) string {
 	return d
 }
 
-// rolloutActive reports whether an approved rollout of the cluster runs.
-func (r *TalosNodeReconciler) rolloutActive(ctx context.Context, cluster string) (bool, error) {
+// rolloutState reports whether an approved rollout of the node's cluster
+// runs, and whether the node's drift is stale (staleDrift).
+func (r *TalosNodeReconciler) rolloutState(ctx context.Context, node *osv1alpha1.TalosNode) (rolling, stale bool, err error) {
 	rollouts := &osv1alpha1.TalosRolloutList{}
 	if err := r.List(ctx, rollouts); err != nil {
-		return false, err
+		return false, false, err
 	}
-	for i := range rollouts.Items {
-		ro := &rollouts.Items[i]
-		if ro.Spec.ClusterRef.Name == cluster && ro.Spec.Approval.ApprovedBy != "" && !rolloutFinished(ro) {
-			return true, nil
+	return clusterHolder(rollouts.Items, node.Spec.ClusterRef.Name) != nil, staleDrift(node, rollouts.Items), nil
+}
+
+// staleDrift: the node's last dry run ran before a rollout step on the node
+// ended, so it says nothing about what that step applied. The next dry run
+// does.
+func staleDrift(node *osv1alpha1.TalosNode, rollouts []osv1alpha1.TalosRollout) bool {
+	d := node.Status.Drift
+	if d == nil {
+		return false
+	}
+	for i := range rollouts {
+		ro := &rollouts[i]
+		for j, st := range ro.Status.Steps {
+			if j < len(ro.Status.Plan) && ro.Status.Plan[j].Node == node.Name && st.FinishedAt != nil &&
+				d.ObservedAt.Before(st.FinishedAt) {
+				return true
+			}
 		}
 	}
-	return false, nil
+	return false
 }
 
 // nodesForRollout re-enters a rollout's nodes when it moves: an approved

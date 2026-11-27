@@ -3,14 +3,12 @@ package controller
 import (
 	"cmp"
 	"context"
-	"errors"
 	"fmt"
 	"slices"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/siderolabs/talos/pkg/machinery/config/generate/secrets"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -52,9 +50,9 @@ type ImageResolver func(ctx context.Context, ref string) (string, error)
 //
 // Between nodes it pauses: always after the first node until a person
 // resumes (os.platform-kit.org/resume=<planHash>), whenever spec.paused is set, and
-// while a live health gate fails (every etcd member healthy and voting,
-// every Kubernetes Node of the cluster Ready, read now rather than from a
-// status polled minutes ago).
+// while a live health gate fails (etcd as the cluster guard reads it, every
+// Kubernetes Node of the cluster Ready, read now rather than from a status
+// polled minutes ago).
 type TalosRolloutReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
@@ -70,16 +68,17 @@ type TalosRolloutReconciler struct {
 	ResolveImage ImageResolver
 	// Dial reaches the machines for the etcd gate and the leader.
 	Dial talos.Dialer
-	// Workload reaches the cluster's Kubernetes API (k8supgrade.Dial in
-	// production).
-	Workload k8supgrade.Dialer
+	// Workload opens a client for the cluster's Kubernetes API from its
+	// admin kubeconfig; nil builds one with clientcmd. A test seam.
+	Workload func(ctx context.Context, kubeconfig []byte) (client.Client, error)
 	// GateInterval paces re-checks while a gate holds or a step runs.
 	GateInterval time.Duration
 	// Audit writes the audit trail; nil writes none.
 	Audit *audit.Logger
 	// APIReader reads straight from the API server, bypassing the informer
 	// cache, for the check that no other rollout holds the cluster before a
-	// step starts. Defaults to the manager's API reader in SetupWithManager.
+	// step starts, and for a step's operation that the cache does not show.
+	// Defaults to the manager's API reader in SetupWithManager.
 	APIReader client.Reader
 
 	// resolved caches pinned images by reference for a while, so that an
@@ -228,10 +227,24 @@ func (r *TalosRolloutReconciler) planPass(ctx context.Context, ro *osv1alpha1.Ta
 		r.set(ro, osv1alpha1.ConditionComplete, metav1.ConditionFalse, osv1alpha1.ReasonRolloutAborted, "aborted before it was approved")
 		return ctrl.Result{}, nil
 	}
-	if stop, err := r.requestersMoved(ctx, ro); stop || err != nil {
+	cluster := &osv1alpha1.TalosCluster{}
+	if err := r.Get(ctx, types.NamespacedName{Name: ro.Spec.ClusterRef.Name}, cluster); err != nil {
+		if client.IgnoreNotFound(err) != nil {
+			return ctrl.Result{}, err
+		}
+		ro.Status.Plan, ro.Status.PlanHash, ro.Status.Steps = nil, planHashOf(ro, nil), nil
+		r.set(ro, osv1alpha1.ConditionPlanned, metav1.ConditionFalse, osv1alpha1.ReasonPlanBlocked,
+			"cluster "+ro.Spec.ClusterRef.Name+" does not exist")
+		return ctrl.Result{RequeueAfter: replanInterval}, nil
+	}
+	members, err := clusterMembers(ctx, r.Client, cluster.Name)
+	if err != nil {
 		return ctrl.Result{}, err
 	}
-	plan, blocked, err := r.plan(ctx, ro)
+	if stop, err := r.requestersMoved(ctx, ro, cluster, members); stop || err != nil {
+		return ctrl.Result{}, err
+	}
+	plan, blocked, err := r.plan(ctx, ro, cluster, members)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -260,17 +273,10 @@ func (r *TalosRolloutReconciler) planPass(ctx context.Context, ro *osv1alpha1.Ta
 // since: the plan, re-made on every pass, would carry their change, and
 // they could approve it. The rollout ends as PlanChanged, unrun, and the
 // proposer proposes it again with their name.
-func (r *TalosRolloutReconciler) requestersMoved(ctx context.Context, ro *osv1alpha1.TalosRollout) (bool, error) {
+func (r *TalosRolloutReconciler) requestersMoved(ctx context.Context, ro *osv1alpha1.TalosRollout,
+	cluster *osv1alpha1.TalosCluster, members []osv1alpha1.TalosNode) (bool, error) {
 	if r.Proposer == "" || ro.Spec.ProposedBy != r.Proposer {
 		return false, nil
-	}
-	cluster := &osv1alpha1.TalosCluster{}
-	if err := r.Get(ctx, types.NamespacedName{Name: ro.Spec.ClusterRef.Name}, cluster); err != nil {
-		return false, client.IgnoreNotFound(err)
-	}
-	members, err := clusterMembers(ctx, r.Client, cluster.Name)
-	if err != nil {
-		return false, err
 	}
 	now, err := clusterRequesters(ctx, r.Client, r.Namespace, cluster, members)
 	if err != nil {
@@ -551,17 +557,18 @@ func (r *TalosRolloutReconciler) observeStep(ctx context.Context, ro *osv1alpha1
 		st.Operation = ns + "/" + name
 	}
 	op := &metalv1alpha1.HostOperation{}
-	if err := r.Get(ctx, types.NamespacedName{Namespace: ns, Name: name}, op); err != nil {
-		if client.IgnoreNotFound(err) != nil {
-			return err
-		}
-		// The cache may not show an operation created moments ago: only a
-		// step that started a while back has lost its operation.
-		if st.StartedAt != nil && time.Since(st.StartedAt.Time) > time.Minute {
-			st.State, st.FinishedAt = osv1alpha1.RolloutNodeFailed, ptr.To(metav1.Now())
-			st.Message = "operation " + st.Operation + " was deleted before it finished"
-		}
+	key := types.NamespacedName{Namespace: ns, Name: name}
+	err := r.Get(ctx, key, op)
+	if apierrors.IsNotFound(err) {
+		err = r.liveOperation(ctx, key, op)
+	}
+	if apierrors.IsNotFound(err) {
+		st.State, st.FinishedAt = osv1alpha1.RolloutNodeFailed, ptr.To(metav1.Now())
+		st.Message = "operation " + st.Operation + " was deleted before it finished"
 		return nil
+	}
+	if err != nil {
+		return err
 	}
 	c := meta.FindStatusCondition(op.Status.Conditions, metalv1alpha1.ConditionExecuted)
 	switch {
@@ -580,15 +587,24 @@ func (r *TalosRolloutReconciler) observeStep(ctx context.Context, ro *osv1alpha1
 	return nil
 }
 
+// liveOperation reads a step's operation from the API server. A step whose
+// operation is gone fails for good, and the cache may not show an operation
+// created moments ago.
+//
+//pk:uncached
+func (r *TalosRolloutReconciler) liveOperation(ctx context.Context, key client.ObjectKey, op *metalv1alpha1.HostOperation) error {
+	return r.reader().Get(ctx, key, op)
+}
+
 // observeKubeProxy moves the kube-proxy DaemonSet and reads its rollout.
 func (r *TalosRolloutReconciler) observeKubeProxy(ctx context.Context, ro *osv1alpha1.TalosRollout, cluster *osv1alpha1.TalosCluster, i int) error {
 	st := &ro.Status.Steps[i]
-	w, msg, err := r.workload(ctx, cluster)
-	if err != nil || w == nil {
+	kube, msg, err := workloadClient(ctx, r.Client, r.Namespace, cluster, r.Workload)
+	if err != nil || kube == nil {
 		st.Message = msg
 		return err
 	}
-	done, msg, err := w.SyncKubeProxy(ctx, ro.Status.Plan[i].Image)
+	done, msg, err := k8supgrade.SyncKubeProxy(ctx, kube, ro.Status.Plan[i].Image)
 	if err != nil {
 		st.Message = err.Error()
 		return nil
@@ -598,30 +614,6 @@ func (r *TalosRolloutReconciler) observeKubeProxy(ctx context.Context, ro *osv1a
 		st.State, st.FinishedAt = osv1alpha1.RolloutNodeSucceeded, ptr.To(metav1.Now())
 	}
 	return nil
-}
-
-// workload opens the cluster's Kubernetes API with the published admin
-// kubeconfig. It returns a nil Workload and why when it cannot yet.
-func (r *TalosRolloutReconciler) workload(ctx context.Context, cluster *osv1alpha1.TalosCluster) (k8supgrade.Workload, string, error) {
-	if r.Workload == nil {
-		return nil, "no Kubernetes client configured", nil
-	}
-	ref := cluster.Status.KubeconfigSecretRef
-	if ref == nil {
-		return nil, "the cluster has no published kubeconfig yet", nil
-	}
-	s := &corev1.Secret{}
-	if err := r.Get(ctx, types.NamespacedName{Namespace: ref.Namespace, Name: ref.Name}, s); err != nil {
-		if client.IgnoreNotFound(err) != nil {
-			return nil, "", err
-		}
-		return nil, "kubeconfig Secret " + ref.Namespace + "/" + ref.Name + " not found", nil
-	}
-	w, err := r.Workload(s.Data[KubeconfigKey])
-	if err != nil {
-		return nil, "open the cluster's Kubernetes API: " + err.Error(), nil
-	}
-	return w, "", nil
 }
 
 // otherHolder names the approved, unfinished rollout of ro's cluster that
@@ -693,10 +685,9 @@ func (r *TalosRolloutReconciler) reader() client.Reader {
 	return r.Client
 }
 
-// healthGate checks, live, that the cluster can take the next step: every
-// etcd member answers, votes and reports no error, and every Kubernetes Node
-// of the cluster that no running step has taken down is Ready. It returns
-// why not, or "".
+// healthGate checks, live, that the cluster can take the next step: etcd is
+// healthy (etcdGate), and every Kubernetes Node of the cluster that no
+// running step has taken down is Ready. It returns why not, or "".
 func (r *TalosRolloutReconciler) healthGate(ctx context.Context, ro *osv1alpha1.TalosRollout, cluster *osv1alpha1.TalosCluster) (string, error) {
 	nodes, err := clusterMembers(ctx, r.Client, cluster.Name)
 	if err != nil {
@@ -717,11 +708,11 @@ func (r *TalosRolloutReconciler) healthGate(ctx context.Context, ro *osv1alpha1.
 		return why, err
 	}
 
-	w, why, err := r.workload(ctx, cluster)
-	if err != nil || w == nil {
+	kube, why, err := workloadClient(ctx, r.Client, r.Namespace, cluster, r.Workload)
+	if err != nil || kube == nil {
 		return why, err
 	}
-	ready, err := w.NodesReady(ctx)
+	ready, err := k8supgrade.NodesReady(ctx, kube)
 	if err != nil {
 		return "the Kubernetes API does not answer: " + err.Error(), nil
 	}
@@ -740,90 +731,44 @@ func (r *TalosRolloutReconciler) healthGate(ctx context.Context, ro *osv1alpha1.
 	return "", nil
 }
 
-// etcdGate asks the control planes about etcd: every control plane that a
-// Host runs must be a voting member, and each must report no error.
+// etcdGate reads etcd as the cluster guard does (clusterEtcd): every member
+// answers, votes and reports no error, no alarm is raised, and every control
+// plane that a Host runs is a member.
 func (r *TalosRolloutReconciler) etcdGate(ctx context.Context, cluster *osv1alpha1.TalosCluster,
 	nodes []osv1alpha1.TalosNode, hosts map[string]string) (string, error) {
 	if r.Dial == nil {
 		return "", nil
 	}
-	bundle, err := loadBundle(ctx, r.Client, r.Namespace, cluster)
-	if err != nil {
-		if unavailable := (*bundleUnavailable)(nil); errors.As(err, &unavailable) {
-			return unavailable.msg, nil
-		}
-		return "", err
-	}
-	var cps []osv1alpha1.TalosNode
+	var cps []string
 	for _, n := range nodes {
 		if n.Spec.Role == osv1alpha1.RoleControlPlane && hosts[n.Name] != "" {
-			cps = append(cps, n)
+			cps = append(cps, n.Name)
 		}
 	}
 	if len(cps) == 0 {
 		return "no control plane runs", nil
 	}
-	var members []talos.EtcdMember
-	var problems []string
-	for _, n := range cps {
-		addr := render.NodeAddress(&n)
-		tcfg, err := readerTalosconfig(bundle, cluster.Name, []string{addr})
-		if err != nil {
-			return "", err
-		}
-		derr := talos.With(ctx, r.Dial, talos.Target{Endpoint: addr, Talosconfig: tcfg}, func(c talos.Client) error {
-			st, err := c.EtcdStatus(ctx)
-			if err != nil {
-				return err
-			}
-			if len(st.Errors) > 0 {
-				problems = append(problems, n.Name+": "+strings.Join(st.Errors, "; "))
-			}
-			if st.LeaderID == 0 {
-				problems = append(problems, n.Name+" follows no leader")
-			}
-			if members == nil {
-				members, err = c.EtcdMembers(ctx)
-			}
-			return err
-		})
-		if derr != nil {
-			problems = append(problems, n.Name+": "+derr.Error())
-		}
+	rep, why, err := clusterEtcd(ctx, r.Client, r.Dial, r.Namespace, cluster)
+	if err != nil || why != "" {
+		return why, err
 	}
-	if len(problems) > 0 {
+	if problems := rep.problems(0); len(problems) > 0 {
 		return "etcd is not healthy: " + strings.Join(problems, "; "), nil
 	}
-	voting := map[string]bool{}
-	for _, m := range members {
-		if m.IsLearner {
-			return "etcd member " + m.Hostname + " is still a learner", nil
-		}
-		voting[m.Hostname] = true
-	}
 	for _, n := range cps {
-		if !voting[n.Name] {
-			return "control plane " + n.Name + " is not an etcd member", nil
+		if rep.member(n) == nil {
+			return "control plane " + n + " is not an etcd member", nil
 		}
 	}
 	return "", nil
 }
 
-// plan computes the rollout's plan from the world as it is now. blocked says
-// why a plan cannot be made yet (a node not ready to be planned); the steps
-// planned so far are still returned for the person to read.
-func (r *TalosRolloutReconciler) plan(ctx context.Context, ro *osv1alpha1.TalosRollout) ([]osv1alpha1.RolloutStep, string, error) {
-	cluster := &osv1alpha1.TalosCluster{}
-	if err := r.Get(ctx, types.NamespacedName{Name: ro.Spec.ClusterRef.Name}, cluster); err != nil {
-		if client.IgnoreNotFound(err) != nil {
-			return nil, "", err
-		}
-		return nil, "cluster " + ro.Spec.ClusterRef.Name + " does not exist", nil
-	}
-	members, err := clusterMembers(ctx, r.Client, cluster.Name)
-	if err != nil {
-		return nil, "", err
-	}
+// plan computes the rollout's plan for cluster and its members as they are
+// now. blocked says why a plan cannot be made yet (a node not ready to be
+// planned); the steps planned so far are still returned for the person to
+// read.
+func (r *TalosRolloutReconciler) plan(ctx context.Context, ro *osv1alpha1.TalosRollout, cluster *osv1alpha1.TalosCluster,
+	members []osv1alpha1.TalosNode) ([]osv1alpha1.RolloutStep, string, error) {
 	hosts, err := hostsByNode(ctx, r.Client)
 	if err != nil {
 		return nil, "", err
@@ -866,11 +811,11 @@ func (r *TalosRolloutReconciler) plan(ctx context.Context, ro *osv1alpha1.TalosR
 			"rendered now carries the old CA. Finish the rotation first", nil
 	}
 
-	var bundle *secrets.Bundle // only for the leader lookup
-	if r.Dial != nil {
-		bundle, _ = loadBundle(ctx, r.Client, r.Namespace, cluster)
+	etcd, _, err := clusterEtcd(ctx, r.Client, r.Dial, r.Namespace, cluster)
+	if err != nil {
+		return nil, "", err
 	}
-	leader := r.etcdLeader(ctx, cluster, members, hosts, bundle)
+	leader := etcd.leaderName()
 
 	var cps, workers []osv1alpha1.RolloutStep
 	var blocked []string
@@ -1025,44 +970,6 @@ func (r *TalosRolloutReconciler) kubeProxyImage(ctx context.Context, members []o
 		return image, "", nil
 	}
 	return "", "no control plane has a rendered config to read the kube-proxy image from", nil
-}
-
-// etcdLeader names the control plane that leads etcd now, "" when unknown.
-func (r *TalosRolloutReconciler) etcdLeader(ctx context.Context, cluster *osv1alpha1.TalosCluster,
-	members []osv1alpha1.TalosNode, hosts map[string]string, bundle *secrets.Bundle) string {
-	if bundle == nil {
-		return ""
-	}
-	for _, n := range members {
-		if n.Spec.Role != osv1alpha1.RoleControlPlane || hosts[n.Name] == "" {
-			continue
-		}
-		addr := render.NodeAddress(&n)
-		tcfg, err := readerTalosconfig(bundle, cluster.Name, []string{addr})
-		if err != nil {
-			return ""
-		}
-		var leader string
-		if talos.With(ctx, r.Dial, talos.Target{Endpoint: addr, Talosconfig: tcfg}, func(c talos.Client) error {
-			st, err := c.EtcdStatus(ctx)
-			if err != nil {
-				return err
-			}
-			ms, err := c.EtcdMembers(ctx)
-			if err != nil {
-				return err
-			}
-			for _, m := range ms {
-				if m.ID == st.LeaderID {
-					leader = m.Hostname
-				}
-			}
-			return nil
-		}) == nil {
-			return leader
-		}
-	}
-	return ""
 }
 
 // rolloutClusterField is a selectable field of the TalosRollout CRD: the API

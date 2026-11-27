@@ -24,30 +24,45 @@ func gatherCompare(t *testing.T, now time.Time, objs []client.Object, expect str
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expect), names...))
 }
 
-// A node that is still being installed, or whose cluster is not yet
-// bootstrapped, is not expected to be Ready: the alert must not page for
-// day-1 work that pk-metal status does not flag either.
+// A node of a bootstrapped cluster is expected to be Ready once a machine
+// was handed it. The hand-off record stays when the node stops answering;
+// its reported version does not, because the TalosNode controller clears it
+// on each failed dial. A node still being installed, a node of a cluster that
+// is not bootstrapped, and a node that pk-metal replace moved to a Host that
+// has not booted it yet are not expected to be Ready: the alert must not page
+// for work that pk-metal status does not flag either.
 func TestCollectorExpectedReadyFollowsStatus(t *testing.T) {
 	boot := metav1.NewTime(time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC))
 	running := &osv1alpha1.TalosCluster{ObjectMeta: metav1.ObjectMeta{Name: "prod"},
 		Status: osv1alpha1.TalosClusterStatus{BootstrappedAt: &boot}}
 	fresh := &osv1alpha1.TalosCluster{ObjectMeta: metav1.ObjectMeta{Name: "new"}}
-	node := func(name, cluster, version string) *osv1alpha1.TalosNode {
+	node := func(name, cluster string) *osv1alpha1.TalosNode {
 		return &osv1alpha1.TalosNode{ObjectMeta: metav1.ObjectMeta{Name: name},
-			Spec:   osv1alpha1.TalosNodeSpec{ClusterRef: osv1alpha1.Reference{Name: cluster}, Role: osv1alpha1.RoleWorker},
-			Status: osv1alpha1.TalosNodeStatus{Version: version}}
+			Spec: osv1alpha1.TalosNodeSpec{ClusterRef: osv1alpha1.Reference{Name: cluster}, Role: osv1alpha1.RoleWorker},
+			Status: osv1alpha1.TalosNodeStatus{Conditions: []metav1.Condition{
+				cond(osv1alpha1.ConditionReady, "Unknown", osv1alpha1.ReasonAwaitingContact)}}}
+	}
+	host := func(name, node string) *metalv1alpha1.Host {
+		return &metalv1alpha1.Host{ObjectMeta: metav1.ObjectMeta{Name: name},
+			Spec: metalv1alpha1.HostSpec{OS: &metalv1alpha1.HostOS{NodeRef: metalv1alpha1.Reference{Name: node}}}}
+	}
+	handOff := func(host, node string) *metalv1alpha1.HostClaim {
+		return &metalv1alpha1.HostClaim{ObjectMeta: metav1.ObjectMeta{Namespace: "team", Name: node},
+			Status: metalv1alpha1.HostClaimStatus{HandOff: &metalv1alpha1.ClaimHandOff{Host: host, Node: node}}}
 	}
 	objs := []client.Object{running, fresh,
-		node("w-1", "prod", "v1.14.6"), // has answered: expected Ready
-		node("w-2", "prod", ""),        // still installing
-		node("w-3", "new", "v1.14.6"),  // cluster not bootstrapped
+		node("w-1", "prod"), host("box-1", "w-1"), handOff("box-1", "w-1"), // handed off, now silent: expected Ready
+		node("w-2", "prod"), host("box-2", "w-2"), // still installing
+		node("w-3", "new"), host("box-3", "w-3"), handOff("box-3", "w-3"), // cluster not bootstrapped
+		node("w-4", "prod"), host("box-5", "w-4"), handOff("box-4", "w-4"), // moved to box-5, not booted there yet
 	}
 	gatherCompare(t, time.Now(), objs, `
-# HELP pk_metal_talosnode_expected_ready 1 when a TalosNode is expected to be Ready: its cluster is bootstrapped and the node reported a version.
+# HELP pk_metal_talosnode_expected_ready 1 when a TalosNode is expected to be Ready: its cluster is bootstrapped and a machine was handed the node.
 # TYPE pk_metal_talosnode_expected_ready gauge
 pk_metal_talosnode_expected_ready{cluster="new",node="w-3",role="worker"} 0
 pk_metal_talosnode_expected_ready{cluster="prod",node="w-1",role="worker"} 1
 pk_metal_talosnode_expected_ready{cluster="prod",node="w-2",role="worker"} 0
+pk_metal_talosnode_expected_ready{cluster="prod",node="w-4",role="worker"} 0
 # HELP pk_metal_taloscluster_expected_available 1 when a TalosCluster is expected to be available: it is bootstrapped.
 # TYPE pk_metal_taloscluster_expected_available gauge
 pk_metal_taloscluster_expected_available{cluster="new"} 0

@@ -5,6 +5,7 @@ import (
 	"context"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -187,4 +188,35 @@ func TestMemberFinalizerReadsTheClusterFromTheAPIServer(t *testing.T) {
 	reason, _, err = r.blocked(t.Context(), node)
 	require.NoError(t, err)
 	assert.Empty(t, reason, "from the stale cache alone, the node would go")
+}
+
+// unseenOperations is a client whose cache has not seen any HostOperation
+// yet.
+type unseenOperations struct{ client.Client }
+
+func (c unseenOperations) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+	if _, ok := obj.(*metalv1alpha1.HostOperation); ok {
+		return apierrors.NewNotFound(metalv1alpha1.GroupVersion.WithResource("hostoperations").GroupResource(), key.Name)
+	}
+	return c.Client.Get(ctx, key, obj, opts...)
+}
+
+// A step whose operation is gone fails for good, and with it the rollout.
+// The rollout reads the operation from the API server before it decides
+// that: a late cache would fail a step whose operation still runs.
+func TestRolloutStepReadsItsOperationFromTheAPIServer(t *testing.T) {
+	ro := approvedRollout(osv1alpha1.RolloutReboot, step("w-1", osv1alpha1.RoleWorker))
+	st := &ro.Status.Steps[0]
+	st.State, st.Operation = osv1alpha1.RolloutNodeRunning, "pk-metal/r-w-1"
+	st.StartedAt = &metav1.Time{Time: time.Now().Add(-2 * time.Minute)}
+	op := &metalv1alpha1.HostOperation{ObjectMeta: metav1.ObjectMeta{Namespace: "pk-metal", Name: "r-w-1"}}
+	api := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(op).Build()
+	r := &TalosRolloutReconciler{Client: unseenOperations{api}, APIReader: api}
+
+	require.NoError(t, r.observeStep(t.Context(), ro, &osv1alpha1.TalosCluster{}, 0))
+	assert.Equal(t, osv1alpha1.RolloutNodeRunning, st.State, "the operation runs, so the step does too")
+
+	require.NoError(t, api.Delete(t.Context(), op))
+	require.NoError(t, r.observeStep(t.Context(), ro, &osv1alpha1.TalosCluster{}, 0))
+	assert.Equal(t, osv1alpha1.RolloutNodeFailed, st.State, "an operation that is gone fails its step")
 }

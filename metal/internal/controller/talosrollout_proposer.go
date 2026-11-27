@@ -86,7 +86,7 @@ func (r *RolloutProposer) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	ro := needed(cluster, members, hosts)
+	ro := needed(cluster, members, hosts, rollouts)
 	if ro == nil {
 		return ctrl.Result{}, nil
 	}
@@ -176,8 +176,10 @@ func clusterRequesters(ctx context.Context, c client.Reader, namespace string, c
 	return metalv1alpha1.RequestedBy(annotations...), nil
 }
 
-// needed is the rollout the cluster needs first, nil when none.
-func needed(cluster *osv1alpha1.TalosCluster, members []osv1alpha1.TalosNode, hosts map[string]string) *osv1alpha1.TalosRollout {
+// needed is the rollout the cluster needs first, nil when none. A node whose
+// drift is stale after a step of one of rollouts waits for its next dry run.
+func needed(cluster *osv1alpha1.TalosCluster, members []osv1alpha1.TalosNode, hosts map[string]string,
+	rollouts []osv1alpha1.TalosRollout) *osv1alpha1.TalosRollout {
 	var skewed, drifted []string
 	for _, n := range members {
 		if hosts[n.Name] == "" {
@@ -187,7 +189,7 @@ func needed(cluster *osv1alpha1.TalosCluster, members []osv1alpha1.TalosNode, ho
 			skewed = append(skewed, n.Name)
 		}
 		if c := meta.FindStatusCondition(n.Status.Conditions, osv1alpha1.ConditionConfigInSync); c != nil &&
-			c.Status == metav1.ConditionFalse && c.Reason == osv1alpha1.ReasonConfigDrift {
+			c.Status == metav1.ConditionFalse && c.Reason == osv1alpha1.ReasonConfigDrift && !staleDrift(&n, rollouts) {
 			drifted = append(drifted, n.Name+"="+n.Status.ConfigDigest)
 		}
 	}

@@ -33,7 +33,7 @@ import (
 //   - a release then powers the machine off and empties its media slots.
 //
 // Removing a control plane changes etcd, and is decided on etcd's own
-// membership read live from the control planes (etcdView), with the rules in
+// membership read live from the control planes (clusterEtcd), with the rules in
 // removalVerdict. A control plane joining a running cluster waits for its
 // turn too (joinVerdict).
 
@@ -227,7 +227,7 @@ func ackedEtcdRisk(claim *metalv1alpha1.HostClaim, node *osv1alpha1.TalosNode) b
 //     more failures than the odd count below it, and costs one more vote.
 //
 // A node etcd does not list leaves nothing behind, and goes ahead.
-func removalVerdict(v etcdView, why, node, cluster string, leaving []string, acked bool) (string, string) {
+func removalVerdict(v *etcdReport, why, node, cluster string, leaving []string, acked bool) (string, string) {
 	ackHint := fmt.Sprintf("To remove it anyway, acknowledge it: kubectl annotate hostclaim <claim> %s=\"<reason>\" "+
 		"(or the same on TalosNode %s)", metalv1alpha1.AnnotationAckEtcdRisk, node)
 	if !v.known() {
@@ -241,7 +241,7 @@ func removalVerdict(v etcdView, why, node, cluster string, leaving []string, ack
 	if m == nil {
 		return "", ""
 	}
-	if l := slices.DeleteFunc(v.learners(), func(n string) bool { return n == node }); len(l) > 0 {
+	if l := slices.DeleteFunc(v.learnerNames(), func(n string) bool { return n == node }); len(l) > 0 {
 		return metalv1alpha1.ReasonRemovalWaiting, fmt.Sprintf(
 			"control plane %s waits: etcd member %s is still a learner, and etcd changes one member at a time; "+
 				"it goes on once that member votes", node, strings.Join(l, ", "))
@@ -262,7 +262,7 @@ func removalVerdict(v etcdView, why, node, cluster string, leaving []string, ack
 	after, healthyAfter := voting, healthy
 	if !m.IsLearner {
 		after--
-		if v.healthy[m.ID] {
+		if v.answers(m.ID) {
 			healthyAfter--
 		}
 	}
@@ -289,7 +289,7 @@ func removalVerdict(v etcdView, why, node, cluster string, leaving []string, ack
 // or a join next to an unhealthy member, can stop the cluster's writes. It
 // returns "" to go ahead, or the message that says what it waits for.
 // joining names the other control planes on their way in.
-func joinVerdict(v etcdView, why, node, cluster string, joining []string) string {
+func joinVerdict(v *etcdReport, why, node, cluster string, joining []string) string {
 	if !v.known() {
 		return fmt.Sprintf("control plane %s joins cluster %s only when its etcd is known to be healthy: %s", node, cluster, why)
 	}
@@ -298,7 +298,7 @@ func joinVerdict(v etcdView, why, node, cluster string, joining []string) string
 			"a second member with that name would never become healthy. Remove the old member first: pk-metal replace does, "+
 			"or a removal of the old node", cluster, node, memberIDHex(m.ID))
 	}
-	if l := v.learners(); len(l) > 0 {
+	if l := v.learnerNames(); len(l) > 0 {
 		return fmt.Sprintf("control plane %s waits: etcd member %s of cluster %s is still a learner; control planes join one at a time",
 			node, strings.Join(l, ", "), cluster)
 	}
@@ -324,7 +324,7 @@ func (r *HostClaimReconciler) clusterOf(ctx context.Context, node *osv1alpha1.Ta
 
 // etcdOf reads the cluster's etcd membership. The reason is empty when it
 // was read.
-func (r *HostClaimReconciler) etcdOf(ctx context.Context, cluster *osv1alpha1.TalosCluster) (etcdView, string, error) {
+func (r *HostClaimReconciler) etcdOf(ctx context.Context, cluster *osv1alpha1.TalosCluster) (*etcdReport, string, error) {
 	return clusterEtcd(ctx, r.Client, r.Dial, r.CredentialsNamespace, cluster)
 }
 

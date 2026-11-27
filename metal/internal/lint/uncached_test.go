@@ -49,6 +49,7 @@ var mustBeUncached = []string{
 	"ProtectionReconciler.liveHosts",
 	"RolloutProposer.clusterRollouts",
 	"TalosNodeMemberReconciler.blocked",
+	"TalosRolloutReconciler.liveOperation",
 	"TalosRolloutReconciler.otherHolder",
 }
 

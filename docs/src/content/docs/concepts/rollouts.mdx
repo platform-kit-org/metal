@@ -41,7 +41,7 @@ The operator writes the plan, a person approves its hash, and each node operatio
   <dt>Pause after the first node</dt>
   <dd>The rollout always stops after its first node. You cannot turn this off. `pk-metal rollout resume` continues.</dd>
   <dt>Health gate</dt>
-  <dd>The checks before each node. etcd has a leader, and no member has an error or is a learner. Each control plane is a member, and each other Kubernetes node is Ready.</dd>
+  <dd>The checks of etcd and of the Kubernetes nodes before each node. See [](kind:TalosRollout#run).</dd>
 </dl>
 
 ## Rules

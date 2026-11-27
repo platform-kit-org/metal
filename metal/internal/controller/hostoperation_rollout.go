@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"reflect"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -73,7 +74,7 @@ func rolloutCovers(ro *osv1alpha1.TalosRollout, op *metalv1alpha1.HostOperation)
 	if step.Host != op.Spec.HostRef.Name {
 		return fmt.Sprintf("the approved plan runs node %s on host %s, this operation targets host %s", node, step.Host, op.Spec.HostRef.Name)
 	}
-	if !sameActions(op.Spec.Actions, rolloutActions(ro, step)) {
+	if !reflect.DeepEqual(op.Spec.Actions, rolloutActions(ro, step)) {
 		return fmt.Sprintf("this operation's actions for node %s differ from the ones the approved plan of rollout %s gives it", node, ro.Name)
 	}
 	return ""
@@ -92,8 +93,11 @@ func (r *HostOperationReconciler) gateRollout(ctx context.Context, op *metalv1al
 		return ctrl.Result{}, true, err
 	}
 	if why == "" {
-		setCond(metalv1alpha1.ConditionApproved, metav1.ConditionTrue, metalv1alpha1.ReasonApproved,
-			"covered by the approval of rollout "+op.Spec.RolloutRef.Name)
+		// A person's own approval of the operation stays as it is.
+		if !op.ApprovalRequired() {
+			setCond(metalv1alpha1.ConditionApproved, metav1.ConditionTrue, metalv1alpha1.ReasonApprovalNotRequired,
+				"covered by the approval of rollout "+op.Spec.RolloutRef.Name)
+		}
 		return ctrl.Result{}, false, nil
 	}
 	msg := why + "; nothing was done to the machine"

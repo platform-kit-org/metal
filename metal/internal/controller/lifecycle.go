@@ -115,7 +115,7 @@ func (r *HostClaimReconciler) joinGate(ctx context.Context, node *osv1alpha1.Tal
 // joiningControlPlanes names the control planes of cluster, other than node,
 // that were installed (a hand-off record, or a check-in) but are not voting
 // members of etcd yet.
-func (r *HostClaimReconciler) joiningControlPlanes(ctx context.Context, cluster, node string, v etcdView) ([]string, error) {
+func (r *HostClaimReconciler) joiningControlPlanes(ctx context.Context, cluster, node string, v *etcdReport) ([]string, error) {
 	nodes, err := clusterMembers(ctx, r.Client, cluster)
 	if err != nil {
 		return nil, err

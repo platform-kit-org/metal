@@ -218,11 +218,11 @@ func (r *TalosNodeReconciler) checkin(ctx context.Context, node *osv1alpha1.Talo
 	if r.Dial == nil {
 		return ctrl.Result{}, nil
 	}
-	handed, err := nodeHandedOff(ctx, r.Client, node.Name)
+	hosts, err := hostsByNode(ctx, r.Client)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	if !handed {
+	if _, handed := hosts[node.Name]; !handed {
 		// No machine is handed this node: nothing to observe. Stale
 		// observations leave with the hand-off (the release path).
 		meta.RemoveStatusCondition(&node.Status.Conditions, osv1alpha1.ConditionMachineReachable)
@@ -262,14 +262,14 @@ func (r *TalosNodeReconciler) checkin(ctx context.Context, node *osv1alpha1.Talo
 		r.observeVersion(node, cluster)
 		if st.Stage == "running" && st.Ready {
 			set(osv1alpha1.ConditionReady, metav1.ConditionTrue, osv1alpha1.ReasonNodeReady, "")
-			rolling, err := r.rolloutActive(ctx, node.Spec.ClusterRef.Name)
+			rolling, stale, err := r.rolloutState(ctx, node)
 			if err != nil {
 				return ctrl.Result{}, err
 			}
-			r.checkDrift(ctx, node, driftTalosconfig(cluster, bundle, endpoint), endpoint, rendered, rolling)
+			r.checkDrift(ctx, node, driftTalosconfig(cluster, bundle, endpoint), endpoint, rendered, rolling, stale)
 			if rolling {
-				// The health gates between the nodes of a rollout read
-				// this: a Ready polled two minutes ago is no gate (D7).
+				// The drift check runs each rollingDriftInterval while a
+				// rollout changes the nodes: the passes come as often.
 				return retry, nil
 			}
 			return ctrl.Result{RequeueAfter: cmp.Or(r.ReadyInterval, defaultReadyInterval)}, nil
@@ -327,21 +327,6 @@ func (r *TalosNodeReconciler) observe(ctx context.Context, tcfg []byte, endpoint
 		return talos.Status{}, "", "", err
 	}
 	return talos.Status{}, version, "maintenance", nil
-}
-
-// nodeHandedOff reports whether any Host's OS hand-off names this node. A plain
-// list-and-filter: the rack is small and this avoids a cross-controller index.
-func nodeHandedOff(ctx context.Context, cl client.Client, nodeName string) (bool, error) {
-	hosts := &metalv1alpha1.HostList{}
-	if err := cl.List(ctx, hosts); err != nil {
-		return false, err
-	}
-	for i := range hosts.Items {
-		if os := hosts.Items[i].Spec.OS; os != nil && os.NodeRef.Name == nodeName {
-			return true, nil
-		}
-	}
-	return false, nil
 }
 
 func (r *TalosNodeReconciler) SetupWithManager(mgr ctrl.Manager) error {

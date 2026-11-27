@@ -315,7 +315,7 @@
       "value": "ApprovalNotRequired",
       "group": "metal.platform-kit.org",
       "source": "metal/api/v1alpha1/conditions.go",
-      "description": "the disruption policy waived the gate.",
+      "description": "the disruption policy waived the gate, or the approval of the rollout that the operation names covers it.",
       "on": [
         {
           "condition": "Approved",

@@ -17,7 +17,7 @@ import (
 
 // lab is a running three-node cluster: two control planes Ready on the
 // wanted version, one that stopped answering after it had run.
-func lab() ([]osv1alpha1.TalosCluster, []osv1alpha1.TalosNode, []metalv1alpha1.Host) {
+func lab() ([]osv1alpha1.TalosCluster, []osv1alpha1.TalosNode, []metalv1alpha1.Host, []metalv1alpha1.HostClaim) {
 	at := metav1.NewTime(time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC))
 	ready := func(s metav1.ConditionStatus, reason, msg string) []metav1.Condition {
 		return []metav1.Condition{{Type: osv1alpha1.ConditionReady, Status: s, Reason: reason, Message: msg}}
@@ -45,19 +45,27 @@ func lab() ([]osv1alpha1.TalosCluster, []osv1alpha1.TalosNode, []metalv1alpha1.H
 	nodes := []osv1alpha1.TalosNode{
 		node("node-1", "v1.14.6", ready(metav1.ConditionTrue, osv1alpha1.ReasonNodeReady, "")),
 		node("node-2", "v1.14.5", ready(metav1.ConditionTrue, osv1alpha1.ReasonNodeReady, "")),
-		node("node-3", "v1.14.6", ready(metav1.ConditionUnknown, osv1alpha1.ReasonAwaitingContact, "no answer since 10:00")),
+		// The controller clears the version of a node that does not answer.
+		node("node-3", "", ready(metav1.ConditionUnknown, osv1alpha1.ReasonAwaitingContact, "no answer since 10:00")),
 	}
-	hosts := []metalv1alpha1.Host{{
-		ObjectMeta: metav1.ObjectMeta{Name: "simx12b000001"},
-		Spec:       metalv1alpha1.HostSpec{OS: &metalv1alpha1.HostOS{NodeRef: metalv1alpha1.Reference{Name: "node-1"}}},
+	host := func(name, node string) metalv1alpha1.Host {
+		return metalv1alpha1.Host{ObjectMeta: metav1.ObjectMeta{Name: name},
+			Spec: metalv1alpha1.HostSpec{OS: &metalv1alpha1.HostOS{NodeRef: metalv1alpha1.Reference{Name: node}}}}
+	}
+	hosts := []metalv1alpha1.Host{host("simx12b000001", "node-1"), host("simx12b000003", "node-3")}
+	// The record that node-3 ran stays when it stops answering.
+	claims := []metalv1alpha1.HostClaim{{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "lab", Name: "node-3"},
+		Status: metalv1alpha1.HostClaimStatus{HandOff: &metalv1alpha1.ClaimHandOff{
+			Host: "simx12b000003", Node: "node-3", At: at}},
 	}}
-	return clusters, nodes, hosts
+	return clusters, nodes, hosts, claims
 }
 
 func TestStatusClusterTables(t *testing.T) {
-	clusters, nodes, hosts := lab()
+	clusters, nodes, hosts, claims := lab()
 	rep := buildReport(hosts, nil, nil, nil, nodes)
-	addClusters(&rep, clusters, nodes, hosts, nil)
+	addClusters(&rep, clusters, nodes, hosts, claims, nil)
 
 	require.Len(t, rep.Clusters, 1)
 	c := rep.Clusters[0]
@@ -90,7 +98,7 @@ func TestStatusClusterTables(t *testing.T) {
 	}
 	stale := policy("lab-daily", "lab", metav1.ConditionFalse, osv1alpha1.ReasonBackupTooOld, "newest snapshot is 30h old")
 	rep = buildReport(nil, nil, nil, nil, nil)
-	addClusters(&rep, clusters, nil, nil, []osv1alpha1.EtcdBackupPolicy{
+	addClusters(&rep, clusters, nil, nil, nil, []osv1alpha1.EtcdBackupPolicy{
 		stale, policy("other-hourly", "other", metav1.ConditionTrue, osv1alpha1.ReasonSnapshotRecent, "")})
 	assert.Equal(t, osv1alpha1.ReasonBackupTooOld, rep.Clusters[0].Backup, "another cluster's policy does not speak for it")
 	assert.Equal(t, "newest snapshot is 30h old", rep.Clusters[0].Message)
@@ -98,14 +106,14 @@ func TestStatusClusterTables(t *testing.T) {
 
 	// A second policy that is backed up does.
 	rep = buildReport(nil, nil, nil, nil, nil)
-	addClusters(&rep, clusters, nil, nil, []osv1alpha1.EtcdBackupPolicy{
+	addClusters(&rep, clusters, nil, nil, nil, []osv1alpha1.EtcdBackupPolicy{
 		stale, policy("lab-hourly", "lab", metav1.ConditionTrue, osv1alpha1.ReasonSnapshotRecent, "lab-hourly-1 taken at ...")})
 	assert.Equal(t, osv1alpha1.ReasonSnapshotRecent, rep.Clusters[0].Backup)
 	assert.False(t, rep.Clusters[0].NeedsAttention)
 }
 
 func TestStatusClustersInJSON(t *testing.T) {
-	clusters, nodes, hosts := lab()
+	clusters, nodes, hosts, _ := lab()
 	cl := fakeClient(&clusters[0], &nodes[0], &nodes[1], &hosts[0])
 	var out bytes.Buffer
 	code, err := runStatus(context.Background(), cl, "json", &out)

@@ -143,7 +143,7 @@ func runStatus(ctx context.Context, cl client.Client, format string, w io.Writer
 		return exitError, fmt.Errorf("read the cluster: %w", err)
 	}
 	rep := buildReport(hosts.Items, eps.Items, claims.Items, ops.Items, nodes.Items)
-	addClusters(&rep, clusters.Items, nodes.Items, hosts.Items, policies.Items)
+	addClusters(&rep, clusters.Items, nodes.Items, hosts.Items, claims.Items, policies.Items)
 	addRollouts(&rep, rollouts.Items)
 	switch format {
 	case "json":

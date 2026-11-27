@@ -3,7 +3,6 @@ package controller
 import (
 	"encoding/json"
 	"fmt"
-	"reflect"
 
 	"github.com/opencontainers/go-digest"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -49,8 +48,10 @@ func drainTimeout(ro *osv1alpha1.TalosRollout) int32 {
 	return 900
 }
 
-// The timeouts of the wait actions. The CRD defaults them too; they are set
-// here so the operation the API server stores equals what was built.
+// The timeouts of the wait actions. The CRD defaults them too. rolloutActions
+// sets every field that the CRD defaults, so the operation the API server
+// stores equals what was built, and rolloutCovers compares the two as they
+// are.
 const (
 	waitNodeReadyTimeout   = 1800
 	waitEtcdHealthyTimeout = 900
@@ -115,42 +116,6 @@ func actionKeys(actions []metalv1alpha1.HostOperationAction) []string {
 		keys[i] = a.Key()
 	}
 	return keys
-}
-
-// sameActions compares an operation's actions with the ones a step builds,
-// after filling in what the API server defaults, so that a default the CRD
-// adds does not read as a difference.
-func sameActions(got, want []metalv1alpha1.HostOperationAction) bool {
-	return reflect.DeepEqual(withDefaults(got), withDefaults(want))
-}
-
-// withDefaults fills the CRD defaults of the actions a rollout builds.
-func withDefaults(in []metalv1alpha1.HostOperationAction) []metalv1alpha1.HostOperationAction {
-	out := make([]metalv1alpha1.HostOperationAction, len(in))
-	for i := range in {
-		a := *in[i].DeepCopy()
-		switch {
-		case a.Drain != nil && a.Drain.TimeoutSeconds == 0:
-			a.Drain.TimeoutSeconds = 900
-		case a.WaitNodeReady != nil && a.WaitNodeReady.TimeoutSeconds == 0:
-			a.WaitNodeReady.TimeoutSeconds = waitNodeReadyTimeout
-		case a.WaitEtcdHealthy != nil && a.WaitEtcdHealthy.TimeoutSeconds == 0:
-			a.WaitEtcdHealthy.TimeoutSeconds = waitEtcdHealthyTimeout
-		case a.TalosApplyConfig != nil && a.TalosApplyConfig.Mode == "":
-			a.TalosApplyConfig.Mode = "NoReboot"
-		case a.TalosReboot != nil && a.TalosReboot.Mode == "":
-			a.TalosReboot.Mode = "Default"
-		case a.TalosUpgrade != nil:
-			if a.TalosUpgrade.Preserve == nil {
-				a.TalosUpgrade.Preserve = ptr.To(true)
-			}
-			if a.TalosUpgrade.RebootMode == "" {
-				a.TalosUpgrade.RebootMode = "Default"
-			}
-		}
-		out[i] = a
-	}
-	return out
 }
 
 // rolloutFinished: the rollout reached an end (complete, failed, aborted, or

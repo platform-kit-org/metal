@@ -4,10 +4,14 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
@@ -54,19 +58,6 @@ func TestRolloutActions(t *testing.T) {
 	upgrade := rolloutActions(&osv1alpha1.TalosRollout{Spec: osv1alpha1.TalosRolloutSpec{Kind: osv1alpha1.RolloutTalosUpgrade}},
 		osv1alpha1.RolloutStep{Node: "cp", To: "v1.14.6", Image: "i@sha256:x", Role: osv1alpha1.RoleControlPlane})
 	assert.Equal(t, "v1.14.6", upgrade[2].WaitNodeReady.Version, "an upgrade waits for the version it installs")
-}
-
-func TestSameActionsIgnoresAPIDefaults(t *testing.T) {
-	ro := &osv1alpha1.TalosRollout{Spec: osv1alpha1.TalosRolloutSpec{Kind: osv1alpha1.RolloutTalosUpgrade}}
-	built := rolloutActions(ro, step("cp", osv1alpha1.RoleControlPlane))
-	stored := withDefaults(built)
-	stored[1].TalosUpgrade.RebootMode = "" // as if the API server had not defaulted it
-	assert.True(t, sameActions(stored, built))
-
-	changed := withDefaults(built)
-	changed[1].TalosUpgrade.Image = "other@sha256:y"
-	assert.False(t, sameActions(changed, built))
-	assert.False(t, sameActions(built[:2], built))
 }
 
 func TestRolloutPlanHash(t *testing.T) {
@@ -225,7 +216,7 @@ func TestProposerNeedsUpgradesBeforeConfig(t *testing.T) {
 	}
 	hosts := map[string]string{"a": "box-a", "b": "box-b"}
 
-	ro := needed(cluster, nodes, hosts)
+	ro := needed(cluster, nodes, hosts, nil)
 	require.NotNil(t, ro)
 	assert.Equal(t, osv1alpha1.RolloutTalosUpgrade, ro.Spec.Kind)
 	assert.Equal(t, "v1.14.6", ro.Spec.Target.TalosVersion)
@@ -233,17 +224,17 @@ func TestProposerNeedsUpgradesBeforeConfig(t *testing.T) {
 
 	nodes[1].Status.Version = "v1.14.6"
 	cluster.Status.KubernetesVersion = "v1.36.1"
-	assert.Equal(t, osv1alpha1.RolloutKubernetesUpgrade, needed(cluster, nodes, hosts).Spec.Kind)
+	assert.Equal(t, osv1alpha1.RolloutKubernetesUpgrade, needed(cluster, nodes, hosts, nil).Spec.Kind)
 
 	cluster.Status.KubernetesVersion = "v1.36.2"
-	cfg := needed(cluster, nodes, hosts)
+	cfg := needed(cluster, nodes, hosts, nil)
 	assert.Equal(t, osv1alpha1.RolloutConfig, cfg.Spec.Kind)
-	assert.Equal(t, cfg.Name, needed(cluster, nodes, hosts).Name, "the same need, the same name: it never spawns twice")
+	assert.Equal(t, cfg.Name, needed(cluster, nodes, hosts, nil).Name, "the same need, the same name: it never spawns twice")
 	nodes[0].Status.ConfigDigest = "sha256:2"
-	assert.NotEqual(t, cfg.Name, needed(cluster, nodes, hosts).Name, "another render is another proposal")
+	assert.NotEqual(t, cfg.Name, needed(cluster, nodes, hosts, nil).Name, "another render is another proposal")
 
 	delete(hosts, "a")
-	assert.Nil(t, needed(cluster, nodes, hosts), "a node no machine runs needs nothing")
+	assert.Nil(t, needed(cluster, nodes, hosts, nil), "a node no machine runs needs nothing")
 }
 
 func TestConfigSecretName(t *testing.T) {
@@ -267,4 +258,99 @@ func TestRolloutStepHeldByAWindowIsStillRunning(t *testing.T) {
 	require.NoError(t, r.observeStep(t.Context(), ro, &osv1alpha1.TalosCluster{}, 0))
 	assert.Equal(t, osv1alpha1.RolloutNodeRunning, ro.Status.Steps[0].State)
 	assert.Equal(t, "waits for window nights", ro.Status.Steps[0].Message, "the rollout says why it waits")
+}
+
+// The gate between rollout steps reads etcd as the cluster guard does: a
+// member that no machine runs any more holds the next step.
+func TestRolloutEtcdGateCountsEveryMember(t *testing.T) {
+	lab := newLifecycleLab(t, []string{"cp-1", "cp-2"}, nil)
+	r := &TalosRolloutReconciler{Client: lab.r.Client, Namespace: "pk-metal", Dial: lab.fleet.Dialer()}
+	cluster := &osv1alpha1.TalosCluster{}
+	require.NoError(t, r.Get(t.Context(), client.ObjectKey{Name: "lab"}, cluster))
+	nodes, err := clusterMembers(t.Context(), r.Client, "lab")
+	require.NoError(t, err)
+	gate := func() string {
+		why, err := r.etcdGate(t.Context(), cluster, nodes, map[string]string{"cp-1": "box-1", "cp-2": "box-2"})
+		require.NoError(t, err)
+		return why
+	}
+	assert.Empty(t, gate())
+
+	lab.etcd.AddStale("cp-9")
+	assert.Contains(t, gate(), "member cp-9", "a stale member counts towards the majority")
+}
+
+// A Config step applies the node's render and ends seconds later, before
+// the next dry run. The dry run from before the apply still says the node
+// drifts. The proposer waits for a dry run after the step: before, it
+// proposed the change that was just applied again.
+func TestProposerWaitsForADryRunAfterTheApply(t *testing.T) {
+	cluster := &osv1alpha1.TalosCluster{ObjectMeta: metav1.ObjectMeta{Name: "c"},
+		Spec: osv1alpha1.TalosClusterSpec{TalosVersion: "v1.14.6", KubernetesVersion: "v1.36.2"}}
+	cluster.Status.KubernetesVersion = "v1.36.2"
+	cluster.Status.BootstrappedAt = &metav1.Time{Time: time.Now()}
+	dryRun := metav1.NewTime(time.Now().Add(-time.Minute))
+	node := &osv1alpha1.TalosNode{ObjectMeta: metav1.ObjectMeta{Name: "a"},
+		Spec: osv1alpha1.TalosNodeSpec{ClusterRef: osv1alpha1.Reference{Name: "c"}},
+		Status: osv1alpha1.TalosNodeStatus{Version: "v1.14.6", ConfigDigest: "sha256:2",
+			Drift:      &osv1alpha1.ConfigDrift{ConfigDigest: "sha256:2", Changed: true, ObservedAt: dryRun},
+			Conditions: []metav1.Condition{{Type: osv1alpha1.ConditionConfigInSync, Status: metav1.ConditionFalse, Reason: osv1alpha1.ReasonConfigDrift}}}}
+	host := &metalv1alpha1.Host{ObjectMeta: metav1.ObjectMeta{Name: "box-a"},
+		Spec: metalv1alpha1.HostSpec{OS: &metalv1alpha1.HostOS{NodeRef: metalv1alpha1.Reference{Name: "a"}}}}
+	applied := needed(cluster, []osv1alpha1.TalosNode{*node}, map[string]string{"a": "box-a"}, nil)
+	require.NotNil(t, applied)
+	applied.Status.Plan = []osv1alpha1.RolloutStep{{Kind: osv1alpha1.RolloutStepNode, Node: "a", ConfigDigest: "sha256:2"}}
+	applied.Status.Steps = []osv1alpha1.RolloutStepStatus{{State: osv1alpha1.RolloutNodeSucceeded,
+		FinishedAt: &metav1.Time{Time: time.Now().Add(-30 * time.Second)}}}
+	applied.Status.Conditions = []metav1.Condition{{Type: osv1alpha1.ConditionComplete, Status: metav1.ConditionTrue,
+		Reason: osv1alpha1.ReasonRolloutSucceeded}}
+
+	cl := byCluster(fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(cluster, node, host, applied).
+		WithStatusSubresource(node)).Build()
+	r := &RolloutProposer{Client: cl, Proposer: "operator"}
+	proposals := func() int {
+		_, err := r.Reconcile(t.Context(), requestFor("c"))
+		require.NoError(t, err)
+		list := &osv1alpha1.TalosRolloutList{}
+		require.NoError(t, cl.List(t.Context(), list))
+		return len(list.Items)
+	}
+	assert.Equal(t, 1, proposals(), "the drift is from before the apply: nothing is proposed")
+
+	node.Status.Drift.ObservedAt = metav1.Now()
+	require.NoError(t, cl.Status().Update(t.Context(), node))
+	assert.Equal(t, 2, proposals(), "a dry run after the apply that still finds drift is proposed again")
+}
+
+// The node lane dry-runs again after a rollout step on the node ended, also
+// before the interval runs out. Before, ConfigInSync said for up to ten
+// minutes that the change just applied was still to come.
+func TestDriftIsCheckedAgainAfterARolloutStep(t *testing.T) {
+	ro := approvedRollout(osv1alpha1.RolloutConfig, step("w-1", osv1alpha1.RoleWorker))
+	ro.Spec.ClusterRef.Name = "lab"
+	ro.Status.Steps[0] = osv1alpha1.RolloutStepStatus{State: osv1alpha1.RolloutNodeSucceeded,
+		FinishedAt: &metav1.Time{Time: time.Now().Add(-30 * time.Second)}}
+	ro.Status.Conditions = []metav1.Condition{{Type: osv1alpha1.ConditionComplete, Status: metav1.ConditionTrue,
+		Reason: osv1alpha1.ReasonRolloutSucceeded}}
+	host := &metalv1alpha1.Host{ObjectMeta: metav1.ObjectMeta{Name: "box-w-1"},
+		Spec: metalv1alpha1.HostSpec{OS: &metalv1alpha1.HostOS{NodeRef: metalv1alpha1.Reference{Name: "w-1"}}}}
+	lab := newLifecycleLab(t, nil, []string{"w-1"}, host, ro)
+	r := &TalosNodeReconciler{Client: lab.r.Client, Namespace: "pk-metal", Dial: lab.fleet.Dialer()}
+	ctx := t.Context()
+	cluster := &osv1alpha1.TalosCluster{}
+	require.NoError(t, r.Get(ctx, client.ObjectKey{Name: "lab"}, cluster))
+	bundle, err := loadBundle(ctx, r.Client, "pk-metal", cluster)
+	require.NoError(t, err)
+	node := &osv1alpha1.TalosNode{}
+	require.NoError(t, r.Get(ctx, client.ObjectKey{Name: "w-1"}, node))
+	rendered := []byte("config of w-1") // what the step applied
+	node.Status.Address = node.Spec.Address
+	node.Status.ConfigDigest = digest.FromBytes(rendered).String()
+	node.Status.Drift = &osv1alpha1.ConfigDrift{ConfigDigest: node.Status.ConfigDigest, Changed: true,
+		ObservedAt: metav1.NewTime(time.Now().Add(-time.Minute))}
+
+	_, err = r.checkin(ctx, node, cluster, bundle, rendered)
+	require.NoError(t, err)
+	assert.False(t, node.Status.Drift.Changed, "the dry run after the step finds the node in sync")
+	assert.True(t, meta.IsStatusConditionTrue(node.Status.Conditions, osv1alpha1.ConditionConfigInSync))
 }

@@ -94,7 +94,10 @@ func (x *exec) workload(ctx context.Context, acc *talosAccess) (client.Client, e
 	if x.kube != nil {
 		return x.kube, nil
 	}
-	c, err := workloadClient(ctx, x.r.Client, x.r.CredentialsNamespace, acc.cluster, x.r.Workload)
+	c, why, err := workloadClient(ctx, x.r.Client, x.r.CredentialsNamespace, acc.cluster, x.r.Workload)
+	if err == nil && why != "" {
+		err = errors.New(why)
+	}
 	if err != nil {
 		return nil, err
 	}

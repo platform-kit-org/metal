@@ -28,7 +28,7 @@ import (
 
 // Run executes the v0 conformance assertions against c, with expectations derived from
 // the fixture the endpoint is supposed to embody: inventory, capability discovery, the
-// serial-anchor asymmetry, power round-trip, and media insert dialect dispatch.
+// serial-anchor asymmetry, power actions, and media insert dialect dispatch.
 // Real hardware runs RunReadOnly.
 func Run(t *testing.T, c bmc.Client, f *sim.Fixture) {
 	t.Helper()
@@ -150,18 +150,33 @@ func Run(t *testing.T, c bmc.Client, f *sim.Fixture) {
 		}
 	})
 
-	t.Run("power-round-trip", func(t *testing.T) {
+	t.Run("power-actions", func(t *testing.T) {
+		// Every reset type the system advertises is accepted and lands in the
+		// power state it stands for; one it does not advertise is refused.
 		id := f.Systems[0].ID
-		_, err := c.Power(ctx, id)
-		require.NoError(t, err)
-
+		// ForceOff is accepted in each power state. The generic system starts
+		// off, so this also sends ForceOff to a system that is off.
 		require.NoError(t, c.SetPower(ctx, id, bmc.ActionForceOff))
 		settles(t, ctx, c, id, bmc.PowerOff, "after ForceOff")
-
+		ends := map[bmc.PowerAction]bmc.PowerState{
+			bmc.ActionOn: bmc.PowerOn, bmc.ActionForceOff: bmc.PowerOff,
+			bmc.ActionGracefulShutdown: bmc.PowerOff, bmc.ActionForceRestart: bmc.PowerOn,
+			bmc.ActionGracefulRestart: bmc.PowerOn, bmc.ActionPowerCycle: bmc.PowerOn,
+		}
+		for _, action := range fixtureResetTypes(f) {
+			want, known := ends[bmc.PowerAction(action)]
+			if !known {
+				continue
+			}
+			// Restart-shaped actions need a running system to act on.
+			require.NoError(t, c.SetPower(ctx, id, bmc.ActionOn))
+			settles(t, ctx, c, id, bmc.PowerOn, "before %s", action)
+			require.NoError(t, c.SetPower(ctx, id, bmc.PowerAction(action)), "reset type %s", action)
+			settles(t, ctx, c, id, want, "after %s", action)
+		}
+		assert.Error(t, c.SetPower(ctx, id, bmc.PowerAction("Nmi-NotOffered")),
+			"a reset type outside AllowableValues must be rejected")
 		require.NoError(t, c.SetPower(ctx, id, bmc.ActionOn))
-		settles(t, ctx, c, id, bmc.PowerOn, "after On")
-
-		require.NoError(t, c.SetPower(ctx, id, bmc.ActionForceRestart))
 	})
 
 	t.Run("reset-advances-reset-time", func(t *testing.T) {
@@ -284,31 +299,6 @@ func Run(t *testing.T, c bmc.Client, f *sim.Fixture) {
 		want.Enabled = bmc.OverrideDisabled
 		require.NoError(t, c.SetBootOverride(ctx, id, want))
 		assert.Equal(t, want, mustSystems(t, ctx, c)[0].BootOverride, "and is withdrawn by disabling it")
-	})
-
-	t.Run("power-actions", func(t *testing.T) {
-		// Every reset type the system advertises is accepted and lands in the
-		// power state it stands for; one it does not advertise is refused.
-		id := f.Systems[0].ID
-		ends := map[bmc.PowerAction]bmc.PowerState{
-			bmc.ActionOn: bmc.PowerOn, bmc.ActionForceOff: bmc.PowerOff,
-			bmc.ActionGracefulShutdown: bmc.PowerOff, bmc.ActionForceRestart: bmc.PowerOn,
-			bmc.ActionGracefulRestart: bmc.PowerOn, bmc.ActionPowerCycle: bmc.PowerOn,
-		}
-		for _, action := range fixtureResetTypes(f) {
-			want, known := ends[bmc.PowerAction(action)]
-			if !known {
-				continue
-			}
-			// Restart-shaped actions need a running system to act on.
-			require.NoError(t, c.SetPower(ctx, id, bmc.ActionOn))
-			settles(t, ctx, c, id, bmc.PowerOn, "before %s", action)
-			require.NoError(t, c.SetPower(ctx, id, bmc.PowerAction(action)), "reset type %s", action)
-			settles(t, ctx, c, id, want, "after %s", action)
-		}
-		assert.Error(t, c.SetPower(ctx, id, bmc.PowerAction("Nmi-NotOffered")),
-			"a reset type outside AllowableValues must be rejected")
-		require.NoError(t, c.SetPower(ctx, id, bmc.ActionOn))
 	})
 
 	t.Run("flash-convergence", func(t *testing.T) {

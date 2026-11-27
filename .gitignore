@@ -6,6 +6,10 @@ metal/.cache/
 !.claude/hooks/
 !.claude/skills/
 mise.local.toml
+# The site files that the install how-to and the real-server tutorial put in
+# the clone. Ignored, so that the image tag stays the commit.
+/overlays/
+/kind.yaml
 .lab/
 /metal/manager
 /metal/pk-metal

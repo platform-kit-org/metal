@@ -20,7 +20,6 @@ import Callout from '../../../../components/Callout.astro';
 ## Goal
 
 Make the first Talos cluster of a site from a workstation, when no management cluster exists.
-Later, you can [](howto:pivot) the operator onto this cluster.
 
 ## Before you start
 
@@ -28,7 +27,7 @@ Later, you can [](howto:pivot) the operator onto this cluster.
 - You have the secrets bundle from `talosctl gen secrets`.
 - Your workstation, or a host that runs [](cli:relay), can reach the BMCs. The BMCs can reach it back.
 - You have the BMC password of each machine.
-- Each BMC has two virtual media slots. [](cli:check) shows the slots: two lines that are not `dialect=none`.
+- Each BMC has two virtual media slots. [](cli:check) shows them on the `slots:` line: `config=-` means one slot.
 - You have the URL of a Talos installer ISO that reads its configuration from a medium. Step 1 makes it.
 
 <Callout type="caution">
@@ -65,10 +64,10 @@ The usual way is different. Start kind on a workstation, install the operator th
    The `talosconfig` and the `kubeconfig` are valid for 24 hours (`--credentials-ttl`, at most 720 hours). Nobody can revoke them before that time, except with a CA rotation.
    If the secrets bundle is encrypted, decrypt it to standard input and give `--secrets -`. Then no plain copy goes to the disk.
 
-3. Put the BMC password of the first machine in the environment.
+3. Put the BMC user name and password of the first machine in the shell. The label of the server or the vendor manual gives the factory user name.
 
    ```sh
-   read -rs PK_METAL_BMC_PASSWORD && export PK_METAL_BMC_PASSWORD
+   read -r BMC_USER && read -rs PK_METAL_BMC_PASSWORD && export PK_METAL_BMC_PASSWORD
    ```
 
 4. Mount the installer ISO on the first slot of the BMC. Use the web console of the BMC, and the URL from step 1.
@@ -77,13 +76,16 @@ The usual way is different. Start kind on a workstation, install the operator th
 5. Find the other slot. Note its id.
 
    ```sh
-   pk-metal check https://192.0.2.21
+   pk-metal check --user "$BMC_USER" --bmc-ca site-ca.pem https://192.0.2.21
    ```
+
+   `--bmc-ca` names the CA of the BMC certificate. Use `--insecure` in its place only for a self-signed certificate.
 
 6. Boot the first machine into its config. `--media` is the slot from step 5. `--listen` is an address on your workstation that the BMC can reach.
 
    ```sh
-   pk-metal boot --config ~/prod-clusterconfig/cp-1.yaml --node cp-1 --media 2 --listen 192.0.2.5:8443 https://192.0.2.21
+   pk-metal boot --user "$BMC_USER" --bmc-ca site-ca.pem --config ~/prod-clusterconfig/cp-1.yaml \
+     --node cp-1 --media 2 --listen 192.0.2.5:8443 https://192.0.2.21
    ```
 
    The command shows its steps. Without `--yes`, it refuses to reset a machine that is on.
@@ -131,6 +133,7 @@ Each node is `Ready`.
 
 | What you see | Fix |
 | --- | --- |
+| `x509` or another certificate error | Give the CA of the BMC certificate with `--bmc-ca`. For a self-signed certificate, use `--insecure`. |
 | `boot` times out and the image was not read | The BMC cannot reach `--listen`. Use `--relay`, or open the port. |
 | The machine starts in Talos maintenance mode and waits | The installer has no `talos.config=metal-iso`. Do step 1 again. |
 | The machine starts the old system from its disk | The boot override did not start the installer. Mount the installer on the slot that the machine starts first. |
@@ -138,7 +141,17 @@ Each node is `Ready`.
 | `bootstrap` waits for a node | Read the serial console of the node. See [](rb:node-not-ready). |
 | `bootstrap` reports data in etcd | A member has old etcd data. See [](rb:bootstrap-refused). |
 
+## Next
+
+[](howto:pivot) moves an operator from another cluster, so it does not apply here. To let the operator manage this cluster, do these tasks:
+
+1. Install the operator into this cluster. Use step 4 of [](howto:install-operator), not kind.
+2. Enroll the machines. See [](howto:enroll-hosts).
+3. Apply the same TalosCluster and TalosNodes, with the same secrets bundle. See [](howto:define-a-cluster).
+4. Claim the machines. See [](howto:install-hosts). The operator hands off a claim on a machine whose node already answers. It does not install it again.
+
+Only unit tests cover this hand-off. No test runs it on a cluster.
+
 ## Related
 
 - [](cli:render), [](cli:boot), [](cli:bootstrap), [](cli:relay)
-- [](howto:pivot) moves the operator onto the new cluster.

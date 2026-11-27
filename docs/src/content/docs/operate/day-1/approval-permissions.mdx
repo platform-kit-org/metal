@@ -108,7 +108,7 @@ The key `selfApproval` in the ConfigMap `hostoperation-approval` tells if a pers
 4. Apply the overlay.
 
    ```sh
-   kubectl apply --server-side -k .
+   kubectl apply --server-side --force-conflicts -k overlays/site
    ```
 
    After the first install, only a member of the admin group can change or delete the ConfigMap. The `settings-guard` policy refuses each other person. The operator writes a `settings.changed` line in the [](ref:audit-trail) for each change.

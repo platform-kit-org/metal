@@ -46,7 +46,7 @@ The steps have the names of the steps in [](howto:pivot).
 5. **Start.** It starts the operator in the target cluster.
 6. **Settle.** For the time of [`--settle`](cli:pivot#--settle), it makes sure that the new operator proposes no new operation.
 
-The command cannot test the network. Before you answer, make sure that the target cluster can reach the BMCs, the Talos API and the media service.
+The command cannot test the network. Before you answer, make sure that the target cluster can reach the BMCs, the Talos API and the Kubernetes API of each cluster. The BMCs must reach the media service.
 
 <Callout type="caution">
 Do not start the operator in the source cluster again while the operator in the target cluster runs. Two operators then act on the same machines.

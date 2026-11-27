@@ -16,8 +16,8 @@ import (
 )
 
 func TestDecideShape(t *testing.T) {
-	twoSlots := endpointView{insertable: []string{"CD1", "USB1"}, bootSlots: []string{"CD1"}}
-	oneCD := endpointView{insertable: []string{"CD"}, bootSlots: []string{"CD"}}
+	twoSlots := endpointView{insertable: []string{"CD1", "USB1"}, boot: "CD1", config: "USB1"}
+	oneCD := endpointView{insertable: []string{"CD"}, boot: "CD"}
 	oneStick := endpointView{insertable: []string{"USBStick"}}
 	for _, tc := range []struct {
 		name      string

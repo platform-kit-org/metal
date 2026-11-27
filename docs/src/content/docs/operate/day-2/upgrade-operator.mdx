@@ -70,7 +70,7 @@ The Deployment has `strategy: Recreate`. The old manager stops before the new on
 6. Apply the overlay. Server-side apply is necessary for the CRDs.
 
    ```sh
-   kubectl apply --server-side -k overlay
+   kubectl apply --server-side --force-conflicts -k overlays/site
    ```
 
 7. Wait for the new manager.

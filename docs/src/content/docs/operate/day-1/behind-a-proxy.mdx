@@ -29,20 +29,21 @@ Keep the BMC network, the node network and the cluster networks off the proxy.
 
 <Steps>
 
-1. Add the proxy to the environment of the manager Deployment, with a patch in your overlay.
+1. Add these two operations to `manager_args.yaml` of your overlay. They put the proxy in the environment of the manager.
 
-   ```yaml
-   env:
-     - name: HTTPS_PROXY
-       value: http://proxy.example.org:3128
-     - name: NO_PROXY
-       value: 192.0.2.0/24,10.96.0.0/12,10.244.0.0/16,.svc,.cluster.local,localhost,127.0.0.1
+   ```yaml title="manager_args.yaml"
+   - op: add
+     path: /spec/template/spec/containers/0/env/-
+     value: {name: HTTPS_PROXY, value: "http://proxy.example.org:3128"}
+   - op: add
+     path: /spec/template/spec/containers/0/env/-
+     value: {name: NO_PROXY, value: "192.0.2.0/24,10.96.0.0/12,10.244.0.0/16,.svc,.cluster.local,localhost,127.0.0.1"}
    ```
 
 2. Apply the overlay.
 
    ```sh
-   kubectl apply -k overlays/site
+   kubectl apply --server-side --force-conflicts -k overlays/site
    ```
 
 3. Add an `EnvironmentConfig` patch to the TalosCluster. It gives the proxy to the nodes.
@@ -58,7 +59,7 @@ Keep the BMC network, the node network and the cluster networks off the proxy.
              no_proxy: 192.0.2.0/24,10.96.0.0/12,10.244.0.0/16,.svc,.cluster.local,localhost,127.0.0.1
    ```
 
-4. If your firewall blocks the default DNS or NTP servers, add `ResolverConfig` and `TimeSyncConfig` patches. [](howto:air-gapped-site) has an example.
+4. If your firewall blocks the default DNS or NTP servers, add `ResolverConfig` and `TimeSyncConfig` patches. See [DNS and time servers](howto:define-a-cluster#dns-and-time-servers).
 
 5. Apply the TalosCluster before you install the first machine.
 

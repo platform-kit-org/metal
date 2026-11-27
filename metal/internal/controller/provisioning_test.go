@@ -16,6 +16,7 @@ import (
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
+	"github.com/dennisklein/platform-kit/metal/internal/boot"
 )
 
 // claimReconcilerFor builds a claim reconciler over a fake API that also
@@ -466,30 +467,10 @@ func TestBootSlotsFollowMediaTypes(t *testing.T) {
 	r := claimReconcilerFor(t, ep)
 	v, err := r.endpointShape(t.Context(), host)
 	require.NoError(t, err)
-	assert.Equal(t, []string{"VirtualMedia2", "VirtualMedia10"}, v.bootSlots,
-		"optical slots only, in the endpoint's order; a slot without an insert mechanism is none")
+	assert.Equal(t, "VirtualMedia2", v.boot, "the first optical slot in the endpoint's order; a slot without an insert mechanism is none")
+	assert.Equal(t, "VirtualMedia10", v.config, "the next insertable slot")
 	assert.Equal(t, []string{"VirtualMedia2", "VirtualMedia10", "USBStick1", "Floppy1"}, v.insertable,
 		"a release empties every insertable slot")
-}
-
-func TestConfigMediumTakesAnyOtherSlot(t *testing.T) {
-	cases := []struct {
-		name         string
-		view         endpointView
-		boot, config string
-	}{
-		{"optical and USB stick", endpointView{insertable: []string{"2", "1"}, bootSlots: []string{"2"}}, "2", "1"},
-		{"two optical", endpointView{insertable: []string{"CD1", "CD2"}, bootSlots: []string{"CD1", "CD2"}}, "CD1", "CD2"},
-		{"one optical only", endpointView{insertable: []string{"CD"}, bootSlots: []string{"CD"}}, "", ""},
-		{"USB sticks only", endpointView{insertable: []string{"U1", "U2"}}, "", ""},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			boot, config := c.view.mediaSlots()
-			assert.Equal(t, c.boot, boot)
-			assert.Equal(t, c.config, config)
-		})
-	}
 }
 
 func TestBootOverrideAsksForUEFIOnlyWhereNeeded(t *testing.T) {
@@ -498,7 +479,7 @@ func TestBootOverrideAsksForUEFIOnlyWhereNeeded(t *testing.T) {
 	config := &osv1alpha1.BootAsset{ObjectMeta: metav1.ObjectMeta{Name: "node-config"}}
 	installer := &osv1alpha1.BootAsset{ObjectMeta: metav1.ObjectMeta{Name: "installer"}}
 	for served, want := range map[string]string{"Legacy": "UEFI", "UEFI": "", "": ""} {
-		plan := provisionPlan{Slots: []string{"VirtualMedia1", "VirtualMedia2"}, Target: "UsbCd", Mode: overrideMode(served)}
+		plan := provisionPlan{Slots: []string{"VirtualMedia1", "VirtualMedia2"}, Target: "UsbCd", Mode: boot.OverrideMode(served)}
 		op := r.provisionOp(testClaim("node"), "host-a", "op", plan, node, config, installer, nil)
 		var got *metalv1alpha1.SetBootOverrideAction
 		for _, a := range op.Spec.Actions {

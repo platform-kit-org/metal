@@ -67,7 +67,15 @@ Run the operator on the Talos cluster that it installed, and stop the bootstrap 
    pk-metal --kubeconfig mgmt.kubeconfig status
    ```
 
-6. When you do not need the bootstrap cluster, delete it. Use the name of your kind cluster.
+6. Make your overlay agree with the target. Else the next apply of the overlay puts back the values of the bootstrap cluster.
+
+   - In `kustomization.yaml`, set `images` to the image of step 2.
+   - In `manager_args.yaml`, set `--media-url` to the URL of step 2.
+   - If you used `--media-store=ephemeral`, remove the component `media-store`.
+
+   The pivot writes the objects on the target as the field manager `pk-metal-pivot`. Thus each later apply of the overlay needs `--force-conflicts`. See [](howto:install-operator).
+
+7. When you do not need the bootstrap cluster, delete it. Use the name of your kind cluster.
 
    ```sh
    kind delete cluster --name bootstrap

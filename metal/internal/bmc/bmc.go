@@ -370,3 +370,35 @@ func InsertableSlots(media []VirtualMedia, caps Capabilities) []string {
 	}
 	return append(optical, other...)
 }
+
+// MediaSlots picks the slots of an install from the insertable ones
+// (InsertableSlots). The installer goes on boot, the best slot that an ISO
+// boots from: an optical one, else one that names no media type (a slot that
+// advertises nothing may still be one). A slot typed as something else, a USB
+// stick for example, never takes the installer. The config medium goes on
+// config, the next insertable slot of any type: Talos only reads it, and finds
+// it by its volume label on any block device. boot is empty when no slot boots
+// an ISO; config is empty when the endpoint cannot hold an installer next to a
+// config.
+func MediaSlots(media []VirtualMedia, caps Capabilities) (insertable []string, boot, config string) {
+	insertable = InsertableSlots(media, caps)
+	types := make(map[string][]string, len(media))
+	for _, m := range media {
+		types[m.ID] = m.MediaTypes
+	}
+	for _, id := range insertable {
+		if t := types[id]; len(t) == 0 || slices.Contains(t, "CD") || slices.Contains(t, "DVD") {
+			boot = id
+			break
+		}
+	}
+	if boot == "" {
+		return insertable, "", ""
+	}
+	for _, id := range insertable {
+		if id != boot {
+			return insertable, boot, id
+		}
+	}
+	return insertable, boot, ""
+}

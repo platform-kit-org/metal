@@ -105,7 +105,7 @@ func (r *hostWipeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, nil
 	}
 	shape, err := r.endpointShape(ctx, host)
-	if err != nil || !shape.known || len(shape.bootSlots) == 0 {
+	if err != nil || !shape.known || shape.boot == "" {
 		return ctrl.Result{}, err
 	}
 	target, err := boot.PickTarget(shape.targets)
@@ -135,11 +135,11 @@ func wipeOp(namespace, proposer, host, name string, asset *osv1alpha1.BootAsset,
 	}
 	actions = append(actions,
 		metalv1alpha1.HostOperationAction{InsertMedia: &metalv1alpha1.InsertMediaAction{
-			MediaID: shape.bootSlots[0], BootAssetRef: &metalv1alpha1.Reference{Name: asset.Name},
+			MediaID: shape.boot, BootAssetRef: &metalv1alpha1.Reference{Name: asset.Name},
 			Digest: asset.Status.Digest,
 		}},
 		metalv1alpha1.HostOperationAction{SetBootOverride: &metalv1alpha1.SetBootOverrideAction{
-			Target: target, Once: ptr.To(true), Mode: overrideMode(shape.mode),
+			Target: target, Once: ptr.To(true), Mode: boot.OverrideMode(shape.mode),
 		}},
 		metalv1alpha1.HostOperationAction{PowerCycle: &metalv1alpha1.PowerCycleAction{}},
 	)

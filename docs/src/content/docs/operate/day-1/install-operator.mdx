@@ -67,11 +67,11 @@ Use one of the two paths.
 
 <Steps>
 
-3. **kind on a workstation.** Copy `lab/kind.yaml` to `kind.yaml`. Set `listenAddress` to the address of the workstation on the BMC network. Keep the cluster name and the node image.
+3. **kind on a workstation.** Copy `lab/kind.yaml` to `kind.yaml`. Set `name` to `bootstrap`, so that the lab tasks do not use the cluster. Set `listenAddress` to the address of the workstation on the BMC network. Keep the node image.
 
    ```sh
    kind create cluster --config kind.yaml
-   kind load docker-image pk-metal:4f0c2d1a9b3e --name pk-metal
+   kind load docker-image pk-metal:4f0c2d1a9b3e --name bootstrap
    ```
 
    The file publishes port 30443 of the workstation. The BMCs get boot media from that port.
@@ -101,24 +101,26 @@ The overlay is a kustomize directory. It adds the values of your site to the bas
 5. Copy the sample overlay.
 
    ```sh
-   cp -r metal/config/samples/site-overlay overlays/site
+   mkdir -p overlays && cp -r metal/config/samples/site-overlay overlays/site
    ```
 
-6. In `overlays/site/kustomization.yaml`, correct the path of the base. From `overlays/site` in the repository root, it is `../../metal/config/default`.
+6. In `overlays/site/kustomization.yaml`, replace `../../` with `../../metal/config/` in the three paths: the base and the two components.
 
 7. In the same file, set `images`: `newName` and `newTag` from the image reference of step 2 or step 4.
 
 8. In `manager_args.yaml`, set `--media-url` to `https://<address>:30443`. The address is the one that the BMCs reach.
 
-9. In `ledger.yaml`, write one line for each BMC that you know now. You can add lines later. See [](howto:enroll-hosts).
+9. In `bindings.yaml`, replace the example group of the approvers with a group of your site. See [The admin group and the approvers](#the-admin-group-and-the-approvers).
 
-10. In `bindings.yaml`, replace the example group of the approvers with a group of your site. See [The admin group and the approvers](#the-admin-group-and-the-approvers).
+10. Replace `bmc-ca.crt` with the CA certificate of your BMCs. See [BMC certificates](#bmc-certificates).
 
-11. Replace `bmc-ca.crt` with the CA certificate of your BMCs. See [BMC certificates](#bmc-certificates).
+11. If a BMC has only one usable media slot, remove the comment mark from the component `media-store` in `kustomization.yaml`. See [One-slot BMCs](#one-slot-bmcs).
 
-12. If a BMC has only one usable media slot, remove the comment mark from `../../media-store` in `components` of `kustomization.yaml`. See [One-slot BMCs](#one-slot-bmcs). On Kubernetes older than 1.36, remove `../../name-stamp` from `components`. See [](ref:admission-policies#requested-by-stamp).
+12. On Kubernetes older than 1.36, remove the component `name-stamp` from `kustomization.yaml`. See [](ref:admission-policies#requested-by-stamp).
 
-13. In `networkpolicy.yaml`, set the CIDR of your BMC network. Only that network can fetch boot media. Until you set it, each mount fails with a connection error. Behind SNAT, add the node network too. See [](ref:media-store#network-policy).
+13. In `networkpolicy.yaml`, set the CIDR of your BMC network. Only that network can fetch boot media. Until you set it, each mount fails with a connection error. See [](ref:media-store#network-policy).
+
+14. On kind, remove the comment marks from the patch of `pk-metal-media` in `kustomization.yaml`. Then the policy sees the BMC address, not a node address. On a cluster with more nodes, add the node network to `networkpolicy.yaml`. See [](ref:media-store#source-addresses-and-nat).
 
 </Steps>
 
@@ -126,19 +128,21 @@ The overlay is a kustomize directory. It adds the values of your site to the bas
 
 <Steps>
 
-14. Show what the overlay makes. Read the Deployment at the end.
+15. Show what the overlay makes. Read the Deployment at the end.
 
     ```sh
     kubectl kustomize overlays/site | less
     ```
 
-15. Apply the overlay. Server-side apply is necessary, because the CRDs are large.
+16. Apply the overlay. Server-side apply is necessary, because the CRDs are large.
 
     ```sh
-    kubectl apply --server-side -k overlays/site
+    kubectl apply --server-side --force-conflicts -k overlays/site
     ```
 
-16. Wait for the manager.
+    Use this command for each later apply. After a [pivot](howto:pivot), `--force-conflicts` makes the overlay the owner of its fields again.
+
+17. Wait for the manager.
 
     ```sh
     kubectl -n pk-metal rollout status deployment/pk-metal-manager --timeout=180s
@@ -219,7 +223,7 @@ Impersonation is a shortcut for a lab. On a production cluster, give the group t
 
 A BMC with one usable media slot gets one install image with the machine config inside. The manager keeps these images in the media store.
 
-- [](howto:check-a-bmc) shows how to count the slots of a BMC.
+- [](howto:check-a-bmc) shows the slots of a BMC.
 - The component `metal/config/media-store` adds a claim for a 10 GiB volume. The cluster needs a storage class. kind has one.
 - The manager builds the image in a Job. The cluster must pull `ghcr.io/siderolabs/imager`, or a mirror that you set with `--imager-repository`.
 - The images hold the machine config, which has secrets. Use storage with encryption if your Secrets are encrypted.

@@ -5,7 +5,7 @@ type: howto
 day: 1
 xref: { cat: howto, id: check-a-bmc }
 sidebar:
-  order: 2
+  order: 0.4
 sources:
   - /repo/metal/cmd/pk-metal/main.go
   - /repo/metal/internal/inventory/factfile.go
@@ -20,7 +20,7 @@ Make sure that one BMC answers, and find its serial number, media slots and NIC 
 
 ## Before you start
 
-- You have the `pk-metal` binary on a workstation that can reach the BMC on TCP 443. [](howto:install-operator) shows how to build it.
+- You have a clone of the repository, with `pk-metal` built by `mise run build`. The workstation can reach the BMC on TCP 443.
 - You have the BMC user name and password. Usually these are the factory values.
 - The machine can be on or off. The two commands read only. They change nothing on the machine.
 
@@ -44,7 +44,8 @@ Make sure that one BMC answers, and find its serial number, media slots and NIC 
    manager:  Huawei fw 6.72
    media:    CD             dialect=vmm-control
    media:    USBStick       dialect=none
-   system:   1 serial=SIMHW2288V5000391 power=On
+   slots:    boot=CD config=-
+   system:   1 serial=SIMHW2288V5000391 power=On boot=Cd
    check:    OK (read-only)
    ```
 
@@ -68,11 +69,11 @@ Make sure that one BMC answers, and find its serial number, media slots and NIC 
 
 <dl>
   <dt>`media:` lines</dt>
-  <dd>One line for each virtual media slot. Count the lines that do not show `dialect=none`. One such line means a [](term:one-slot-bmc). The example above has two lines, but only one usable slot.</dd>
-  <dt>`dialect=none`</dt>
-  <dd>The slot cannot mount an image. The operator does not use it.</dd>
-  <dt>One usable slot</dt>
-  <dd>Add the media store to your overlay before the install. See [One-slot BMCs](howto:install-operator#one-slot-bmcs) and [](concept:one-slot-bmc).</dd>
+  <dd>One line for each virtual media slot. A slot with `dialect=none` cannot mount an image. The operator does not use it.</dd>
+  <dt>`slots:`</dt>
+  <dd>The slots of an install, with the rule of the operator: `boot` for the installer, `config` for the config medium. `config=-` means a [](term:one-slot-bmc). Then add the media store to your overlay before the install. See [One-slot BMCs](howto:install-operator#one-slot-bmcs).</dd>
+  <dt>`boot=` on a `system:` line</dt>
+  <dd>The boot override target that the operator sets, `UsbCd` or `Cd`. `boot=-` means that the system offers neither.</dd>
   <dt>More than one `system:` line</dt>
   <dd>The BMC controls more than one machine. [](cli:inventory) needs `--system`, and your [](kind:HostClaim) must set `spec.systemRef`.</dd>
   <dt>`serial=-`</dt>
@@ -94,10 +95,11 @@ The last line of [](cli:check) is `check:    OK (read-only)`.
 | `check failed:` with a timeout or a TLS error | [](rb:bmc-unreachable) |
 | `401` or `403` in the error | Check the user name and the password. |
 | No `media:` line | [](rb:media-slot-busy) |
+| `not installable:` and a reason | The operator cannot boot the machine from virtual media. Compare the BMC with [](ref:hardware). |
 | The check passes with `--insecure`, but the endpoint is `Unreachable` later | The manager checks the certificate. See [BMC certificates](howto:install-operator#bmc-certificates). |
 
 ## Related
 
 - [](cli:inventory), [](cli:check)
-- [](howto:enroll-hosts) is the next step.
+- [](howto:install-operator) is the next step.
 - [](howto:network-checklist)

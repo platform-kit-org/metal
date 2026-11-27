@@ -28,6 +28,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"path"
 	"slices"
 	"strconv"
@@ -736,28 +737,32 @@ func (c *client) followTask(ctx context.Context, info *schemas.TaskMonitorInfo) 
 
 // firstReadable walks the candidates and then the members of a collection,
 // in the order the service lists them, and returns the first one that read
-// accepts. A member that fails to read is skipped, so one broken member does
-// not hide a good one; the first failure is the error when none reads.
+// accepts. The collection is listed only when no candidate reads. A member
+// that fails to read is skipped, so one broken member does not hide a good
+// one; the first failure is the error when none reads.
 func (c *client) firstReadable(what, coll string, prefer []string, read func(uri string) error) (string, error) {
-	uris := slices.Clone(prefer)
+	var first error
+	walk := func(uris []string) string {
+		for _, uri := range uris {
+			if uri == "" {
+				continue
+			}
+			err := read(uri)
+			if err == nil {
+				return uri
+			}
+			first = cmp.Or(first, err)
+		}
+		return ""
+	}
+	if uri := walk(prefer); uri != "" {
+		return uri, nil
+	}
 	if coll != "" {
 		members, err := c.members(coll)
-		if err != nil && len(uris) == 0 {
-			return "", fmt.Errorf("bmc: %s: %w", what, err)
-		}
-		uris = append(uris, members...)
-	}
-	var first error
-	for _, uri := range uris {
-		if uri == "" {
-			continue
-		}
-		err := read(uri)
-		if err == nil {
+		first = cmp.Or(first, err)
+		if uri := walk(members); uri != "" {
 			return uri, nil
-		}
-		if first == nil {
-			first = err
 		}
 	}
 	if first != nil {
@@ -1097,43 +1102,29 @@ func (c *client) Capabilities(ctx context.Context) (bmc.Capabilities, error) {
 	return caps, nil
 }
 
-// systemByID reads one system. The member whose URI ends in the id is asked
-// first, as that is where services put it; the others follow in the order
-// the service lists them. A member that fails to read is skipped.
+// systemByID reads one system. The URI that ends in the id is asked first,
+// as that is where services put it; the members of the Systems collection
+// follow only when it does not read as that system.
 func (c *client) systemByID(id string) (*schemas.ComputerSystem, error) {
+	if id == "" {
+		return nil, errors.New("bmc: no system id")
+	}
 	root, err := c.root()
 	if err != nil {
 		return nil, err
 	}
-	members, err := c.members(root.Systems.ODataID)
+	var s *schemas.ComputerSystem
+	_, err = c.firstReadable(fmt.Sprintf("system %q", id), root.Systems.ODataID,
+		[]string{path.Join(root.Systems.ODataID, url.PathEscape(id))}, func(uri string) (err error) {
+			if s, err = schemas.GetComputerSystem(c.api, uri); err == nil && s.ID != id {
+				err = fmt.Errorf("%s is system %q", uri, s.ID)
+			}
+			return err
+		})
 	if err != nil {
-		return nil, fmt.Errorf("bmc: systems: %w", err)
+		return nil, err
 	}
-	slices.SortStableFunc(members, func(a, b string) int {
-		return boolRank(path.Base(b) == id) - boolRank(path.Base(a) == id)
-	})
-	var first error
-	for _, uri := range members {
-		s, err := schemas.GetComputerSystem(c.api, uri)
-		if err != nil {
-			first = cmp.Or(first, err)
-			continue
-		}
-		if s.ID == id {
-			return s, nil
-		}
-	}
-	if first != nil {
-		return nil, fmt.Errorf("bmc: no system %q: %w", id, first)
-	}
-	return nil, fmt.Errorf("bmc: no system %q", id)
-}
-
-func boolRank(b bool) int {
-	if b {
-		return 1
-	}
-	return 0
+	return s, nil
 }
 
 func (c *client) Power(ctx context.Context, systemID string) (bmc.PowerState, error) {

@@ -2,6 +2,7 @@ package gofish_test
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -81,4 +82,53 @@ func TestObservationPassReadsEachResourceOnce(t *testing.T) {
 			assert.LessOrEqual(t, total, 48, "requests in one pass")
 		})
 	}
+}
+
+// Power reads the system and nothing else: a step polls it while a reset
+// settles, twice a second.
+func TestPowerReadsOnlyTheSystem(t *testing.T) {
+	for _, name := range sim.Fixtures() {
+		t.Run(name, func(t *testing.T) {
+			f, err := sim.LoadFixture(name)
+			require.NoError(t, err)
+			srv, counts := countingSim(t, f)
+			c := connect(t, srv.URL, f)
+			before := counts()
+			_, err = c.Power(t.Context(), f.Systems[0].ID)
+			require.NoError(t, err)
+			for req, n := range counts() {
+				if n -= before[req]; n > 0 {
+					assert.Equal(t, "GET /redfish/v1/Systems/"+f.Systems[0].ID, req, "%d requests", n)
+					assert.Equal(t, 1, n, req)
+				}
+			}
+		})
+	}
+}
+
+// A system that the service keeps at a URI that does not end in its id is
+// found in the Systems collection, past a member that fails to read.
+func TestSystemAtAnotherURIIsFound(t *testing.T) {
+	f, err := sim.LoadFixture("generic")
+	require.NoError(t, err)
+	next := sim.NewServer(sim.NewState(f))
+	id := f.Systems[0].ID
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/redfish/v1/Systems":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"Members":[{"@odata.id":"/redfish/v1/Systems/broken"},{"@odata.id":"/redfish/v1/Systems/self"}]}`)
+		case "/redfish/v1/Systems/self":
+			r.URL.Path = "/redfish/v1/Systems/" + id
+			next.ServeHTTP(w, r)
+		case "/redfish/v1/Systems/broken", "/redfish/v1/Systems/" + id:
+			http.Error(w, "not here", http.StatusNotFound)
+		default:
+			next.ServeHTTP(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	state, err := connect(t, srv.URL, f).Power(t.Context(), id)
+	require.NoError(t, err)
+	assert.Equal(t, bmc.PowerState(f.Systems[0].Power), state)
 }

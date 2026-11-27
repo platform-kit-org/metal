@@ -99,12 +99,7 @@ A restore is not part of this lane. It is an approved [](act:EtcdRecover) operat
 
 ## Conditions
 
-| Object | Condition | Reasons |
-| --- | --- | --- |
-| Policy | `Ready` | `SinkReady`, `SinkUnavailable`, `SinkRefused`, `RecipientsInvalid`, `ClusterNotFound` |
-| Policy | `BackedUp` | `SnapshotRecent`, `NoSnapshot`, `BackupTooOld` |
-| Snapshot | `Complete` | `Taking`, `Stored`, `SnapshotFailed` |
-| Snapshot | `Verified` | `Intact`, `Damaged`, `ReadBackFailed` |
+The [EtcdBackupPolicy page](kind:EtcdBackupPolicy#conditions) lists the conditions of a policy. The [EtcdSnapshot page](kind:EtcdSnapshot#lifecycle) lists the conditions of a snapshot.
 
 ## Failure modes
 

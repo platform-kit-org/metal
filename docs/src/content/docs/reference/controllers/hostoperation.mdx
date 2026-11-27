@@ -113,15 +113,7 @@ Step through the figure, or use the arrow keys.
 
 ## Conditions
 
-| Condition | Status | Reasons |
-| --- | --- | --- |
-| `Approved` | True | `Approved`, `ApprovalNotRequired` |
-| `Approved` | False | `AwaitingApproval` |
-| `Executed` | Unknown | `Executing`, `OperationQueued`, `HostNotFound`, `HostInMaintenance`, `OutsideMaintenanceWindow`, `SelfDisruption`, `ClusterDisruption`, `NoReachablePath` |
-| `Executed` | False | `StepFailed`, `RolloutRefused`, `HostNotClaimed`, `Aborted` |
-| `Executed` | True | `StepsSucceeded` |
-
-An Unknown reason other than `Executing` is the `blockedOn` of the operation. The phase stays Proposed while it holds.
+The [HostOperation page](kind:HostOperation#conditions) lists the conditions and their reasons.
 
 ## Failure modes
 

@@ -92,11 +92,7 @@ It bootstraps etcd once, and it publishes the admin kubeconfig and talosconfig a
 
 ## Conditions
 
-| Condition | Reasons |
-| --- | --- |
-| `Bootstrapped` | True when etcd runs. Unknown: `BootstrapRequested`, `SecretsUnavailable`. False: the reason of the bootstrap check. |
-| `Available` | True: `ClusterAvailable`. False: `NotBootstrapped`, `KubernetesUnreachable`, `NodesNotReady`. |
-| `SecretsBundleHeld` | True while a changed bundle is held. |
+The [TalosCluster page](kind:TalosCluster#conditions) lists the conditions and their reasons.
 
 <Callout type="warning">
 Do not delete `status.bootstrappedAt` to force a new bootstrap. A second bootstrap over lost data makes a new, empty etcd. Use the restore procedure.

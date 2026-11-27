@@ -84,8 +84,8 @@ If all control planes answer and none runs etcd, `Bootstrapped=False` with reaso
 
 | Condition | True means | Reasons when not True |
 | --- | --- | --- |
-| `Bootstrapped` | etcd runs. | `AwaitingControlPlane`, `NoControlPlane`, `BootstrapRefused`, `EtcdDataLost`, `EtcdUnavailable`, `EtcdDataPresent`, `RestorePending` |
-| `Available` | The Kubernetes API answers and all members are Ready. | `NotBootstrapped`, `KubernetesUnreachable`, `NodesNotReady` |
+| `Bootstrapped` | etcd runs. | False: `AwaitingControlPlane`, `NoControlPlane`, `BootstrapRefused`, `EtcdDataLost`, `EtcdUnavailable`, `EtcdDataPresent`, `RestorePending`. Unknown: `BootstrapRequested`, `SecretsUnavailable`. |
+| `Available` | The Kubernetes API answers and all members are Ready. | False: `NotBootstrapped`, `KubernetesUnreachable`, `NodesNotReady`. Unknown: `SecretsUnavailable`. |
 | `VersionsSupported` | The Talos version supports the Kubernetes version. | `UnsupportedVersionPair` |
 | `VersionsCurrent` | All nodes and the API server run the versions of the spec. | `VersionsBehind` |
 | `SecretsBundleHeld` | The operator holds the applied bundle, because `spec.secretsRef` changed. | `BundleApplied` (False: no difference) |

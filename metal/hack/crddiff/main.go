@@ -200,8 +200,8 @@ func compareSchema(kv, path string, o, c *apiextensionsv1.JSONSchemaProps) []Fin
 	tighter(add, "maxItems", o.MaxItems, c.MaxItems, true)
 	tighter(add, "minItems", o.MinItems, c.MinItems, false)
 	tighter(add, "maxProperties", o.MaxProperties, c.MaxProperties, true)
-	tighterFloat(add, "maximum", o.Maximum, c.Maximum, true)
-	tighterFloat(add, "minimum", o.Minimum, c.Minimum, false)
+	tighter(add, "maximum", o.Maximum, c.Maximum, true)
+	tighter(add, "minimum", o.Minimum, c.Minimum, false)
 	for _, r := range c.XValidations {
 		if !slices.ContainsFunc(o.XValidations, func(x apiextensionsv1.ValidationRule) bool { return x.Rule == r.Rule }) {
 			add(Breaking, "new rule: %s", r.Rule)
@@ -284,25 +284,14 @@ func defaultJSON(s *apiextensionsv1.JSONSchemaProps) []byte {
 
 // tighter reports a limit that accepts less than before. upper is true for
 // a maximum (smaller is tighter), false for a minimum (larger is tighter).
-func tighter(add func(Severity, string, ...any), name string, o, c *int64, upper bool) {
+func tighter[T int64 | float64](add func(Severity, string, ...any), name string, o, c *T, upper bool) {
 	switch {
 	case c == nil:
 		return
 	case o == nil:
-		add(Breaking, "new %s %d", name, *c)
+		add(Breaking, "new %s %v", name, *c)
 	case upper && *c < *o, !upper && *c > *o:
-		add(Breaking, "%s %d becomes %d", name, *o, *c)
-	}
-}
-
-func tighterFloat(add func(Severity, string, ...any), name string, o, c *float64, upper bool) {
-	switch {
-	case c == nil:
-		return
-	case o == nil:
-		add(Breaking, "new %s %g", name, *c)
-	case upper && *c < *o, !upper && *c > *o:
-		add(Breaking, "%s %g becomes %g", name, *o, *c)
+		add(Breaking, "%s %v becomes %v", name, *o, *c)
 	}
 }
 

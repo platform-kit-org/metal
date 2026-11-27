@@ -21,14 +21,7 @@ Make approved operations start only in agreed time slots. A window does not appr
 
 - You know which machines the window covers: a Host label, a cluster, or both.
 - You know the time zone of the plan, as an IANA name, for example `Europe/Berlin`.
-
-## Rules
-
-- An approved operation on a covered machine waits until a window that covers it is open.
-- A step that runs is never stopped when the window closes. Make windows long enough.
-- A machine that no window covers is not held.
-- New installs (reason `Provisioning`) are not held.
-- A window that the operator cannot read is never open. It holds work back.
+- You know the [rules](kind:MaintenanceWindow#rules): which operations wait, and that a window does not stop a step that runs. Make windows long enough.
 
 ## Steps
 
@@ -77,14 +70,14 @@ Make approved operations start only in agreed time slots. A window does not appr
 
 ## Start one operation now
 
-For an urgent fix, annotate the operation with your reason. The API server writes your username in front of the reason. See [`guard-lift-stamp`](ref:admission-policies#guard-lift-stamp).
+For an urgent fix, annotate the operation that waits with your username and your reason. See [](ref:labels-annotations) for the value.
 
 ```sh
 kubectl -n pk-metal annotate hostoperation simhw2288v5000398-bios-4b5c6d7e \
-  metal.platform-kit.org/ignore-window="CVE fix, agreed with on-call"
+  metal.platform-kit.org/ignore-window="alice: CVE fix, agreed with on-call"
 ```
 
-The operation still needs its approval.
+The operation starts in a few seconds. It still needs its approval. You can set the annotation before or after the approval. The reason stays in the record of the operation.
 
 <Callout type="note">
 An operation that waits for its window does not make [](cli:status) exit with 2. That is the plan, not a fault.

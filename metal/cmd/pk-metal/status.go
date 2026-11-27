@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -194,6 +195,7 @@ type epStatus struct {
 	BlockedOn      string `json:"blockedOn"`
 	Message        string `json:"message"`
 	NeedsAttention bool   `json:"needsAttention"`
+	host           string // a Host that this BMC manages
 }
 
 type claimStatus struct {
@@ -246,7 +248,44 @@ func buildStatus(in topInput, policies []osv1alpha1.EtcdBackupPolicy) statusRepo
 	addMachines(&rep, in)
 	addClusters(&rep, in.Clusters, in.Nodes, policies)
 	addRollouts(&rep, in.Rollouts)
+	rep.NeedsAttention = len(attentionKeys(rep)) > 0
 	return rep
+}
+
+// attentionKeys names each thing in the report that needs a person, once: a
+// machine (its Host, its operations, its bound claim and its node are one
+// machine), a BMC that no Host lists, a claim without a machine, a cluster,
+// a node without a Host, and a rollout. status exits 2 when there is one; top
+// counts them.
+func attentionKeys(rep statusReport) map[string]bool {
+	keys := map[string]bool{}
+	add := func(yes bool, host, own string) {
+		if yes {
+			keys[cmp.Or(host, own)] = true
+		}
+	}
+	for _, r := range rep.Hosts {
+		add(r.NeedsAttention, r.Name, "")
+	}
+	for _, r := range rep.Operations {
+		add(r.NeedsAttention, r.Host, "operation/"+nsName(r.Namespace, r.Name))
+	}
+	for _, r := range rep.Endpoints {
+		add(r.NeedsAttention, r.host, "endpoint/"+r.Name)
+	}
+	for _, r := range rep.Claims {
+		add(r.NeedsAttention, r.Host, "claim/"+nsName(r.Namespace, r.Name))
+	}
+	for _, r := range rep.Clusters {
+		add(r.NeedsAttention, "", "cluster/"+r.Name)
+	}
+	for _, r := range rep.Nodes {
+		add(r.NeedsAttention, r.Host, "node/"+r.Name)
+	}
+	for _, r := range rep.Rollouts {
+		add(r.NeedsAttention, "", "rollout/"+r.Name)
+	}
+	return keys
 }
 
 // addMachines fills the HOST, OPERATION, ENDPOINT and CLAIM rows.
@@ -263,6 +302,7 @@ func addMachines(rep *statusReport, in topInput) {
 	for i := range in.Nodes {
 		nodeByName[in.Nodes[i].Name] = &in.Nodes[i]
 	}
+	hostOfEp := map[string]string{}
 
 	for _, h := range in.Hosts {
 		row := hostStatus{Name: h.Name, Phase: string(h.Status.Phase), BlockedOn: h.Status.BlockedOn,
@@ -278,6 +318,7 @@ func addMachines(rep *statusReport, in topInput) {
 			if ep := epByName[p.EndpointRef.Name]; ep != nil {
 				paths = append(paths, *ep)
 			}
+			hostOfEp[p.EndpointRef.Name] = h.Name
 		}
 		row.Asset = strings.Join(assetsOf(paths), ",")
 		row.Message = explain(h.Status.Conditions, h.Status.BlockedOn,
@@ -327,7 +368,7 @@ func addMachines(rep *statusReport, in topInput) {
 
 	for _, ep := range in.Endpoints {
 		row := epStatus{Name: ep.Name, Asset: ep.Spec.AssetRef.Name, Vendor: ep.Status.Vendor,
-			Phase: string(ep.Status.Phase), Address: ep.Spec.Address, BlockedOn: ep.Status.BlockedOn}
+			Phase: string(ep.Status.Phase), Address: ep.Spec.Address, BlockedOn: ep.Status.BlockedOn, host: hostOfEp[ep.Name]}
 		row.Message = explain(ep.Status.Conditions, ep.Status.BlockedOn,
 			metalv1alpha1.ConditionReachable, metalv1alpha1.ConditionVerified)
 		row.NeedsAttention = row.BlockedOn != "" || ep.Status.Phase == metalv1alpha1.EndpointUnreachable ||
@@ -355,20 +396,6 @@ func addMachines(rep *statusReport, in topInput) {
 	slices.SortFunc(rep.Claims, func(a, b claimStatus) int {
 		return strings.Compare(nsName(a.Namespace, a.Name), nsName(b.Namespace, b.Name))
 	})
-
-	attention := func(yes bool) { rep.NeedsAttention = rep.NeedsAttention || yes }
-	for _, r := range rep.Hosts {
-		attention(r.NeedsAttention)
-	}
-	for _, r := range rep.Operations {
-		attention(r.NeedsAttention)
-	}
-	for _, r := range rep.Endpoints {
-		attention(r.NeedsAttention)
-	}
-	for _, r := range rep.Claims {
-		attention(r.NeedsAttention)
-	}
 }
 
 // renderReport prints the tables: hosts first (the machines), unfinished

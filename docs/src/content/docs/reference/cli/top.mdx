@@ -38,7 +38,7 @@ The command takes no arguments. It needs a terminal. In a script, use [](cli:sta
 
 <dl>
   <dt>Header</dt>
-  <dd>Each [](kind:TalosCluster) and the number of its nodes that are Ready.</dd>
+  <dd>The number of nodes that are Ready, each [](kind:TalosCluster), and each [](kind:TalosRollout) that did not succeed. The count `needs a person` is the number of machines, BMCs, claims, clusters and rollouts that need a person in [](cli:status). This command does not read [](kind:EtcdBackupPolicy) objects, so only [](cli:status) shows a backup that is too old.</dd>
   <dt>Tile</dt>
   <dd>One machine in four lines. The lines show its name and a mark for each step from the BMC to the node. They also show the phase of the [](kind:Host), its block, and the operation or the node.</dd>
   <dt>Detail panel</dt>

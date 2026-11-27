@@ -47,18 +47,22 @@ func addRollouts(rep *statusReport, rollouts []osv1alpha1.TalosRollout) {
 		}
 		row.NeedsAttention = !st.Succeeded && slices.Contains(rolloutNeedsPerson, st.Reason)
 		rep.Rollouts = append(rep.Rollouts, row)
-		rep.NeedsAttention = rep.NeedsAttention || row.NeedsAttention
 	}
 	slices.SortFunc(rep.Rollouts, func(a, b rolloutStatus) int { return strings.Compare(a.Name, b.Name) })
 }
 
-// renderRollouts prints the rollouts that have not succeeded; a finished
-// one is history, as a succeeded operation is.
+// history: the rollout succeeded, or had nothing to do. It is history, as a
+// succeeded operation is; status and top show only the others.
+func (r rolloutStatus) history() bool {
+	return r.State == osv1alpha1.ReasonRolloutSucceeded || r.State == osv1alpha1.ReasonNothingToDo
+}
+
+// renderRollouts prints the rollouts that are not history.
 func renderRollouts(rep statusReport, section func(string, [][]string, []string)) {
 	var rows [][]string
 	var notes []string
 	for _, r := range rep.Rollouts {
-		if r.State == osv1alpha1.ReasonRolloutSucceeded || r.State == osv1alpha1.ReasonNothingToDo {
+		if r.history() {
 			continue
 		}
 		rows = append(rows, []string{r.Name, orDash(r.Cluster), orDash(r.Kind),

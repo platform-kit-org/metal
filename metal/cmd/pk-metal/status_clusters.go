@@ -164,12 +164,6 @@ func addClusters(rep *statusReport, clusters []osv1alpha1.TalosCluster, nodes []
 	slices.SortFunc(rep.Nodes, func(a, b talosNodeStatus) int {
 		return cmpJoin(a.Cluster, a.Name, b.Cluster, b.Name)
 	})
-	for _, r := range rep.Clusters {
-		rep.NeedsAttention = rep.NeedsAttention || r.NeedsAttention
-	}
-	for _, r := range rep.Nodes {
-		rep.NeedsAttention = rep.NeedsAttention || r.NeedsAttention
-	}
 }
 
 func cmpJoin(a1, a2, b1, b2 string) int {

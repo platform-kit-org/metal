@@ -89,6 +89,7 @@ func labRack() topInput {
 		}
 	}
 	failedOp := op("bios-real1-9f8e7d6c", "pk-real-1", 3, "bob", executed(metav1.ConditionFalse))
+	failedOp.Status.Phase = metalv1alpha1.OperationFailed
 	failedOp.Status.Steps[2].Phase = "Failed"
 	failedOp.Status.Conditions[0].Message = "the BMC answered 500 to the media mount"
 
@@ -320,8 +321,20 @@ func TestBuildTop(t *testing.T) {
 		"the failed operation makes the host bad")
 	assert.Equal(t, stWait, d.Tiles[2].hostState(), "a host that waits for approval waits; it has not failed")
 
-	// A fleet machine with no Host yet still gets a tile.
+	// The count is what pk-metal status flags, one for each machine, BMC,
+	// claim, cluster and rollout: also those that have no tile.
 	in := labRack()
+	in.Clusters = append(in.Clusters, osv1alpha1.TalosCluster{ObjectMeta: metav1.ObjectMeta{Name: "prod"},
+		Status: osv1alpha1.TalosClusterStatus{BootstrappedAt: &metav1.Time{}, Conditions: []metav1.Condition{
+			{Type: osv1alpha1.ConditionBootstrapped, Status: metav1.ConditionFalse, Reason: osv1alpha1.ReasonEtcdDataLost}}}})
+	in.Endpoints = append(in.Endpoints, metalv1alpha1.ManagementEndpoint{ObjectMeta: metav1.ObjectMeta{Name: "rack2-u01"},
+		Status: metalv1alpha1.ManagementEndpointStatus{Phase: metalv1alpha1.EndpointUnreachable}})
+	in.Claims = append(in.Claims, metalv1alpha1.HostClaim{ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "spare"},
+		Status: metalv1alpha1.HostClaimStatus{Phase: metalv1alpha1.ClaimPending, BlockedOn: metalv1alpha1.ReasonAssetNotFound}})
+	assert.Equal(t, 2+3, buildTop(in).Attention, "a cluster that lost etcd, a BMC with no Host, a claim with no machine")
+
+	// A fleet machine with no Host yet still gets a tile.
+	in = labRack()
 	in.Hosts = nil
 	d = buildTop(in)
 	require.Len(t, d.Tiles, 3)

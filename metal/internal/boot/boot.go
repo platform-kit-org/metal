@@ -157,8 +157,9 @@ func Run(ctx context.Context, o Options) (Result, error) {
 	}
 	m := newMeter(&asset.Server{Grants: grants}, int64(len(iso)))
 	srv := &http.Server{Handler: m}
+	served := make(chan error, 1)
 	go func() {
-		_ = srv.Serve(tls.NewListener(ln, &tls.Config{
+		served <- srv.Serve(tls.NewListener(ln, &tls.Config{
 			Certificates: []tls.Certificate{cert},
 			MinVersion:   tls.VersionTLS12,
 		}))
@@ -223,19 +224,35 @@ func Run(ctx context.Context, o Options) (Result, error) {
 		logf("boot: image read complete")
 	case <-time.After(o.TTL):
 		logf("boot: grant expired before a full read")
+	case err := <-served:
+		res.ServedBytes = m.total()
+		return res, cleanupAfter(ctx, o, grants, grant.Token, slot, servingStopped(err))
 	case <-ctx.Done():
 		res.ServedBytes = m.total()
 		return res, cleanupAfter(ctx, o, grants, grant.Token, slot, ctx.Err())
 	}
 	res.ServedBytes = m.total()
 
+	var cause error
 	if o.Hold {
 		logf("boot: holding mount and grant until interrupted")
-		<-ctx.Done()
+		select {
+		case err := <-served:
+			cause = servingStopped(err)
+		case <-ctx.Done():
+		}
 	}
-	err = cleanupAfter(ctx, o, grants, grant.Token, slot, nil)
+	err = cleanupAfter(ctx, o, grants, grant.Token, slot, cause)
 	res.ServedBytes = m.total()
 	return res, err
+}
+
+// servingStopped is the error when the image server stops before the boot
+// ends. Its listener closed: with a relay, that is the tunnel, the relay, or
+// a later registration at the relay.
+func servingStopped(err error) error {
+	return fmt.Errorf("boot: stopped serving the image: %w (with a relay: the tunnel or the relay closed, "+
+		"or another pk-metal boot registered at the relay; boot one machine at a time through one relay)", err)
 }
 
 // shortToken is the start of a grant token, enough to tell two grants apart

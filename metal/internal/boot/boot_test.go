@@ -62,20 +62,29 @@ func TestLadderDirect(t *testing.T) {
 	}
 }
 
+var relaySecret = []byte("0123456789abcdef0123456789abcdef")
+
+// startRelay runs a relay on loopback and returns its tunnel and front
+// addresses.
+func startRelay(t *testing.T) (tunnel, front string) {
+	t.Helper()
+	tl, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	fl, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go func() { _ = relay.Serve(ctx, tl, fl, "", relaySecret) }()
+	return tl.Addr().String(), fl.Addr().String()
+}
+
 // TestLadderOverRelay is the media-fetch-traverses-relay gate: the asset server
 // has NO listener of its own — it serves purely over the tunnel, so the sim's
 // pull succeeding proves the traversal.
 func TestLadderOverRelay(t *testing.T) {
-	relaySecret := []byte("0123456789abcdef0123456789abcdef")
-	tunnel, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-	front, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	go func() { _ = relay.Serve(ctx, tunnel, front, "", relaySecret) }()
-
-	rc, err := relay.Dial(ctx, tunnel.Addr().String(), relaySecret)
+	ctx := context.Background()
+	tunnel, front := startRelay(t)
+	rc, err := relay.Dial(ctx, tunnel, relaySecret)
 	require.NoError(t, err)
 
 	st := simState(t, "supermicro-x12")
@@ -94,7 +103,48 @@ func TestLadderOverRelay(t *testing.T) {
 
 	u, err := url.Parse(res.ImageURL)
 	require.NoError(t, err)
-	assert.Equal(t, front.Addr().String(), u.Host, "the grant URL names the relay front")
+	assert.Equal(t, front, u.Host, "the grant URL names the relay front")
+}
+
+// TestLadderStopsWhenTheRelayIsTaken: a second boot that registers at the
+// relay takes the media traffic. The first boot then stops with an error
+// that names the cause. It does not hold the mount, or wait for the end of
+// the grant, with no server.
+func TestLadderStopsWhenTheRelayIsTaken(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	tunnel, _ := startRelay(t)
+	rc, err := relay.Dial(ctx, tunnel, relaySecret)
+	require.NoError(t, err)
+
+	st := simState(t, "supermicro-x12")
+	held := make(chan struct{})
+	errc := make(chan error, 1)
+	go func() {
+		_, err := boot.Run(ctx, boot.Options{
+			Client: st, NodeName: "w", Config: config, TTL: time.Minute, Relay: rc, Hold: true,
+			// The fixture's machine is on: this test boots it anyway.
+			AllowRestart: true,
+			Logf: func(format string, args ...any) {
+				t.Logf(format, args...)
+				if strings.HasPrefix(format, "boot: holding") {
+					close(held)
+				}
+			},
+		})
+		errc <- err
+	}()
+	<-held
+
+	second, err := relay.Dial(ctx, tunnel, relaySecret)
+	require.NoError(t, err)
+	defer func() { _ = second.Close() }()
+	assert.ErrorContains(t, <-errc, "another pk-metal boot registered at the relay")
+	media, err := st.Media(context.Background())
+	require.NoError(t, err)
+	for _, m := range media {
+		assert.False(t, m.Inserted, "the stop ejects the medium from %s", m.ID)
+	}
 }
 
 // TestLadderVmmDialect runs the Huawei shape: single CD slot, credentials as

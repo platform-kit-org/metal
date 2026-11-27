@@ -90,7 +90,7 @@ spec:
             severity: critical
           annotations:
             summary: "Prometheus has not scraped the pk-metal manager for 10 minutes"
-            description: "No pk-metal alert can fire while this one does. kubectl -n pk-metal get pods,endpoints shows whether the manager runs; if the API server does not answer, the management cluster is lost."
+            description: "No pk-metal alert can fire while this one does. kubectl -n pk-metal get pods,endpoints shows whether the manager runs; if the API server does not answer, follow the runbook before you change anything."
             runbook_url: https://metal.platform-kit.org/operate/runbooks/management-cluster-lost/
         - alert: PkMetalAdmissionGateDegraded
           # An admission policy of the approval gate, or its binding, is

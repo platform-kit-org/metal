@@ -182,7 +182,7 @@ func (r *ManagementEndpointReconciler) observe(ctx context.Context, ep *metalv1a
 		ep.Status.BoardSerial = d.chassis.BoardSerial
 		ep.Status.Firmware = firmwareItems(d.firmware)
 		ep.Status.Systems = discoveredSystems(d.systems)
-		ep.Status.Capabilities = endpointCapabilities(d.caps)
+		ep.Status.Capabilities = endpointCapabilities(d.caps, d.media)
 		ep.Status.VirtualMedia = discoveredMedia(d.media)
 		setCond(metalv1alpha1.ConditionInventoried, metav1.ConditionTrue, "FactsGathered", "")
 
@@ -344,24 +344,20 @@ func firmwareItems(fw []bmc.Firmware) []metalv1alpha1.FirmwareInventoryItem {
 	return out
 }
 
-// endpointCapabilities projects the client's discovered capabilities into status.
-// DualMedia is a derivation: ≥2 insertable slots (X12's concurrent dual-mount is
-// confirmed on hardware; iBMC's second slot exposes no actions) — refined once the sim
-// models convergence.
-func endpointCapabilities(caps bmc.Capabilities) *metalv1alpha1.EndpointCapabilities {
+// endpointCapabilities projects the client's discovered capabilities and the
+// dialect of each media slot into status. DualMedia is a derivation: ≥2
+// insertable slots (X12's concurrent dual-mount is confirmed on hardware; iBMC's
+// second slot exposes no actions) — refined once the sim models convergence.
+func endpointCapabilities(caps bmc.Capabilities, media []bmc.VirtualMedia) *metalv1alpha1.EndpointCapabilities {
 	out := &metalv1alpha1.EndpointCapabilities{
 		MediaDialects:   map[string]string{},
 		UpdateDialect:   string(caps.UpdateDialect),
 		IdentityDialect: string(caps.IdentityDialect),
+		DualMedia:       len(bmc.InsertableSlots(media)) >= 2,
 	}
-	insertable := 0
-	for id, d := range caps.MediaDialect {
-		out.MediaDialects[id] = string(d)
-		if d != bmc.DialectNone {
-			insertable++
-		}
+	for _, m := range media {
+		out.MediaDialects[m.ID] = string(m.Dialect)
 	}
-	out.DualMedia = insertable >= 2
 	return out
 }
 

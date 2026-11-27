@@ -36,9 +36,7 @@ func TestInsertMediaErrorIsMasked(t *testing.T) {
 			c := connect(t, serve(t, f).URL, f)
 			media, err := c.Media(context.Background())
 			require.NoError(t, err)
-			caps, err := c.Capabilities(context.Background())
-			require.NoError(t, err)
-			slots := bmc.InsertableSlots(media, caps)
+			slots := bmc.InsertableSlots(media)
 			require.NotEmpty(t, slots)
 			err = c.InsertMedia(context.Background(), slots[0], image,
 				&bmc.MediaCredentials{Username: "media", Password: password})

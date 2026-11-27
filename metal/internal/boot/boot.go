@@ -284,33 +284,23 @@ func listener(o Options) (host string, ln net.Listener, err error) {
 }
 
 func pickSlot(ctx context.Context, c bmc.Client, want string) (string, bmc.MediaDialect, error) {
-	caps, err := c.Capabilities(ctx)
-	if err != nil {
-		return "", "", fmt.Errorf("boot: capabilities: %w", err)
-	}
-	if want != "" {
-		if d, ok := caps.MediaDialect[want]; ok && d != bmc.DialectNone {
-			return want, d, nil
-		}
-		return "", "", fmt.Errorf("boot: media %q advertises no insert mechanism", want)
-	}
 	media, err := c.Media(ctx)
 	if err != nil {
 		return "", "", fmt.Errorf("boot: media: %w", err)
 	}
-	if slots := InsertableSlots(caps.MediaDialect, media); len(slots) > 0 {
-		return slots[0], caps.MediaDialect[slots[0]], nil
+	if want == "" {
+		slots := bmc.InsertableSlots(media)
+		if len(slots) == 0 {
+			return "", "", fmt.Errorf("boot: endpoint advertises no insertable media slot")
+		}
+		want = slots[0]
 	}
-	return "", "", fmt.Errorf("boot: endpoint advertises no insertable media slot")
-}
-
-// InsertableSlots lists the slots that advertise an insert mechanism, the best
-// boot slot first: optical slots lead, wherever they sit in the endpoint's
-// collection, the others follow in the endpoint's order (deterministic). Its
-// length is what decides whether an installer and a config medium can be
-// mounted side by side.
-func InsertableSlots(dialects map[string]bmc.MediaDialect, media []bmc.VirtualMedia) []string {
-	return bmc.InsertableSlots(media, bmc.Capabilities{MediaDialect: dialects})
+	for _, m := range media {
+		if m.ID == want && m.Dialect != "" && m.Dialect != bmc.DialectNone {
+			return want, m.Dialect, nil
+		}
+	}
+	return "", "", fmt.Errorf("boot: media %q advertises no insert mechanism", want)
 }
 
 func pickSystem(ctx context.Context, c bmc.Client, want string) (bmc.System, error) {

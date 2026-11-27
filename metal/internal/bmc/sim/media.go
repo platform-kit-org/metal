@@ -55,12 +55,13 @@ func (s *State) Media(context.Context) ([]bmc.VirtualMedia, error) {
 		return nil, err
 	}
 	var out []bmc.VirtualMedia
-	for _, vm := range s.f.VirtualMedia {
+	for i, vm := range s.f.VirtualMedia {
 		m := bmc.VirtualMedia{
 			ID:             vm.ID,
 			MediaTypes:     vm.MediaTypes,
 			InsertStandard: vm.InsertStandard,
 			OemActions:     vm.OemActions,
+			Dialect:        s.f.dialect(i),
 		}
 		if mm := s.media[vm.ID]; mm != nil {
 			m.Inserted, m.ImageURL = true, mm.imageURL

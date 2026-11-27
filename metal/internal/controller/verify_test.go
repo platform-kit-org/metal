@@ -1,13 +1,19 @@
 package controller
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
 	"github.com/dennisklein/platform-kit/metal/internal/bmc"
+	gofishclient "github.com/dennisklein/platform-kit/metal/internal/bmc/gofish"
+	"github.com/dennisklein/platform-kit/metal/internal/bmc/sim"
 )
 
 func TestVerifiedCondition(t *testing.T) {
@@ -68,17 +74,42 @@ func TestSerialAnchors(t *testing.T) {
 }
 
 func TestEndpointCapabilities(t *testing.T) {
-	x12 := endpointCapabilities(bmc.Capabilities{MediaDialect: map[string]bmc.MediaDialect{
-		"VirtualMedia1": bmc.DialectStandard,
-		"VirtualMedia2": bmc.DialectStandard,
-	}})
+	x12 := endpointCapabilities(bmc.Capabilities{}, []bmc.VirtualMedia{
+		{ID: "VirtualMedia1", Dialect: bmc.DialectStandard},
+		{ID: "VirtualMedia2", Dialect: bmc.DialectStandard},
+	})
 	assert.True(t, x12.DualMedia)
 	assert.Equal(t, "insert-media", x12.MediaDialects["VirtualMedia1"])
 
-	ibmc := endpointCapabilities(bmc.Capabilities{MediaDialect: map[string]bmc.MediaDialect{
-		"CD":       bmc.DialectVmmControl,
-		"USBStick": bmc.DialectNone,
-	}})
+	ibmc := endpointCapabilities(bmc.Capabilities{}, []bmc.VirtualMedia{
+		{ID: "CD", Dialect: bmc.DialectVmmControl},
+		{ID: "USBStick", Dialect: bmc.DialectNone},
+	})
 	assert.False(t, ibmc.DualMedia, "a slot with no insert mechanism does not count")
 	assert.Equal(t, "vmm-control", ibmc.MediaDialects["CD"])
+}
+
+// An endpoint whose media slots do not read is still inventoried: the slots
+// only shape boot plans. It offers no slot to boot from.
+func TestDiscoverWithUnreadableMedia(t *testing.T) {
+	f, err := sim.LoadFixture("supermicro-x12")
+	require.NoError(t, err)
+	next := sim.NewServer(sim.NewState(f))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/VirtualMedia/VirtualMedia2") {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		next.ServeHTTP(w, r)
+	}))
+	t.Cleanup(srv.Close)
+	cl, err := gofishclient.Connect(t.Context(), gofishclient.Config{Endpoint: srv.URL, ReadOnly: true})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = cl.Close() })
+
+	d, err := discover(t.Context(), cl)
+	require.NoError(t, err, "the endpoint is inventoried")
+	assert.Empty(t, discoveredMedia(d.media))
+	assert.Empty(t, endpointCapabilities(d.caps, d.media).MediaDialects)
+	assert.Equal(t, f.Manager.Firmware, d.mgr.FirmwareVersion)
 }

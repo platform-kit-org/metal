@@ -162,6 +162,14 @@ func (c *client) Media(ctx context.Context) ([]bmc.VirtualMedia, error) {
 			entry.OemActions = append(entry.OemActions, name)
 		}
 		slices.Sort(entry.OemActions)
+		switch {
+		case vm.SupportsMediaInsert:
+			entry.Dialect = bmc.DialectStandard
+		case vm.oemTargets[vmmControlAction] != "":
+			entry.Dialect = bmc.DialectVmmControl
+		default:
+			entry.Dialect = bmc.DialectNone
+		}
 		out = append(out, entry)
 	}
 	return out, nil

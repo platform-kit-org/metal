@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 
@@ -77,6 +78,11 @@ func TestObservationPassReadsEachResourceOnce(t *testing.T) {
 			}
 			// The manager is read when it is found, and fresh for Manager.
 			assert.LessOrEqual(t, seen["GET /redfish/v1/Managers/1"], 2, "manager reads")
+			for req, n := range seen {
+				if strings.Contains(req, "/VirtualMedia/") {
+					assert.LessOrEqual(t, n, 1, req)
+				}
+			}
 			// Before the lookups were kept per session, a pass made 46 to 61
 			// requests on these fixtures.
 			assert.LessOrEqual(t, total, 48, "requests in one pass")

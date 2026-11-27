@@ -1078,26 +1078,7 @@ func (c *client) sweepDrives(s *schemas.ComputerSystem) []bmc.Drive {
 }
 
 func (c *client) Capabilities(ctx context.Context) (bmc.Capabilities, error) {
-	media, err := c.Media(ctx)
-	if err != nil {
-		return bmc.Capabilities{}, err
-	}
-	caps := bmc.Capabilities{
-		MediaDialect:    map[string]bmc.MediaDialect{},
-		UpdateDialect:   c.updateDialect(),
-		IdentityDialect: c.identityDialect(),
-	}
-	for _, m := range media {
-		switch {
-		case m.InsertStandard:
-			caps.MediaDialect[m.ID] = bmc.DialectStandard
-		case slices.Contains(m.OemActions, vmmControlAction):
-			caps.MediaDialect[m.ID] = bmc.DialectVmmControl
-		default:
-			caps.MediaDialect[m.ID] = bmc.DialectNone
-		}
-	}
-	return caps, nil
+	return bmc.Capabilities{UpdateDialect: c.updateDialect(), IdentityDialect: c.identityDialect()}, nil
 }
 
 // systemByID reads one system. The URI that ends in the id is asked first,

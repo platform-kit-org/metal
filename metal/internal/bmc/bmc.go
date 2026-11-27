@@ -25,6 +25,7 @@ type Client interface {
 	// Systems enumerates the ComputerSystems this endpoint fronts (1 today, N-ready).
 	Systems(ctx context.Context) ([]System, error)
 	// Capabilities reports what the endpoint can DO — the HOW-is-data rule.
+	// The insert mechanism of each media slot is on the slot (Media).
 	Capabilities(ctx context.Context) (Capabilities, error)
 
 	Power(ctx context.Context, systemID string) (PowerState, error)
@@ -268,14 +269,15 @@ type VirtualMedia struct {
 	MediaTypes     []string
 	InsertStandard bool     // DMTF InsertMedia action present
 	OemActions     []string // e.g. "#VirtualMedia.VmmControl"
-	Inserted       bool
-	ImageURL       string
+	// Dialect is the insert mechanism of the slot: the standard action wins
+	// over the OEM one.
+	Dialect  MediaDialect
+	Inserted bool
+	ImageURL string
 }
 
 // Capabilities is the endpoint-level summary the reconcilers select strategies from.
 type Capabilities struct {
-	// MediaDialect is the insert mechanism per media slot id.
-	MediaDialect map[string]MediaDialect
 	// UpdateDialect is the firmware-update transport the endpoint advertises.
 	UpdateDialect UpdateDialect
 	// IdentityDialect is how the manager's HTTPS certificate is replaced.
@@ -356,10 +358,10 @@ const (
 // nothing — a standard tree may list a USB-stick slot before the optical one —
 // and an empty MediaTypes list says nothing either (the iBMC's CD slot serves
 // one), so untyped slots stay as fallbacks instead of being dropped.
-func InsertableSlots(media []VirtualMedia, caps Capabilities) []string {
+func InsertableSlots(media []VirtualMedia) []string {
 	var optical, other []string
 	for _, m := range media {
-		if d := caps.MediaDialect[m.ID]; d == "" || d == DialectNone {
+		if m.Dialect == "" || m.Dialect == DialectNone {
 			continue
 		}
 		if slices.Contains(m.MediaTypes, "CD") || slices.Contains(m.MediaTypes, "DVD") {

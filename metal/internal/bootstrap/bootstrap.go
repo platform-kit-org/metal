@@ -92,9 +92,8 @@ type Observation struct {
 	// even though it was never seen bootstrapped, and waits for the
 	// approved recovery to start etcd.
 	RestorePending bool
-	// Now defaults to time.Now; Grace to RequestGrace.
-	Now   time.Time
-	Grace time.Duration
+	// Now defaults to time.Now.
+	Now time.Time
 }
 
 // Ensure observes the control-plane members and bootstraps etcd when, and only
@@ -111,7 +110,6 @@ func Ensure(ctx context.Context, dial talos.Dialer, talosconfig []byte, members 
 	if now.IsZero() {
 		now = time.Now()
 	}
-	grace := cmp.Or(obs.Grace, RequestGrace)
 	if len(members) == 0 {
 		return Result{Reason: osv1alpha1.ReasonNoControlPlane, Message: "no control-plane member"}
 	}
@@ -144,7 +142,7 @@ func Ensure(ctx context.Context, dial talos.Dialer, talosconfig []byte, members 
 				"restores its etcd from a snapshot (%s); remove the annotation to start an empty cluster instead",
 			osv1alpha1.AnnotationRestorePending, RestoreProcedure)}
 	}
-	if !obs.RequestedAt.IsZero() && now.Sub(obs.RequestedAt) < grace {
+	if !obs.RequestedAt.IsZero() && now.Sub(obs.RequestedAt) < RequestGrace {
 		msg := fmt.Sprintf("bootstrap requested at %s; waiting for etcd on %s",
 			obs.RequestedAt.UTC().Format(time.RFC3339), members[0].Name)
 		if len(silent) > 0 {
@@ -263,9 +261,7 @@ type Options struct {
 	// Poll is the probe cadence between rounds (default 2s). The overall
 	// deadline is the caller's ctx.
 	Poll time.Duration
-	// Grace overrides RequestGrace (tests).
-	Grace time.Duration
-	Logf  func(format string, args ...any)
+	Logf func(format string, args ...any)
 }
 
 // Run climbs: etcd bootstrapped (Ensure, repeated) → every node running and
@@ -289,7 +285,7 @@ func Run(ctx context.Context, o Options) error {
 	// without it, which is what an operator re-running day-0 by hand means.
 	var last Result
 	if err := wait(ctx, poll, func() error {
-		r := Ensure(ctx, o.Dial, o.Talosconfig, members, Observation{RequestedAt: last.RequestedAt, Grace: o.Grace})
+		r := Ensure(ctx, o.Dial, o.Talosconfig, members, Observation{RequestedAt: last.RequestedAt})
 		if r.Reason != last.Reason || r.Message != last.Message {
 			logf("bootstrap: %s: %s", r.Reason, r.Message)
 		}

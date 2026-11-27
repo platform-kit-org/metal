@@ -68,8 +68,6 @@ type TalosClusterReconciler struct {
 	// ReadyInterval afterwards. Zero values default.
 	CheckInterval time.Duration
 	ReadyInterval time.Duration
-	// BootstrapGrace overrides bootstrap.RequestGrace (tests).
-	BootstrapGrace time.Duration
 
 	// requests remembers, by cluster UID, when this process last had a
 	// bootstrap request accepted. The status condition is the durable record,
@@ -201,7 +199,7 @@ func (r *TalosClusterReconciler) reconcile(ctx context.Context, cluster *osv1alp
 	// accepted and kept while the request waits, so it survives restarts.
 	requestedAt := r.outstandingRequest(cluster)
 	b := bootstrap.Ensure(ctx, r.Dial, talosconfig, members, bootstrap.Observation{
-		KubernetesAnswers: kerr == nil, RequestedAt: requestedAt, Grace: r.BootstrapGrace,
+		KubernetesAnswers: kerr == nil, RequestedAt: requestedAt,
 		BootstrappedAt: rememberedBootstrap(cluster),
 		RestorePending: cluster.Annotations[osv1alpha1.AnnotationRestorePending] != "",
 	})

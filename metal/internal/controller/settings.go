@@ -61,8 +61,6 @@ type SettingsReconciler struct {
 	Reader    client.Reader
 	Namespace string
 	Audit     *audit.Logger
-	// Interval paces the gate check; zero is one minute.
-	Interval time.Duration
 
 	mu       sync.Mutex
 	read     bool
@@ -198,12 +196,8 @@ func bindingProblem(p *admissionregistrationv1.ValidatingAdmissionPolicy,
 
 // Start runs the gate check until ctx ends. It runs on the leader only.
 func (r *SettingsReconciler) Start(ctx context.Context) error {
-	interval := r.Interval
-	if interval <= 0 {
-		interval = defaultGateCheck
-	}
 	log := logf.FromContext(ctx).WithName("settings")
-	t := time.NewTicker(interval)
+	t := time.NewTicker(defaultGateCheck)
 	defer t.Stop()
 	for {
 		if err := r.checkGate(ctx); err != nil {

@@ -9,7 +9,7 @@ sidebar:
   order: 3
 sources:
   - /repo/metal/config/samples/asset.yaml
-  - /repo/metal/config/samples/ledger.yaml
+  - /repo/metal/config/samples/site-overlay/ledger.yaml
   - /repo/metal/internal/controller/asset_controller.go
 ---
 
@@ -33,7 +33,7 @@ Make the operator find each new machine and make a [](kind:Host) for it.
 1. Add one [](term:ledger) line for each BMC to the ledger file of your overlay. The key is the BMC MAC in lower case.
 
    ```yaml title="ledger.yaml"
-   "02:00:48:0b:74:83": https://192.0.2.21
+   "0c:c4:7a:12:34:56": https://192.0.2.21
    ```
 
 2. Apply the overlay. The manager reads the ledger only when it starts. The overlay gives the ledger ConfigMap a new name, and thus the apply restarts the manager.
@@ -59,7 +59,7 @@ Make the operator find each new machine and make a [](kind:Host) for it.
    spec:
      cid: "ASSET-01"
      serial: "SIMHW2288V5000397"
-     bmcMac: "02:00:48:0b:74:83"
+     bmcMac: "0c:c4:7a:12:34:56"
      credentialsRef:
        name: bmc-factory
    ```

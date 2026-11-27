@@ -29,6 +29,7 @@ The operator checks each policy of the gate one time each minute. The operator r
 - Its `failurePolicy` is not `Fail`.
 - No binding of the policy has `validationActions: [Deny]`.
 - The policy reads the site settings, and no such binding has `parameterNotFoundAction: Deny`.
+- The policy is `requested-by`, and its binding `requested-by` or `requested-by-patches` is missing or does not deny.
 
 ## Impact
 

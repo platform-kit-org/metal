@@ -1,23 +1,25 @@
-# The HostOperation human gate: approval is a CEL-guarded
+# The human gate of HostOperations and TalosRollouts: approval is a CEL-guarded
 # FIELD, not a subresource — a ValidatingAdmissionPolicy (no webhook, no cert, no pod)
 # enforces the identity rules that schema CEL cannot (they need request.userInfo).
-# Structural immutability (hostRef, actions, approval.required, proposedBy frozen)
-# lives in the CRD schema, so "patch" is "approve" and ordinary RBAC recovers the CSR
-# permission split: metal-operator may CREATE (propose), metal-approver may PATCH
-# (approve).
+# The CRD schema freezes what, where and how (and proposedBy, approval.required),
+# so "patch" is "approve" and RBAC splits the work: the manager's service account
+# creates (proposes), pk-metal-approver patches (approves). One approval of a
+# rollout covers every node of its plan: it also names the planHash the person
+# saw, and the operator runs the rollout only while that is the plan.
 #
 # The rules, in order:
-#   - nobody creates an operation pre-approved;
+#   - nobody creates an operation or a rollout pre-approved;
 #   - the creator records themselves in spec.proposedBy (admission checks the name,
 #     so the record cannot lie);
 #   - only the operator's own identity, or a member of the admin group, may create an
 #     operation that needs no approval — anyone else would simply skip the gate;
-#   - approval is write-once and stamped as yourself;
+#   - approval (approvedBy, and the planHash of a rollout) is write-once and
+#     stamped as yourself;
 #   - the operator never approves anything;
 #   - a person approves their own proposal, or a change they asked for (a
 #     name in spec.requestedBy: whose edit made the operator propose it,
 #     config/policy/requested-by.yaml), only where the site allows it
-#     (selfApproval below; the same rules as talosrollout-approval.yaml).
+#     (selfApproval below).
 #
 # Who the operator is, which group administers it and whether a person may
 # approve their own proposal are deployment facts, so they come from the
@@ -41,6 +43,10 @@ spec:
         apiVersions: ["v1alpha1"]
         operations: ["CREATE", "UPDATE"]
         resources: ["hostoperations"]
+      - apiGroups: ["os.platform-kit.org"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["talosrollouts"]
   variables:
     - name: newApprover
       expression: >-
@@ -51,6 +57,12 @@ spec:
         request.operation == 'UPDATE'
         && has(oldObject.spec.approval) && has(oldObject.spec.approval.approvedBy)
         ? oldObject.spec.approval.approvedBy : ''
+    # Only a rollout has a planHash; for an operation both are ''.
+    - name: newPlan
+      expression: "object.spec.?approval.?planHash.orValue('')"
+    - name: oldPlan
+      expression: >-
+        request.operation == 'UPDATE' ? oldObject.spec.?approval.?planHash.orValue('') : ''
     - name: proposer
       expression: "has(object.spec.proposedBy) ? object.spec.proposedBy : ''"
     - name: approvalRequired
@@ -73,8 +85,8 @@ spec:
     - name: paramsRef
       expression: "params.metadata.namespace + '/' + params.metadata.name"
   validations:
-    - expression: "request.operation != 'CREATE' || variables.newApprover == ''"
-      message: an operation cannot be created pre-approved
+    - expression: "request.operation != 'CREATE' || (variables.newApprover == '' && variables.newPlan == '')"
+      messageExpression: "'a ' + request.kind.kind + ' cannot be created pre-approved'"
       reason: Forbidden
     - expression: "request.operation != 'CREATE' || variables.proposer == request.userInfo.username"
       messageExpression: >-
@@ -85,7 +97,9 @@ spec:
         || variables.isOperator || variables.isAdmin
       message: only the operator or an admin may create an operation that needs no approval
       reason: Forbidden
-    - expression: "variables.oldApprover == '' || variables.newApprover == variables.oldApprover"
+    - expression: >-
+        (variables.oldApprover == '' || variables.newApprover == variables.oldApprover)
+        && (variables.oldPlan == '' || variables.newPlan == variables.oldPlan)
       message: approval is write-once
       reason: Forbidden
     - expression: >-
@@ -132,23 +146,10 @@ spec:
     namespace: pk-metal
     parameterNotFoundAction: Deny
 ---
-# The policy's parameters: who the operator runs as (the manager's service account),
-# the group whose members may create pre-cleared operations by hand, and whether a
-# person may approve an operation or a rollout that they proposed themselves.
-#
-# selfApproval is Allowed or Forbidden; a missing key means Allowed. Allowed suits
-# a team too small for two-person review: the record still names the proposer and
-# the approver, and the operator still approves nothing. Forbidden makes every
-# change need two people, so one stolen or careless account cannot change a
-# machine alone. Any other value counts as Forbidden.
-#
-# retention is not an admission setting: the operator reads it. It says how long
-# the operator keeps a finished HostOperation or TalosRollout that it may delete
-# (an operation it proposed with a TTL, a rollout that succeeded): Forever, a
-# number of days (30d) or a duration (720h). A missing key means 30d. A value it
-# cannot read keeps every record. The operator writes an audit line before every
-# delete. This ConfigMap holds it because it holds the site's other settings and
-# exists in every install.
+# The site settings, the parameters of the policies: who the operator runs as
+# (the manager's service account), the admin group, selfApproval and retention
+# (the operator reads it, admission does not). samples/site-overlay/approval.yaml
+# says what each value does.
 apiVersion: v1
 kind: ConfigMap
 metadata:

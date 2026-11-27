@@ -36,7 +36,6 @@ func TestRequestedByStamp(t *testing.T) {
 
 	installApprovalPolicy(t, ctx, cl, "op-sa")
 	installPolicy(t, ctx, cl, "requested-by.yaml")
-	installPolicy(t, ctx, cl, "requested-by-patches.yaml")
 	installStamp(t, ctx, cl)
 	setSelfApproval(t, ctx, cl, ptr.To("Forbidden"))
 	alice := st.userClient(t, "alice")
@@ -218,9 +217,9 @@ func TestNameStampMatchesTheValidatingPolicies(t *testing.T) {
 	}
 	// The group/resource/operation triples, without deletes: a delete
 	// takes no stamp.
-	matched := func(m *admissionregistrationv1.MatchResources) []string {
+	matched := func(rules []admissionregistrationv1.NamedRuleWithOperations) []string {
 		var out []string
-		for _, r := range m.ResourceRules {
+		for _, r := range rules {
 			for _, g := range r.APIGroups {
 				for _, res := range r.Resources {
 					for _, op := range r.Operations {
@@ -244,14 +243,44 @@ func TestNameStampMatchesTheValidatingPolicies(t *testing.T) {
 		return ""
 	}
 
+	// The matchResources of each binding in a file, by name.
+	bindings := func(dir, file string) map[string]*admissionregistrationv1.MatchResources {
+		out := map[string]*admissionregistrationv1.MatchResources{}
+		for _, doc := range strings.Split(readFile(t, filepath.Join("..", "..", "config", dir, file)), "\n---") {
+			var b struct {
+				Kind     string            `json:"kind"`
+				Metadata metav1.ObjectMeta `json:"metadata"`
+				Spec     struct {
+					MatchResources *admissionregistrationv1.MatchResources `json:"matchResources"`
+				} `json:"spec"`
+			}
+			require.NoError(t, yaml.Unmarshal([]byte(doc), &b))
+			if strings.HasSuffix(b.Kind, "Binding") {
+				out[b.Metadata.Name] = b.Spec.MatchResources
+			}
+		}
+		return out
+	}
+
 	for _, pair := range []struct{ file, validating, mutating string }{
 		{"requested-by.yaml", "requested-by", "requested-by-stamp"},
-		{"requested-by-patches.yaml", "requested-by-patches", "requested-by-stamp-patches"},
 		{"guard-lift.yaml", "guard-lift", "guard-lift-stamp"},
 	} {
 		v, m := validating(pair.file, pair.validating), mutating(pair.mutating)
-		assert.Equal(t, matched(v.MatchConstraints), matched(m.MatchConstraints), "%s and %s match other requests", pair.validating, pair.mutating)
+		assert.Equal(t, matched(v.MatchConstraints.ResourceRules), matched(m.MatchConstraints.ResourceRules),
+			"%s and %s match other requests", pair.validating, pair.mutating)
 		assert.Equal(t, v.MatchConstraints.ObjectSelector, m.MatchConstraints.ObjectSelector, "%s and %s select other objects", pair.validating, pair.mutating)
+	}
+	// requested-by has a binding of its own for the Talos config patches,
+	// and its stamp has the same two.
+	vb, mb := bindings("policy", "requested-by.yaml"), bindings("name-stamp", "requested-by-stamp.yaml")
+	require.Len(t, mb, len(vb))
+	for v, m := range map[string]string{"requested-by": "requested-by-stamp", "requested-by-patches": "requested-by-stamp-patches"} {
+		require.NotNil(t, vb[v], v)
+		require.NotNil(t, mb[m], m)
+		assert.Equal(t, matched(vb[v].ResourceRules), matched(mb[m].ResourceRules), "%s and %s match other requests", v, m)
+		assert.Equal(t, matched(vb[v].ExcludeResourceRules), matched(mb[m].ExcludeResourceRules), "%s and %s leave out other requests", v, m)
+		assert.Equal(t, vb[v].ObjectSelector, mb[m].ObjectSelector, "%s and %s select other objects", v, m)
 	}
 	rb, rbs := validating("requested-by.yaml", "requested-by"), mutating("requested-by-stamp")
 	assert.Equal(t, variable(rb.Variables, "setAnnotation"), variable(rbs.Variables, "setAnnotation"))

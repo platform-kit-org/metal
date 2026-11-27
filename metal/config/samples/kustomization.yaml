@@ -12,8 +12,6 @@
 #      install that follows.
 #
 # Not in the list:
-#   - ledger.yaml is not an object. It is the content of the ConfigMap
-#     pk-metal-ledger (site-overlay/ shows how to supply it).
 #   - Secrets (BMC credentials, the Talos secrets bundle, backup credentials).
 #     Keep them out of git, or encrypt them.
 #   - rollout-reboot.yaml is a one-time request by a person, not site state.

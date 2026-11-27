@@ -8,10 +8,7 @@ sources:
   - /repo/metal/internal/asset/grants.go
   - /repo/metal/internal/etcdbackup/pipeline.go
   - /repo/metal/config/policy/hostoperation-approval.yaml
-  - /repo/metal/config/policy/talosrollout-approval.yaml
-  - /repo/metal/config/policy/endpointprofile-guard.yaml
-  - /repo/metal/config/policy/etcdbackuppolicy-guard.yaml
-  - /repo/metal/config/policy/taloscluster-credentials-guard.yaml
+  - /repo/metal/config/policy/admin-guard.yaml
   - /repo/metal/internal/controller/bmctls.go
   - /repo/metal/config/manager/services.yaml
 ---
@@ -58,7 +55,7 @@ pk-metal can wipe disks, flash firmware and boot any image on a machine. This pa
 | 3 | BMC to media service | Each boot medium, maybe with a node config | HTTPS that the BMC does not verify. A grant token in the URL, bound to the first source address. A user and password for each grant that carries a secret. The digest of each medium. A NetworkPolicy for the BMC network. See [Media grants](#media-grants). |
 | 4 | Manager to node | Talos API calls | Mutual TLS with the cluster certificates. To observe a node, the manager can also call the maintenance service without authentication. That call reads the version only. It sends no configuration. |
 | 5 | Manager to sink | Etcd snapshots | Age encryption to public recipients. Only the holder of the age identity can decrypt, on their own machine. Only an admin chooses the recipients and the sink. |
-| 6 | Manager to BMC, from an [](kind:EndpointProfile) | Account, NTP servers, TLS identity | No operation and no approval: the profile is the approval. Only an admin creates or changes a profile (`endpointprofile-guard`). The [](ref:audit-trail) records each account change, identity push and BMC restart (events `bmc.*`). The operator sends a private key only over a session that a CA or a pinned key checks. |
+| 6 | Manager to BMC, from an [](kind:EndpointProfile) | Account, NTP servers, TLS identity | No operation and no approval: the profile is the approval. Only an admin creates or changes a profile (`admin-guard`). The [](ref:audit-trail) records each account change, identity push and BMC restart (events `bmc.*`). The operator sends a private key only over a session that a CA or a pinned key checks. |
 
 ## Assets worth protecting
 
@@ -88,8 +85,8 @@ pk-metal can wipe disks, flash firmware and boot any image on a machine. This pa
 | Identity | What it can do alone | What checks it |
 | --- | --- | --- |
 | Operator service account | Create an operation that needs no approval. It cannot approve an operation or a rollout, with each `selfApproval` value. | RBAC (no `patch`) and rule 6 of `hostoperation-approval` |
-| Admin group | Create an operation that needs no approval, and the other admin changes above. | `hostoperation-approval`, `hostclaim-provisioning`, `etcdbackuppolicy-guard`, `endpointprofile-guard` |
-| A person with `create` and `patch` on operations or rollouts, if `selfApproval` is `Allowed` | Propose a change, or make the edit that the operator proposes a change for, and approve it. The record names the person as proposer, and as approver. It names the person as requester if the edit set `metal.platform-kit.org/requested-by`, as the pk-metal commands and the policy `requested-by-stamp` do. | Rules 7 and 8 of `hostoperation-approval`, rules 6 and 7 of `talosrollout-approval`, `requested-by`, `requested-by-patches`, and the `selfApproved` field of the [](ref:audit-trail) |
+| Admin group | Create an operation that needs no approval, and the other admin changes above. | `hostoperation-approval`, `hostclaim-provisioning`, `admin-guard` |
+| A person with `create` and `patch` on operations or rollouts, if `selfApproval` is `Allowed` | Propose a change, or make the edit that the operator proposes a change for, and approve it. The record names the person as proposer, and as approver. It names the person as requester if the edit set `metal.platform-kit.org/requested-by`, as the pk-metal commands and the policy `requested-by-stamp` do. | Rules 7 and 8 of `hostoperation-approval`, `requested-by`, and the `selfApproved` field of the [](ref:audit-trail) |
 | Holder of `patch` on operations | Lift a maintenance window or the cluster guard on an operation that a person approved. The value must name the person and a reason. | RBAC, `guard-lift`, and the [](ref:audit-trail) |
 
 ### Known limits
@@ -166,7 +163,7 @@ The [relay](concept:relay) lets the CLI drive a BMC through a jump host on day 0
 ### Credentials
 
 - Published cluster credentials live 24 hours by default, and 720 hours at most. The operator renews them when one third of the time is left.
-- Only the admin group sets `spec.credentials.ttl` of a [](kind:TalosCluster) to more than 24 hours (`taloscluster-credentials-guard`). The on-call and approver roles can patch a cluster, but they cannot make a published credential live longer.
+- Only the admin group sets `spec.credentials.ttl` of a [](kind:TalosCluster) to more than 24 hours (`admin-guard`). The on-call role can patch a cluster, but they cannot make a published credential live longer.
 - [](cli:render) writes credentials that live 24 hours by default, and 720 hours at most.
 - `readerTalosconfig` publishes a talosconfig with the `os:reader` role only.
 - The client certificate for the install check-in lives 10 minutes.

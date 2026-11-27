@@ -27,18 +27,20 @@ const (
 	recipientB = "age1lggyhqrw2nlhcxprm67z43rta597azn8gknawjehu9d9dl0jq3yqqvfafg"
 )
 
-// installPolicy loads one committed policy and its binding from config/policy.
+// installPolicy loads one committed policy and its bindings from config/policy.
 // The params are the ones installApprovalPolicy created.
 func installPolicy(t *testing.T, ctx context.Context, cl client.Client, file string) {
 	t.Helper()
 	docs := strings.Split(readFile(t, filepath.Join("..", "..", "config", "policy", file)), "\n---")
-	require.Len(t, docs, 2)
+	require.Greater(t, len(docs), 1, "%s has a binding", file)
 	vap := &admissionregistrationv1.ValidatingAdmissionPolicy{}
 	require.NoError(t, yaml.Unmarshal([]byte(docs[0]), vap))
 	require.NoError(t, cl.Create(ctx, vap))
-	binding := &admissionregistrationv1.ValidatingAdmissionPolicyBinding{}
-	require.NoError(t, yaml.Unmarshal([]byte(docs[1]), binding))
-	require.NoError(t, cl.Create(ctx, binding))
+	for _, doc := range docs[1:] {
+		binding := &admissionregistrationv1.ValidatingAdmissionPolicyBinding{}
+		require.NoError(t, yaml.Unmarshal([]byte(doc), binding))
+		require.NoError(t, cl.Create(ctx, binding))
+	}
 }
 
 // refusedOnceEnforcing waits until a policy compiles and refuses c's create
@@ -68,8 +70,7 @@ func TestPolicyStreamC(t *testing.T) {
 	const operator = "op-sa"
 	installApprovalPolicy(t, ctx, cl, operator)
 	installClaimPolicy(t, ctx, cl)
-	installPolicy(t, ctx, cl, "etcdbackuppolicy-guard.yaml")
-	installPolicy(t, ctx, cl, "endpointprofile-guard.yaml")
+	installPolicy(t, ctx, cl, "admin-guard.yaml")
 
 	// userClient adds system:masters: these clients test admission, not RBAC.
 	operatorCl := st.userClient(t, operator)
@@ -190,10 +191,10 @@ func TestPolicyStreamC(t *testing.T) {
 				},
 			}
 		}
-		err := cl.Create(ctx, tc("c8-long", 721*time.Hour))
-		require.Error(t, err)
+		err := ada.Create(ctx, tc("c8-long", 721*time.Hour))
+		require.Error(t, err, "not even an admin")
 		assert.Contains(t, err.Error(), "ttl must be at most 720h")
-		require.NoError(t, cl.Create(ctx, tc("c8-month", 720*time.Hour)))
+		require.NoError(t, ada.Create(ctx, tc("c8-month", 720*time.Hour)))
 	})
 }
 

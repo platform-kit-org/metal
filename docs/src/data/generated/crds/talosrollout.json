@@ -64,10 +64,6 @@
       "description": "TalosRolloutSpec says what to change on which nodes of one cluster, and carries the one approval that covers every node of it.\n\nA rollout is proposed by the operator (or created by a person), then planned: the operator writes the ordered node list, each node's actions and the exact target (config digest, installer image digest) into status.plan, and its hash into status.planHash. A person approves that plan by stamping spec.approval with their name and the planHash they saw. From then on the plan is frozen: the operator runs exactly it, or nothing.",
       "validations": [
         {
-          "rule": "self.clusterRef == oldSelf.clusterRef && self.kind == oldSelf.kind",
-          "message": "clusterRef and kind are frozen after creation"
-        },
-        {
           "rule": "(!has(self.target) && !has(oldSelf.target)) || (has(self.target) && has(oldSelf.target) && self.target == oldSelf.target)",
           "message": "target is frozen after creation"
         },
@@ -86,14 +82,6 @@
         {
           "rule": "!has(oldSelf.abort) || !oldSelf.abort || (has(self.abort) && self.abort)",
           "message": "an abort cannot be taken back"
-        },
-        {
-          "rule": "(has(self.maxUnavailableWorkers) ? self.maxUnavailableWorkers : 1) == (has(oldSelf.maxUnavailableWorkers) ? oldSelf.maxUnavailableWorkers : 1)",
-          "message": "maxUnavailableWorkers is frozen after creation"
-        },
-        {
-          "rule": "(has(self.drainTimeoutSeconds) ? self.drainTimeoutSeconds : 900) == (has(oldSelf.drainTimeoutSeconds) ? oldSelf.drainTimeoutSeconds : 900)",
-          "message": "drainTimeoutSeconds is frozen after creation"
         }
       ]
     },
@@ -147,7 +135,13 @@
       "depth": 1,
       "type": "object",
       "required": true,
-      "description": "ClusterRef names the TalosCluster whose nodes this rollout changes."
+      "description": "ClusterRef names the TalosCluster whose nodes this rollout changes.",
+      "validations": [
+        {
+          "rule": "self == oldSelf",
+          "message": "clusterRef is frozen after creation"
+        }
+      ]
     },
     {
       "path": "spec.clusterRef.name",
@@ -169,7 +163,13 @@
       "default": 900,
       "minimum": 30,
       "maximum": 86400,
-      "description": "DrainTimeoutSeconds bounds the drain of each node that is drained (an upgrade, a reboot, a config that needs a reboot). It is part of what is approved, so it is frozen after creation."
+      "description": "DrainTimeoutSeconds bounds the drain of each node that is drained (an upgrade, a reboot, a config that needs a reboot). It is part of what is approved, so it is frozen after creation.",
+      "validations": [
+        {
+          "rule": "self == oldSelf",
+          "message": "drainTimeoutSeconds is frozen after creation"
+        }
+      ]
     },
     {
       "path": "spec.kind",
@@ -184,7 +184,13 @@
         "KubernetesUpgrade",
         "Reboot"
       ],
-      "description": "Kind is what changes on each node."
+      "description": "Kind is what changes on each node.",
+      "validations": [
+        {
+          "rule": "self == oldSelf",
+          "message": "kind is frozen after creation"
+        }
+      ]
     },
     {
       "path": "spec.maxUnavailableWorkers",
@@ -197,7 +203,13 @@
       "default": 1,
       "minimum": 1,
       "maximum": 100,
-      "description": "MaxUnavailableWorkers is how many workers may be in the middle of the change at once. Control planes always go one at a time, and only while etcd keeps every member healthy."
+      "description": "MaxUnavailableWorkers is how many workers may be in the middle of the change at once. Control planes always go one at a time, and only while etcd keeps every member healthy.",
+      "validations": [
+        {
+          "rule": "self == oldSelf",
+          "message": "maxUnavailableWorkers is frozen after creation"
+        }
+      ]
     },
     {
       "path": "spec.nodes",

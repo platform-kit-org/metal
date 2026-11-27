@@ -16,8 +16,9 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-// installApprovalPolicy loads the committed approval policy — the gate under
-// test is the one in config/policy, not a test-local copy — with its params
+// installApprovalPolicy loads the committed approval policy of operations and
+// rollouts — the gate under test is the one in config/policy, not a
+// test-local copy — with its params
 // naming operator as the operator's identity (the manager in these suites runs
 // as the envtest admin, not as the deployed service account).
 func installApprovalPolicy(t *testing.T, ctx context.Context, cl client.Client, operator string) {

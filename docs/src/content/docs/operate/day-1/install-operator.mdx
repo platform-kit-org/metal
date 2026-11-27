@@ -114,6 +114,8 @@ The overlay is a kustomize directory. It adds the values of your site to the bas
 
 10. In `bindings.yaml`, replace the example group of the approvers with a group of your site. See [The admin group and the approvers](#the-admin-group-and-the-approvers).
 
+    For an admin group with a name other than `pk-metal:admins`, write the name in `bindings.yaml` and in `adminGroup` of `approval.yaml`. Do this before the first apply. A later change needs a member of the old group.
+
 11. Replace `bmc-ca.crt` with the CA certificate of your BMCs. See [BMC certificates](#bmc-certificates).
 
 12. If a BMC has only one usable media slot, remove the comment mark from `../../media-store` in `components` of `kustomization.yaml`. See [One-slot BMCs](#one-slot-bmcs). On Kubernetes older than 1.36, remove `../../name-stamp` from `components`. See [](ref:admission-policies#requested-by-stamp).
@@ -155,7 +157,7 @@ The overlay is a kustomize directory. It adds the values of your site to the bas
 | `ledger.yaml` | BMC MAC address to BMC URL | [](concept:ledger) |
 | `bmc-ca.crt` | The CA of the BMC certificates | [BMC certificates](#bmc-certificates) |
 | `bindings.yaml` | The rights of the admin group and of the approvers | [](ref:rbac) |
-| `approval.yaml` | Whether a person can approve their own proposal (`selfApproval`) | [](howto:approval-permissions) |
+| `approval.yaml` | The admin group (`adminGroup`), and whether a person can approve their own proposal (`selfApproval`) | [](howto:approval-permissions) |
 | `networkpolicy.yaml` | The BMC network, the only one that can fetch boot media | [](ref:media-store#network-policy) |
 
 The ledger ConfigMap has a name that changes with its content. Thus an apply of a new ledger restarts the manager.

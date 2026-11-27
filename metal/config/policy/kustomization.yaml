@@ -3,11 +3,7 @@ kind: Kustomization
 resources:
   - hostoperation-approval.yaml
   - hostclaim-provisioning.yaml
-  - talosrollout-approval.yaml
-  - etcdbackuppolicy-guard.yaml
-  - endpointprofile-guard.yaml
-  - taloscluster-credentials-guard.yaml
+  - admin-guard.yaml
   - guard-lift.yaml
   - requested-by.yaml
-  - requested-by-patches.yaml
   - settings-guard.yaml

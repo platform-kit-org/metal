@@ -14,6 +14,7 @@ sources:
   - /repo/metal/config/samples/site-overlay/bindings.yaml
   - /repo/metal/internal/controller/hostoperation_steps.go
   - /repo/metal/cmd/manager/main.go
+  - /repo/metal/config/prometheus/metrics_reader.yaml
 ---
 
 import { Steps } from '@astrojs/starlight/components';
@@ -102,6 +103,9 @@ Apply the overlay with the old tag.
 | The component `config/name-stamp` writes your username into `requested-by` and into guard lifts. It needs Kubernetes 1.36 or later. | The sample site overlay includes it. On an older release, remove it from `components`. See [](ref:admission-policies#the-name-stamps). |
 | `status.managerType` of [](kind:ManagementEndpoint) goes. | Nothing. The operator did not read it. |
 | The CRDs of [](kind:HostOperation) and [](kind:TalosRollout) declare selectable fields. The management cluster needs Kubernetes 1.32 or later. | On 1.30 or 1.31, upgrade Kubernetes first. See [](ref:versions). |
+| The policy `hostoperation-approval` also checks [](kind:TalosRollout). The policy `admin-guard` checks the three kinds of `endpointprofile-guard`, `etcdbackuppolicy-guard` and `taloscluster-credentials-guard`. These four old policies go. | After the apply, delete the old policies and their bindings: `kubectl delete validatingadmissionpolicy,validatingadmissionpolicybinding talosrollout-approval endpointprofile-guard etcdbackuppolicy-guard taloscluster-credentials-guard`. The old policies have the same rules, but they do not get later changes. |
+| The policy `requested-by` also checks the Talos config patches, through its second binding `requested-by-patches`. The stamp `requested-by-stamp` does the same through its binding `requested-by-stamp-patches`. The two old policies of these names go. | After the apply, delete the old policies. Keep the bindings: they now bind the new policies. `kubectl delete validatingadmissionpolicy requested-by-patches` and `kubectl delete mutatingadmissionpolicy requested-by-stamp-patches`. |
+| The binding `pk-metal-metrics-reader` of `config/prometheus` names the built-in ClusterRole `system:monitoring`. The ClusterRole `pk-metal-metrics-reader` goes. | Kubernetes does not change the role of a binding. Before you apply `metal/config/prometheus` again, delete the old objects: `kubectl delete clusterrolebinding,clusterrole pk-metal-metrics-reader`. |
 
 <Callout type="note">
 `mise run crd:diff` runs for each pull request in CI. The result is on the summary page of the run, in the job that checks the generated files.

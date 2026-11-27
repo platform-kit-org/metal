@@ -30,7 +30,7 @@ holds no private key: it can store a snapshot but not read one. Decrypting
 needs one of the matching age identities, on your own machine.
 
 subcommands:
-  now <cluster>              take a snapshot now (it waits until stored; --wait=false returns at once)
+  now <cluster>              take a snapshot now (it waits until stored; --wait 0 returns at once)
   list [<cluster>]           list the snapshots, newest first; RECIPIENTS shows the
                              last 8 characters of each age public key a snapshot is
                              encrypted to (compare with: age-keygen -y <identity file>)
@@ -56,8 +56,7 @@ func backupCmd(args []string) {
 	defer stop()
 	switch sub {
 	case "now":
-		wait := fs.Bool("wait", true, "wait until the snapshot is stored and verified")
-		timeout := fs.Duration("timeout", 35*time.Minute, "how long --wait waits")
+		wait := fs.Duration("wait", 35*time.Minute, "how long to wait until the snapshot is stored and verified (0: do not wait)")
 		parseFlags(fs, rest)
 		if fs.NArg() != 1 {
 			badUsage(fs, "give exactly one TalosCluster or EtcdBackupPolicy")
@@ -67,8 +66,8 @@ func backupCmd(args []string) {
 		if err != nil {
 			die(err)
 		}
-		if *wait {
-			wctx, cancel := context.WithTimeout(ctx, *timeout)
+		if *wait > 0 {
+			wctx, cancel := context.WithTimeout(ctx, *wait)
 			defer cancel()
 			if err := waitSnapshot(wctx, cl, name, time.Second, os.Stdout); err != nil {
 				die(err)

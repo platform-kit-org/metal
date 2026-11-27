@@ -7,7 +7,7 @@
   ],
   "changes": true,
   "needsCluster": true,
-  "description": "etcd snapshots are taken by the operator, on the schedule an EtcdBackupPolicy\nsets, and kept encrypted to the age public keys the policy names. The operator\nholds no private key: it can store a snapshot but not read one. Decrypting\nneeds one of the matching age identities, on your own machine.\n\nsubcommands:\n  now <cluster>              take a snapshot now (it waits until stored; --wait=false returns at once)\n  list [<cluster>]           list the snapshots, newest first; RECIPIENTS shows the\n                             last 8 characters of each age public key a snapshot is\n                             encrypted to (compare with: age-keygen -y <identity file>)\n  get <snapshot> -o <file>   download the encrypted snapshot (s3 sinks; pvc sinks: see the message)\n  decrypt (<snapshot> | --in <file.age>) --identity <file> [-o <file.db>]\n                             decrypt on this machine and check it is an intact etcd snapshot;\n                             with -o, also write the plaintext (it holds every Secret of the cluster)\n\n\nRestoring is pk-metal restore; https://metal.platform-kit.org/operate/day-2/restore-etcd/ walks through it.",
+  "description": "etcd snapshots are taken by the operator, on the schedule an EtcdBackupPolicy\nsets, and kept encrypted to the age public keys the policy names. The operator\nholds no private key: it can store a snapshot but not read one. Decrypting\nneeds one of the matching age identities, on your own machine.\n\nsubcommands:\n  now <cluster>              take a snapshot now (it waits until stored; --wait 0 returns at once)\n  list [<cluster>]           list the snapshots, newest first; RECIPIENTS shows the\n                             last 8 characters of each age public key a snapshot is\n                             encrypted to (compare with: age-keygen -y <identity file>)\n  get <snapshot> -o <file>   download the encrypted snapshot (s3 sinks; pvc sinks: see the message)\n  decrypt (<snapshot> | --in <file.age>) --identity <file> [-o <file.db>]\n                             decrypt on this machine and check it is an intact etcd snapshot;\n                             with -o, also write the plaintext (it holds every Secret of the cluster)\n\n\nRestoring is pk-metal restore; https://metal.platform-kit.org/operate/day-2/restore-etcd/ walks through it.",
   "examples": [
     "pk-metal backup now lab",
     "pk-metal backup list lab",
@@ -36,17 +36,10 @@
           "global": true
         },
         {
-          "name": "timeout",
+          "name": "wait",
           "type": "duration",
           "default": "35m0s",
-          "usage": "how long --wait waits",
-          "global": false
-        },
-        {
-          "name": "wait",
-          "type": "bool",
-          "default": "true",
-          "usage": "wait until the snapshot is stored and verified",
+          "usage": "how long to wait until the snapshot is stored and verified (0: do not wait)",
           "global": false
         }
       ]

@@ -82,6 +82,7 @@ environment variables:
                         cgroup v1 runs the lab, see lab/README.md"
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
+PK_METAL=$ROOT/metal/bin/pk-metal
 # shellcheck source=lab/distro.sh
 source "$ROOT/lab/distro.sh"
 LAB_DIR=$(realpath -m "${PK_LAB_DIR:-$ROOT/.lab}")
@@ -149,9 +150,8 @@ render_into() {
 }
 
 render() {
-  local root=$1 spec=$2 size=$3 workload=$4 gen=$5
-  step "render $spec${size:+ at size $size} into $gen"
-  render_into "$root" "$spec" "$size" "$workload" "$gen"
+  step "render $SPEC${SIZE:+ at size $SIZE} into $GEN"
+  render_into "$ROOT" "$SPEC" "$SIZE" "$WORKLOAD" "$GEN"
 }
 
 # The parts of up and the later verbs work on what up rendered last, so that a
@@ -159,8 +159,7 @@ render() {
 # without PK_LAB_NODES. Only a lab directory with nothing rendered yet is
 # rendered here.
 require_rendered() {
-  local root=$1 spec=$2 size=$3 workload=$4 gen=$5
-  [[ -s $gen/lab.env ]] || render "$root" "$spec" "$size" "$workload" "$gen"
+  [[ -s $GEN/lab.env ]] || render
 }
 
 # Prints one value of a rendered lab.env. The values are names and numbers the
@@ -748,11 +747,11 @@ deploy() {
 # repository. The command line is compared, not just the pid: a pid file outlives
 # its process, and the number may belong to something else by now.
 fleet_running() {
-  local lab_dir=$1 binary=$2 pid
+  local lab_dir=$1 pid
   [[ -s $lab_dir/fleet.pid ]] || return 1
   pid=$(<"$lab_dir/fleet.pid")
   [[ $pid =~ ^[0-9]+$ && -r /proc/$pid/cmdline ]] || return 1
-  [[ $(tr '\0' ' ' <"/proc/$pid/cmdline") == "$binary sim fleet "* ]]
+  [[ $(tr '\0' ' ' <"/proc/$pid/cmdline") == "$PK_METAL sim fleet "* ]]
 }
 
 # Marks the fleet's state directory as the lab's, for reset. Only a directory
@@ -771,12 +770,12 @@ mark_state_dir() {
 
 fleet_up() {
   local root=$1 lab_dir=$2 fleet=$3
-  local binary=$root/metal/bin/pk-metal listen deadline pid
+  local listen deadline pid
   step "simulated fleet"
-  [[ -x $binary ]] || die "$binary is missing. Build it: mise run build"
+  [[ -x $PK_METAL ]] || die "$PK_METAL is missing. Build it: mise run build"
   mkdir -p "$lab_dir"
   mark_state_dir "$(fleet_state_dir "$root" "$fleet")"
-  if fleet_running "$lab_dir" "$binary"; then
+  if fleet_running "$lab_dir"; then
     echo "  already running (pid $(<"$lab_dir/fleet.pid"))" >&2
   else
     # What the fleet was started with, for rerender_guard.
@@ -785,7 +784,7 @@ fleet_up() {
     # the repository root, which the relative paths in the fleet file refer to.
     (
       cd "$root"
-      setsid nohup "$binary" sim fleet --config "$fleet" >>"$lab_dir/fleet.log" 2>&1 </dev/null &
+      setsid nohup "$PK_METAL" sim fleet --config "$fleet" >>"$lab_dir/fleet.log" 2>&1 </dev/null &
       echo $! >"$lab_dir/fleet.pid"
     )
     echo "  started (pid $(<"$lab_dir/fleet.pid"), log $lab_dir/fleet.log)" >&2
@@ -811,9 +810,9 @@ $(tail -n 20 "$lab_dir/fleet.log" 2>/dev/null)
 }
 
 fleet_down() {
-  local root=$1 lab_dir=$2
-  local binary=$root/metal/bin/pk-metal pid waited=0
-  if ! fleet_running "$lab_dir" "$binary"; then
+  local lab_dir=$1
+  local pid waited=0
+  if ! fleet_running "$lab_dir"; then
     rm -f "$lab_dir/fleet.pid" "$lab_dir/fleet.running.yaml"
     return 0
   fi
@@ -879,7 +878,7 @@ manifests_apply() {
 # rendered anew. Other changes (versions, patches) are fine and are applied.
 rerender_guard() {
   local root=$1 lab_dir=$2 spec=$3 size=$4 workload=$5 preview differs=0
-  fleet_running "$lab_dir" "$root/metal/bin/pk-metal" || return 0
+  fleet_running "$lab_dir" || return 0
   # A fleet started some other way has no copy to compare with.
   [[ -e $lab_dir/fleet.running.yaml ]] || return 0
   preview=$(mktemp -d)
@@ -930,7 +929,7 @@ up() {
   doctor "$root" "$lab_dir" "$spec" "$size" "$workload" "$min_free_gib" "$kind_config"
   rerender_guard "$root" "$lab_dir" "$spec" "$size" "$workload"
   talos_override_guard "$lab_dir" "$gen" "$talos_override"
-  render "$root" "$spec" "$size" "$workload" "$gen"
+  render
   network_up "$root" "$gen"
   cluster_up "$lab_dir" "$cluster" "$kind_config"
   deploy "$root" "$lab_dir" "$gen" "$cluster"
@@ -953,11 +952,11 @@ require_cluster() {
 }
 
 status() {
-  local root=$1 lab_dir=$2
+  local lab_dir=$1
   require_cluster "$lab_dir"
   # Exits non-zero when something is blocked or failed; the listing that
   # follows is still wanted then.
-  "$root/metal/bin/pk-metal" status || true
+  "$PK_METAL" status || true
   echo
   # The category metal names every kind of the operator.
   kubectl get metal --all-namespaces
@@ -981,7 +980,7 @@ pending_operations() {
 # kubeconfig's user and prints how many that were. An approval that fails is
 # reported by pk-metal and not counted.
 approve_pending() {
-  local root=$1 host=${2:-}
+  local host=${1:-}
   local namespace name pending count=0
   # A cluster that does not answer has nothing to approve; the callers poll.
   pending=$(pending_operations "$host") || pending=""
@@ -989,7 +988,7 @@ approve_pending() {
   while read -r namespace name; do
     [[ -n $name ]] || continue
     # --yes: this is the unattended path; approve would otherwise ask.
-    if "$root/metal/bin/pk-metal" approve --yes -n "$namespace" "$name" >&2; then
+    if "$PK_METAL" approve --yes -n "$namespace" "$name" >&2; then
       count=$((count + 1))
     fi
   done <<<"$pending"
@@ -997,10 +996,10 @@ approve_pending() {
 }
 
 approve() {
-  local root=$1 lab_dir=$2
+  local lab_dir=$1
   local count
   require_cluster "$lab_dir"
-  count=$(approve_pending "$root")
+  count=$(approve_pending)
   if (( count == 0 )); then
     echo "no operation waits for approval" >&2
   else
@@ -1127,11 +1126,11 @@ failed_operations() {
 # the TalosCluster has nodes Ready nodes. wait runs it for the first cluster,
 # pivot for the second; each fetches the cluster's files to the names given.
 wait_converged() {
-  local root=$1 cluster_name=$2 kube_file=$3 talos_file=$4 hosts=$5 nodes=$6 timeout=$7
+  local cluster_name=$1 kube_file=$2 talos_file=$3 hosts=$4 nodes=$5 timeout=$6
   local line failed last="" deadline=$((SECONDS + timeout))
   step "waiting up to ${timeout}s for $hosts Provisioned hosts and $nodes Ready nodes in $cluster_name (from $(date '+%F %T %Z'))"
   while true; do
-    approve_pending "$root" >/dev/null || true
+    approve_pending >/dev/null || true
     kubeconfig_fetch "$cluster_name" "$kube_file" "$talos_file" || true
     if cluster_converged "$hosts" "$kube_file" "$nodes"; then
       echo "converged after $((SECONDS - (deadline - timeout)))s: $(progress "$kube_file")" >&2
@@ -1172,7 +1171,7 @@ claim_gone() { ! kubectl -n "$1" get hostclaim "$2" >/dev/null 2>&1; }
 # not the operation: a released machine that still shows its claim, or a Host
 # that is not Available, is a failure however the operations ended.
 release() {
-  local root=$1 lab_dir=$2 claim=$3 timeout=$4
+  local lab_dir=$1 claim=$2 timeout=$3
   local namespace name host phase deadline=$((SECONDS + timeout))
   require_cluster "$lab_dir"
   [[ $claim == */* ]] || die "name the claim as namespace/name, e.g.: mise run lab:release default/node-3"
@@ -1190,7 +1189,7 @@ release() {
     metal.platform-kit.org/requested-by=lab-admin >&2
   kubectl -n "$namespace" delete hostclaim "$name" --wait=false "${ADMIN_AS[@]}" >&2
   while true; do
-    approve_pending "$root" >/dev/null || true
+    approve_pending >/dev/null || true
     phase=$(host_phase "$host") || phase=""
     if claim_gone "$namespace" "$name" && [[ $phase == Available ]]; then
       echo "released after $((SECONDS - (deadline - timeout)))s: Host $host is Available, $claim is gone" >&2
@@ -1257,7 +1256,7 @@ node_back() {
 # uncordons. The outcome is checked on the workload cluster, not only on the
 # operation: the node's boot ID changed, and it is Ready and schedulable.
 day2_reboot_node() {
-  local root=$1 lab_dir=$2 proposer=$3 node=$4 override=$5 timeout=$6
+  local lab_dir=$1 proposer=$2 node=$3 override=$4 timeout=$5
   local kube_file=$lab_dir/workload.kubeconfig
   local before after ref namespace name phase message deadline=$((SECONDS + timeout))
   before=$(boot_id "$kube_file" "$node") \
@@ -1265,7 +1264,7 @@ day2_reboot_node() {
   [[ -n $before ]] || die "node $node reports no boot ID. See the nodes: kubectl --kubeconfig $kube_file get nodes"
 
   step "rebooting $node through pk-metal reboot, waiting up to ${timeout}s"
-  ref=$("$root/metal/bin/pk-metal" --kubeconfig "$proposer" reboot "$node" | tee /dev/stderr \
+  ref=$("$PK_METAL" --kubeconfig "$proposer" reboot "$node" | tee /dev/stderr \
     | sed -n 's/^proposed \([^:]*\):.*/\1/p')
   [[ $ref == */* ]] || die "pk-metal reboot $node proposed no operation it named. Run it by hand to see why:
   KUBECONFIG=$proposer metal/bin/pk-metal reboot $node"
@@ -1279,7 +1278,7 @@ day2_reboot_node() {
   fi
 
   while true; do
-    approve_pending "$root" >/dev/null || true
+    approve_pending >/dev/null || true
     phase=$(kubectl -n "$namespace" get hostoperation "$name" --output jsonpath='{.status.phase}' 2>/dev/null) || phase=""
     case "$phase" in
       Succeeded)
@@ -1307,12 +1306,12 @@ day2_reboot_node() {
 # Reboots a worker, then a control plane. A lab without workers skips the
 # first; every lab has a control plane.
 day2_reboot() {
-  local root=$1 lab_dir=$2 gen=$3 timeout=$4
+  local lab_dir=$1 gen=$2 timeout=$3
   local cluster_name proposer=$lab_dir/admin.kubeconfig worker cp override=""
   cluster_name=$(lab_value "$gen" TALOS_CLUSTER)
   worker=$(running_node worker)
   if [[ -n $worker ]]; then
-    day2_reboot_node "$root" "$lab_dir" "$proposer" "$worker" "" "$timeout"
+    day2_reboot_node "$lab_dir" "$proposer" "$worker" "" "$timeout"
   else
     note "no running worker; only a control plane is rebooted"
   fi
@@ -1321,7 +1320,7 @@ day2_reboot() {
   if (( $(control_plane_count "$cluster_name") == 1 )); then
     override=$(guard_lift "cluster $cluster_name has a single control plane")
   fi
-  day2_reboot_node "$root" "$lab_dir" "$proposer" "$cp" "$override" "$timeout"
+  day2_reboot_node "$lab_dir" "$proposer" "$cp" "$override" "$timeout"
 }
 
 # The day-2 rounds that run on the lab as it converged, in an order where
@@ -1330,12 +1329,12 @@ day2_reboot() {
 # upgrade (a lab on an older Talos), scale (five machines), backup-restore
 # (one machine, its etcd wiped) and observe (a maintenance window).
 day2() {
-  local root=$1 lab_dir=$2 gen=$3 timeout=$4 rollout_timeout=$5
+  local lab_dir=$1 gen=$2 timeout=$3 rollout_timeout=$4
   require_cluster "$lab_dir"
   kubeconfig_fetch "$(lab_value "$gen" TALOS_CLUSTER)" "$lab_dir/workload.kubeconfig" "$lab_dir/talosconfig" \
     || die "the workload cluster has published no kubeconfig yet. Converge the lab first: mise run lab:wait"
-  day2_reboot "$root" "$lab_dir" "$gen" "$timeout"
-  day2_config_change "$root" "$lab_dir" "$gen" "$rollout_timeout"
+  day2_reboot "$lab_dir" "$gen" "$timeout"
+  day2_config_change "$lab_dir" "$gen" "$rollout_timeout"
 }
 
 # ---------------------------------------------------------------- day 2: scale
@@ -1361,11 +1360,11 @@ workload_nodes() {
 # never more than one learner (control planes join one at a time) and never
 # fewer than min_voters voting members. A failed operation ends the wait.
 day2_until() {
-  local root=$1 lab_dir=$2 timeout=$3 voters=$4 nodes=$5 min_voters=$6 what=$7
+  local lab_dir=$1 timeout=$2 voters=$3 nodes=$4 min_voters=$5 what=$6
   local members learners have total ready failed line last="" deadline=$((SECONDS + timeout))
   step "$what: waiting up to ${timeout}s for $voters etcd voter(s) and $nodes Ready node(s)"
   while true; do
-    approve_pending "$root" >/dev/null || true
+    approve_pending >/dev/null || true
     members=$(etcd_members "$lab_dir") || members=""
     if [[ -n $members ]]; then
       learners=$(awk '$2 == "true"' <<<"$members" | wc -l)
@@ -1414,11 +1413,11 @@ hosts_returned() {
 # Approves the operations of one Host until it is Available again: the
 # release of a machine whose claim moved elsewhere.
 release_host() {
-  local root=$1 host=$2 timeout=$3 what=$4
+  local host=$1 timeout=$2 what=$3
   local deadline=$((SECONDS + timeout))
   step "$what: releasing Host $host"
   until [[ $(host_phase "$host" || true) == Available ]]; do
-    approve_pending "$root" "$host" >/dev/null || true
+    approve_pending "$host" >/dev/null || true
     (( SECONDS < deadline )) || die "$what: Host $host was not released within ${timeout}s.
   Look at it: mise run lab:status; collect the evidence: mise run lab:collect"
     sleep 10
@@ -1430,11 +1429,10 @@ release_host() {
 # removed, a control plane replaced on the freed worker machine, and back to
 # one control plane. Like wait, it stands in for the person who approves.
 day2_scale() {
-  local root=$1 lab_dir=$2 gen=$3 timeout=$4
-  local cluster cli admin size h2 h3 h5
+  local lab_dir=$1 gen=$2 timeout=$3
+  local cluster admin size h2 h3 h5
   require_cluster "$lab_dir"
   cluster=$(lab_value "$gen" TALOS_CLUSTER)
-  cli=$root/metal/bin/pk-metal
   # Creating a claim that names a node, and moving a claim to another
   # machine, are an admin's decisions (the claim policy): scale and replace
   # run as a member of the admin group, as a site's admin would.
@@ -1453,19 +1451,19 @@ day2_scale() {
   # Two of three control planes leave: on the way etcd has two members, an
   # even count the operator refuses without the acknowledgement.
   step "scale $cluster to 1 control plane"
-  KUBECONFIG=$admin "$cli" scale "$cluster" --control-planes 1 --workers 2 --apply --ack-etcd-risk "lab scale round" >&2
-  day2_until "$root" "$lab_dir" "$timeout" 1 3 1 "scale to 1 control plane"
+  KUBECONFIG=$admin "$PK_METAL" scale "$cluster" --control-planes 1 --workers 2 --apply --ack-etcd-risk "lab scale round" >&2
+  day2_until "$lab_dir" "$timeout" 1 3 1 "scale to 1 control plane"
   hosts_returned "scale to 1 control plane" "$h2" "$h3"
 
   # The same TalosNodes come back on their own machines (scale pairs a node
   # with the host of the asset of its name), one control plane at a time.
   step "scale $cluster to 3 control planes"
-  KUBECONFIG=$admin "$cli" scale "$cluster" --control-planes 3 --workers 2 --apply >&2
-  day2_until "$root" "$lab_dir" "$timeout" 3 5 1 "scale to 3 control planes"
+  KUBECONFIG=$admin "$PK_METAL" scale "$cluster" --control-planes 3 --workers 2 --apply >&2
+  day2_until "$lab_dir" "$timeout" 3 5 1 "scale to 3 control planes"
 
   step "remove worker node-5"
-  KUBECONFIG=$admin "$cli" scale "$cluster" --control-planes 3 --workers 1 --apply >&2
-  day2_until "$root" "$lab_dir" "$timeout" 3 4 3 "remove a worker"
+  KUBECONFIG=$admin "$PK_METAL" scale "$cluster" --control-planes 3 --workers 1 --apply >&2
+  day2_until "$lab_dir" "$timeout" 3 4 3 "remove a worker"
   hosts_returned "remove a worker" "$h5"
 
   # node-2 moves to the machine node-5 had. Its etcd member goes before it
@@ -1475,19 +1473,19 @@ day2_scale() {
   # new one's, as a person replacing failed hardware would. A boot proposed
   # before the edit is withdrawn by the operator and proposed again.
   step "replace control plane node-2 onto Host $h5"
-  KUBECONFIG=$admin "$cli" replace node-2 --host "$h5" --ack-etcd-risk "lab scale round" >&2
-  release_host "$root" "$h2" "$timeout" "replace a control plane"
+  KUBECONFIG=$admin "$PK_METAL" replace node-2 --host "$h5" --ack-etcd-risk "lab scale round" >&2
+  release_host "$h2" "$timeout" "replace a control plane"
   kubectl --kubeconfig "$admin" patch talosnode node-2 --type json --patch '[
     {"op": "add", "path": "/metadata/annotations/metal.platform-kit.org~1requested-by", "value": "lab-admin"},
     {"op": "replace", "path": "/spec/installDiskSelector/serial", "value": "pklab-disk-5"},
     {"op": "replace", "path": "/spec/network/links/0/hardwareAddr", "value": "52:54:00:77:00:15"}]' >&2
-  day2_until "$root" "$lab_dir" "$timeout" 3 4 2 "replace a control plane"
+  day2_until "$lab_dir" "$timeout" 3 4 2 "replace a control plane"
   [[ $(claim_host default node-2) == "$h5" ]] || die "replace: claim node-2 should hold Host $h5 now, it holds $(claim_host default node-2)"
   hosts_returned "replace a control plane" "$h2"
 
   step "scale $cluster back to 1 control plane"
-  KUBECONFIG=$admin "$cli" scale "$cluster" --control-planes 1 --workers 1 --apply --ack-etcd-risk "lab scale round" >&2
-  day2_until "$root" "$lab_dir" "$timeout" 1 2 1 "scale back to 1 control plane"
+  KUBECONFIG=$admin "$PK_METAL" scale "$cluster" --control-planes 1 --workers 1 --apply --ack-etcd-risk "lab scale round" >&2
+  day2_until "$lab_dir" "$timeout" 1 2 1 "scale back to 1 control plane"
   hosts_returned "scale back to 1 control plane" "$h3" "$h5"
   echo "the scale round finished: $cluster has 1 control plane and 1 worker" >&2
 }
@@ -1555,11 +1553,11 @@ rollout_wait_proposed() {
 # resumes, and waits until the rollout is Complete. The outcome is what is
 # checked: Complete=True, every step Succeeded.
 rollout_through() {
-  local root=$1 lab_dir=$2 name=$3 timeout=$4
+  local lab_dir=$1 name=$2 timeout=$3
   local conditions cluster single lift op resumed=0 line last="" deadline=$((SECONDS + timeout)) count look_until
   step "rollout $name: approve, check the first node, resume, wait (up to ${timeout}s)"
-  "$root/metal/bin/pk-metal" rollout show "$name" >&2
-  "$root/metal/bin/pk-metal" rollout approve --yes "$name" >&2
+  "$PK_METAL" rollout show "$name" >&2
+  "$PK_METAL" rollout approve --yes "$name" >&2
   cluster=$(kubectl get talosrollout "$name" --output jsonpath='{.spec.clusterRef.name}')
   single=0
   [[ $(control_plane_count "$cluster") != 1 ]] || single=1
@@ -1585,13 +1583,13 @@ rollout_through() {
       kubectl get talosrollout "$name" --output json | jq -e '
         [.status.steps[] | select(.state != "Succeeded")] | length == 0' >/dev/null \
         || die "rollout $name says Complete but not every step succeeded:
-$("$root/metal/bin/pk-metal" rollout show "$name")"
+$("$PK_METAL" rollout show "$name")"
       echo "rollout $name complete after $((SECONDS - (deadline - timeout)))s" >&2
       return 0
     fi
     if grep -q '^Complete=False/' <<<"$conditions"; then
       die "rollout $name did not complete:
-$("$root/metal/bin/pk-metal" rollout show "$name")
+$("$PK_METAL" rollout show "$name")
   The failed operation says why: kubectl --kubeconfig $KUBECONFIG -n $NAMESPACE get hostoperations -l os.platform-kit.org/rollout=$name"
     fi
     if (( resumed == 0 )) && grep -qx 'Paused=True/PausedAfterFirstNode' <<<"$conditions"; then
@@ -1608,7 +1606,7 @@ $(kubectl --kubeconfig "$lab_dir/workload.kubeconfig" get nodes 2>&1)
 $(kubectl get hosts 2>&1)"
         sleep 5
       done
-      "$root/metal/bin/pk-metal" rollout resume "$name" >&2
+      "$PK_METAL" rollout resume "$name" >&2
       resumed=1
     fi
     line=$(kubectl get talosrollout "$name" --output json | jq -r '
@@ -1618,7 +1616,7 @@ $(kubectl get hosts 2>&1)"
       last=$line
     fi
     (( SECONDS < deadline )) || die "rollout $name did not finish within ${timeout}s:
-$("$root/metal/bin/pk-metal" rollout show "$name")
+$("$PK_METAL" rollout show "$name")
   collect the evidence: mise run lab:collect"
     sleep 15
   done
@@ -1635,7 +1633,7 @@ boot_ids() {
 # older release (PK_LAB_TALOS); this upgrades it to the release the spec
 # names, with pk-metal upgrade, and checks that every machine runs it after.
 day2_upgrade() {
-  local root=$1 lab_dir=$2 gen=$3 timeout=$4 spec=$5
+  local lab_dir=$1 gen=$2 timeout=$3 spec=$4
   local cluster_name target current name stale
   require_cluster "$lab_dir"
   cluster_name=$(lab_value "$gen" TALOS_CLUSTER)
@@ -1648,9 +1646,9 @@ day2_upgrade() {
   # pk-metal upgrade names its caller as the requester of the rollout, and
   # the lab forbids an approval by the requester: lab-admin asks, the kind
   # admin approves.
-  KUBECONFIG=$lab_dir/admin.kubeconfig "$root/metal/bin/pk-metal" upgrade --wait 5m talos "$cluster_name" "$target" >&2
+  KUBECONFIG=$lab_dir/admin.kubeconfig "$PK_METAL" upgrade --wait 5m talos "$cluster_name" "$target" >&2
   name=$(rollout_wait_proposed "$cluster_name" TalosUpgrade 300)
-  rollout_through "$root" "$lab_dir" "$name" "$timeout"
+  rollout_through "$lab_dir" "$name" "$timeout"
   stale=$(kubectl get talosnodes --output json | jq -r --arg v "$target" '
     .items[] | select(.status.version != $v) | "\(.metadata.name) runs \(.status.version // "an unknown release")"')
   [[ -z $stale ]] || die "rollout $name completed, but not every node runs Talos $target:
@@ -1663,7 +1661,7 @@ $stale"
 # rollout. The check: the label is on every Kubernetes node, every TalosNode
 # is in sync again, and no machine rebooted.
 day2_config_change() {
-  local root=$1 lab_dir=$2 gen=$3 timeout=$4
+  local lab_dir=$1 gen=$2 timeout=$3
   local cluster_name stamp before after node name missing
   require_cluster "$lab_dir"
   cluster_name=$(lab_value "$gen" TALOS_CLUSTER)
@@ -1684,8 +1682,8 @@ day2_config_change() {
   name=$(rollout_wait_proposed "$cluster_name" Config 600)
   kubectl get talosrollout "$name" --output json | jq -e '[.status.plan[] | select(.rebootRequired)] | length == 0' >/dev/null \
     || die "the operator planned a reboot for a label change:
-$("$root/metal/bin/pk-metal" rollout show "$name")"
-  rollout_through "$root" "$lab_dir" "$name" "$timeout"
+$("$PK_METAL" rollout show "$name")"
+  rollout_through "$lab_dir" "$name" "$timeout"
   missing=$(kubectl --kubeconfig "$lab_dir/workload.kubeconfig" get nodes --output json | jq -r --arg s "$stamp" '
     .items[] | select(.metadata.labels["lab.platform-kit.org/day2"] != $s) | .metadata.name')
   [[ -z $missing ]] || die "rollout $name completed, but these nodes lack the label lab.platform-kit.org/day2=$stamp: $missing"
@@ -1738,11 +1736,10 @@ metrics_text() {
 # Checks the views a person and a monitoring system have of a converged lab.
 # Every check names what it expected; the first miss stops the run.
 observe_views() {
-  local root=$1
   local report metrics
   step "pk-metal status: every cluster available, every node Ready"
   # Exit 2 means something needs a person; the JSON is what is checked.
-  report=$("$root/metal/bin/pk-metal" status -o json) || true
+  report=$("$PK_METAL" status -o json) || true
   jq -e '.clusters | length > 0' <<<"$report" >/dev/null \
     || die "pk-metal status -o json lists no cluster. See it: mise run lab:status"
   jq -e '[.clusters[] | select(.available != "ClusterAvailable")] | length == 0' <<<"$report" >/dev/null \
@@ -1767,7 +1764,7 @@ observe_views() {
 # $lead seconds, approves it, and checks that it waits for the window and
 # then runs by itself.
 observe_window() {
-  local root=$1 lead=$2
+  local lead=$1
   local host endpoint slot opens closes op=lab-window-probe blocked phase started deadline
   host=$(kubectl get hosts --output jsonpath='{.items[0].metadata.name}')
   [[ -n $host ]] || die "the lab has no Host to try a maintenance window on"
@@ -1805,7 +1802,7 @@ spec:
   actions:
     - ejectMedia: {mediaId: "$slot"}
 YAML
-  "$root/metal/bin/pk-metal" approve --yes -n "$NAMESPACE" "$op" >&2
+  "$PK_METAL" approve --yes -n "$NAMESPACE" "$op" >&2
 
   deadline=$((SECONDS + 60))
   until blocked=$(kubectl -n "$NAMESPACE" get hostoperation "$op" --output jsonpath='{.status.blockedOn}') \
@@ -1831,10 +1828,10 @@ YAML
 }
 
 observe() {
-  local root=$1 lab_dir=$2
+  local lab_dir=$1
   require_cluster "$lab_dir"
-  observe_views "$root"
-  observe_window "$root" 120
+  observe_views
+  observe_window 120
   echo "observe: status tables, metrics and the maintenance window behave" >&2
 }
 
@@ -1932,7 +1929,7 @@ pivot() {
     # two-slot machines into it; a one-slot machine there would wait with
     # BuilderUnavailable, because the imager Jobs cannot write into the
     # manager's emptyDir.
-    "$root/metal/bin/pk-metal" pivot --to "$lab_dir/workload.kubeconfig" --image "$ref" \
+    "$PK_METAL" pivot --to "$lab_dir/workload.kubeconfig" --image "$ref" \
       --media-url "https://$media_node:30443" --media-store ephemeral --timeout 600s --yes >&2 \
       || die "the move did not finish. Its message above says what to do; rerun it with: mise run lab:pivot"
     step "deleting the kind cluster $cluster"
@@ -1949,7 +1946,7 @@ pivot() {
   want_hosts=$(($(lab_value "$gen" NODES) + $(lab_value "$gen" WORKLOAD_NODES)))
   want_nodes=$(lab_value "$gen" WORKLOAD_NODES)
   # What is left of the time the round got: the move above used some of it.
-  wait_converged "$root" "$second" "$lab_dir/second.kubeconfig" "$lab_dir/second.talosconfig" \
+  wait_converged "$second" "$lab_dir/second.kubeconfig" "$lab_dir/second.talosconfig" \
     "$want_hosts" "$want_nodes" $((deadline - SECONDS))
   cat >&2 <<EOF
 
@@ -1965,15 +1962,15 @@ EOF
 # deployment does not carry it, so that the default lab stays as it is; this
 # adds the claim and patches the Deployment with the component's own patch.
 backup_volume_up() {
-  local root=$1 namespace=$2 deployment=$3
+  local root=$1
   local component=$root/metal/config/etcd-backup
   step "etcd backup volume"
   kubectl apply --server-side -f "$component/pvc.yaml" >&2
-  if ! kubectl -n "$namespace" get deployment "$deployment" --output json \
+  if ! kubectl -n "$NAMESPACE" get deployment "$DEPLOYMENT" --output json \
     | jq -e '.spec.template.spec.containers[0].args // [] | any(startswith("--etcd-backup-dir="))' >/dev/null; then
-    kubectl -n "$namespace" patch deployment "$deployment" --type json --patch-file "$component/manager.yaml" >&2
+    kubectl -n "$NAMESPACE" patch deployment "$DEPLOYMENT" --type json --patch-file "$component/manager.yaml" >&2
   fi
-  kubectl -n "$namespace" rollout status "deployment/$deployment" --timeout=300s >&2
+  kubectl -n "$NAMESPACE" rollout status "deployment/$DEPLOYMENT" --timeout=300s >&2
 }
 
 # An age identity for the lab's restorer, made once. The operator only ever
@@ -2013,17 +2010,17 @@ bootstrapped_is() {
 # Copies one file off the backup volume, through a pod that mounts the claim
 # as the manager's user (the volume is the operator's; nothing else reads it).
 backup_volume_copy() {
-  local namespace=$1 deployment=$2 key=$3 out=$4
+  local key=$1 out=$2
   local node
-  node=$(kubectl -n "$namespace" get pod --selector app.kubernetes.io/name=pk-metal,app.kubernetes.io/component=manager \
+  node=$(kubectl -n "$NAMESPACE" get pod --selector app.kubernetes.io/name=pk-metal,app.kubernetes.io/component=manager \
     --output jsonpath='{.items[0].spec.nodeName}')
-  kubectl -n "$namespace" delete pod etcd-backup-reader --ignore-not-found --wait=true >&2
+  kubectl -n "$NAMESPACE" delete pod etcd-backup-reader --ignore-not-found --wait=true >&2
   kubectl apply -f - >&2 <<EOF
 apiVersion: v1
 kind: Pod
 metadata:
   name: etcd-backup-reader
-  namespace: $namespace
+  namespace: $NAMESPACE
 spec:
   nodeName: $node
   restartPolicy: Never
@@ -2045,11 +2042,11 @@ spec:
     - name: backups
       persistentVolumeClaim: { claimName: pk-metal-etcd-backups, readOnly: true }
 EOF
-  kubectl -n "$namespace" wait --for=condition=Ready pod/etcd-backup-reader --timeout=180s >&2
-  kubectl -n "$namespace" exec etcd-backup-reader -- cat "/backups/$key" >"$out"
-  kubectl -n "$namespace" delete pod etcd-backup-reader --wait=false >&2
-  [[ -s $out ]] || die "copied nothing from /backups/$key on the backup volume (deployment $deployment). Look at it:
-  kubectl --kubeconfig $KUBECONFIG -n $namespace get etcdsnapshots; mise run lab:collect"
+  kubectl -n "$NAMESPACE" wait --for=condition=Ready pod/etcd-backup-reader --timeout=180s >&2
+  kubectl -n "$NAMESPACE" exec etcd-backup-reader -- cat "/backups/$key" >"$out"
+  kubectl -n "$NAMESPACE" delete pod etcd-backup-reader --wait=false >&2
+  [[ -s $out ]] || die "copied nothing from /backups/$key on the backup volume (deployment $DEPLOYMENT). Look at it:
+  kubectl --kubeconfig $KUBECONFIG -n $NAMESPACE get etcdsnapshots; mise run lab:collect"
 }
 
 # The total-loss round on the lab's first cluster: back it up to the backup
@@ -2059,8 +2056,8 @@ EOF
 # marker written before the snapshot is back, one written after it is not,
 # and the TalosCluster is Bootstrapped again.
 day2_backup_restore() {
-  local root=$1 lab_dir=$2 gen=$3 namespace=$4 deployment=$5 timeout=$6
-  local cli=$root/metal/bin/pk-metal dir=$lab_dir/backup-restore
+  local root=$1 lab_dir=$2 gen=$3 timeout=$4
+  local dir=$lab_dir/backup-restore
   local cluster_name policy recipient snap key op addr addrs line last="" deadline=$((SECONDS + timeout))
   require_cluster "$lab_dir"
   cluster_name=$(lab_value "$gen" TALOS_CLUSTER)
@@ -2071,7 +2068,7 @@ day2_backup_restore() {
   chmod 700 "$dir"
   policy=$cluster_name-dr
 
-  backup_volume_up "$root" "$namespace" "$deployment"
+  backup_volume_up "$root"
   recipient=$(age_identity "$root" "$dir/identity.txt")
   [[ $recipient == age1* ]] || die "$dir/identity.txt has no public key line. Remove it and run again."
 
@@ -2094,13 +2091,13 @@ spec:
       - $recipient
 EOF
   marker_set "$lab_dir/workload.kubeconfig" dr-before
-  "$cli" backup now "$policy" >&2 || die "the snapshot did not complete. Look at it: kubectl --kubeconfig $KUBECONFIG get etcdsnapshots; kubectl --kubeconfig $KUBECONFIG describe etcdbackuppolicy $policy"
+  "$PK_METAL" backup now "$policy" >&2 || die "the snapshot did not complete. Look at it: kubectl --kubeconfig $KUBECONFIG get etcdsnapshots; kubectl --kubeconfig $KUBECONFIG describe etcdbackuppolicy $policy"
   snap=$(kubectl get etcdsnapshots --selector "os.platform-kit.org/etcd-backup-policy=$policy" --output json \
     | jq -r '[.items[] | select(any(.status.conditions[]?; .type == "Verified" and .status == "True"))]
       | sort_by(.status.takenAt) | last | .metadata.name // empty')
   [[ -n $snap ]] || die "no verified snapshot of policy $policy. Look at it: kubectl --kubeconfig $KUBECONFIG get etcdsnapshots -o yaml"
   key=$(kubectl get etcdsnapshot "$snap" --output jsonpath='{.status.key}')
-  "$cli" backup list "$cluster_name" >&2
+  "$PK_METAL" backup list "$cluster_name" >&2
   marker_set "$lab_dir/workload.kubeconfig" dr-after
 
   step "losing etcd: wiping EPHEMERAL on every control plane of $cluster_name"
@@ -2120,33 +2117,33 @@ EOF
     --output jsonpath='{.status.conditions[?(@.type=="Bootstrapped")].message}')" >&2
 
   step "restoring $snap"
-  backup_volume_copy "$namespace" "$deployment" "$key" "$dir/snapshot.db.age"
-  "$cli" backup decrypt --in "$dir/snapshot.db.age" --identity "$dir/identity.txt" >&2
+  backup_volume_copy "$key" "$dir/snapshot.db.age"
+  "$PK_METAL" backup decrypt --in "$dir/snapshot.db.age" --identity "$dir/identity.txt" >&2
   impersonating_kubeconfig "$lab_dir/kubeconfig" "$dir/restorer.kubeconfig" lab-restorer
   # A control plane comes back from the reset some time after; until every
   # one answers, the plan may propose nothing. Proposing again is harmless:
   # an operation that exists is left as it is.
   while true; do
-    KUBECONFIG=$dir/restorer.kubeconfig "$cli" restore plan --snapshot "$snap" --propose "$cluster_name" >&2 || true
-    op=$(kubectl -n "$namespace" get hostoperations --selector "os.platform-kit.org/etcd-restore=$cluster_name" --output json \
+    KUBECONFIG=$dir/restorer.kubeconfig "$PK_METAL" restore plan --snapshot "$snap" --propose "$cluster_name" >&2 || true
+    op=$(kubectl -n "$NAMESPACE" get hostoperations --selector "os.platform-kit.org/etcd-restore=$cluster_name" --output json \
       | jq -r '.items[] | select(any(.spec.actions[]?; .etcdRecover != null)) | .metadata.name' | head -n 1)
     [[ -z $op ]] || break
     (( SECONDS < deadline )) || die "pk-metal restore plan proposed no etcdRecover operation within ${timeout}s; its output above says why"
     sleep 15
   done
   # The lab's admin approves what lab-restorer proposed: two people.
-  approve_pending "$root" >/dev/null
-  until "$cli" restore upload "$namespace/$op" --identity "$dir/identity.txt" --from-file "$dir/snapshot.db.age" >&2; do
+  approve_pending >/dev/null
+  until "$PK_METAL" restore upload "$NAMESPACE/$op" --identity "$dir/identity.txt" --from-file "$dir/snapshot.db.age" >&2; do
     (( SECONDS < deadline )) || die "the snapshot upload to $op did not succeed within ${timeout}s; its output above says why"
-    approve_pending "$root" >/dev/null || true
+    approve_pending >/dev/null || true
     sleep 15
   done
 
   step "waiting for $op and for etcd"
   while true; do
-    approve_pending "$root" >/dev/null || true
-    line="$(kubectl -n "$namespace" get hostoperation "$op" --output jsonpath='{.status.phase}' 2>/dev/null): $(
-      kubectl -n "$namespace" get hostoperation "$op" \
+    approve_pending >/dev/null || true
+    line="$(kubectl -n "$NAMESPACE" get hostoperation "$op" --output jsonpath='{.status.phase}' 2>/dev/null): $(
+      kubectl -n "$NAMESPACE" get hostoperation "$op" \
         --output jsonpath='{.status.conditions[?(@.type=="Executed")].message}' 2>/dev/null)"
     if [[ $line == Succeeded:* ]] && bootstrapped_is "$cluster_name" True \
       && marker_present "$lab_dir/workload.kubeconfig" dr-before; then
@@ -2190,7 +2187,7 @@ collect() {
   fi
 
   if [[ -s $lab_dir/kubeconfig ]]; then
-    "$root/metal/bin/pk-metal" status >"$out/status.txt" 2>&1 || true
+    "$PK_METAL" status >"$out/status.txt" 2>&1 || true
     kubectl get metal --all-namespaces --output wide >"$out/get.txt" 2>&1 || true
     kubectl get metal --all-namespaces --output yaml >"$out/objects.yaml" 2>&1 || true
     kubectl get events --all-namespaces --sort-by=.lastTimestamp >"$out/events.txt" 2>&1 || true
@@ -2213,7 +2210,7 @@ collect() {
 down() {
   local root=$1 lab_dir=$2 cluster=$3
   step "lab down"
-  fleet_down "$root" "$lab_dir"
+  fleet_down "$lab_dir"
   if have kind && kind get clusters 2>/dev/null | grep -qx "$cluster"; then
     kind delete cluster --name "$cluster" >&2
   fi
@@ -2269,7 +2266,7 @@ forget_clusters() {
 reset() {
   local root=$1 lab_dir=$2 fleet=$3
   local state_dir
-  fleet_running "$lab_dir" "$root/metal/bin/pk-metal" \
+  fleet_running "$lab_dir" \
     && die "the fleet is running and has the disks open. Take the lab down first: mise run lab:down"
   state_dir=$(fleet_state_dir "$root" "$fleet")
   if [[ ! -e $state_dir ]]; then
@@ -2289,14 +2286,17 @@ reset() {
 main() {
   local verb=${1:-} nodes
   [[ -z ${PK_LAB_TALOS:-} ]] || SPEC=$(spec_at_talos "$TARGET_SPEC" "$PK_LAB_TALOS" "$LAB_DIR")
+  # The verbs that work on what up rendered last.
+  case "$verb" in
+    network | deploy | fleet | manifests | kubeconfig | wait | day2 | scale | pivot | backup-restore | upgrade | collect | reset)
+      require_rendered
+      ;;
+  esac
   case "$verb" in
     doctor) doctor "$ROOT" "$LAB_DIR" "$SPEC" "$SIZE" "$WORKLOAD" "$MIN_FREE_GIB" "$KIND_CONFIG" ;;
-    render) render "$ROOT" "$SPEC" "$SIZE" "$WORKLOAD" "$GEN" ;;
+    render) render ;;
     up) up "$ROOT" "$LAB_DIR" "$SPEC" "$SIZE" "$WORKLOAD" "$GEN" "$CLUSTER" "$MIN_FREE_GIB" "$KIND_CONFIG" "${PK_LAB_TALOS:-}" ;;
-    network)
-      require_rendered "$ROOT" "$SPEC" "$SIZE" "$WORKLOAD" "$GEN"
-      network_up "$ROOT" "$GEN"
-      ;;
+    network) network_up "$ROOT" "$GEN" ;;
     cluster)
       pivoted_guard "$LAB_DIR"
       cluster_up "$LAB_DIR" "$CLUSTER" "$KIND_CONFIG"
@@ -2304,75 +2304,45 @@ main() {
     deploy)
       pivoted_guard "$LAB_DIR"
       require_cluster "$LAB_DIR"
-      require_rendered "$ROOT" "$SPEC" "$SIZE" "$WORKLOAD" "$GEN"
       deploy "$ROOT" "$LAB_DIR" "$GEN" "$CLUSTER"
       ;;
-    fleet)
-      require_rendered "$ROOT" "$SPEC" "$SIZE" "$WORKLOAD" "$GEN"
-      fleet_up "$ROOT" "$LAB_DIR" "$FLEET"
-      ;;
+    fleet) fleet_up "$ROOT" "$LAB_DIR" "$FLEET" ;;
     manifests)
       require_cluster "$LAB_DIR"
-      require_rendered "$ROOT" "$SPEC" "$SIZE" "$WORKLOAD" "$GEN"
       manifests_apply "$GEN"
       ;;
     apply)
       require_cluster "$LAB_DIR"
       shift
       if (( $# == 0 )); then
-        require_rendered "$ROOT" "$SPEC" "$SIZE" "$WORKLOAD" "$GEN"
+        require_rendered
         manifests_apply "$GEN"
       else
         admin_apply "$@"
       fi
       ;;
-    status) status "$ROOT" "$LAB_DIR" ;;
-    approve) approve "$ROOT" "$LAB_DIR" ;;
-    kubeconfig)
-      require_rendered "$ROOT" "$SPEC" "$SIZE" "$WORKLOAD" "$GEN"
-      kubeconfig "$LAB_DIR" "$(lab_value "$GEN" TALOS_CLUSTER)"
-      ;;
+    status) status "$LAB_DIR" ;;
+    approve) approve "$LAB_DIR" ;;
+    kubeconfig) kubeconfig "$LAB_DIR" "$(lab_value "$GEN" TALOS_CLUSTER)" ;;
     wait)
-      require_rendered "$ROOT" "$SPEC" "$SIZE" "$WORKLOAD" "$GEN"
       require_cluster "$LAB_DIR"
       nodes=$(lab_value "$GEN" NODES)
-      wait_converged "$ROOT" "$(lab_value "$GEN" TALOS_CLUSTER)" "$LAB_DIR/workload.kubeconfig" "$LAB_DIR/talosconfig" \
+      wait_converged "$(lab_value "$GEN" TALOS_CLUSTER)" "$LAB_DIR/workload.kubeconfig" "$LAB_DIR/talosconfig" \
         "$nodes" "$nodes" "$WAIT_TIMEOUT"
       ;;
     release)
       (( $# == 2 )) || die "name one claim, e.g.: mise run lab:release default/node-3"
-      release "$ROOT" "$LAB_DIR" "$2" "$RELEASE_TIMEOUT"
+      release "$LAB_DIR" "$2" "$RELEASE_TIMEOUT"
       ;;
-    day2)
-      require_rendered "$ROOT" "$SPEC" "$SIZE" "$WORKLOAD" "$GEN"
-      day2 "$ROOT" "$LAB_DIR" "$GEN" "$DAY2_TIMEOUT" "$ROLLOUT_TIMEOUT"
-      ;;
-    scale)
-      require_rendered "$ROOT" "$SPEC" "$SIZE" "$WORKLOAD" "$GEN"
-      day2_scale "$ROOT" "$LAB_DIR" "$GEN" "$WAIT_TIMEOUT"
-      ;;
-    observe) observe "$ROOT" "$LAB_DIR" ;;
-    pivot)
-      require_rendered "$ROOT" "$SPEC" "$SIZE" "$WORKLOAD" "$GEN"
-      pivot "$ROOT" "$LAB_DIR" "$GEN" "$CLUSTER" "$WAIT_TIMEOUT"
-      ;;
-    backup-restore)
-      require_rendered "$ROOT" "$SPEC" "$SIZE" "$WORKLOAD" "$GEN"
-      day2_backup_restore "$ROOT" "$LAB_DIR" "$GEN" "$NAMESPACE" "$DEPLOYMENT" "$WAIT_TIMEOUT"
-      ;;
-    upgrade)
-      require_rendered "$ROOT" "$SPEC" "$SIZE" "$WORKLOAD" "$GEN"
-      day2_upgrade "$ROOT" "$LAB_DIR" "$GEN" "$ROLLOUT_TIMEOUT" "$TARGET_SPEC"
-      ;;
-    collect)
-      require_rendered "$ROOT" "$SPEC" "$SIZE" "$WORKLOAD" "$GEN"
-      collect "$ROOT" "$LAB_DIR" "$FLEET"
-      ;;
+    day2) day2 "$LAB_DIR" "$GEN" "$DAY2_TIMEOUT" "$ROLLOUT_TIMEOUT" ;;
+    scale) day2_scale "$LAB_DIR" "$GEN" "$WAIT_TIMEOUT" ;;
+    observe) observe "$LAB_DIR" ;;
+    pivot) pivot "$ROOT" "$LAB_DIR" "$GEN" "$CLUSTER" "$WAIT_TIMEOUT" ;;
+    backup-restore) day2_backup_restore "$ROOT" "$LAB_DIR" "$GEN" "$WAIT_TIMEOUT" ;;
+    upgrade) day2_upgrade "$LAB_DIR" "$GEN" "$ROLLOUT_TIMEOUT" "$TARGET_SPEC" ;;
+    collect) collect "$ROOT" "$LAB_DIR" "$FLEET" ;;
     down) down "$ROOT" "$LAB_DIR" "$CLUSTER" ;;
-    reset)
-      require_rendered "$ROOT" "$SPEC" "$SIZE" "$WORKLOAD" "$GEN"
-      reset "$ROOT" "$LAB_DIR" "$FLEET"
-      ;;
+    reset) reset "$ROOT" "$LAB_DIR" "$FLEET" ;;
     -h | --help | help) usage ;;
     *)
       usage

@@ -5,7 +5,9 @@
 #     proposes a new one, which waits for approval again;
 #   - patch a HostClaim (pk-metal hold, unhold) and a Host (pk-metal wipe, or
 #     remove the disk-not-wiped mark); a wipe is still an operation that a
-#     person approves;
+#     person approves. This patch can also set the guard lifts there
+#     (allow-self-disruption, wipe-waived, ack-etcd-risk); guard-lift
+#     admission makes each one name that person;
 #   - patch a TalosCluster to remove the restore-pending mark after a restore;
 #   - patch an Asset to correct its ledger facts;
 #   - delete a TalosRollout to stop it for good.

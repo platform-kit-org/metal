@@ -70,12 +70,7 @@ Read the full plan before you answer. An approved install overwrites the disk th
 
 ### Lifted guards
 
-Two annotations on a [](kind:HostOperation) lift a safety rule for that operation:
-
-| Annotation | Rule that it lifts |
-| --- | --- |
-| `metal.platform-kit.org/override-cluster-guard` | A control plane goes down only while etcd is healthy without it. |
-| `metal.platform-kit.org/ignore-window` | The operation starts only in a [](kind:MaintenanceWindow). |
+The plan shows two annotations on the operation: `metal.platform-kit.org/override-cluster-guard` and `metal.platform-kit.org/ignore-window`. It does not show the lifts on the Host or the claim. See [Named guard lifts](ref:audit-trail#named-guard-lifts).
 
 [](cli:restore) sets both on each operation that it proposes.
 The plan shows each annotation that is set, in the section `guards lifted for this operation`. Each line names the person who lifted the guard, and the reason. A value that names nobody shows as `lifted by nobody named`.

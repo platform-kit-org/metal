@@ -35,6 +35,7 @@ These annotations are commands. Most of them have a `pk-metal` command that sets
 | <KeyRef k="metal.platform-kit.org/allow-self-disruption" /> | Host | The operator can reboot the machine that it runs on. | `kubectl annotate`, with your name |
 | <KeyRef k="metal.platform-kit.org/wipe-waived" /> | Host | A person removed `disk-not-wiped` without a wipe. | `kubectl annotate`, with your name |
 | <KeyRef k="metal.platform-kit.org/override-cluster-guard" /> | HostOperation | The operation can stop a control plane when etcd is not healthy. | `kubectl annotate`, with your name |
+| <KeyRef k="metal.platform-kit.org/etcd-snapshot-uploaded" /> | HostOperation | You uploaded the etcd snapshot of an [](act:EtcdRecover) operation. | [](cli:restore) `upload` |
 | <KeyRef k="metal.platform-kit.org/approve-tls-key" /> | [](kind:ManagementEndpoint) | The operator pins this TLS key of the BMC when the BMC shows it. See [Trust the BMC certificate](kind:ManagementEndpoint#trust-the-bmc-certificate). | `kubectl annotate` |
 | <KeyRef k="os.platform-kit.org/resume" /> | [](kind:TalosRollout) | The rollout continues after the pause on the first node. | [](cli:rollout) |
 | <KeyRef k="os.platform-kit.org/restore-pending" /> | [](kind:TalosCluster) | The operator does not bootstrap etcd, because you restore it. | `kubectl annotate` |
@@ -49,11 +50,7 @@ Do not set `metal.platform-kit.org/allow-self-disruption` or `metal.platform-kit
 These annotations remove a protection of the cluster that the operator runs in.
 </Callout>
 
-The value of `metal.platform-kit.org/ignore-window`, `metal.platform-kit.org/override-cluster-guard` and `metal.platform-kit.org/ack-etcd-risk` is `<username>: <reason>`. The username is your own username in the API server. The [`guard-lift`](ref:admission-policies#guard-lift) policy refuses each other value, and an empty reason. For example: `metal.platform-kit.org/ignore-window="alice: CVE fix, agreed with on-call"`. If the site installs [`guard-lift-stamp`](ref:admission-policies#guard-lift-stamp), give the reason only: the API server writes your username in front of it. Else get your username with `kubectl auth whoami`. `pk-metal` writes the value for you with `--ack-etcd-risk`.
-
-You can always remove the annotation. That puts the guard back. A value from before the policy, or an empty value, stays until somebody changes it. An empty value does not count: the operator ignores the annotation, and the guard stays. See [](ref:audit-trail).
-
-A holder of `patch` on HostOperations can set these annotations. The [approver role](ref:rbac) has `patch`. So a person who can approve an operation can also lift these guards on it.
+Seven of these keys are guard lifts: the value names the person who sets the key, and a reason. [Named guard lifts](ref:audit-trail#named-guard-lifts) lists them. [`guard-lift`](ref:admission-policies#guard-lift) has the rules of the value.
 
 ## Labels for selectors
 

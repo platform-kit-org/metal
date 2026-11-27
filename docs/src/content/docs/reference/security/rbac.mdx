@@ -144,7 +144,8 @@ subjects:
 | Name the TalosNode that a claim installs | A member of the admin group. | `hostclaim-provisioning` |
 | Set `provisioning.approval: Automatic` on a claim | A member of the admin group. | `hostclaim-provisioning` |
 | Point a claim at another machine ([](cli:replace)) | A member of the admin group. | `hostclaim-provisioning` |
-| Lift a maintenance window or the cluster guard on an operation | A holder of `patch` on operations. | RBAC |
+| Lift a maintenance window or the cluster guard on an operation | A holder of `patch` on operations. | RBAC and `guard-lift` |
+| Lift self-protection or waive a wipe on a Host, or accept an etcd risk on a claim or a node | A holder of `patch` on the object: `pk-metal-oncall` (Hosts and claims) or `pk-metal-admin`. | RBAC and `guard-lift` |
 | Ask for an etcd snapshot now | A holder of `pk-metal-backup`. | RBAC |
 | Create a backup policy, or change its recipients or sink | A member of the admin group. | `etcdbackuppolicy-guard` |
 | Create or change an EndpointProfile | A member of the admin group. | `endpointprofile-guard` |

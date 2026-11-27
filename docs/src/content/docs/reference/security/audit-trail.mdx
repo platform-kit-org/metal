@@ -265,17 +265,11 @@ These annotations lift a safety rule or decide a step of a change:
 | `metal.platform-kit.org/abort` | HostOperation | A person stops the operation. |
 | `metal.platform-kit.org/etcd-snapshot-uploaded` | HostOperation | A person uploaded the etcd snapshot. The reason is the sha256 of the upload. |
 
-The value must be `<username>: <reason>`. The username is the username of the request, and the reason is not empty. The [admission policy](ref:admission-policies#guard-lift) `guard-lift` refuses each other value. So the object records who lifted the rule and why.
+The value is `<username>: <reason>`, so the object records who lifted the rule and why. The admission policy [`guard-lift`](ref:admission-policies#guard-lift) has the rules of the value.
 
-```sh
-kubectl -n pk-metal annotate hostoperation reboot-node-1 metal.platform-kit.org/ignore-window="CVE fix"
-```
-
-- The API server writes your username in front of the reason, if the site installs [`guard-lift-stamp`](ref:admission-policies#guard-lift-stamp) (Kubernetes 1.36 or later). Without it, write `<username>: ` in front yourself.
 - `pk-metal` writes this value for you: [](cli:reinstall), [](cli:replace), [](cli:scale), [](cli:restore) and [](cli:abort).
-- [](cli:approve) shows the person and the reason of each lift in the plan.
-- A person who may update the object can always remove a lift. That puts the rule back.
-- A value from before the policy stays. The plan and the audit log show it as `nobody named`.
+- [](cli:approve) shows the lifts on the operation, `ignore-window` and `override-cluster-guard`, with the person and the reason. It does not show the lifts on the Host or the claim.
+- The plan and the audit log show a value that names nobody as `nobody named`.
 
 The audit log records `metal.platform-kit.org/allow-self-disruption` with each operation that it lets stop the node of the operator, and `metal.platform-kit.org/wipe-waived` with each install that starts on the machine. The `finished` line of an aborted operation has the value of `metal.platform-kit.org/abort` in `message`. The operator removes `metal.platform-kit.org/wipe-waived` when it marks the machine again or wipes it.
 

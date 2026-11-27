@@ -91,6 +91,7 @@ pk-metal can wipe disks, flash firmware and boot any image on a machine. This pa
 | Admin group | Create an operation that needs no approval, and the other admin changes above. | `hostoperation-approval`, `hostclaim-provisioning`, `etcdbackuppolicy-guard`, `endpointprofile-guard` |
 | A person with `create` and `patch` on operations or rollouts, if `selfApproval` is `Allowed` | Propose a change, or make the edit that the operator proposes a change for, and approve it. The record names the person as proposer, and as approver. It names the person as requester if the edit set `metal.platform-kit.org/requested-by`, as the pk-metal commands and the policy `requested-by-stamp` do. | Rules 7 and 8 of the approval policies, `requested-by`, `requested-by-patches`, and the `selfApproved` field of the [](ref:audit-trail) |
 | Holder of `patch` on operations | Lift a maintenance window or the cluster guard on an operation that a person approved. The value must name the person and a reason. | RBAC, `guard-lift`, and the [](ref:audit-trail) |
+| Holder of `patch` on Hosts, claims or nodes (`pk-metal-oncall`, `pk-metal-admin`) | Lift self-protection or waive a wipe on a Host, or accept an etcd risk on a claim or a node. The plan of [](cli:approve) does not show these lifts. The value must name the person and a reason. | RBAC, `guard-lift`, and the [](ref:audit-trail) |
 
 ### Known limits
 

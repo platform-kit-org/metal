@@ -13,7 +13,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"slices"
 	"testing"
 	"time"
@@ -51,21 +50,11 @@ func Run(t *testing.T, c bmc.Client, f *sim.Fixture) {
 		// way they are the same facts.
 		ch, err := c.Chassis(ctx)
 		require.NoError(t, err)
+		assert.Equal(t, f.Chassis.BoardSerial, ch.BoardSerial, "chassis serial")
 		require.Len(t, ch.Adapters, len(f.Chassis.Adapters))
 		for i, want := range f.Chassis.Adapters {
 			assert.Equal(t, want.Model, ch.Adapters[i].Model, "adapter %d model", i)
 			assertList(t, want.PortMACs, ch.Adapters[i].PortMACs, "adapter %d port MACs", i)
-		}
-	})
-
-	t.Run("serial-anchors", func(t *testing.T) {
-		ch, err := c.Chassis(ctx)
-		require.NoError(t, err)
-		assert.Equal(t, f.Chassis.BoardSerial, ch.BoardSerial, "chassis serial")
-		for i, sys := range mustSystems(t, ctx, c) {
-			// Covers BOTH vendor shapes: Huawei's ComputerSystem carries the chassis
-			// serial; Supermicro's carries none (fixture serial == "").
-			assert.Equal(t, f.Systems[i].Serial, sys.SerialNumber, "system %s serial", sys.ID)
 		}
 	})
 
@@ -74,6 +63,9 @@ func Run(t *testing.T, c bmc.Client, f *sim.Fixture) {
 		require.Len(t, systems, len(f.Systems))
 		for i, sys := range systems {
 			fx := f.Systems[i]
+			// Covers BOTH vendor shapes: Huawei's ComputerSystem carries the chassis
+			// serial; Supermicro's carries none (fixture serial == "").
+			assert.Equal(t, fx.Serial, sys.SerialNumber, "system %s serial", sys.ID)
 			assert.Equal(t, fx.UUID, sys.UUID, "system %s uuid", sys.ID)
 			assert.Len(t, sys.NICs, len(fx.NICs), "system %s nics", sys.ID)
 			assert.Len(t, sys.Drives, len(fx.Drives), "system %s drives", sys.ID)
@@ -250,7 +242,7 @@ func Run(t *testing.T, c bmc.Client, f *sim.Fixture) {
 				assert.True(t, m.Inserted, "slot %s inserted", slot)
 				// The vmm dialect stores the URL userinfo-bearing, the standard
 				// dialect clean — compare with userinfo stripped.
-				assert.Equal(t, img, stripUserinfo(t, m.ImageURL), "slot %s image", slot)
+				assert.Equal(t, img, sim.WithoutUserinfo(m.ImageURL), "slot %s image", slot)
 			}
 		}
 		require.True(t, seen, "slot %s missing from Media()", slot)
@@ -732,14 +724,6 @@ func fixtureDialect(f *sim.Fixture, slot int) bmc.MediaDialect {
 		}
 		return bmc.DialectNone
 	}
-}
-
-func stripUserinfo(t *testing.T, imageURL string) string {
-	t.Helper()
-	u, err := url.Parse(imageURL)
-	require.NoError(t, err)
-	u.User = nil
-	return u.String()
 }
 
 // insertableSlot is the slot a boot image belongs in: the first insertable one

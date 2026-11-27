@@ -75,16 +75,15 @@ func (r *TalosClusterReconciler) guardBundle(ctx context.Context, cluster *osv1a
 	set := func(s metav1.ConditionStatus, reason, msg string) {
 		setCondition(&cluster.Status.Conditions, cluster.Generation, osv1alpha1.ConditionSecretsBundleHeld, s, reason, msg)
 	}
-	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: r.Namespace, Name: appliedBundleName(cluster.Name)}}
-	err := r.Get(ctx, client.ObjectKeyFromObject(secret), secret)
-	if client.IgnoreNotFound(err) != nil {
+	old, held, err := chooseBundle(ctx, r.Client, r.Namespace, cluster, specData)
+	if err != nil {
 		return err
 	}
-	old := secret.Data[render.BundleKey]
-	if err == nil && len(old) > 0 && !bytes.Equal(old, specData) && cluster.Status.BootstrappedAt != nil {
+	if held {
 		set(metav1.ConditionTrue, osv1alpha1.ReasonBundleChanged, bundleHeldMessage(cluster, old, specData, r.Namespace))
 		return nil
 	}
+	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: r.Namespace, Name: appliedBundleName(cluster.Name)}}
 	op, err := controllerutil.CreateOrUpdate(ctx, r.Client, secret, func() error {
 		secret.Data = map[string][]byte{render.BundleKey: specData}
 		return controllerutil.SetControllerReference(cluster, secret, r.Scheme)

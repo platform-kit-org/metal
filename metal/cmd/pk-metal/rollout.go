@@ -12,6 +12,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/GSI-HPC/go-clikit/termtext"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/types"
@@ -216,7 +217,8 @@ func rolloutTarget(ro *osv1alpha1.TalosRollout) string {
 }
 
 // renderRollout is what a person reads before approving: the order, what
-// changes on each node and whether it reboots, and how far it got.
+// changes on each node and whether it reboots, and how far it got. It quotes
+// the messages of the rollout's conditions and steps, so it is escaped.
 func renderRollout(ro *osv1alpha1.TalosRollout) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "rollout %s: %s on cluster %s", ro.Name, ro.Spec.Kind, ro.Spec.ClusterRef.Name)
@@ -239,7 +241,7 @@ func renderRollout(ro *osv1alpha1.TalosRollout) string {
 	}
 	if len(ro.Status.Plan) == 0 {
 		b.WriteString("\nno plan yet\n")
-		return b.String()
+		return termtext.EscapeLines(b.String())
 	}
 	maxW := ro.Spec.MaxUnavailableWorkers
 	if maxW < 1 {
@@ -276,7 +278,7 @@ func renderRollout(ro *osv1alpha1.TalosRollout) string {
 			fmt.Fprintf(&b, "     steps: %s\n", strings.Join(s.Actions, ", "))
 		}
 	}
-	return b.String()
+	return termtext.EscapeLines(b.String())
 }
 
 // rolloutApproval is one approve call.

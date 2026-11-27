@@ -10,6 +10,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"github.com/GSI-HPC/go-clikit/termtext"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -403,7 +404,7 @@ func renderReport(rep statusReport) string {
 		}
 		_ = w.Flush()
 		for _, n := range notes {
-			fmt.Fprintf(&sb, "  %s\n", n)
+			fmt.Fprintf(&sb, "  %s\n", termtext.Escape(n))
 		}
 	}
 

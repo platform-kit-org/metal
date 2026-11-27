@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/GSI-HPC/go-clikit/termtext"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -205,9 +206,9 @@ func buildTop(in topInput) topData {
 	switch {
 	case in.FleetURL == "":
 	case in.FleetErr != "":
-		d.FleetLine = "fleet " + in.FleetURL + ": " + in.FleetErr
+		d.FleetLine = termtext.Escape("fleet " + in.FleetURL + ": " + in.FleetErr)
 	default:
-		d.FleetLine = "fleet " + in.FleetURL
+		d.FleetLine = termtext.Escape("fleet " + in.FleetURL)
 	}
 
 	epByName := map[string]*metalv1alpha1.ManagementEndpoint{}
@@ -275,12 +276,40 @@ func buildTop(in topInput) topData {
 		}
 	}
 	for i := range d.Tiles {
+		d.Tiles[i].escape()
 		d.Tiles[i].Flow = flow(&d.Tiles[i])
 		if d.Tiles[i].Attention || (d.Tiles[i].Op != nil && (d.Tiles[i].Op.Waits || d.Tiles[i].Op.Failed)) {
 			d.Attention++
 		}
 	}
 	return d
+}
+
+// escape escapes the text of the tile before the view lays it out: a vendor,
+// a message, an address or a console line comes from a BMC, a cluster or the
+// fleet, and a control character in it would act on the terminal. The names
+// that the keys act on stay as they are; the API server allows no control
+// character in a name.
+func (t *tile) escape() {
+	texts := []*string{&t.Title, &t.Subtitle, &t.Phase, &t.BlockedOn, &t.Message,
+		&t.BMCAddress, &t.BMCPhase, &t.Power, &t.Override, &t.LastCall, &t.VM, &t.ConsoleLog,
+		&t.NodeName, &t.NodeAddress, &t.TalosWhy}
+	if o := t.Op; o != nil {
+		texts = append(texts, &o.Phase, &o.Step, &o.Approval, &o.Message)
+	}
+	for _, s := range texts {
+		*s = termtext.Escape(*s)
+	}
+	t.Media, t.Console = escapeAll(t.Media), escapeAll(t.Console)
+}
+
+// escapeAll returns a copy of lines with each line escaped.
+func escapeAll(lines []string) []string {
+	out := slices.Clone(lines)
+	for i := range out {
+		out[i] = termtext.Escape(out[i])
+	}
+	return out
 }
 
 func nodeConds(nodes []osv1alpha1.TalosNode, name string) []metav1.Condition {

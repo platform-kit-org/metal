@@ -10,6 +10,8 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+
+	"github.com/GSI-HPC/go-clikit/termtext"
 )
 
 // command is one verb: what it does in a plain line, how to call it, and
@@ -244,9 +246,10 @@ func signalContext() (ctx context.Context, stop context.CancelFunc) {
 	return signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 }
 
-// die prints the error as "pk-metal: <message>" on stderr and exits 1.
+// die prints the error as "pk-metal: <message>" on stderr and exits 1. The
+// message is escaped: an error can hold text from a BMC or a cluster.
 func die(err error) {
-	fmt.Fprintf(os.Stderr, "pk-metal: %v\n", err)
+	fmt.Fprintf(os.Stderr, "pk-metal: %s\n", termtext.EscapeLines(err.Error()))
 	os.Exit(1)
 }
 

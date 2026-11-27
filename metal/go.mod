@@ -38,6 +38,11 @@ require (
 	// authenticates every 64 KiB chunk, so a damaged backup fails while it is read instead
 	// of restoring garbage. It is the tool SOPS users already hold keys for.
 	filippo.io/age v1.3.1
+	// pk-metal: termtext escapes the text that a BMC or a cluster wrote before it reaches the
+	// terminal, and cliout aligns the tables by display width and escapes each cell: one
+	// escape policy for each line that pk-metal prints. The two packages need only
+	// golang.org/x/text, which the module has already.
+	github.com/GSI-HPC/go-clikit v0.11.0
 	// Already linked through machinery, whose compatibility package parses versions with it;
 	// orders Talos versions for the per-node render contract the same way that package does.
 	github.com/blang/semver/v4 v4.0.0

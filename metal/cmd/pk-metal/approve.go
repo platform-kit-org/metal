@@ -15,6 +15,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/GSI-HPC/go-clikit/termtext"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
@@ -140,7 +141,7 @@ func approveAll(ctx context.Context, cl client.Client, refs []types.NamespacedNa
 			return err
 		}
 		notApproved = append(notApproved, ref.String())
-		fmt.Fprintf(tmpl.Out, "%s: %v\n", ref, err)
+		fmt.Fprintf(tmpl.Out, "%s: %s\n", ref, termtext.Escape(err.Error()))
 		if errors.Is(err, errCannotAsk) || errors.Is(err, errNoAnswer) || ctx.Err() != nil {
 			for _, rest := range refs[i+1:] {
 				notApproved = append(notApproved, rest.String())
@@ -497,7 +498,8 @@ func loadPlanContext(ctx context.Context, cl client.Client, op *metalv1alpha1.Ho
 	return pc, nil
 }
 
-// renderPlan says in plain words what the operation will do, in order.
+// renderPlan says in plain words what the operation will do, in order. The
+// plan quotes the operation, its host and its BMCs, so it is escaped.
 func renderPlan(op *metalv1alpha1.HostOperation, pc planContext) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "operation %s/%s\n", op.Namespace, op.Name)
@@ -574,7 +576,7 @@ func renderPlan(op *metalv1alpha1.HostOperation, pc planContext) string {
 		fmt.Fprintf(&b, "  installs Talos onto the disk that matches %s; everything on that disk is overwritten\n",
 			diskSelector(n.Spec.InstallDiskSelector))
 	}
-	return b.String()
+	return termtext.EscapeLines(b.String())
 }
 
 // guardEffect says in plain words which rule an annotation lifts.

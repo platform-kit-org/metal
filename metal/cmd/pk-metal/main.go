@@ -209,18 +209,14 @@ run: pk-metal sim serve -h, or pk-metal sim fleet -h, for the flags`)
 	if err != nil {
 		die(err)
 	}
+	st := sim.NewState(f)
 	// Bind BEFORE logging, so the "serving" line means the listener is really up.
-	ln, err := net.Listen("tcp", *listen)
+	ln, err := simListen(*listen, st, *serveTLS)
 	if err != nil {
 		die(err)
 	}
 	scheme := "http"
 	if *serveTLS {
-		cert, err := asset.EphemeralCert()
-		if err != nil {
-			die(err)
-		}
-		ln = tls.NewListener(ln, &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12})
 		scheme = "https"
 	}
 	account := "no accounts, open"
@@ -230,7 +226,22 @@ run: pk-metal sim serve -h, or pk-metal sim fleet -h, for the flags`)
 		account = "account " + f.Accounts[0].Username + " / " + f.Accounts[0].Password
 	}
 	log.Printf("sim: serving %s (%s) on %s://%s/redfish/v1 (%s)", f.Name, f.Vendor, scheme, ln.Addr(), account)
-	die(http.Serve(ln, logRequests(sim.NewServer(sim.NewState(f)), "sim", *verbose)))
+	die(http.Serve(ln, logRequests(sim.NewServer(st), "sim", *verbose)))
+}
+
+// simListen binds addr. With serveTLS the listener presents the certificate
+// of st, which starts as a new self-signed one. So the Certificate resources
+// show it, and a replaced identity reaches the wire, as in the fleet.
+func simListen(addr string, st *sim.State, serveTLS bool) (net.Listener, error) {
+	if !serveTLS {
+		return net.Listen("tcp", addr)
+	}
+	cert, err := asset.EphemeralCert()
+	if err != nil {
+		return nil, err
+	}
+	st.SetServedCertificate(cert)
+	return tls.Listen("tcp", addr, &tls.Config{GetCertificate: st.TLSCertificate, MinVersion: tls.VersionTLS12})
 }
 
 // logRequests is the sim's console: state-changing requests — power, media, boot,

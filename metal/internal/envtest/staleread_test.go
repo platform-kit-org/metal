@@ -483,59 +483,50 @@ func (c *staleClient) List(ctx context.Context, list client.ObjectList, opts ...
 	return c.w.mgr.GetCache().List(ctx, list, opts...)
 }
 
-func (c *staleClient) Create(ctx context.Context, obj client.Object, opts ...client.CreateOption) error {
-	if !c.exploring() {
-		return c.Client.Create(ctx, obj, opts...)
+// writer is where a write goes: a dry run while the explorer runs, else the
+// API server.
+func (c *staleClient) writer() client.Client {
+	if c.exploring() {
+		return c.dry
 	}
-	err := c.dry.Create(ctx, obj, opts...)
-	if err == nil {
-		c.note("create", obj)
+	return c.Client
+}
+
+// done records a write that the API server accepted while the explorer
+// runs, and returns err.
+func (c *staleClient) done(verb string, obj client.Object, err error) error {
+	if err == nil && c.exploring() {
+		c.note(verb, obj)
 	}
 	return err
+}
+
+// doneApply is done for an apply.
+func (c *staleClient) doneApply(verb string, ac runtime.ApplyConfiguration, err error) error {
+	if err == nil && c.exploring() {
+		c.noteApply(verb, ac)
+	}
+	return err
+}
+
+func (c *staleClient) Create(ctx context.Context, obj client.Object, opts ...client.CreateOption) error {
+	return c.done("create", obj, c.writer().Create(ctx, obj, opts...))
 }
 
 func (c *staleClient) Update(ctx context.Context, obj client.Object, opts ...client.UpdateOption) error {
-	if !c.exploring() {
-		return c.Client.Update(ctx, obj, opts...)
-	}
-	err := c.dry.Update(ctx, obj, opts...)
-	if err == nil {
-		c.note("update", obj)
-	}
-	return err
+	return c.done("update", obj, c.writer().Update(ctx, obj, opts...))
 }
 
 func (c *staleClient) Delete(ctx context.Context, obj client.Object, opts ...client.DeleteOption) error {
-	if !c.exploring() {
-		return c.Client.Delete(ctx, obj, opts...)
-	}
-	err := c.dry.Delete(ctx, obj, opts...)
-	if err == nil {
-		c.note("delete", obj)
-	}
-	return err
+	return c.done("delete", obj, c.writer().Delete(ctx, obj, opts...))
 }
 
 func (c *staleClient) Patch(ctx context.Context, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
-	if !c.exploring() {
-		return c.Client.Patch(ctx, obj, patch, opts...)
-	}
-	err := c.dry.Patch(ctx, obj, patch, opts...)
-	if err == nil {
-		c.note("patch", obj)
-	}
-	return err
+	return c.done("patch", obj, c.writer().Patch(ctx, obj, patch, opts...))
 }
 
-func (c *staleClient) Apply(ctx context.Context, obj runtime.ApplyConfiguration, opts ...client.ApplyOption) error {
-	if !c.exploring() {
-		return c.Client.Apply(ctx, obj, opts...)
-	}
-	err := c.dry.Apply(ctx, obj, opts...)
-	if err == nil {
-		c.noteApply("apply", obj)
-	}
-	return err
+func (c *staleClient) Apply(ctx context.Context, ac runtime.ApplyConfiguration, opts ...client.ApplyOption) error {
+	return c.doneApply("apply", ac, c.writer().Apply(ctx, ac, opts...))
 }
 
 // noteApply records an apply configuration as the typed object it sets.
@@ -570,41 +561,17 @@ func (c *staleClient) SubResource(sub string) client.SubResourceClient {
 type staleStatus struct{ c *staleClient }
 
 func (s *staleStatus) Create(ctx context.Context, obj, sub client.Object, opts ...client.SubResourceCreateOption) error {
-	if !s.c.exploring() {
-		return s.c.Client.Status().Create(ctx, obj, sub, opts...)
-	}
-	return s.c.dry.Status().Create(ctx, obj, sub, opts...)
+	return s.c.writer().Status().Create(ctx, obj, sub, opts...)
 }
 
 func (s *staleStatus) Update(ctx context.Context, obj client.Object, opts ...client.SubResourceUpdateOption) error {
-	if !s.c.exploring() {
-		return s.c.Client.Status().Update(ctx, obj, opts...)
-	}
-	err := s.c.dry.Status().Update(ctx, obj, opts...)
-	if err == nil {
-		s.c.note("status update", obj)
-	}
-	return err
+	return s.c.done("status update", obj, s.c.writer().Status().Update(ctx, obj, opts...))
 }
 
 func (s *staleStatus) Patch(ctx context.Context, obj client.Object, patch client.Patch, opts ...client.SubResourcePatchOption) error {
-	if !s.c.exploring() {
-		return s.c.Client.Status().Patch(ctx, obj, patch, opts...)
-	}
-	err := s.c.dry.Status().Patch(ctx, obj, patch, opts...)
-	if err == nil {
-		s.c.note("status patch", obj)
-	}
-	return err
+	return s.c.done("status patch", obj, s.c.writer().Status().Patch(ctx, obj, patch, opts...))
 }
 
 func (s *staleStatus) Apply(ctx context.Context, ac runtime.ApplyConfiguration, opts ...client.SubResourceApplyOption) error {
-	if !s.c.exploring() {
-		return s.c.Client.Status().Apply(ctx, ac, opts...)
-	}
-	err := s.c.dry.Status().Apply(ctx, ac, opts...)
-	if err == nil {
-		s.c.noteApply("status apply", ac)
-	}
-	return err
+	return s.c.doneApply("status apply", ac, s.c.writer().Status().Apply(ctx, ac, opts...))
 }

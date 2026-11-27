@@ -229,6 +229,10 @@ func TestRBAC(t *testing.T) {
 			{"get", "metal.platform-kit.org", "managementendpoints", "", "", true},
 			{"get", "os.platform-kit.org", "bootassets", "", "", true},
 			{"get", "os.platform-kit.org", "talosnodes", "", "", true},
+			// What pk-metal status and top read.
+			{"list", "metal.platform-kit.org", "hostclaims", "", "", true},
+			{"patch", "metal.platform-kit.org", "hostclaims", "", "team-a", false},
+			{"list", "os.platform-kit.org", "etcdbackuppolicies", "", "", true},
 			{"get", "", "secrets", "", operatorNamespace, false},
 		} {
 			name := c.verb + " " + strings.TrimSuffix(c.resource+"/"+c.subresource, "/") + " in " + c.namespace

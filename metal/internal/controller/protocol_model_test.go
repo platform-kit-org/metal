@@ -20,7 +20,7 @@ import (
 )
 
 // An explicit-state model of the claim, operation, approval and release
-// protocol, explored exhaustively to a bound. The docs site (concepts/protocol-model)
+// protocol, explored exhaustively to a bound. The docs site (project/protocol-model)
 // describes it for people; this comment describes it for the code.
 //
 // The world is one host, one claim, its machine (the BMC), and three

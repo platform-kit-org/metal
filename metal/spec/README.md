@@ -1,8 +1,8 @@
 # TLA+ specifications
 
 Each directory holds one protocol of the operator, written in TLA+ and
-model-checked with TLC. The concept page
-[Protocol model](https://metal.platform-kit.org/concepts/protocol-model/)
+model-checked with TLC. The page
+[Protocol model](https://metal.platform-kit.org/project/protocol-model/)
 explains them.
 
 | Directory | Protocol | Go test of the same invariants |

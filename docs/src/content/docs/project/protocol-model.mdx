@@ -1,10 +1,12 @@
 ---
 title: Protocol model
 description: A TLA+ specification and three model tests check many orders of events in the claim and operation protocol, not one path at a time.
-type: concept
-xref: { cat: concept, id: protocol-model }
+type: project
+eyebrow: Project
+xref: { cat: ref, id: protocol-model }
+redirectFrom: [concepts/protocol-model/]
 sidebar:
-  order: 14
+  order: 4
 sources:
   - /repo/metal/internal/controller/protocol_model_test.go
   - /repo/metal/internal/controller/hostoperation_model_test.go
@@ -41,8 +43,8 @@ A TLA+ specification and three model tests check the protocol across many orders
 | --- | --- | --- |
 | `TestProtocolModel` | Each order of turns of the controllers, a person and the machine, with stale reads | 14 turns, about 40 seconds |
 | `TestExecutorModel` | The real executor against the Redfish simulator, with faults and process stops | 300 cases from a fixed seed |
-| `spec/claimhost` (TLA+, `mise run spec`) | Each order of events of the Host hand-off between claims: bind, release, unbind, and the Host phase. Each kind has its own late cache | 3 configurations, about 10 seconds |
-| `TestStaleReadClaimHost` (controller test) | The real claim and Host controllers on each cache state that one pass can read along the life of a claim | about 110 passes, about 12 seconds |
+| `spec/claimhost` (TLA+, `mise run spec`) | Each order of events when a Host moves between claims: bind, release, unbind, and the Host phase. Each kind has its own late cache | 3 configurations, about 10 seconds |
+| `TestStaleReadClaimHost` (`internal/envtest`) | The real claim and Host controllers on each cache state that one pass can read along the life of a claim | about 110 passes, about 12 seconds |
 
 ## Terms
 
@@ -64,7 +66,7 @@ A TLA+ specification and three model tests check the protocol across many orders
 5. A power action on a control plane of the operator cluster starts only with `metal.platform-kit.org/allow-self-disruption`.
 
 The model calls the same helper functions as the controllers. Only the control flow is written again in the test.
-`TestModelMirrorsTheCode` keeps a hash of each function whose control flow the model writes again. A change of the code in one of them fails the test, so that a person brings the model in line before the hash changes. A change of a comment does not count.
+[](/repo/AGENTS.md) says what to do when `TestModelMirrorsTheCode` finds a change in such a function.
 
 ## The hand-off of a Host: TLA+ and stale reads
 
@@ -109,32 +111,16 @@ After each step, it runs each controller once on each combination of late caches
 The API server checks the write, but does not keep it. The test checks the rules above on each write that the API server accepts.
 A cache cannot be behind the last pass on the path. All controllers read the same caches, and a cache never shows an older version again.
 
-### Keep the specification and the code in step
-
-- Each operator of the specification names the Go functions it mirrors in a `\* go:` line, with a fingerprint of their code.
-- `TestSpecSync` (part of `mise run test`) fails when one of these functions changes or is gone.
-- When it fails:
-  1. Read the operator. Change it if the code does something new.
-  2. Run `mise run spec`.
-  3. Record the new fingerprints with `go test ./spec -run TestSpecSync -update`.
-- The configurations of the specification and `TestStaleReadClaimHost` check invariants with the same names. `TestSpecSync` compares the two lists.
-
-## Known limit
-
-A hold set right after the deletion of a claim does not stop a release that needs no approval.
-To keep a machine, hold the claim before you delete it.
-
 ## Run it
+
+[](/repo/metal/spec/README.md) says how to run the specification and how to keep it in step with the code. To check the model test to a greater depth:
 
 ```sh
 cd metal
 PK_MODEL_DEPTH=16 go test -count=1 -run TestProtocolModel -v ./internal/controller
-hack/tlc.sh                               # or: mise run spec (needs a Java runtime)
-go test ./spec                            # the sync check
-mise run envtest                          # includes TestStaleReadClaimHost
 ```
 
-## In the reference
+## Related
 
 - [](ctrl:hostclaim), [](ctrl:hostoperation)
 - [](concept:approval)

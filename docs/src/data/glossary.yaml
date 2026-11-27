@@ -222,7 +222,7 @@ terms:
     kind: noun
     domain: redfish
     forms: [Redfish]
-    see: concept:protocol-model
+    see: ref:hardware
     related: [bmc, dialect]
     def: >-
       A standard HTTPS and JSON API to control servers through their BMC. The
@@ -233,7 +233,7 @@ terms:
     kind: noun
     domain: redfish
     forms: [dialect, dialects]
-    see: concept:protocol-model
+    see: cli:check
     related: [redfish, managementendpoint]
     def: >-
       The way a BMC vendor implements a Redfish function, for example the

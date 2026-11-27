@@ -660,8 +660,12 @@ func (t tile) clusterFields() []field {
 		fs = append(fs,
 			field{label: "op", text: t.Op.state().style().Render(t.Op.Step + ", " + t.Op.Approval)},
 			field{text: styleDim.Render(t.Op.Namespace + "/" + t.Op.Name)})
-		if t.Op.Failed && t.Op.Message != "" {
-			fs = append(fs, field{text: styleBad.Render(t.Op.Message), wrap: true})
+		if t.Op.Message != "" {
+			style := styleDim
+			if t.Op.Failed {
+				style = styleBad
+			}
+			fs = append(fs, field{text: style.Render(t.Op.Message), wrap: true})
 		}
 	}
 

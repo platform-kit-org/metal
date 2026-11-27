@@ -34,6 +34,16 @@ func TestTopShowsRollouts(t *testing.T) {
 	assert.NotContains(t, screen(m), "rollout old")
 }
 
+// A running operation shows the step it is at and what that step waits for.
+func TestTopShowsWhyARunningOperationWaits(t *testing.T) {
+	in := labRack()
+	msg := "step 7/9 awaitCheckIn: BMC unavailable, retrying: connection refused"
+	in.Ops[1].Status.Conditions[1].Message = msg
+	assert.Equal(t, msg, buildTop(in).Tiles[1].Op.Message)
+	m, _ := feed(t, newTopModel(nil, &fakeActions{}, nil, 0), tea.WindowSizeMsg{Width: 100, Height: 50}, topDataMsg(in), key("tab"))
+	assert.Contains(t, screen(m), "BMC unavailable, retrying")
+}
+
 // hangingActions never answers until its context ends.
 type hangingActions struct{ fakeActions }
 

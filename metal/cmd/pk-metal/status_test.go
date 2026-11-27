@@ -287,6 +287,22 @@ func TestStatusAwaitsApprovalAsApproveDoes(t *testing.T) {
 	assert.NotContains(t, out, "approve pk-metal/approved", "alice approved it already")
 }
 
+// A running operation says which step it is at and what that step waits
+// for, in the controller's words.
+func TestStatusShowsWhyARunningOperationWaits(t *testing.T) {
+	msg := "step 5/9 powerCycle: BMC unavailable, retrying: connection refused"
+	op := metalv1alpha1.HostOperation{ObjectMeta: metav1.ObjectMeta{Namespace: "pk-metal", Name: "run"},
+		Spec: metalv1alpha1.HostOperationSpec{HostRef: metalv1alpha1.Reference{Name: "simx12b000001"},
+			Approval: metalv1alpha1.OperationApproval{ApprovedBy: "alice"}},
+		Status: metalv1alpha1.HostOperationStatus{Phase: metalv1alpha1.OperationRunning, Conditions: []metav1.Condition{{
+			Type: metalv1alpha1.ConditionExecuted, Status: metav1.ConditionUnknown, Reason: metalv1alpha1.ReasonExecuting, Message: msg}}},
+	}
+	rep := buildStatus(topInput{Ops: []metalv1alpha1.HostOperation{op}}, nil)
+	assert.Equal(t, msg, rep.Operations[0].Message)
+	assert.False(t, rep.NeedsAttention, "a running operation is the plan working")
+	assert.Contains(t, renderReport(rep), "\n  pk-metal/run: "+msg+"\n")
+}
+
 // A kind that the caller may not read fails the command: an empty ROLLOUT
 // table or BACKUP column would read as nothing to do.
 func TestStatusFailsOnAKindItMayNotRead(t *testing.T) {

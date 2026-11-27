@@ -47,6 +47,7 @@ Tables:
              and who approved it
 Under each table, every blocked or failed row gets a line that says why, in
 the operator's own words, and what to run next when there is a command for it.
+A running operation gets a line with its step and what that step waits for.
 
 -o json prints the same facts as one JSON object, for scripts. The reference
 page of pk-metal status lists the keys of each row.
@@ -220,6 +221,21 @@ func explain(conds []metav1.Condition, blockedOn string, failTypes ...string) st
 	return ""
 }
 
+// opMessage is the controller's sentence for an operation: why it is
+// blocked or failed, else, while it runs, the step it is at and what that
+// step waits for, for example "step 5/9 powerCycle: BMC unavailable,
+// retrying: ...".
+func opMessage(op *metalv1alpha1.HostOperation) string {
+	if m := explain(op.Status.Conditions, op.Status.BlockedOn, metalv1alpha1.ConditionExecuted); m != "" {
+		return m
+	}
+	if c := meta.FindStatusCondition(op.Status.Conditions, metalv1alpha1.ConditionExecuted); c != nil &&
+		c.Status == metav1.ConditionUnknown && c.Reason == metalv1alpha1.ReasonExecuting {
+		return c.Message
+	}
+	return ""
+}
+
 func nsName(namespace, name string) string { return namespace + "/" + name }
 
 // buildStatus is the pure part of status and top: objects in, report out,
@@ -341,7 +357,7 @@ func addMachines(rep *statusReport, in topInput) {
 		row := opStatus{Namespace: op.Namespace, Name: op.Name, Host: op.Spec.HostRef.Name,
 			Phase: string(op.Status.Phase), ApprovedBy: op.Spec.Approval.ApprovedBy,
 			AwaitsApproval: op.AwaitsApproval(), BlockedOn: op.Status.BlockedOn}
-		row.Message = explain(op.Status.Conditions, op.Status.BlockedOn, metalv1alpha1.ConditionExecuted)
+		row.Message = opMessage(&op)
 		// Queued behind another operation or waiting for its maintenance
 		// window is the plan working, not something a person must do.
 		row.NeedsAttention = row.AwaitsApproval ||
@@ -420,6 +436,8 @@ func renderReport(rep statusReport) string {
 			ops.notes = append(ops.notes, note(ref, op.Message, "aborted")+"; to run it again: pk-metal retry "+ref)
 		case op.AwaitsApproval:
 			ops.notes = append(ops.notes, ref+": waits for approval; see the plan and approve: pk-metal approve "+ref)
+		case op.Phase == string(metalv1alpha1.OperationRunning) && op.Message != "":
+			ops.notes = append(ops.notes, ref+": "+op.Message)
 		default:
 			ops.noteIf(op.NeedsAttention, ref, op.Message, op.BlockedOn)
 		}

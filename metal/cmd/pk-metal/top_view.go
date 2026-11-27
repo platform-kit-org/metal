@@ -468,7 +468,7 @@ func currentOp(ops []metalv1alpha1.HostOperation, host string) *opLine {
 	default:
 		l.Approval = "not approved"
 	}
-	l.Message = explain(op.Status.Conditions, op.Status.BlockedOn, metalv1alpha1.ConditionExecuted)
+	l.Message = opMessage(op)
 	return l
 }
 

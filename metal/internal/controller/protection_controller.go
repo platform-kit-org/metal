@@ -19,11 +19,6 @@ import (
 // alive until the claim lets go — the pvc-protection pattern.
 const claimProtection = "metal.platform-kit.org/claim-protection"
 
-// fieldOwnerProtection owns the endpoint's DeletionHeld condition. The
-// endpoint's observer stops writing once deletion starts, so nothing else
-// names it; a distinct owner keeps that true by construction.
-const fieldOwnerProtection = "pk-metal-protection"
-
 // ProtectionReconciler holds claimed machines against garbage collection. An
 // Asset owns its ManagementEndpoint, which owns the Hosts it fronts, so
 // deleting an Asset — a CMDB clean-up, a re-keyed git file — used to collect a

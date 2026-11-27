@@ -10,7 +10,6 @@ package envtest_test
 import (
 	"encoding/json"
 	"fmt"
-	"k8s.io/apimachinery/pkg/api/meta"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -23,6 +22,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"

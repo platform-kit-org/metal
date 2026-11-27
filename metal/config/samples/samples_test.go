@@ -10,8 +10,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"sigs.k8s.io/yaml"
 
-	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
+	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
 )
 
 // decode reads the one object of a sample file into out and refuses a field

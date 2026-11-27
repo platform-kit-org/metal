@@ -56,7 +56,8 @@ mise run lint          # golangci-lint, the phase check and shellcheck
 ```
 
 CI runs the three parts as separate steps: `lint:go`, `lint:phase` and
-`lint:shell`.
+`lint:shell`. `lint:go` also fails on a file that `gofmt` or
+`goimports` would change; `golangci-lint fmt` in `metal/` writes the change.
 
 ## Generated files
 

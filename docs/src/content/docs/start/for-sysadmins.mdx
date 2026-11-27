@@ -43,14 +43,7 @@ It maps what you know to the objects of pk-metal.
 ## Where the state lives
 
 All state is API objects in the management cluster. No other database exists.
-
-<dl>
-  <dt>What you assert</dt>
-  <dd>Asset, credentials Secret, TalosCluster, TalosNode, HostClaim, profiles. Keep them in git.</dd>
-  <dt>What the operator found or did</dt>
-  <dd>ManagementEndpoint, Host, HostOperation, and the status of each object.</dd>
-</dl>
-
+[Who writes what](/start/overview/#who-writes-what) lists the objects that you write and the objects that the operator writes.
 If the two disagree, the operator stops and tells you. See [](concept:assert-vs-observe).
 
 ## Which name is which

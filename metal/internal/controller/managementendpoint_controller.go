@@ -149,9 +149,7 @@ func (r *ManagementEndpointReconciler) snapshotAsset(ctx context.Context, ep *me
 // observe performs one read-only pass against the endpoint and rewrites the
 // Reachable / Inventoried / Verified conditions from what it saw.
 func (r *ManagementEndpointReconciler) observe(ctx context.Context, ep *metalv1alpha1.ManagementEndpoint) {
-	setCond := func(t string, s metav1.ConditionStatus, reason, msg string) {
-		setCondition(&ep.Status.Conditions, ep.Generation, t, s, reason, msg)
-	}
+	setCond := setterFor(&ep.Status.Conditions, ep.Generation)
 
 	if pinsKeys(ep) && !r.checkPin(ctx, ep) {
 		return

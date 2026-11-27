@@ -245,9 +245,7 @@ func (r *EtcdBackupPolicyReconciler) reconcile(ctx context.Context, p *osv1alpha
 	log := logf.FromContext(ctx)
 	now := r.now()
 	interval := p.Spec.Interval.Duration
-	set := func(t string, s metav1.ConditionStatus, reason, msg string) {
-		setCondition(&p.Status.Conditions, p.Generation, t, s, reason, msg)
-	}
+	set := setterFor(&p.Status.Conditions, p.Generation)
 
 	snaps := &osv1alpha1.EtcdSnapshotList{}
 	if err := r.List(ctx, snaps, client.MatchingLabels{osv1alpha1.LabelSnapshotPolicy: p.Name}); err != nil {
@@ -454,9 +452,7 @@ func (r *EtcdSnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Request
 func (r *EtcdSnapshotReconciler) take(ctx context.Context, s *osv1alpha1.EtcdSnapshot) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 	st := &s.Status
-	set := func(t string, cs metav1.ConditionStatus, reason, msg string) {
-		setCondition(&st.Conditions, s.Generation, t, cs, reason, msg)
-	}
+	set := setterFor(&st.Conditions, s.Generation)
 	fail := func(msg string) (ctrl.Result, error) {
 		set(osv1alpha1.ConditionComplete, metav1.ConditionFalse, osv1alpha1.ReasonSnapshotFailed, msg)
 		log.Info("etcd snapshot failed", "snapshot", s.Name, "reason", msg)

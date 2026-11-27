@@ -138,9 +138,7 @@ func (r *TalosClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request
 }
 
 func (r *TalosClusterReconciler) reconcile(ctx context.Context, cluster *osv1alpha1.TalosCluster) (ctrl.Result, error) {
-	set := func(t string, s metav1.ConditionStatus, reason, msg string) {
-		setCondition(&cluster.Status.Conditions, cluster.Generation, t, s, reason, msg)
-	}
+	set := setterFor(&cluster.Status.Conditions, cluster.Generation)
 	retry := ctrl.Result{RequeueAfter: cmp.Or(r.CheckInterval, defaultCheckInterval)}
 
 	nodes, err := clusterMembers(ctx, r.Client, cluster.Name)

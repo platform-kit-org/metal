@@ -214,7 +214,7 @@ func endMaintenanceCommand(host *metalv1alpha1.Host) string {
 
 // projectMaintenance mirrors the maintenance annotation into the Maintenance
 // condition, so the reason reads next to every other condition.
-func projectMaintenance(host *metalv1alpha1.Host, setCond func(string, metav1.ConditionStatus, string, string)) {
+func projectMaintenance(host *metalv1alpha1.Host, setCond conditionSetter) {
 	why, ok := inMaintenance(host)
 	if !ok {
 		meta.RemoveStatusCondition(&host.Status.Conditions, metalv1alpha1.ConditionMaintenance)
@@ -258,9 +258,7 @@ func (r *HostReconciler) applyStatus(ctx context.Context, host *metalv1alpha1.Ho
 // the drift check compares against (the same status-as-cache pattern as the
 // endpoint's AssetSnapshot).
 func projectHost(host *metalv1alpha1.Host, paths []hostPath, ops []metalv1alpha1.HostOperation, node *osv1alpha1.TalosNode) {
-	setCond := func(t string, s metav1.ConditionStatus, reason, msg string) {
-		setCondition(&host.Status.Conditions, host.Generation, t, s, reason, msg)
-	}
+	setCond := setterFor(&host.Status.Conditions, host.Generation)
 
 	// Identity must byte-agree across paths — divergence means the same serial
 	// anchor resolves to different machine facts, so inspection cannot produce a
@@ -350,7 +348,7 @@ func projectOS(host *metalv1alpha1.Host, setCond func(string, metav1.ConditionSt
 
 // projectApproval surfaces a proposed operation's human gate on the Host —
 // blockedOn renders it as Approval(<domain>) via the phase derivation.
-func projectApproval(setCond func(string, metav1.ConditionStatus, string, string), ops []metalv1alpha1.HostOperation) {
+func projectApproval(setCond conditionSetter, ops []metalv1alpha1.HostOperation) {
 	var pending []metalv1alpha1.HostOperation
 	for _, op := range ops {
 		if op.AwaitsApproval() {
@@ -372,7 +370,7 @@ func projectApproval(setCond func(string, metav1.ConditionStatus, string, string
 // projectDrift advances the reset-time memory and raises Drifted when the world
 // moved with no operation explaining it — information, not error. An advance is explained by an active operation (in flight over the
 // machine) or by a finished one whose closing observation covers it.
-func projectDrift(host *metalv1alpha1.Host, setCond func(string, metav1.ConditionStatus, string, string), paths []hostPath, ops []metalv1alpha1.HostOperation) {
+func projectDrift(host *metalv1alpha1.Host, setCond conditionSetter, paths []hostPath, ops []metalv1alpha1.HostOperation) {
 	var newest *metav1.MicroTime
 	for _, p := range paths {
 		if t := p.sys.LastResetTime; t != nil && (newest == nil || t.After(newest.Time)) {

@@ -97,9 +97,7 @@ func (r *ConvergenceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	orig := host.DeepCopy()
-	setCond := func(t string, s metav1.ConditionStatus, reason, msg string) {
-		setCondition(&host.Status.Conditions, host.Generation, t, s, reason, msg)
-	}
+	setCond := setterFor(&host.Status.Conditions, host.Generation)
 
 	// Manager firmware first, then the system's, then BIOS settings: each
 	// can change what the next one offers.
@@ -181,7 +179,7 @@ func (r *ConvergenceReconciler) matchedProfiles(ctx context.Context, host *metal
 // firmware converges the manager firmware and reports whether the BIOS lane
 // may proceed (converged, or nothing desired). The observation is a pure
 // cluster-state join — the endpoint poll already serves the manager version.
-func (r *ConvergenceReconciler) firmware(ctx context.Context, host *metalv1alpha1.Host, profiles []metalv1alpha1.FirmwareProfile, setCond func(string, metav1.ConditionStatus, string, string)) (bool, error) {
+func (r *ConvergenceReconciler) firmware(ctx context.Context, host *metalv1alpha1.Host, profiles []metalv1alpha1.FirmwareProfile, setCond conditionSetter) (bool, error) {
 	if len(profiles) == 0 {
 		if err := r.withdrawObsolete(ctx, host.Status.FirmwareProposed); err != nil {
 			return false, err
@@ -278,7 +276,7 @@ func (r *ConvergenceReconciler) firmware(ctx context.Context, host *metalv1alpha
 // bios materializes the desired BIOS state, observes the machine, and
 // converges — mirroring the settings' verdict onto the Host. Returns whether
 // a re-observation requeue is wanted.
-func (r *ConvergenceReconciler) bios(ctx context.Context, host *metalv1alpha1.Host, profiles []metalv1alpha1.BiosProfile, fwConverged bool, setCond func(string, metav1.ConditionStatus, string, string)) (bool, error) {
+func (r *ConvergenceReconciler) bios(ctx context.Context, host *metalv1alpha1.Host, profiles []metalv1alpha1.BiosProfile, fwConverged bool, setCond conditionSetter) (bool, error) {
 	if len(profiles) == 0 {
 		settings := &metalv1alpha1.BiosSettings{}
 		switch err := r.Get(ctx, client.ObjectKey{Name: host.Name}, settings); {

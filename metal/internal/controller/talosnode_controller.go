@@ -231,9 +231,7 @@ func (r *TalosNodeReconciler) checkin(ctx context.Context, node *osv1alpha1.Talo
 		return ctrl.Result{}, nil
 	}
 
-	set := func(t string, s metav1.ConditionStatus, reason, msg string) {
-		setCondition(&node.Status.Conditions, node.Generation, t, s, reason, msg)
-	}
+	set := setterFor(&node.Status.Conditions, node.Generation)
 	retry := ctrl.Result{RequeueAfter: cmp.Or(r.CheckInterval, defaultCheckInterval)}
 
 	endpoint := node.Status.Address

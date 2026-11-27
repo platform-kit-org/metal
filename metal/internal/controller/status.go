@@ -159,6 +159,16 @@ func setCondition(conds *[]metav1.Condition, gen int64, t string, s metav1.Condi
 	})
 }
 
+// conditionSetter sets one condition of an object (see setCondition).
+type conditionSetter func(t string, s metav1.ConditionStatus, reason, msg string)
+
+// setterFor is the conditionSetter of conds, stamped with gen.
+func setterFor(conds *[]metav1.Condition, gen int64) conditionSetter {
+	return func(t string, s metav1.ConditionStatus, reason, msg string) {
+		setCondition(conds, gen, t, s, reason, msg)
+	}
+}
+
 // updateStatusIfChanged writes obj's status when after differs from before,
 // and does nothing otherwise. It uses Update, not a patch: these objects have
 // one status writer, and a resourceVersion conflict is how a pass learns it

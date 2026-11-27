@@ -179,7 +179,7 @@ for f in $(git ls-tree --name-only "$base" -- config/crd/); do
   git show "$base:metal/$f" > "$old/$(basename "$f")"
 done
 echo "CRDs of $(git rev-parse --short "$base") against the working tree"
-go run ./hack/crddiff ${CRD_DIFF_STRICT:+-strict} "$old" config/crd
+go run ./hack/crddiff "$old" config/crd
 '''
 
 [tasks."generate:check"]

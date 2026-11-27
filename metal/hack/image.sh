@@ -9,10 +9,9 @@
 set -euo pipefail
 
 SCRIPT=${0##*/}
-HELP="usage: $SCRIPT tag | ref | build
+HELP="usage: $SCRIPT tag | build
 
   tag     print the tag for the current tree
-  ref     print the full image reference (name:tag)
   build   docker build the image and print its reference
 
 environment variables:
@@ -102,10 +101,6 @@ main() {
   case "$verb" in
     tag)
       tree_tag "$repo"
-      ;;
-    ref)
-      tag=$(tree_tag "$repo")
-      echo "$IMAGE_NAME:$tag"
       ;;
     build)
       tag=$(tree_tag "$repo")

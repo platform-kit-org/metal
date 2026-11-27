@@ -162,10 +162,7 @@ run = [
   # The manager's roles come from the +kubebuilder:rbac markers next to the code that
   # needs each permission: on the reconcilers, and in cmd/manager for leader election.
   "go tool controller-gen rbac:roleName=pk-metal-manager 'paths=./cmd/manager/...;./internal/controller/...' output:rbac:artifacts:config=config/rbac",
-  # The documentation site's reference data (CRD fields, pk-metal commands, RBAC,
-  # actions, phases, conditions, keys), from the files generated above; it also
-  # checks the glossary's shape.
-  "go run ./hack/docgen",
+  { task = "docs:gen" },
 ]
 
 [tasks."crd:diff"]

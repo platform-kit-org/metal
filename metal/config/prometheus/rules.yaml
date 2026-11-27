@@ -54,9 +54,11 @@ spec:
             description: "kubectl describe hostoperation -n {{ $labels.namespace }} {{ $labels.operation }} says what holds it and what to run."
             runbook_url: https://metal.platform-kit.org/operate/runbooks/operation-held/
         - alert: PkMetalOperationStuck
-          # Each step has its own deadline (check-in, drain, graceful power
-          # off), all well under two hours. A step that runs longer has
-          # stopped making progress.
+          # A step that waits for the machine has its own deadline
+          # (check-in, drain, graceful power off), all well under two hours.
+          # A step that waits for a BMC or a cluster API that does not
+          # answer, or that a guard holds, has no deadline: this alert
+          # finds it.
           expr: max by (namespace, operation, host, step) (pk_metal_operation_running_seconds) > 2 * 3600
           labels:
             severity: warning

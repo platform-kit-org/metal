@@ -38,11 +38,9 @@ The repository has no record of an install on real hardware. Read [](ref:status)
   <dt>Hardware</dt>
   <dd>One x86-64 server in UEFI boot mode, with Secure Boot off. Its Redfish BMC has the license for virtual media. One free static address for the node. See [](ref:hardware).</dd>
   <dt>Network</dt>
-  <dd>Your workstation reaches the BMC on TCP 443. The BMC reaches your workstation on TCP 30443. The node reaches the internet.</dd>
-  <dt>BMC network</dt>
-  <dd>The BMC downloads the installer and the config from the media service of the operator. The operator downloads the installer from `factory.talos.dev`. See [The BMC and the image factory](howto:network-checklist#the-bmc-and-the-image-factory).</dd>
+  <dd>Your workstation reaches the BMC on TCP 443, and the node address on TCP 50000 and TCP 6443. The BMC reaches your workstation on TCP 30443 for the installer and the config. The workstation reaches `factory.talos.dev` on TCP 443. The node reaches the internet. See [The BMC and the image factory](howto:network-checklist#the-bmc-and-the-image-factory).</dd>
   <dt>Tools</dt>
-  <dd>A Linux workstation with Docker Engine and a clone of the repository. `mise install` gives you kind, kubectl and talosctl. `eval "$(mise activate bash)"` puts them on the `PATH`. Stage 1 builds `pk-metal`.</dd>
+  <dd>A Linux workstation with Docker Engine and a clone of the repository. `mise trust && mise install` gives you kind, kubectl and talosctl. `eval "$(mise activate bash)"` puts them on the `PATH`. Stage 1 builds `pk-metal`.</dd>
   <dt>Knowledge</dt>
   <dd>Read [](tut:lab-first-cluster) first. This tutorial uses the same steps.</dd>
 </dl>
@@ -336,6 +334,7 @@ If no Host comes and `kubectl get managementendpoints` shows `Unreachable`, the 
 | The manager pod is not `Running` | [If it fails](howto:install-operator#if-it-fails) of the install how-to |
 | The endpoint is `Unreachable` | [](rb:bmc-unreachable) |
 | The operation fails at `insertMedia` | If the BMC log shows a connection error: steps 9 and 10 of stage 2. Else [](rb:media-slot-busy), and [The BMC and the image factory](howto:network-checklist#the-bmc-and-the-image-factory) |
+| The Host stays `Provisioning`, and the console shows Talos | The operator cannot reach the node. Check the paths to TCP 50000 and TCP 6443 in [Time and prerequisites](#time-and-prerequisites). |
 | The Host stays `Provisioning`, and the console shows no boot | [](rb:node-not-ready), and the boot mode and Secure Boot in [](ref:hardware) |
 | The operation is `Failed` | [](rb:operation-failed) |
 

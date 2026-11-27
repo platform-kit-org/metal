@@ -8,7 +8,7 @@
 // play is off and edges do not move; the steps still work, and the play button is
 // "Next step". Without JavaScript and in print, the explainer shows all steps as a
 // list instead of the stepper.
-import { dropSharedDefs, linkRole } from '../lib/svg';
+import { linkRole } from '../lib/svg';
 
 interface Step {
   title: string;
@@ -24,8 +24,8 @@ interface Props {
 }
 const { title, steps, start = 0 } = Astro.props;
 const first = steps[start];
-// The stage: shared defs removed, and a stage with links is a group, not an image.
-const stage = linkRole(dropSharedDefs(await Astro.slots.render('default')));
+// A stage with links is a group, not an image.
+const stage = linkRole(await Astro.slots.render('default'));
 ---
 
 <section class="pk-ex not-content" aria-label={title} tabindex="0" data-steps={JSON.stringify(steps)} data-start={start}>

@@ -3,7 +3,7 @@
 // marker and the hatch pattern are shared (SvgDefs.astro). Put Zone, Box, Edge and
 // Label inside. The class vocabulary is zone, box, box-accent, box-soft, box-ok, box-warn, box-err, edge, edge-accent,
 // edge-muted, t-title, t-small, t-muted, t-mono; the theme CSS styles them.
-import { dropSharedDefs, stableId } from '../../lib/svg';
+import { stableId } from '../../lib/svg';
 
 interface Props {
   title: string;
@@ -15,7 +15,7 @@ interface Props {
 }
 const { title, caption, width, height, wide, class: cls } = Astro.props;
 const id = stableId('fig', title);
-const body = dropSharedDefs(await Astro.slots.render('default'));
+const body = await Astro.slots.render('default');
 // The role "img" hides the children from screen readers. A diagram with links is a
 // group, so that each link (a Box with href) is announced.
 const role = /<a\s/.test(body) ? 'group' : 'img';

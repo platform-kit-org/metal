@@ -64,11 +64,9 @@ Each task calls one verb of [lab/lab.sh](/repo/lab/lab.sh). mise puts the pinned
 ## The usual round
 
 1. Start the lab: `mise run lab:up`.
-2. Read the proposals: `mise run lab:status`.
-3. Approve the installs: `mise run lab:approve`.
-4. Look again until all Hosts are Provisioned: `mise run lab:status`.
-5. Get the access files: `mise run lab:kubeconfig`.
-6. Stop the lab: `mise run lab:down`.
+2. Read and approve each proposal in `mise run lab:top`. The key `a` shows the plan, and `y` approves it.
+3. Get the access files: `mise run lab:kubeconfig`.
+4. Stop the lab: `mise run lab:down`.
 
 [](tut:lab-first-cluster) shows this round with the expected output.
 

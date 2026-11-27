@@ -177,15 +177,11 @@
   },
   {
    "at": 20.15,
-   "out": "  watch it:      mise run lab:status"
+   "out": "  watch and approve: mise run lab:top   (a shows a plan, y approves it)"
   },
   {
    "at": 20.4,
-   "out": "  let it happen: mise run lab:approve     (the one human step)"
-  },
-  {
-   "at": 20.65,
-   "out": "  afterwards:    mise run lab:kubeconfig"
+   "out": "  afterwards:        mise run lab:kubeconfig"
   }
  ]
 }

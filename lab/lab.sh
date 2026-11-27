@@ -896,9 +896,8 @@ up() {
   cat >&2 <<EOF
 
 The lab is up. The operator now enrolls the machines and proposes to boot them.
-  watch it:      mise run lab:status
-  let it happen: mise run lab:approve     (the one human step)
-  afterwards:    mise run lab:kubeconfig
+  watch and approve: mise run lab:top   (a shows a plan, y approves it)
+  afterwards:        mise run lab:kubeconfig
 EOF
 }
 
@@ -956,7 +955,7 @@ approve() {
   require_cluster "$lab_dir"
   count=$(approve_pending "$root" "$lab_dir")
   if (( count == 0 )); then
-    echo "no operation waits for approval" >&2
+    echo "no operation waits for approval yet. Run it again when mise run lab:status shows AwaitingApproval (or approve in mise run lab:top)." >&2
   else
     echo "approved $count operation(s)" >&2
   fi

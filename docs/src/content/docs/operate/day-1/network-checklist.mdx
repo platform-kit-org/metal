@@ -5,7 +5,7 @@ type: howto
 day: 1
 xref: { cat: howto, id: network-checklist }
 sidebar:
-  order: 1
+  order: 0.3
 sources:
   - /repo/metal/config/manager/deployment.yaml
 ---
@@ -67,11 +67,10 @@ Check each row with your network team. The number is the arrow in the figure.
 Also do these steps:
 
 1. Give each BMC a fixed address. Use a DHCP reservation or a static address.
-2. Write one [](term:ledger) line for each BMC: the BMC MAC and `https://<address>`.
-3. Write the static node addresses, the gateway and the VIP in your notes. You need them in the [](kind:TalosNode) and [](kind:TalosCluster) objects.
-4. If your BMCs use one virtual media slot, let the management cluster pull `ghcr.io/siderolabs/imager`.
-5. Make sure that each machine agrees with [](ref:hardware): UEFI boot mode, and a BMC license for virtual media.
-6. Let the admin workstation reach the nodes on TCP 50000 and the VIP on TCP 6443. `talosctl` and `kubectl` use these paths.
+2. Write the static node addresses, the gateway and the VIP in your notes. You need them in the [](kind:TalosNode) and [](kind:TalosCluster) objects.
+3. If your BMCs use one virtual media slot, let the management cluster pull `ghcr.io/siderolabs/imager`.
+4. Make sure that each machine agrees with [](ref:hardware): UEFI boot mode, and a BMC license for virtual media.
+5. Let the admin workstation reach the nodes on TCP 50000 and the VIP on TCP 6443. `talosctl` and `kubectl` use these paths.
 
 The NetworkPolicy `pk-metal-manager` lets only the BMC network open row 2. Set the BMC network in your overlay. See [](ref:media-store#network-policy).
 

@@ -5,7 +5,7 @@ type: howto
 day: 1
 xref: { cat: howto, id: check-a-bmc }
 sidebar:
-  order: 2
+  order: 0.4
 sources:
   - /repo/metal/cmd/pk-metal/main.go
   - /repo/metal/internal/inventory/factfile.go
@@ -20,7 +20,7 @@ Make sure that one BMC answers, and find its serial number, media slots and NIC 
 
 ## Before you start
 
-- You have the `pk-metal` binary on a workstation that can reach the BMC on TCP 443. [](howto:install-operator) shows how to build it.
+- You have a clone of the repository, with `pk-metal` built by `mise run build`. The workstation can reach the BMC on TCP 443.
 - You have the BMC user name and password. Usually these are the factory values.
 - The machine can be on or off. The two commands read only. They change nothing on the machine.
 
@@ -99,5 +99,5 @@ The last line of [](cli:check) is `check:    OK (read-only)`.
 ## Related
 
 - [](cli:inventory), [](cli:check)
-- [](howto:enroll-hosts) is the next step.
+- [](howto:install-operator) is the next step.
 - [](howto:network-checklist)

@@ -125,7 +125,7 @@ This stage is a short form of [](howto:install-operator). That page explains eac
 
 7. In `overlays/site/manager_args.yaml`, set `--media-url=https://<workstation address>:30443`.
 
-8. In `overlays/site/ledger.yaml`, write one line: the BMC MAC and `https://192.0.2.21`. Delete the example lines.
+8. In `overlays/site/ledger.yaml`, write one line: the BMC MAC and `https://192.0.2.21`.
 
 9. Decide how the manager checks the BMC certificate. See [BMC certificates](howto:install-operator#bmc-certificates). For this first test on a closed BMC network, you can remove `--bmc-ca-secret=bmc-ca`. The manager then pins the key that the BMC shows at the first contact.
 

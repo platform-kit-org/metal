@@ -336,6 +336,17 @@ terms:
       One control loop in the manager. Each controller watches one primary
       kind and reconciles its objects.
 
+  - id: executor
+    term: executor
+    kind: noun
+    domain: k8s
+    forms: [executor]
+    see: ctrl:hostoperation
+    related: [controller, hostoperation, approval]
+    def: >-
+      The HostOperation controller. It runs the steps of an approved
+      HostOperation, one at a time.
+
   - id: reconcile
     term: reconcile
     kind: verb

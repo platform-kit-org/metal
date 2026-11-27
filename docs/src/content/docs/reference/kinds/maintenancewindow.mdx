@@ -42,7 +42,7 @@ You write it. A person must still approve each change. The window only sets the 
 
 <WindowGate />
 
-The [executor](ctrl:hostoperation) examines the windows one time for each operation, before the first action.
+The executor examines the windows one time for each operation, before the first action.
 It calculates the result from the spec of each window. It does not read `status.open`.
 When you change a window, an operation that waits uses the new window in 5 minutes or less.
 

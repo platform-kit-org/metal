@@ -32,7 +32,7 @@ import { Steps } from '@astrojs/starlight/components';
   <dt>[](cli:status)</dt>
   <dd>The `ROLLOUT` table shows the reason in the `STATE` column.</dd>
   <dt>Alert</dt>
-  <dd>`PkMetalRolloutStalled` (waits for health, cannot plan, or paused after the first node, for one hour) or `PkMetalRolloutFailed`.</dd>
+  <dd>`PkMetalRolloutStalled` (waits for health, cannot plan, or paused after the first node, for one hour) or `PkMetalRolloutFailed`. The second alert fires when a node failed. It also fires when the plan changed and no later rollout replaces it.</dd>
 </dl>
 
 ## Impact
@@ -54,7 +54,7 @@ pk-metal rollout show prod-talosupgrade-1a2b3c4d
 | `WaitingForHealth`, the message names a node or etcd | See [](rb:etcd-unhealthy) or [](rb:node-not-ready). |
 | `WaitingForHealth`, the message says "rollout X of the same cluster runs" | Only one rollout changes a cluster at a time. Examine the other rollout first. |
 | `PlanBlocked` | The message names the step that the operator cannot plan. Correct the cause. The operator then makes the plan again. |
-| `PlanChanged` | The operator proposes a fresh rollout. Read it and approve it. |
+| `PlanChanged` | Nothing ran. If `pk-metal rollout list` shows a later rollout of the same cluster, approve it. The operator deletes the old one after the retention. If there is no later rollout, delete the old one. The operator then proposes its own rollout again. Create a rollout that a person wrote again. |
 | `RolloutFailed` | See [](rb:operation-failed) for the failed node. Then delete the failed rollout. The operator proposes a new one. |
 | `AwaitingApproval` | A person runs `pk-metal rollout approve <rollout>`. If your site forbids self-approval, that is not the proposer. |
 

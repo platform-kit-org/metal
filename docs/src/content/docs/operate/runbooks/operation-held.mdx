@@ -1,20 +1,19 @@
 ---
 title: Operation held
-description: An approved operation does not start, or a claim proposes nothing. A guard, a window, a hold or a rollout holds it.
+description: An approved operation does not start, or a claim proposes nothing. A guard, a window or a hold holds it.
 type: runbook
 xref: { cat: rb, id: operation-held }
 sources:
   - /repo/metal/internal/controller/clusterguard.go
   - /repo/metal/internal/controller/window.go
   - /repo/metal/internal/controller/selfprotect.go
-  - /repo/metal/internal/controller/hostoperation_rollout.go
 ---
 
 ## Symptoms
 
 <dl>
   <dt>Operation</dt>
-  <dd>Approved, but `Executed=Unknown` and a value in `BLOCKED`. Or `Executed=False` with `RolloutRefused`.</dd>
+  <dd>Approved, but `Executed=Unknown` and a value in `BLOCKED`.</dd>
   <dt>Claim</dt>
   <dd>A value in `BLOCKED`, and no operation exists.</dd>
   <dt>Alert</dt>
@@ -35,6 +34,7 @@ Read the `BLOCKED` value and the note line in [](cli:status). Then find it in th
 | --- | --- | --- |
 | `AwaitingApproval` | Nobody approved it | [](howto:approve-hold-retry) |
 | `OperationQueued` | Another operation runs on the same Host | Wait. One operation at a time for each Host. |
+| `HostNotFound` | The Host does not exist | Wait until the Host is back, or delete the operation: `kubectl -n pk-metal delete hostoperation <name>`. |
 | `OutsideMaintenanceWindow` | A window covers the Host and it is not open | Wait, or set `metal.platform-kit.org/ignore-window` to `<username>: <reason>`. See [](howto:maintenance-windows). If the message says "none of them opens again" or "cannot read", no window opens: correct the window. |
 | `ClusterDisruption` | Another control plane is down, or etcd is not healthy without this one | Wait. To repair a broken etcd, set `metal.platform-kit.org/override-cluster-guard` to `<username>: <reason>`. |
 | `SelfDisruption` | The step would reboot a machine that the operator runs on | Move the operator, or set `metal.platform-kit.org/allow-self-disruption` on the Host. See [](concept:self-protection). |
@@ -43,7 +43,6 @@ Read the `BLOCKED` value and the note line in [](cli:status). Then find it in th
 | `EtcdJoinWaiting` | Another control plane joins, or etcd is not healthy | Wait. If it stays, see [](rb:etcd-unhealthy). |
 | `EtcdRiskRefused` | The removal leaves etcd unsafe | Choose an odd size, or set `metal.platform-kit.org/ack-etcd-risk`. See [](howto:scale-control-planes). |
 | `RemovalWaiting` | Another control plane leaves first | Wait. |
-| `RolloutRefused` | The rollout approval does not cover this operation | See [](rb:rollout-paused). The machine did not change. |
 | `NoReachablePath` | The BMC does not answer | [](rb:bmc-unreachable) |
 
 ## Verify

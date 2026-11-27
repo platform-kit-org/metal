@@ -37,10 +37,22 @@ import Callout from '../../../../components/Callout.astro';
 
    | Result | Case | What to do |
    | --- | --- | --- |
-   | The API server does not answer | You lost the management cluster | Continue with [Fix](#fix). |
+   | The API server does not answer | Not known yet | Go to step 3. |
    | The manager pod is not `Running` | The manager stopped | Read its log: `kubectl -n pk-metal logs deploy/pk-metal-manager --previous`. |
    | The pod runs, the Service has no endpoints | The pod is not ready | `kubectl -n pk-metal describe pod -l app.kubernetes.io/component=manager`. |
    | The pod runs and has endpoints | Prometheus cannot scrape it | Check the ServiceMonitor and the metrics reader role. See [](howto:monitor). |
+
+3. Read etcd on each control plane of the management cluster.
+
+   ```sh
+   talosctl -n 192.0.2.11 etcd members
+   ```
+
+   | Result | Case | What to do |
+   | --- | --- | --- |
+   | A majority lists the members | etcd runs. The API server or your access is the cause. | Do not rebuild. Check your kubeconfig, the network and the API server. |
+   | One member does not answer | You lost one member | Follow [](howto:restore-etcd). |
+   | No control plane runs etcd | You lost the management cluster | Continue with [Fix](#fix). |
 
 </Steps>
 

@@ -42,10 +42,10 @@ The machine does not boot the installer. It stays as it was.
    kubectl get bootassets
    ```
 
-3. List the media slots of the BMC.
+3. Read the media slots of the endpoint, in `Virtual Media`.
 
    ```sh
-   pk-metal check --insecure https://192.0.2.21
+   kubectl describe managementendpoint sim-0001
    ```
 
 </Steps>

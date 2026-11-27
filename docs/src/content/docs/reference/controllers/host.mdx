@@ -108,14 +108,6 @@ The [](ctrl:convergence) owns `BiosConverged`, `FirmwareConverged`, `SystemFirmw
 | `DeletionHeld` | A deleted Host that a claim still holds (`HostClaimed`). |
 | `DiskWiped` | False with `InstalledNodeRemains` or `WipeRequested`. |
 
-## Failure modes
-
-| You see | Cause | Do this |
-| --- | --- | --- |
-| Phase stays Inspecting, `Verified=False` | The serial does not agree. | Use [](rb:host-mismatch). |
-| `Reachable=False`, `AllPathsDown` | No BMC answers. | Use [](rb:bmc-unreachable). |
-| `OSReady` not True after install | The node did not check in. | Use [](rb:node-not-ready). |
-
 ## Permissions
 
 <RbacRows sources={['host_controller.go']} />

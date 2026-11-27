@@ -32,13 +32,13 @@ The claim holds no machine. The operator installs nothing.
    kubectl -n default describe hostclaim cp-1
    ```
 
-2. For `AmbiguousSystem`, list the systems of the BMC.
+2. For `AmbiguousSystem`, read the systems of the endpoint.
 
    ```sh
-   pk-metal check --insecure https://192.0.2.21
+   kubectl describe managementendpoint sim-0001
    ```
 
-   More than one `system:` line means a chassis with more than one machine.
+   Each entry in `Systems` is one machine.
 
 </Steps>
 
@@ -46,8 +46,8 @@ The claim holds no machine. The operator installs nothing.
 
 | Reason | Fix |
 | --- | --- |
-| `AmbiguousSystem` | Set `spec.systemRef.name` to the system ID from the check. |
-| `SystemNotFound` | `spec.systemRef.name` names no system. Use an ID from the check. |
+| `AmbiguousSystem` | Set `spec.systemRef.name` to the system ID from `Systems`. |
+| `SystemNotFound` | `spec.systemRef.name` names no system. Use an ID from `Systems`. |
 | `HostAlreadyClaimed` | Another claim holds the Host. The first claim wins. Use another Asset, or release the other claim. |
 | `AssetNotFound` | `spec.assetRef.name` names no Asset. |
 | `AssetNotMaterialized`, `HostNotDiscovered` | The operator did not find the machine yet. See [](rb:bmc-unreachable). |

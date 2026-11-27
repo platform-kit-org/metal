@@ -1,6 +1,8 @@
 package metrics
 
 import (
+	"slices"
+
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -56,4 +58,19 @@ func RolloutStateOf(ro *osv1alpha1.TalosRollout) RolloutState {
 		return RolloutState{Reason: c.Reason, Message: c.Message}
 	}
 	return RolloutState{Reason: osv1alpha1.ReasonRolloutNotStarted}
+}
+
+// Superseded is true for a rollout whose plan changed under its approval
+// (PlanChanged) when a later rollout of the same cluster exists in all. It
+// ran nothing, and the later one carries the change: it is history, as a
+// succeeded rollout is. With no later rollout (one that a person wrote, or
+// the last round that the proposer makes), a person decides what next.
+func Superseded(ro *osv1alpha1.TalosRollout, all []osv1alpha1.TalosRollout) bool {
+	c := meta.FindStatusCondition(ro.Status.Conditions, osv1alpha1.ConditionComplete)
+	if c == nil || c.Status != metav1.ConditionFalse || c.Reason != osv1alpha1.ReasonPlanChanged {
+		return false
+	}
+	return slices.ContainsFunc(all, func(o osv1alpha1.TalosRollout) bool {
+		return o.Spec.ClusterRef.Name == ro.Spec.ClusterRef.Name && ro.CreationTimestamp.Before(&o.CreationTimestamp)
+	})
 }

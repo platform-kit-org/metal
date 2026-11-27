@@ -106,14 +106,6 @@ A restore is not part of this lane. It is an approved [](act:EtcdRecover) operat
 | Snapshot | `Complete` | `Taking`, `Stored`, `SnapshotFailed` |
 | Snapshot | `Verified` | `Intact`, `Damaged`, `ReadBackFailed` |
 
-## Failure modes
-
-| You see | Cause | Do this |
-| --- | --- | --- |
-| `Ready=False`, `SinkRefused` | A `pvc` sink for the cluster of the operator. | Use an S3 sink. |
-| `BackedUp=False`, `BackupTooOld` | Snapshots fail or the sink is down. | Read the failed snapshots. See [](cli:backup). |
-| Etcd lost its data | All members lost etcd. | Use [](rb:etcd-unhealthy). |
-
 ## Permissions
 
 <RbacRows sources={['etcdbackup_controller.go']} />

@@ -57,18 +57,25 @@ Put all facts about a fault in one directory, before you change anything.
    kubectl -n pk-metal logs deployment/pk-metal-manager --since=24h > manager.log
    ```
 
-6. For one node, save its kernel log and its services.
+6. If the manager restarted, save the log of the previous container. `kubectl -n pk-metal get pods` shows the restarts.
+
+   ```sh
+   kubectl -n pk-metal logs deployment/pk-metal-manager --previous > manager-previous.log
+   ```
+
+7. For one node, save its kernel log and its services.
 
    ```sh
    talosctl -n 192.0.2.13 dmesg > node-w-1-dmesg.txt
+   talosctl -n 192.0.2.13 services > node-w-1-services.txt
    ```
 
-7. Read the serial console of the machine through the BMC (serial-over-LAN), if the node does not answer.
+8. Read the serial console of the machine through the BMC (serial-over-LAN), if the node does not answer.
 
 </Steps>
 
 <Callout type="caution">
-Do not attach `objects.yaml` to a public ticket. It can show addresses, serial numbers and Secret names of your site.
+Do not attach `objects.yaml` or the manager logs to a public ticket. They can show user names, addresses, serial numbers and Secret names of your site.
 `kubectl get metal` does not include Secret data.
 </Callout>
 

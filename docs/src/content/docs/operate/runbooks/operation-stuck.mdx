@@ -5,6 +5,7 @@ type: runbook
 xref: { cat: rb, id: operation-stuck }
 sources:
   - /repo/metal/cmd/pk-metal/abort.go
+  - /repo/metal/internal/controller/hostoperation_controller.go
   - /repo/metal/internal/metrics/collector.go
 ---
 
@@ -42,7 +43,13 @@ The machine can be in the middle of a change: media mounted, a boot override set
 
 ## Fix
 
-If the step can finish, correct the cause and wait. Each step has its own deadline and fails at the end of it.
+Find the message of `Executed` from step 1 in the table.
+
+| Message | Deadline | What to do |
+| --- | --- | --- |
+| `BMC unavailable, retrying` or `cluster API unavailable, retrying` | None. The step waits for the BMC or the cluster API. | Follow [](rb:bmc-unreachable) or [](rb:cluster-unavailable) first. An abort waits for the same BMC or API. |
+| `held: ...` | None. A guard holds the step. | See [](rb:operation-held). |
+| Any other message | The step fails at the end of its deadline. A manager restart can start the deadline again. | If the step can finish, correct the cause and wait. |
 
 If the step cannot finish, stop the operation.
 
@@ -64,6 +71,7 @@ If the step cannot finish, stop the operation.
 
 <Callout type="caution">
 Do not delete the operation to stop it. A delete stops it, but undoes nothing: media stay mounted and the node stays cordoned.
+Delete it only if the message says `aborting, undoing` and the BMC or the API does not come back. Then eject the media, clear the boot override and uncordon the node yourself.
 </Callout>
 
 ## Verify

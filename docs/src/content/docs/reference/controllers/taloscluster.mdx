@@ -102,14 +102,6 @@ It bootstraps etcd once, and it publishes the admin kubeconfig and talosconfig a
 Do not delete `status.bootstrappedAt` to force a new bootstrap. A second bootstrap over lost data makes a new, empty etcd. Use the restore procedure.
 </Callout>
 
-## Failure modes
-
-| You see | Cause | Do this |
-| --- | --- | --- |
-| `Available=False`, `NodesNotReady` | A member is not Ready. | Use [](rb:node-not-ready). |
-| `Bootstrapped=False` after it was True | Etcd lost its data. | Use [](rb:etcd-unhealthy). |
-| `SecretsBundleHeld=True` | The bundle changed after bootstrap. | Put the bundle back. |
-
 ## Permissions
 
 <RbacRows sources={['taloscluster_controller.go']} />

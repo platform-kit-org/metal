@@ -49,13 +49,15 @@ Find who changed or deleted the object in the kube-apiserver audit log.
 
 <Steps>
 
-1. Apply the policies again from the release that you run.
+1. If the site overlay patches the policy or its binding, correct the overlay first.
+
+2. Apply the site overlay again, from the release that you run. This step needs cluster admin: `pk-metal-oncall` and `pk-metal-admin` cannot write admission policies.
 
    ```sh
-   kubectl apply --server-side -k metal/config/policy
+   kubectl apply --server-side -k overlays/site
    ```
 
-2. If a site overlay changes a policy or a binding, correct the overlay.
+   Do not apply `metal/config/policy` alone. Its default site settings replace the values of your overlay, for example `selfApproval: Forbidden`.
 
 </Steps>
 

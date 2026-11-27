@@ -83,9 +83,9 @@ The TalosRollout lane changes a running cluster one node at a time: a Talos upgr
     { label: 'Read the rollout', out: 'Plan pass', outSub: 'not approved: write plan, planHash', outVariant: 'accent', outEdge: 'unapproved' },
     { label: 'Approval covers the plan?', out: 'Complete = False', outSub: 'PlanChanged, nothing ran', outVariant: 'err', outEdge: 'no' },
     { label: 'Observe the running steps' },
-    { label: 'Failed or aborted?', out: 'Skip pending steps', outSub: 'RolloutFailed / RolloutAborted', outVariant: 'err', outEdge: 'yes' },
-    { label: 'Pick the next steps', out: 'Complete = True', outSub: 'RolloutSucceeded', outVariant: 'ok', outEdge: 'none left' },
-    { label: 'Paused?', out: 'Paused = True', outSub: 'PausedByPerson / CanaryPause', outEdge: 'yes' },
+    { label: 'Failed or aborted?', out: 'Skip pending steps', outSub: 'RolloutFailed / Aborted', outVariant: 'err', outEdge: 'yes' },
+    { label: 'Pick the next steps', out: 'Complete = True', outSub: 'Succeeded', outVariant: 'ok', outEdge: 'none left' },
+    { label: 'Paused?', out: 'Paused = True', outSub: 'PausedByPerson / PausedAfterFirstNode', outEdge: 'yes' },
     { label: 'Health gate', sub: 'other rollout, etcd, Nodes', out: 'Progressing', outSub: 'WaitingForHealth' },
     { label: 'Start: create HostOperations', variant: 'ok' },
   ]}
@@ -135,23 +135,7 @@ Do not abort a rollout to stop a node in the middle of its step. An abort starts
 | kube-proxy DaemonSet in the workload cluster | Kubernetes upgrade | through the admin kubeconfig |
 | New TalosRollout (proposer) | A need appears | `manager` (create) |
 
-## Conditions
-
-| Condition | Reasons |
-| --- | --- |
-| `Approved` | `AwaitingApproval`, `PlanApproved`, `PlanChanged` |
-| `Planned` | `PlanReady`, `PlanBlocked` |
-| `Progressing` | `RolloutNotStarted`, `NodeRunning`, `WaitingForHealth`, `CanaryPause`, `PausedByPerson`, `RolloutSucceeded`, `RolloutFailed`, `RolloutAborted`, `PlanChanged` |
-| `Paused` | `PausedByPerson`, `CanaryPause`, `NotPaused` |
-| `Complete` | `RolloutSucceeded`, `NothingToDo`, `RolloutFailed`, `RolloutAborted`, `PlanChanged` |
-
-## Failure modes
-
-| You see | Cause | Do this |
-| --- | --- | --- |
-| `Progressing`, `WaitingForHealth` | Etcd or a Node is not healthy. | Use [](rb:node-not-ready) or [](rb:etcd-unhealthy). |
-| `Complete=False`, `RolloutFailed` | A node step failed. | Use [](rb:operation-failed). |
-| `Complete=False`, `PlanChanged` | The plan moved after approval. | Delete the rollout. The proposer makes a new one. |
+The conditions and their reasons are on [](kind:TalosRollout#conditions).
 
 ## Permissions
 

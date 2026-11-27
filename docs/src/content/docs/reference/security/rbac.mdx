@@ -163,7 +163,7 @@ subjects:
 | Ask for a wipe, remove the mark `disk-not-wiped` | [](cli:wipe), `kubectl annotate host` | `pk-metal-oncall` |
 | Correct the facts of an Asset | `kubectl apply` | `pk-metal-oncall` |
 | Remove `os.platform-kit.org/restore-pending` | `kubectl annotate taloscluster` | `pk-metal-oncall` |
-| Stop a rollout for good | `kubectl delete talosrollout` | `pk-metal-oncall` |
+| Ask for a new proposal after a failed or aborted rollout | `kubectl delete talosrollout` | `pk-metal-oncall` |
 | Approve, abort, pause or resume | [](cli:approve), [](cli:abort), [](cli:rollout) | `pk-metal-approver` |
 | Lift a window or the cluster guard | `kubectl annotate hostoperation` | `pk-metal-approver` |
 | Take a snapshot now | [](cli:backup) | `pk-metal-backup` |

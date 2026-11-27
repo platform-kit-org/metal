@@ -109,13 +109,6 @@ The push memory is a server-side apply, not an update. An update from a stale ca
 | `Configured` | False | `ProfileConflict`, `RotationFailed`, `NTPFailed`, and the reasons of the identity lane |
 | `Configured` | Unknown | `AwaitingVerification` |
 
-## Failure modes
-
-| You see | Cause | Do this |
-| --- | --- | --- |
-| `Configured=False`, `RotationFailed` | The BMC refused the new password. | The old password still works. See [](howto:rotate-bmc-credentials). |
-| `Configured=Unknown`, `AwaitingVerification` | The endpoint is not verified. | Use [](rb:host-mismatch). |
-
 ## Permissions
 
 <RbacRows sources={['endpointprofile_controller.go', 'identity.go']} />

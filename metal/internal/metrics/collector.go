@@ -63,8 +63,9 @@ var (
 	descClusterMembers = desc("taloscluster_nodes",
 		"TalosCluster nodes by role and readiness.", "cluster", "role", "ready")
 	descRolloutCondition = desc("rollout_condition",
-		"1 for each TalosRollout that has not succeeded, with the reason it is where it is "+
-			"(AwaitingApproval, PlanBlocked, WaitingForHealth, PausedAfterFirstNode, RolloutFailed, …).",
+		"1 for each TalosRollout that has not succeeded and that no later rollout of its cluster replaces, "+
+			"with the reason it is where it is "+
+			"(AwaitingApproval, PlanBlocked, WaitingForHealth, PausedAfterFirstNode, RolloutFailed, PlanChanged, …).",
 		"rollout", "cluster", "reason")
 	descBackupLastSuccess = desc("etcd_backup_last_success_timestamp_seconds",
 		"Unix time of the newest verified etcd snapshot of a TalosCluster, over all its EtcdBackupPolicies.", "cluster")
@@ -284,7 +285,7 @@ func (c *Collector) rollouts(ctx context.Context, ch chan<- prometheus.Metric) {
 	for i := range ros.Items {
 		ro := &ros.Items[i]
 		st := RolloutStateOf(ro)
-		if st.Succeeded {
+		if st.Succeeded || Superseded(ro, ros.Items) {
 			continue
 		}
 		gauge(ch, descRolloutCondition, 1, ro.Name, ro.Spec.ClusterRef.Name, st.Reason)

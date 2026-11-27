@@ -10,37 +10,43 @@ sidebar:
 
 Start with [](cli:status). Find the value from the `PHASE` or `BLOCKED` column, or the reason of a condition, in the table.
 Each runbook has the same parts: symptoms, impact, diagnosis, fix and verification.
+The runbooks expect the roles `pk-metal-oncall` and `pk-metal-approver`. [What the runbooks do](ref:rbac#what-the-runbooks-do) names the role of each step.
 
 ## Alerts
 
 Each alert links to one runbook in its `runbook_url` annotation.
 
-| Alert | Runbook |
-| --- | --- |
-| `PkMetalMetricsAbsent` | [](rb:management-cluster-lost) |
-| `PkMetalAdmissionGateDegraded` | [](rb:admission-gate-degraded) |
-| `PkMetalReconcileFailing`, `PkMetalReconcilePanicked` | [](rb:reconcile-failing) |
-| `PkMetalOperationWorkersBusy` | [](rb:workers-busy) |
-| `PkMetalOperationFailed` | [](rb:operation-failed) |
-| `PkMetalOperationStuck` | [](rb:operation-stuck) |
-| `PkMetalOperationBlocked`, `PkMetalApprovalWaiting` | [](rb:operation-held) |
-| `PkMetalBMCUnreachable` | [](rb:bmc-unreachable) |
-| `PkMetalNodeNotReady` | [](rb:node-not-ready) |
-| `PkMetalClusterUnavailable` | [](rb:cluster-unavailable) |
-| `PkMetalEtcdBackupStale`, `PkMetalEtcdBackupMissing` | [](rb:backup-failing) |
-| `PkMetalCredentialsExpiring` | [](rb:credentials-not-renewed) |
-| `PkMetalRolloutStalled`, `PkMetalRolloutFailed` | [](rb:rollout-paused) |
+| Alert | Fires when | Runbook |
+| --- | --- | --- |
+| `PkMetalMetricsAbsent` | Prometheus did not scrape the manager, for 10 minutes | [](rb:management-cluster-lost) |
+| `PkMetalAdmissionGateDegraded` | An admission policy of the approval gate, or its binding, is missing or does not deny, for 2 minutes | [](rb:admission-gate-degraded) |
+| `PkMetalReconcileFailing` | More than half of the passes of one controller fail, for 30 minutes | [](rb:reconcile-failing) |
+| `PkMetalReconcilePanicked` | A controller panicked in the last hour | [](rb:reconcile-failing) |
+| `PkMetalOperationWorkersBusy` | Each operation worker is busy, for 1 hour | [](rb:workers-busy) |
+| `PkMetalOperationFailed` | An operation failed, for 5 minutes | [](rb:operation-failed) |
+| `PkMetalOperationStuck` | An operation is in one step for more than 2 hours | [](rb:operation-stuck) |
+| `PkMetalOperationBlocked` | An approved operation did not start for 1 hour, and no window or queue holds it | [](rb:operation-held) |
+| `PkMetalApprovalWaiting` | An operation waits more than one day for approval | [](rb:operation-held) |
+| `PkMetalBMCUnreachable` | A BMC does not answer, for 15 minutes | [](rb:bmc-unreachable) |
+| `PkMetalNodeNotReady` | A node that answered before is not `Ready`, for 15 minutes | [](rb:node-not-ready) |
+| `PkMetalClusterUnavailable` | A bootstrapped cluster is not available, for 15 minutes | [](rb:cluster-unavailable) |
+| `PkMetalEtcdBackupStale` | The newest verified backup is older than two backup intervals | [](rb:backup-failing) |
+| `PkMetalEtcdBackupMissing` | A backup policy has no verified snapshot after 1 hour | [](rb:backup-failing) |
+| `PkMetalCredentialsExpiring` | A published credential has less than one sixth of its lifetime left | [](rb:credentials-not-renewed) |
+| `PkMetalRolloutStalled` | A rollout waits for health, cannot plan, or waits after its first node, for 1 hour | [](rb:rollout-paused) |
+| `PkMetalRolloutFailed` | A node of a rollout failed, or its plan changed and no later rollout replaces it, for 5 minutes | [](rb:rollout-paused) |
 
 ## Machines and BMCs
 
 | You see | Where | Runbook |
 | --- | --- | --- |
-| `Mismatch`, `SerialMismatch`, `MACMismatch`, `IdentityDiverged` | Endpoint phase, `Verified=False` | [](rb:host-mismatch) |
-| `Unreachable`, `Reachable=False`, `NoReachablePath` | Endpoint phase, operation | [](rb:bmc-unreachable) |
+| `Mismatch`, `SerialMismatch`, `MACMismatch`, `IdentityDiverged`, `AwaitingVerification` | Endpoint phase, `Verified=False`, `Configured=Unknown` | [](rb:host-mismatch) |
+| `Unreachable`, `Reachable=False`, `DialError`, `CredentialsMissing`, `AllPathsDown`, `NoReachablePath` | Endpoint phase, Host, operation | [](rb:bmc-unreachable) |
 | `NoLedgerEntry`, `NoBMCMac`, `LedgerEntryInvalid` | Asset `Materialized=False` | [](rb:bmc-unreachable) |
 | `Ambiguous`, `AmbiguousSystem`, `HostAlreadyClaimed` | Claim phase, `BLOCKED` | [](rb:claim-ambiguous) |
 | `InstalledNodeRemains`, `DiskNotWiped` | Host `DiskWiped=False`, claim | [](rb:disk-not-wiped) |
-| `insertMedia` failed, `SingleMediumUnsupported`, `NoBootableMedia`, `BuilderUnavailable` | Operation, claim, BootAsset | [](rb:media-slot-busy) |
+| `insertMedia` failed, `SingleMediumUnsupported`, `NoBootableMedia`, `BuilderUnavailable`, `BuildFailed` | Operation, claim, BootAsset | [](rb:media-slot-busy) |
+| `SchematicUnavailable` | BootAsset or TalosNode | The manager cannot reach the image factory. See [](howto:air-gapped-site). |
 
 ## Operations
 
@@ -50,22 +56,26 @@ Each alert links to one runbook in its `runbook_url` annotation.
 | `Aborted` | Operation phase | [](rb:operation-failed) |
 | `OperationQueued`, `OutsideMaintenanceWindow`, `ClusterDisruption`, `SelfDisruption` | Operation `BLOCKED` | [](rb:operation-held) |
 | `HeldByUser`, `HostInMaintenance`, `EtcdJoinWaiting`, `EtcdRiskRefused`, `RemovalWaiting` | Claim `BLOCKED` | [](rb:operation-held) |
-| `RolloutRefused` | Operation `Executed=False` | [](rb:operation-held) |
+| `RolloutRefused`, `WaiverRefused`, `HostNotClaimed` | Operation `Failed` | [](rb:operation-failed) |
 | A drain step failed, the node stays cordoned | Operation message | [](rb:drain-stuck) |
 | `Running` in the same step for hours | Operation, `pk_metal_operation_running_seconds` | [](rb:operation-stuck) |
+| `WindowInvalid` | MaintenanceWindow `Valid=False` | The window never opens and holds its machines. Correct the time zone, the weekly entry or the selector. |
 
 ## Nodes and clusters
 
 | You see | Where | Runbook |
 | --- | --- | --- |
-| `Ready=False`, `Converging`, `DialFailed`, `MaintenanceMode` | TalosNode | [](rb:node-not-ready) |
+| `Ready=False`, `Converging`, `AwaitingContact`, `DialFailed`, `MaintenanceMode` | TalosNode | [](rb:node-not-ready) |
+| `SecretsUnavailable` | TalosNode `Rendered=False` | The secrets bundle Secret of the cluster is missing. Apply it from git again. |
+| `EtcdMemberRemains` | TalosNode `RemovalBlocked=True` | [](howto:remove-a-node) |
 | `NodesNotReady`, `KubernetesUnreachable` | Cluster `Available=False` | [](rb:cluster-unavailable) |
-| `EtcdUnavailable`, a member unhealthy | Cluster `Bootstrapped`, `pk-metal restore plan` | [](rb:etcd-unhealthy) |
+| `EtcdUnavailable`, a member unhealthy | Cluster `Bootstrapped`, `ETCD` column | [](rb:etcd-unhealthy) |
 | `EtcdDataLost`, `EtcdDataPresent`, `RestorePending`, `BootstrapRefused` | Cluster `Bootstrapped=False` | [](rb:bootstrap-refused) |
 | `PausedAfterFirstNode`, `WaitingForHealth`, `PlanBlocked`, `PlanChanged`, `RolloutFailed` | TalosRollout, `ROLLOUT` table | [](rb:rollout-paused) |
 | `BackupTooOld`, `SinkRefused`, `SinkUnavailable`, `SnapshotFailed` | EtcdBackupPolicy, EtcdSnapshot | [](rb:backup-failing) |
 | The management cluster does not answer | Everything | [](rb:management-cluster-lost) |
 | `credentialsExpireAt` near, not renewed | TalosCluster status | [](rb:credentials-not-renewed) |
+| `SecretsBundleHeld=True` | TalosCluster | The bundle Secret changed after the bootstrap. See [](howto:rotate-cluster-credentials). If the change is a mistake, put the old bundle back. |
 | `gate.degraded` in the audit log, `pk_metal_admission_gate_degraded` is 1 | Operator audit log, metrics | [](rb:admission-gate-degraded) |
 
 ## Before you change anything

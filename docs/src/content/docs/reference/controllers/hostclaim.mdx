@@ -148,15 +148,6 @@ It acts only on a Host with the annotation `metal.platform-kit.org/wipe`, which 
 Do not remove the finalizer `metal.platform-kit.org/release` by hand. The controller then unbinds the Host without a power-off, and the machine keeps its node.
 </Callout>
 
-## Failure modes
-
-| You see | Cause | Do this |
-| --- | --- | --- |
-| `Bound=False`, `AmbiguousSystem` | The endpoint fronts more than one system. | Set `spec.systemRef`. See [](rb:claim-ambiguous). |
-| `Bound=False`, `HostAlreadyClaimed` | Another claim holds the Host. | Delete the other claim, or choose another Asset. |
-| `Provisioned=False`, `OperationFailed` | The boot operation failed. | Use [](rb:operation-failed). |
-| `Provisioned=False`, `AwaitingOperation` | The boot waits for approval. | Use [](cli:approve). |
-
 ## Permissions
 
 <RbacRows sources={['hostclaim_controller.go', 'selfprotect.go']} />

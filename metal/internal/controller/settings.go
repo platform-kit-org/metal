@@ -151,7 +151,7 @@ func gateProblems(ctx context.Context, c client.Reader, policies []string) (map[
 			if !apierrors.IsNotFound(err) {
 				return nil, fmt.Errorf("read admission policy %s: %w", name, err)
 			}
-			problems[name] = fmt.Sprintf("the ValidatingAdmissionPolicy %s is missing: apply metal/config/policy", name)
+			problems[name] = fmt.Sprintf("the ValidatingAdmissionPolicy %s is missing: apply the site overlay", name)
 			continue
 		}
 		if fp := p.Spec.FailurePolicy; fp != nil && *fp != admissionregistrationv1.Fail {
@@ -187,7 +187,7 @@ func bindingProblem(p *admissionregistrationv1.ValidatingAdmissionPolicy,
 		return ""
 	}
 	if len(found) == 0 {
-		return fmt.Sprintf("the policy %s has no ValidatingAdmissionPolicyBinding, so it checks nothing: apply metal/config/policy", p.Name)
+		return fmt.Sprintf("the policy %s has no ValidatingAdmissionPolicyBinding, so it checks nothing: apply the site overlay", p.Name)
 	}
 	need := "validationActions [Deny]"
 	if p.Spec.ParamKind != nil {

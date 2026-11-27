@@ -33,10 +33,14 @@ var rolloutNeedsPerson = []string{
 }
 
 // addRollouts fills the ROLLOUT rows. The state is read the same way as the
-// metric pk_metal_rollout_condition, so the table and the alerts agree.
+// metric pk_metal_rollout_condition, so the table and the alerts agree: a
+// rollout that a later one of its cluster supersedes gets no row.
 func addRollouts(rep *statusReport, rollouts []osv1alpha1.TalosRollout) {
 	for i := range rollouts {
 		ro := &rollouts[i]
+		if metrics.Superseded(ro, rollouts) {
+			continue
+		}
 		st := metrics.RolloutStateOf(ro)
 		row := rolloutStatus{Name: ro.Name, Cluster: ro.Spec.ClusterRef.Name, Kind: string(ro.Spec.Kind),
 			NodesTotal: len(ro.Status.Plan), State: st.Reason, ApprovedBy: ro.Spec.Approval.ApprovedBy, Message: st.Message}

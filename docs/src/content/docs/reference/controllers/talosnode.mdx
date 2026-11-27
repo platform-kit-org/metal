@@ -58,7 +58,7 @@ A second controller in the same lane, `talosnode-member`, holds a deleted node u
     { label: 'Read the TalosCluster and bundle', out: 'Rendered = False', outSub: 'ClusterNotFound, SecretsUnavailable' },
     { label: 'Resolve the patches', out: 'Rendered = False', outSub: 'PatchesUnresolvable' },
     { label: 'Register the schematic', out: 'Rendered = False', outSub: 'SchematicUnavailable' },
-    { label: 'Render, write the config Secret', sub: 'content-addressed, never rewritten', out: 'Rendered = False', outSub: 'UnsupportedVersion, RenderFailed' },
+    { label: 'Render, write the config Secret', sub: 'content-addressed, never rewritten', out: 'Rendered = False', outSub: 'UnsupportedVersionPair, RenderFailed' },
     { label: 'Check in with the machine', sub: 'only if a Host runs the node' },
     { label: 'Update status, collect old Secrets', variant: 'ok' },
   ]}
@@ -105,14 +105,6 @@ It proposes nothing. The claim that holds the machine proposes the removal. See 
 | Config Secret, owned by the node | New render | `manager` (create) |
 | Node status (`Rendered`, `MachineReachable`, `Ready`, `ConfigInSync`, `VersionCurrent`, address, digest, drift) | When it changed | `manager` (status update) |
 | Finalizer `os.platform-kit.org/member`, `RemovalBlocked` | Add on create, remove at the end | `manager` (update) |
-
-## Failure modes
-
-| You see | Cause | Do this |
-| --- | --- | --- |
-| `Rendered=False`, `SecretsUnavailable` | The secrets bundle is missing. | Create the bundle Secret of the cluster. |
-| `Ready=Unknown`, `AwaitingContact` | The machine does not answer. | Use [](rb:node-not-ready). |
-| `RemovalBlocked=True`, `EtcdMemberRemains` | Etcd still lists the node. | See [](howto:remove-a-node). |
 
 ## Permissions
 

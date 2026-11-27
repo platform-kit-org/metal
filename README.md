@@ -8,6 +8,9 @@ true. The operator proposes each change to a machine, and a person approves it.
 
 Documentation: **https://metal.platform-kit.org/**
 
+Coming from Metal3, Tinkerbell or Omni? Read
+[Compared with other tools](https://metal.platform-kit.org/start/compared-with/).
+
 ## Status
 
 pk-metal is experimental.

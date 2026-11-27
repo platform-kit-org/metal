@@ -205,6 +205,7 @@ func TestResumePauseAbort(t *testing.T) {
 	ro := planned()
 	ro.Spec.Approval = osv1alpha1.RolloutApproval{ApprovedBy: "alice", PlanHash: planHash}
 	ro.Spec.Paused = true
+	ro.Status.Steps = []osv1alpha1.RolloutStepStatus{{State: osv1alpha1.RolloutNodeSucceeded}, {State: osv1alpha1.RolloutNodePending}, {State: osv1alpha1.RolloutNodePending}}
 	cl := fakeClientAs("bob", ro)
 	get := func() *osv1alpha1.TalosRollout {
 		got := &osv1alpha1.TalosRollout{}
@@ -228,6 +229,37 @@ func TestResumePauseAbort(t *testing.T) {
 	unapproved.Name = "other"
 	require.NoError(t, cl.Create(ctx, unapproved))
 	require.ErrorContains(t, resumeRollout(ctx, cl, "other", &bytes.Buffer{}), "approve it first")
+}
+
+// A resume before the first node is done must not lift the pause after it:
+// the controller skips that pause when the resume annotation names the plan.
+func TestResumeKeepsTheFirstNodePause(t *testing.T) {
+	ctx := context.Background()
+	running := func(paused bool) *osv1alpha1.TalosRollout {
+		ro := planned()
+		ro.Spec.Approval = osv1alpha1.RolloutApproval{ApprovedBy: "alice", PlanHash: planHash}
+		ro.Spec.Paused = paused
+		ro.Status.Steps = []osv1alpha1.RolloutStepStatus{{State: osv1alpha1.RolloutNodeRunning}, {State: osv1alpha1.RolloutNodePending}, {State: osv1alpha1.RolloutNodePending}}
+		return ro
+	}
+	get := func(cl client.Client) *osv1alpha1.TalosRollout {
+		got := &osv1alpha1.TalosRollout{}
+		require.NoError(t, cl.Get(ctx, client.ObjectKey{Name: "lab-talosupgrade-1a2b3c4d"}, got))
+		return got
+	}
+
+	t.Run("refused while the first node runs", func(t *testing.T) {
+		cl := fakeClientAs("bob", running(false))
+		require.ErrorContains(t, resumeRollout(ctx, cl, "lab-talosupgrade-1a2b3c4d", &bytes.Buffer{}), "pauses after it")
+		assert.Empty(t, get(cl).Annotations[osv1alpha1.AnnotationRolloutResume])
+	})
+	t.Run("a pause by a person is lifted, the pause after the first node stays", func(t *testing.T) {
+		cl := fakeClientAs("bob", running(true))
+		require.NoError(t, resumeRollout(ctx, cl, "lab-talosupgrade-1a2b3c4d", &bytes.Buffer{}))
+		assert.False(t, get(cl).Spec.Paused)
+		assert.Empty(t, get(cl).Annotations[osv1alpha1.AnnotationRolloutResume])
+		assert.Equal(t, "bob", get(cl).Annotations[metalv1alpha1.AnnotationRequestedBy])
+	})
 }
 
 func TestUpgrade(t *testing.T) {

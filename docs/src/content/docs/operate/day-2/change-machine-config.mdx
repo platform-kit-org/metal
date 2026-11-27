@@ -93,6 +93,7 @@ Revert the change in git and apply it. The operator proposes a new `Config` roll
 | No rollout appears, `ConfigInSync` is `Unknown` | The dry run failed. The message on `DriftUnknown` says why. |
 | `PlanChanged` | [](rb:rollout-paused) |
 | A node fails | [](rb:operation-failed) |
+| A node step waits with `SelfDisruption` or `ClusterDisruption` | [](rb:operation-held) |
 
 ## Related
 

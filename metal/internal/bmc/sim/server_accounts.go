@@ -41,11 +41,7 @@ func (s *Server) accounts(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	ids := make([]string, 0, len(view))
-	for _, a := range view {
-		ids = append(ids, a.id)
-	}
-	s.reply(w, r, collection("ManagerAccount", accountServiceURI+"/Accounts", ids))
+	s.reply(w, r, collection("ManagerAccount", accountServiceURI+"/Accounts", memberIDs(view, func(a account) string { return a.id })))
 }
 
 func accountDoc(a account) map[string]any {

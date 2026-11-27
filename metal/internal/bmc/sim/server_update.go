@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+
+	"github.com/dennisklein/platform-kit/metal/internal/bmc"
 )
 
 // The UpdateService: the firmware inventory and the multipart push. What an
@@ -64,11 +66,7 @@ func (s *Server) firmwareInventory(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	ids := make([]string, 0, len(inv))
-	for _, e := range inv {
-		ids = append(ids, e.ID)
-	}
-	s.reply(w, r, collection("SoftwareInventory", firmwareInventoryURI, ids))
+	s.reply(w, r, collection("SoftwareInventory", firmwareInventoryURI, memberIDs(inv, func(e bmc.Firmware) string { return e.ID })))
 }
 
 func (s *Server) firmwareEntry(w http.ResponseWriter, r *http.Request) {

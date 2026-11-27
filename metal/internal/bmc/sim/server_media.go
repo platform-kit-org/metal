@@ -37,34 +37,28 @@ func (s *Server) mediaCollection(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	ids := make([]string, 0, len(media))
-	for _, m := range media {
-		ids = append(ids, m.ID)
-	}
-	s.reply(w, r, collection("VirtualMedia", s.f.mediaBase(), ids))
+	s.reply(w, r, collection("VirtualMedia", s.f.mediaBase(), memberIDs(media, func(m bmc.VirtualMedia) string { return m.ID })))
 }
 
-// bySlot resolves the {slot} path value; it answers the request itself when
-// there is no such slot.
-func (s *Server) bySlot(w http.ResponseWriter, r *http.Request) *bmc.VirtualMedia {
+// slotOf is the slot that the {slot} path value names.
+func (s *Server) slotOf(r *http.Request) (*bmc.VirtualMedia, error) {
 	media, err := s.st.Media(r.Context())
 	if err != nil {
-		s.fail(w, err)
-		return nil
+		return nil, err
 	}
 	id := r.PathValue("slot")
 	for i := range media {
 		if media[i].ID == id {
-			return &media[i]
+			return &media[i], nil
 		}
 	}
-	s.fail(w, notFound("VirtualMedia", id))
-	return nil
+	return nil, notFound("VirtualMedia", id)
 }
 
 func (s *Server) mediaSlot(w http.ResponseWriter, r *http.Request) {
-	m := s.bySlot(w, r)
-	if m == nil {
+	m, err := s.slotOf(r)
+	if err != nil {
+		s.fail(w, err)
 		return
 	}
 	self := s.f.mediaBase() + "/" + m.ID

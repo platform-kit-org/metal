@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -227,17 +229,50 @@ func resource(odataType, uri, id, name string) map[string]any {
 
 // collection is a resource collection of the named member type.
 func collection(memberType, uri string, ids []string) map[string]any {
-	members := make([]map[string]string, 0, len(ids))
-	for _, id := range ids {
-		members = append(members, link(uri+"/"+id))
-	}
 	return map[string]any{
 		"@odata.type":         "#" + memberType + "Collection." + memberType + "Collection",
 		"@odata.id":           uri,
 		"Name":                memberType + " Collection",
-		"Members":             members,
-		"Members@odata.count": len(members),
+		"Members":             memberLinks(uri, ids),
+		"Members@odata.count": len(ids),
 	}
+}
+
+// memberLinks links each member of the collection at uri.
+func memberLinks(uri string, ids []string) []map[string]string {
+	out := make([]map[string]string, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, link(uri+"/"+id))
+	}
+	return out
+}
+
+// memberIDs are the ids of the members xs.
+func memberIDs[T any](xs []T, id func(T) string) []string {
+	ids := make([]string, 0, len(xs))
+	for _, x := range xs {
+		ids = append(ids, id(x))
+	}
+	return ids
+}
+
+// ordinals are the ids 1..n of members that have no id of their own.
+func ordinals(n int) []string {
+	ids := make([]string, 0, n)
+	for i := range n {
+		ids = append(ids, strconv.Itoa(i+1))
+	}
+	return ids
+}
+
+// nth is the member of xs that the ordinal raw names; kind names the
+// resource in the 404.
+func nth[T any](xs []T, kind, raw string) (T, error) {
+	if i := slices.Index(ordinals(len(xs)), raw); i >= 0 {
+		return xs[i], nil
+	}
+	var zero T
+	return zero, notFound(kind, raw)
 }
 
 func link(uri string) map[string]string { return map[string]string{"@odata.id": uri} }

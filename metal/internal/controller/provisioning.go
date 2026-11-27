@@ -1149,7 +1149,7 @@ func (r *HostClaimReconciler) release(ctx context.Context, claim *metalv1alpha1.
 				set(metalv1alpha1.ReasonReleasing, fmt.Sprintf(
 					"host %s runs or ran its node, so releasing it waits for a person: the release %s. To go ahead: pk-metal approve %s/%s. "+
 						"To keep the machine running for now: pk-metal hold %s/%s",
-					host.Name, r.describeRelease(op), op.Namespace, op.Name, claim.Namespace, claim.Name))
+					host.Name, describeRelease(op), op.Namespace, op.Name, claim.Namespace, claim.Name))
 				done = false
 				continue
 			case ex != nil && ex.Status == metav1.ConditionFalse:
@@ -1401,7 +1401,7 @@ func (r *HostClaimReconciler) nodeExit(ctx context.Context, claim *metalv1alpha1
 }
 
 // describeRelease says in a clause what an approved release does.
-func (r *HostClaimReconciler) describeRelease(op *metalv1alpha1.HostOperation) string {
+func describeRelease(op *metalv1alpha1.HostOperation) string {
 	var parts []string
 	for _, a := range op.Spec.Actions {
 		switch {
@@ -1416,7 +1416,7 @@ func (r *HostClaimReconciler) describeRelease(op *metalv1alpha1.HostOperation) s
 		case a.DeleteKubernetesNode != nil:
 			parts = append(parts, "deletes its Kubernetes Node")
 		case a.PowerOff != nil && a.PowerOff.GracefulTimeoutSeconds > 0:
-			parts = append(parts, fmt.Sprintf("shuts the machine down (forced off after %s)", r.releaseShutdownTimeout()))
+			parts = append(parts, fmt.Sprintf("shuts the machine down (forced off after %s)", gracefulWindow(a.PowerOff)))
 		case a.PowerOff != nil:
 			parts = append(parts, "powers it off")
 		}

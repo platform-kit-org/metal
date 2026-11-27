@@ -30,7 +30,7 @@ var mirrored = map[string]string{
 	"HostClaimReconciler.Reconcile":     "f483186c1bc670bd",
 	"HostClaimReconciler.finishRelease": "0988f8ac95640f6b",
 	"HostClaimReconciler.provision":     "dafeb879b2f7f748",
-	"HostClaimReconciler.release":       "fd4485d6404fc121",
+	"HostClaimReconciler.release":       "c4e88e01c8a8299a",
 	"HostOperationReconciler.Reconcile": "2e6a1caf224249ef",
 }
 

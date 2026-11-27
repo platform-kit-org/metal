@@ -244,6 +244,17 @@ func TestReleasePowersOffOnlyWhatABootTouched(t *testing.T) {
 	}
 }
 
+func TestReleaseTextNamesTheShutdownWindowOfTheOperation(t *testing.T) {
+	// The operation fixed its window when it was made. The manager can run
+	// with another --release-shutdown-timeout since (the default is five
+	// minutes).
+	op := &metalv1alpha1.HostOperation{Spec: metalv1alpha1.HostOperationSpec{
+		HostRef: metalv1alpha1.Reference{Name: "host-a"},
+		Actions: []metalv1alpha1.HostOperationAction{{PowerOff: &metalv1alpha1.PowerOffAction{GracefulTimeoutSeconds: 60}}},
+	}}
+	assert.Contains(t, describeRelease(op), "forced off after 1m0s")
+}
+
 func TestReleaseOfARunningNodeWaitsForAPerson(t *testing.T) {
 	osReady := []metav1.Condition{{Type: metalv1alpha1.ConditionOSReady, Status: metav1.ConditionTrue,
 		Reason: osv1alpha1.ReasonNodeReady, LastTransitionTime: metav1.Now()}}

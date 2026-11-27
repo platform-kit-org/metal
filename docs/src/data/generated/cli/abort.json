@@ -1,9 +1,9 @@
 {
   "name": "abort",
   "summary": "stop an operation and undo what it left behind (media, cordon)",
-  "synopsis": "[-n namespace] [--reason text] <operation> | <namespace>/<operation>",
+  "synopsis": "[-n namespace] --reason <text> <operation> | <namespace>/<operation>",
   "usage": [
-    "pk-metal abort [-n namespace] [--reason text] <operation> | <namespace>/<operation>"
+    "pk-metal abort [-n namespace] --reason <text> <operation> | <namespace>/<operation>"
   ],
   "changes": true,
   "needsCluster": true,

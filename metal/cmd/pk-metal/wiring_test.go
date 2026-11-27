@@ -85,6 +85,18 @@ func TestHelpOfSubcommands(t *testing.T) {
 	assert.Contains(t, stdout, "\n  -o string\n", "the flags of backup get, not of backup")
 }
 
+// The flags block names the value of a flag with one word, and shows no
+// default that a required flag does not have.
+func TestHelpOfFlags(t *testing.T) {
+	_, stdout, _ := runCLI(t, "render", "-h")
+	assert.Contains(t, stdout, "\n  -secrets file\n")
+	_, stdout, _ = runCLI(t, "scale", "-h")
+	assert.NotContains(t, stdout, "(default -1)")
+	code, _, stderr := runCLI(t, "scale", "lab", "--workers", "1")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "give one cluster, --control-planes and --workers")
+}
+
 // pk-metal render writes what the day-0 path consumes: a machine config per
 // node that Talos loads, and a kubeconfig and talosconfig that parse.
 func TestRenderWritesLoadableConfigs(t *testing.T) {

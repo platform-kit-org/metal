@@ -269,13 +269,13 @@ func replace(ctx context.Context, cl client.Client, namespace string, nsGiven bo
 func scaleCmd(args []string) {
 	fs := newFlags("scale")
 	ns := fs.String("n", claimNamespace, "namespace for the claims of new nodes")
-	cps := fs.Int("control-planes", -1, "control planes wanted (required)")
-	workers := fs.Int("workers", -1, "workers wanted (required)")
+	cps := fs.Int("control-planes", 0, "control planes wanted (required)")
+	workers := fs.Int("workers", 0, "workers wanted (required)")
 	apply := fs.Bool("apply", false, "create and delete the claims of the plan")
 	ack := fs.String("ack-etcd-risk", "", "reason to accept passing through an even number of control planes; stored on the claim as \"<your username>: <reason>\"")
 	addGlobalFlags(fs)
 	parseFlags(fs, args)
-	if fs.NArg() != 1 || *cps < 0 || *workers < 0 {
+	if fs.NArg() != 1 || !flagGiven(fs, "control-planes") || !flagGiven(fs, "workers") || *cps < 0 || *workers < 0 {
 		badUsage(fs, "give one cluster, --control-planes and --workers")
 	}
 	onCluster(func(ctx context.Context, cl client.Client) error {

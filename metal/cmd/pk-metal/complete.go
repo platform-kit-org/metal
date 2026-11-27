@@ -89,7 +89,8 @@ func isBoolFlag(f *flag.Flag) bool {
 	return ok && b.IsBoolFlag()
 }
 
-// flagName is how help writes a flag: -n for one letter, --name otherwise.
+// flagName is how synopses and the site write a flag: -n for one letter,
+// --name otherwise.
 func flagName(name string) string {
 	if len(name) == 1 {
 		return "-" + name

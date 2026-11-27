@@ -44,7 +44,7 @@ func init() {
 			summary: "list waiting operations, or show the plan of one and approve it"},
 		{name: "retry", synopsis: "[-n namespace] <operation> | <namespace>/<operation>", run: retryCmd, changes: true,
 			summary: "delete a failed or aborted operation, so that it is proposed again"},
-		{name: "abort", synopsis: "[-n namespace] [--reason text] <operation> | <namespace>/<operation>", run: abortCmd, changes: true,
+		{name: "abort", synopsis: "[-n namespace] --reason <text> <operation> | <namespace>/<operation>", run: abortCmd, changes: true,
 			summary: "stop an operation and undo what it left behind (media, cordon)"},
 		{name: "hold", synopsis: "[-n namespace] [--reason text] <claim> | <namespace>/<claim>", run: holdCmd, changes: true,
 			summary: "stop new operations for a claim; nothing on the machine changes"},

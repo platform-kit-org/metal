@@ -35,7 +35,7 @@
     {
       "name": "control-planes",
       "type": "int",
-      "default": "-1",
+      "default": "",
       "usage": "control planes wanted (required)",
       "global": false
     },
@@ -56,7 +56,7 @@
     {
       "name": "workers",
       "type": "int",
-      "default": "-1",
+      "default": "",
       "usage": "workers wanted (required)",
       "global": false
     }

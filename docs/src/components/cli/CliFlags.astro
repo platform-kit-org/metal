@@ -27,14 +27,13 @@ const globals = all.some((f) => f.global) || c.needsCluster;
 
 function describe(f: Flag) {
   const required = /\(required[;)]/.test(f.usage);
-  let text = f.usage.replace(/\s*\(required\)/, '').replace(/\(required; /, '(').replace(/`/g, '').trim();
+  let text = f.usage.replace(/\s*\(required\)/, '').replace(/\(required; /, '(').trim();
   text = text.charAt(0).toUpperCase() + text.slice(1);
   if (!/[.!?]$/.test(text)) text += '.';
   return { text, required };
 }
 function fallback(f: Flag) {
   if (f.type === 'bool') return f.default || 'false';
-  if (f.default === '-1' && /required/.test(f.usage)) return '';
   return f.default;
 }
 ---

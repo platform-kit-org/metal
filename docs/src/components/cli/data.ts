@@ -107,8 +107,5 @@ export function flagId(f: Flag, sub?: string): string {
 
 /** The value placeholder after a flag: nothing for a bool, `<duration>` and so on for the rest. */
 export function flagValue(f: Flag): string {
-  if (f.type === 'bool') return '';
-  // Go takes the placeholder from a back-quoted word in the usage text; a
-  // phrase there (`talosctl gen secrets`) is not a type.
-  return /\s/.test(f.type) ? 'file' : f.type;
+  return f.type === 'bool' ? '' : f.type;
 }

@@ -1,6 +1,6 @@
 ---
 title: Protocol model
-description: Two model tests check many orders of events in the claim and operation protocol, not one path at a time.
+description: A TLA+ specification and three model tests check many orders of events in the claim and operation protocol, not one path at a time.
 type: concept
 xref: { cat: concept, id: protocol-model }
 sidebar:
@@ -8,6 +8,10 @@ sidebar:
 sources:
   - /repo/metal/internal/controller/protocol_model_test.go
   - /repo/metal/internal/controller/hostoperation_model_test.go
+  - /repo/metal/spec/claimhost/ClaimHost.tla
+  - /repo/metal/spec/sync_test.go
+  - /repo/metal/internal/envtest/staleread_test.go
+  - /repo/metal/internal/envtest/staleread_claimhost_test.go
 ---
 
 import Figure from '../../../components/diagram/Figure.astro';
@@ -16,7 +20,7 @@ import Edge from '../../../components/diagram/Edge.astro';
 
 The operator changes a machine through some controllers that work together.
 Each controller reads a cache that can be late, and a process can stop at each point.
-Two model tests check the protocol across many orders of events.
+A TLA+ specification and three model tests check the protocol across many orders of events.
 
 <Figure title="The protocol model holds the full system as one world. Actors take turns: claim controller, executor, person, machine, convergence. After each turn the invariants are checked. A failure prints the shortest sequence of turns." caption="An explicit-state model check, breadth first, about 1.2 million states at 14 turns." width={720} height={200} wide>
   <Box x={10} y={20} w={150} h={34} label="claim controller" />
@@ -31,12 +35,14 @@ Two model tests check the protocol across many orders of events.
   <Edge points={[[440, 110], [490, 110], [490, 135], [540, 135]]} variant="muted" />
 </Figure>
 
-## The two tests
+## The checks
 
-| Test | What it checks | Size |
+| Check | What it checks | Size |
 | --- | --- | --- |
 | `TestProtocolModel` | Each order of turns of the controllers, a person and the machine, with stale reads | 14 turns, about 40 seconds |
 | `TestExecutorModel` | The real executor against the Redfish simulator, with faults and process stops | 300 cases from a fixed seed |
+| `spec/claimhost` (TLA+, `mise run spec`) | Each order of events of the Host hand-off between claims: bind, release, unbind, and the Host phase. Each kind has its own late cache | 3 configurations, about 10 seconds |
+| `TestStaleReadClaimHost` (controller test) | The real claim and Host controllers on each cache state that one pass can read along the life of a claim | about 110 passes, about 12 seconds |
 
 ## Terms
 
@@ -59,6 +65,59 @@ Two model tests check the protocol across many orders of events.
 
 The model calls the same helper functions as the controllers. Only the control flow is written again in the test.
 
+## The hand-off of a Host: TLA+ and stale reads
+
+`TestProtocolModel` checks the Host phase from the true world. The Host controller does not see the true world.
+It reads its caches, and each kind has its own cache.
+A cache is late, but it never shows an older version again. Two caches can be late by different amounts.
+The TLA+ specification `metal/spec/claimhost/ClaimHost.tla` models exactly this.
+
+<Figure title="The API server writes each change of a kind into the queue of that kind. An informer delivers the queue to the cache in order, late. The claim controller and the Host controller read the same two caches. An Update fails on a conflict; a status apply from a late read lands." caption="Per kind: one queue, one cache. The Host cache can be behind the claim cache." width={720} height={210} wide>
+  <Box x={10} y={80} w={130} h={50} label="API server" sub="claims, Host" variant="accent" />
+  <Box x={200} y={30} w={150} h={40} label="claim events" sub="queue" />
+  <Box x={200} y={140} w={150} h={40} label="Host events" sub="queue" />
+  <Box x={400} y={30} w={120} h={40} label="claim cache" />
+  <Box x={400} y={140} w={120} h={40} label="Host cache" />
+  <Box x={580} y={80} w={130} h={50} label="controllers" sub="claim, Host" variant="accent" />
+  <Edge points={[[140, 95], [170, 95], [170, 50], [200, 50]]} />
+  <Edge points={[[140, 115], [170, 115], [170, 160], [200, 160]]} />
+  <Edge points={[[350, 50], [400, 50]]} label="deliver" at={[375, 42]} />
+  <Edge points={[[350, 160], [400, 160]]} label="deliver" at={[375, 152]} />
+  <Edge points={[[520, 50], [550, 50], [550, 95], [580, 95]]} label="read" at={[565, 42]} />
+  <Edge points={[[520, 160], [550, 160], [550, 115], [580, 115]]} label="read" at={[565, 176]} />
+</Figure>
+
+TLC, the TLA+ model checker, checks these rules in each state:
+
+1. A claim that reports `Bound`, and that is not in deletion, holds the Host.
+2. The claim finalizer goes only after no Host carries the claim.
+3. No claim takes the Host from a claim that still exists.
+4. A machine that a boot started is unbound only after the release turned it off.
+5. No controller writes `Assigned`, `Provisioning`, `Provisioned` or `Failed` from a bind that the API server already ended.
+
+Rule 5 is the race of a release. The claim cache shows no claim.
+But the Host cache still shows the old `claimRef`, the OS and `OSReady=True`.
+The old phase derivation then wrote `Provisioned` after `Releasing`.
+`MC_cache.cfg` keeps that old derivation, and `mise run spec` fails if TLC does not find the violation.
+That proves that rule 5 catches the race.
+`mise run spec` also fails if the model cannot reach each state that the rules are about.
+
+`TestStaleReadClaimHost` runs the real controllers on the same idea.
+It follows the life of a claim with fresh reads: bind, hand-off, delete, release, unbind, a second claim.
+After each step, it runs each controller once on each combination of late caches, and sends each write as a dry run.
+The API server checks the write, but does not keep it. The test checks the rules above on each write that the API server accepts.
+A cache cannot be behind the last pass on the path. All controllers read the same caches, and a cache never shows an older version again.
+
+### Keep the specification and the code in step
+
+- Each operator of the specification names the Go functions it mirrors in a `\* go:` line, with a fingerprint of their code.
+- `TestSpecSync` (part of `mise run test`) fails when one of these functions changes or is gone.
+- When it fails:
+  1. Read the operator. Change it if the code does something new.
+  2. Run `mise run spec`.
+  3. Record the new fingerprints with `go test ./spec -run TestSpecSync -update`.
+- The configurations of the specification and `TestStaleReadClaimHost` check invariants with the same names. `TestSpecSync` compares the two lists.
+
 ## Known limit
 
 A hold set right after the deletion of a claim does not stop a release that needs no approval.
@@ -69,6 +128,9 @@ To keep a machine, hold the claim before you delete it.
 ```sh
 cd metal
 PK_MODEL_DEPTH=16 go test -count=1 -run TestProtocolModel -v ./internal/controller
+hack/tlc.sh                               # or: mise run spec (needs a Java runtime)
+go test ./spec                            # the sync check
+mise run envtest                          # includes TestStaleReadClaimHost
 ```
 
 ## In the reference

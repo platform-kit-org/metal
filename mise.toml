@@ -7,7 +7,8 @@
 #
 # Not managed here (system packages): docker, qemu-system-x86_64 or
 # qemu-system-aarch64, OVMF or AAVMF, iproute2, iptables. The virtual lab checks
-# for them in `mise run lab:doctor`.
+# for them in `mise run lab:doctor`. A Java runtime (11 or later) runs the TLA+
+# model checker (`mise run spec`).
 
 [tools]
 go = "1.26"
@@ -79,6 +80,11 @@ go test -count 1 -run 'TestHardware$' -v ./internal/bmc/gofish/
 description = "Run every Go fuzz target for FUZZTIME each (default 10s); a local search, not part of CI"
 dir = "metal"
 run = "hack/fuzz.sh"
+
+[tasks.spec]
+description = "Model-check the TLA+ specifications in metal/spec with TLC (needs a Java runtime)"
+dir = "metal"
+run = "hack/tlc.sh"
 
 [tasks.envtest]
 description = "Controller tests against a real kube-apiserver and etcd"

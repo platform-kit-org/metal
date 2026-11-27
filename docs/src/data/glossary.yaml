@@ -257,12 +257,12 @@ terms:
     kind: noun
     domain: redfish
     forms: [grant, grants, media grant, media grants]
-    see: concept:virtual-media-boot
+    see: ref:media-store#grants
     related: [media-service, virtual-media]
     def: >-
-      A one-time user name and password for one boot image on the media
-      service. A BMC must have a grant to download the image. The grant stops
-      when the operation ends.
+      A random token in the media URL for one medium of one operation. The
+      first address that fetches it owns it. A medium that carries a secret
+      also gets a one-time user name and password.
 
   - id: media-service
     term: media service
@@ -1229,8 +1229,8 @@ terms:
     see: concept:approval
     related: [approval, hostoperation, plan-hash]
     def: >-
-      A HostOperation or TalosRollout that the operator makes and that waits
-      for a person. A proposal changes no machine.
+      A HostOperation or TalosRollout that the operator or a person makes and
+      that waits for a person. A proposal changes no machine.
 
   - id: approval
     term: approval
@@ -1242,7 +1242,8 @@ terms:
     related: [proposal, approver, hold, plan-hash]
     def: >-
       The decision of a person that a proposed change can run. You approve with
-      pk-metal approve. You cannot approve your own proposal.
+      pk-metal approve. A site setting tells if you can approve your own
+      change.
 
   - id: approver
     term: approver
@@ -1254,6 +1255,18 @@ terms:
     def: >-
       A person who can approve operations and rollouts. Bind the ClusterRole
       pk-metal-approver to these persons.
+
+  - id: admin-group
+    term: admin group
+    kind: noun
+    domain: safety
+    forms: [admin group]
+    see: ref:rbac#get-into-the-admin-group
+    related: [approver, admission-policy]
+    def: >-
+      The group whose members make the decisions that no approval covers. A
+      site setting names it, pk-metal:admins by default. Membership comes
+      from your credential, not from a RoleBinding.
 
   - id: plan-hash
     term: plan hash

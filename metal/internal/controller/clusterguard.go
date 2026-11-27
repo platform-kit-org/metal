@@ -34,9 +34,10 @@ import (
 // from the TalosNodes: a member a wiped node left behind still counts
 // against the majority, and a node that never joined does not count for it.
 //
-// What the guard does not hold: a node that is not an etcd member (a worker,
-// a control plane still joining or already removed), and any cluster that
-// was never bootstrapped (day 0 installs every control plane at once).
+// What the guard does not hold: a worker, and any cluster that was never
+// bootstrapped (day 0 installs every control plane at once). Rule 2 does
+// not hold a control plane that is not an etcd member (still joining or
+// already removed); rule 1 still holds it.
 // An operation whose first such step is the node's own etcd leave counts
 // rule 2's majority from the cluster it leaves behind: the member goes
 // while the others answer, so two control planes may become one without

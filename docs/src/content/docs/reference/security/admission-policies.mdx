@@ -23,7 +23,6 @@ sources:
 import Figure from '../../../../components/diagram/Figure.astro';
 import Box from '../../../../components/diagram/Box.astro';
 import Edge from '../../../../components/diagram/Edge.astro';
-import Callout from '../../../../components/Callout.astro';
 
 RBAC says who may create or patch an object. It cannot see the name that a person writes into a field.
 Ten [ValidatingAdmissionPolicies](term:vap) close that gap. They are [CEL](term:cel) in the API server: no webhook, no certificate, no pod.
@@ -93,7 +92,7 @@ The operator never approves, with each value. [](howto:approval-permissions) tel
   <Box x={10} y={40} w={120} h={50} label="Propose" sub="manager creates" cat="ctrl" href="/reference/controllers/hostclaim/" />
   <Box x={160} y={40} w={130} h={50} label="Policy" sub="rules 1 to 3" variant="warn" />
   <Box x={320} y={40} w={120} h={50} label="Approve" sub="a person patches" variant="accent" />
-  <Box x={470} y={40} w={110} h={50} label="Policy" sub="rules 4 to 7" variant="warn" />
+  <Box x={470} y={40} w={110} h={50} label="Policy" sub="rules 4 to 8" variant="warn" />
   <Box x={610} y={40} w={100} h={50} label="Run" sub="executor" variant="ok" cat="ctrl" href="/reference/controllers/hostoperation/" />
   <Edge points={[[130, 65], [160, 65]]} />
   <Edge points={[[290, 65], [320, 65]]} />
@@ -101,28 +100,30 @@ The operator never approves, with each value. [](howto:approval-permissions) tel
   <Edge points={[[580, 65], [610, 65]]} />
 </Figure>
 
-## `hostoperation-approval`
+## The approval policies
 
-The CRD schema freezes the target, the actions, `approval.required` and `proposedBy`. The policy checks the rules that need the name of the requester.
+`hostoperation-approval` checks a [](kind:HostOperation), and `talosrollout-approval` checks a [](kind:TalosRollout). They have the same rules, with the same numbers. One approval of a rollout covers each node of its plan, so the rollout approval also names the plan hash.
 
-| # | Rule | When | Message |
-| --- | --- | --- | --- |
-| 1 | Nobody creates an operation that is already approved. | CREATE | an operation cannot be created pre-approved |
-| 2 | `spec.proposedBy` is your own name. | CREATE | spec.proposedBy must name you |
-| 3 | Only the operator or an admin creates an operation with `approval.required: false`. | CREATE | only the operator or an admin may create an operation that needs no approval |
-| 4 | An approval, once set, does not change. | UPDATE | approval is write-once |
-| 5 | You approve as yourself: `approvedBy` is your name. | Approval write | you may only approve as yourself |
-| 6 | The operator approves nothing. | Approval write | the operator approves nothing: a person with the pk-metal-approver role must approve |
-| 7 | You approve your own proposal only if `selfApproval` is `Allowed` or not set. | Approval write | this site forbids approving your own proposal (selfApproval: Forbidden in ConfigMap pk-metal/hostoperation-approval): another person must approve |
-| 8 | You approve a change that you asked for (`spec.requestedBy` names you) only if `selfApproval` is `Allowed` or not set. | Approval write | you asked for this change (spec.requestedBy names you: your edit made the operator propose it), and this site does not allow approving your own change |
+The CRD schemas freeze what the object changes, and the names in it. The policies check the rules that need the name of the requester.
+
+| # | Rule | Kinds | When | Message |
+| --- | --- | --- | --- | --- |
+| 1 | Nobody creates an object that is already approved: with `approvedBy`, or on a rollout with `planHash`. | Both | CREATE | an operation cannot be created pre-approved, or a rollout cannot be created pre-approved |
+| 2 | `spec.proposedBy` is your own name. | Both | CREATE | spec.proposedBy must name you |
+| 3 | Only the operator or an admin creates an operation with `approval.required: false`. | HostOperation | CREATE | only the operator or an admin may create an operation that needs no approval |
+| 4 | An approval, once set, does not change: `approvedBy`, and on a rollout `planHash`. | Both | UPDATE | approval is write-once |
+| 5 | You approve as yourself: `approvedBy` is your name. | Both | Approval write | you may only approve as yourself |
+| 6 | The operator approves nothing. | Both | Approval write | the operator approves nothing: a person with the pk-metal-approver role must approve |
+| 7 | You approve your own proposal only if `selfApproval` is `Allowed` or not set. | Both | Approval write | this site forbids approving your own proposal (selfApproval: Forbidden in ConfigMap pk-metal/hostoperation-approval): another person must approve |
+| 8 | You approve a change that you asked for (`spec.requestedBy` names you) only if `selfApproval` is `Allowed` or not set. | Both | Approval write | you asked for this change (spec.requestedBy names you: your edit made the operator propose it), and this site does not allow approving your own change |
 
 <dl>
   <dt>Why rule 3</dt>
-  <dd>Anybody else could skip the gate. The operator itself creates such operations in three cases. These are the node steps of an approved rollout, an install of a claim with `provisioning.approval: Automatic`, and a release that needs no person.</dd>
+  <dd>Anybody else could skip the gate. See [Operator work without approval](ref:threat-model#known-limits).</dd>
   <dt>Why rule 6 names the operator</dt>
-  <dd>The operator proposes most operations. A person must approve them. RBAC also stops the operator: it has no `patch` on operations. See [](ref:rbac). Rule 6 is the second lock. It is the same rule as rule 5 of `talosrollout-approval`. No setting changes it.</dd>
+  <dd>The operator proposes most operations. A person must approve them. RBAC also stops the operator: it has no `patch` on operations. See [](ref:rbac). Rule 6 is the second lock. No setting changes it.</dd>
   <dt>Why rule 7 is a setting</dt>
-  <dd>A small team cannot always find a second person. With `Allowed`, the record still names who proposed and who approved. A value that is not `Allowed` or `Forbidden` closes the gate. The message names the value.</dd>
+  <dd>A small team cannot always find a second person. With `Allowed`, the record still names who proposed and who approved. See [The `selfApproval` setting](#the-selfapproval-setting).</dd>
   <dt>Why rule 8</dt>
   <dd>The operator proposes most operations as the result of an edit by a person. Without rule 8, that person could approve the result of their own edit. The operator copies the names from the `requested-by` annotations into `spec.requestedBy`. The CRD schema freezes the field.</dd>
 </dl>
@@ -136,21 +137,7 @@ kubectl -n pk-metal patch hostoperation install-node-07 --type merge \
 
 The policy accepts this only if the username of `jo` is `jo`. Use [](cli:approve). It writes your name.
 
-## `talosrollout-approval`
-
-One approval covers each node of a rollout plan. So the rules are the rules of an operation, plus the plan hash.
-
-| # | Rule | When | Message |
-| --- | --- | --- | --- |
-| 1 | Nobody creates a rollout with `approvedBy` or `planHash`. | CREATE | a rollout cannot be created pre-approved |
-| 2 | `spec.proposedBy` is your own name. | CREATE | spec.proposedBy must name you |
-| 3 | `approvedBy` and `planHash`, once set, do not change. | UPDATE | approval is write-once |
-| 4 | You approve as yourself. | Approval write | you may only approve as yourself |
-| 5 | The operator approves nothing. | Approval write | the operator approves nothing: a person with the pk-metal-approver role must approve |
-| 6 | You approve your own proposal only if `selfApproval` is `Allowed` or not set. | Approval write | this site forbids approving your own proposal (selfApproval: Forbidden in ConfigMap pk-metal/hostoperation-approval): another person must approve |
-| 7 | You approve a change that you asked for (`spec.requestedBy` names you) only if `selfApproval` is `Allowed` or not set. | Approval write | you asked for this change (spec.requestedBy names you: your edit made the operator propose it), and this site does not allow approving your own change |
-
-The approval names the `planHash` that you read. The [](ctrl:talosrollout) runs the rollout only while that hash is the plan.
+The approval of a rollout names the `planHash` that you read. The [](ctrl:talosrollout) runs the rollout only while that hash is the plan.
 
 ## `hostclaim-provisioning`
 
@@ -164,11 +151,7 @@ A claim that names a [](kind:TalosNode) makes the operator mount the config of t
 
 - A value that did not change passes. So the finalizers of the operator and edits to other fields need no admin.
 - Each refusal says who you are, your groups, and where group membership comes from.
-
-<Callout type="caution">
-Cluster admin (`system:masters`) is not enough. The policy asks for the group `pk-metal:admins` by name.
-A ClusterRoleBinding does not make you a member of a group. Your credential does. See [Get into the admin group](ref:rbac#get-into-the-admin-group).
-</Callout>
+- Cluster admin is not a member of the admin group. See [Get into the admin group](ref:rbac#get-into-the-admin-group).
 
 ## `etcdbackuppolicy-guard`
 
@@ -200,7 +183,7 @@ Labels and annotations of a profile need no admin.
 | --- | --- | --- | --- |
 | 1 | Only an admin sets `spec.credentials.ttl` to more than 24 hours. | CREATE, UPDATE, when the value changes | only an admin may set spec.credentials.ttl above 24h |
 
-Each person who can patch a cluster can make the time shorter, or remove it. The on-call and approver roles can patch clusters.
+Each person who can patch a cluster can make the time shorter, or remove it. The roles `pk-metal-oncall` and `pk-metal-admin` can patch clusters.
 
 ## `guard-lift`
 
@@ -211,6 +194,7 @@ These annotations lift a safety rule of the operator, or decide a step of a chan
 | 1 | A request that sets a lift, or changes its value, gives the value `<username>: <reason>`. The username is the username of the request. The reason is not empty. | CREATE, UPDATE | `a guard lift must name you and say why: set … to "<username>: <reason>"` |
 | 2 | A request that removes `metal.platform-kit.org/disk-not-wiped` from a Host also sets `metal.platform-kit.org/wipe-waived` to `<username>: <reason>`. The operator is exempt: it removes the mark after a wipe. | UPDATE | `the machine may still hold the install of another cluster: wipe it (pk-metal wipe), or waive the wipe in the same request` |
 
+- Where the site installs [`guard-lift-stamp`](#guard-lift-stamp), give the reason only. The API server writes your username in front of it.
 - A request that removes a lift passes. That puts the rule back.
 - A request that leaves the value as it is passes. So the writes of the operator and a value from before the policy pass.
 - The operator sets none of these annotations, so it has no exemption from rule 1.
@@ -220,11 +204,11 @@ These annotations lift a safety rule of the operator, or decide a step of a chan
 
 ## `requested-by`
 
-The operator proposes most changes itself, as the result of an edit. The proposal names the operator as proposer. If the site forbids self-approval, this policy makes each such edit name the user who made it, in the annotation `metal.platform-kit.org/requested-by`. The operator copies the names into `spec.requestedBy` of the proposal. Rule 8 of `hostoperation-approval` and rule 7 of `talosrollout-approval` then apply.
+The operator proposes most changes itself, as the result of an edit. The proposal names the operator as proposer. If the site forbids self-approval, this policy makes each such edit name the user who made it, in the annotation `metal.platform-kit.org/requested-by`. The operator copies the names into `spec.requestedBy` of the proposal. Rule 8 of [the approval policies](#the-approval-policies) then applies.
 
 The policy `requested-by-patches` has the same rules for the ConfigMaps with the label `os.platform-kit.org/patch`. It is a separate policy because it selects these ConfigMaps by their label before the API server reads the parameters. So without the parameters, a request on another ConfigMap passes.
 
-The key `selfApproval` of the parameters sets the mode. A missing key is `Allowed`. A value other than `Allowed` is the same as `Forbidden`.
+The key `selfApproval` of the parameters sets the mode. A missing key and another value count as in [The `selfApproval` setting](#the-selfapproval-setting).
 
 | Mode | An edit without the annotation | An edit of an object with the annotation |
 | --- | --- | --- |

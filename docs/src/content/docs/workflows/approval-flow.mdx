@@ -24,13 +24,7 @@ A controller proposes a [](kind:HostOperation), a person approves it, and only t
 1. A controller proposes a HostOperation. Its phase is `AwaitingApproval`.
 2. Find the operations that wait with [](cli:status) or [](cli:top).
 3. Read the plan and approve it with [](cli:approve). You can approve your own proposal only if your site allows it. See [](howto:approval-permissions).
-4. The [](ctrl:hostoperation) checks the gates before the start, in this sequence:
-   1. an abort ends the operation;
-   2. a [](kind:TalosRollout) must cover the operation, if it names one;
-   3. only one operation runs on a Host at a time;
-   4. a Host in maintenance mode holds the operation;
-   5. a [](kind:MaintenanceWindow) holds it until a window opens;
-   6. [](concept:self-protection) and the [](concept:cluster-guard) hold power actions.
+4. The [](ctrl:hostoperation) checks the [gates before the start](kind:HostOperation#gates-before-the-start).
 5. The executor runs the actions one at a time. See [](act:index).
 6. The operation ends as `Succeeded`, `Failed` or `Aborted`.
 
@@ -52,16 +46,7 @@ To say no, hold the claim or remove `spec.os` from the claim.
 
 ## Who may do what
 
-<dl>
-  <dt>Proposer</dt>
-  <dd>The name in `spec.proposedBy`. The admission policy makes sure that it is the user who writes the object.</dd>
-  <dt>Approver</dt>
-  <dd>A user with the ClusterRole `pk-metal-approver`. The approver must not be the proposer.</dd>
-  <dt>Admin</dt>
-  <dd>A member of the admin group, `pk-metal:admins` by default. Only an admin can give a claim `spec.os` or set its approval to Automatic.</dd>
-  <dt>Approval</dt>
-  <dd>Write once. Nobody can change it after it is written.</dd>
-</dl>
+[The roles](howto:approval-permissions#the-roles) tells who proposes, who approves and who is in the admin group.
 
 ## Rollouts
 

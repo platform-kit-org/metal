@@ -62,12 +62,13 @@ const (
 // happen.
 //
 // The operator proposes an operation by creating it; a person approves it by
-// setting spec.approval. The machine and the actions cannot be changed after
-// creation, so the right to edit an operation is only the right to approve
-// it. The cluster checks who may approve, and refuses an approval by the
-// person who proposed the operation.
+// setting spec.approval. The machine, the actions, the reason and the names
+// cannot be changed after creation, so the right to edit an operation is the
+// right to approve it, and to set the annotations that abort it or lift a
+// guard.
 //
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.proposedBy) || (has(self.proposedBy) && self.proposedBy == oldSelf.proposedBy)",message="proposedBy is frozen after creation"
+// +kubebuilder:validation:XValidation:rule="has(self.reason) == has(oldSelf.reason) && (!has(self.reason) || self.reason == oldSelf.reason)",message="reason is frozen after creation"
 // +kubebuilder:validation:XValidation:rule="has(self.requestedBy) == has(oldSelf.requestedBy) && (!has(self.requestedBy) || self.requestedBy == oldSelf.requestedBy)",message="requestedBy is frozen after creation"
 // +kubebuilder:validation:XValidation:rule="has(self.ttlSecondsAfterFinished) == has(oldSelf.ttlSecondsAfterFinished) && (!has(self.ttlSecondsAfterFinished) || self.ttlSecondsAfterFinished == oldSelf.ttlSecondsAfterFinished)",message="ttlSecondsAfterFinished is frozen after creation"
 // +kubebuilder:validation:XValidation:rule="has(self.rolloutRef) == has(oldSelf.rolloutRef) && (!has(self.rolloutRef) || self.rolloutRef == oldSelf.rolloutRef)",message="rolloutRef is frozen after creation"
@@ -79,7 +80,8 @@ type HostOperationSpec struct {
 	// Reason names the desired-state gate this operation serves (BiosConvergence,
 	// FirmwareConvergence, …); empty for a human-requested op. It becomes the
 	// Approval(<reason>) domain on the Host's blockedOn — hence the condition-reason
-	// shape.
+	// shape. It is frozen after creation: Provisioning skips every maintenance
+	// window, so a patch must not give that reason to a reboot.
 	// +kubebuilder:validation:Pattern=`^[A-Za-z][A-Za-z0-9]*$`
 	// +kubebuilder:validation:MaxLength=128
 	// +optional

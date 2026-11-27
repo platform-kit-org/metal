@@ -5,7 +5,9 @@
 #     proposes a new one, which waits for approval again;
 #   - patch a HostClaim (pk-metal hold, unhold) and a Host (pk-metal wipe, or
 #     remove the disk-not-wiped mark); a wipe is still an operation that a
-#     person approves;
+#     person approves. This patch can also set the guard lifts there
+#     (allow-self-disruption, wipe-waived, ack-etcd-risk); guard-lift
+#     admission makes each one name that person;
 #   - patch a TalosCluster to remove the restore-pending mark after a restore;
 #   - patch an Asset to correct its ledger facts;
 #   - delete a TalosRollout to stop it for good.
@@ -16,7 +18,9 @@
 # imager Jobs, in pk-metal only: the runbooks read the manager log.
 # It holds no patch on HostOperations or TalosRollouts: that is approval, and
 # belongs to pk-metal-approver. Bind both to a person who must also approve,
-# abort, or resume. It holds no Secret. Nothing binds it by default.
+# abort, or resume. It holds no Secret. The base binds nothing; the sample
+# site overlay binds the ClusterRole and the Role to one group
+# (config/samples/site-overlay/bindings.yaml).
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:

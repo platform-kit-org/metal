@@ -207,26 +207,28 @@ func TestOnCallRole(t *testing.T) {
 
 	clusterRoles, roles, _, _ := rbacDocs(t, "oncall_role.yaml")
 	require.Len(t, clusterRoles, 1)
-	role := clusterRoles[0]
-	require.Equal(t, "pk-metal-oncall", role.Name)
-	require.NoError(t, cl.Create(ctx, &role))
-	require.NoError(t, cl.Create(ctx, &rbacv1.ClusterRoleBinding{
-		ObjectMeta: metav1.ObjectMeta{Name: "pk-metal-oncall-bob"},
-		RoleRef:    rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "ClusterRole", Name: role.Name},
-		Subjects:   []rbacv1.Subject{{APIGroup: rbacv1.GroupName, Kind: rbacv1.UserKind, Name: "bob"}},
-	}))
+	require.Equal(t, "pk-metal-oncall", clusterRoles[0].Name)
+	require.NoError(t, cl.Create(ctx, &clusterRoles[0]))
 	require.Len(t, roles, 1)
 	ensureNamespace(t, ctx, cl, roles[0].Namespace)
 	require.NoError(t, cl.Create(ctx, &roles[0]))
-	require.NoError(t, cl.Create(ctx, &rbacv1.RoleBinding{
-		ObjectMeta: metav1.ObjectMeta{Name: "pk-metal-oncall-bob", Namespace: roles[0].Namespace},
-		RoleRef:    rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "Role", Name: roles[0].Name},
-		Subjects:   []rbacv1.Subject{{APIGroup: rbacv1.GroupName, Kind: rbacv1.UserKind, Name: "bob"}},
-	}))
+	// The bindings of the sample site overlay: a person on call needs both,
+	// the Role for the first step of several runbooks (pods, the manager log).
+	_, bindings := rbacFiles(t, filepath.Join("..", "..", "config", "samples", "site-overlay", "bindings.yaml"))
+	for _, b := range bindings {
+		if b.Name != "pk-metal-oncall" {
+			continue
+		}
+		if b.Namespace == "" {
+			require.NoError(t, cl.Create(ctx, &rbacv1.ClusterRoleBinding{ObjectMeta: b.ObjectMeta, RoleRef: b.RoleRef, Subjects: b.Subjects}))
+			continue
+		}
+		require.NoError(t, cl.Create(ctx, b.DeepCopy()))
+	}
 
 	allowedIn := func(ns, verb, group, resource, sub string) bool {
 		sar := &authorizationv1.SubjectAccessReview{Spec: authorizationv1.SubjectAccessReviewSpec{
-			User: "bob", Groups: []string{"system:authenticated"},
+			User: "bob", Groups: []string{"example:platform-oncall", "system:authenticated"},
 			ResourceAttributes: &authorizationv1.ResourceAttributes{
 				Verb: verb, Group: group, Resource: resource, Subresource: sub, Namespace: ns,
 			},
@@ -272,7 +274,7 @@ func TestOnCallRole(t *testing.T) {
 
 	// The manager's /metrics, for a look when Prometheus is down.
 	sar := &authorizationv1.SubjectAccessReview{Spec: authorizationv1.SubjectAccessReviewSpec{
-		User: "bob", Groups: []string{"system:authenticated"},
+		User: "bob", Groups: []string{"example:platform-oncall", "system:authenticated"},
 		NonResourceAttributes: &authorizationv1.NonResourceAttributes{Verb: "get", Path: "/metrics"},
 	}}
 	require.NoError(t, cl.Create(ctx, sar))

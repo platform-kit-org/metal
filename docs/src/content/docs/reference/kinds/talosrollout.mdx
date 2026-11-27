@@ -88,11 +88,7 @@ A node that runs finishes in both cases.
 
 ## Approval rules
 
-A ValidatingAdmissionPolicy enforces the same rules as for a HostOperation:
-
-1. The creator must name themselves in `spec.proposedBy`.
-2. The approver is a person, never the operator. The approver is not the proposer if the site sets `selfApproval: Forbidden`.
-3. `approvedBy` and `planHash` are set together, and cannot change after that.
+The admission policy [`talosrollout-approval`](ref:admission-policies#the-approval-policies) checks who proposes and who approves.
 
 Before each node operation starts, the [](ctrl:hostoperation) checks that this rollout still covers it.
 If not, the operation fails with `RolloutRefused` and the machine does not change.

@@ -37,8 +37,6 @@ It lists the actions in order. A person approves it, then the operator runs it a
   <dd>One [](kind:Host), through [`spec.hostRef`](kind:HostOperation#spec.hostRef). The Talos actions also name its [](kind:TalosNode).</dd>
   <dt>Phases</dt>
   <dd>Proposed, AwaitingApproval, Running, Succeeded, Failed, Aborted.</dd>
-  <dt>Frozen after creation</dt>
-  <dd>`hostRef`, `actions`, `proposedBy`, `rolloutRef` and `approval.required`.</dd>
   <dt>Source</dt>
   <dd>[hostoperation_types.go](/repo/metal/api/v1alpha1/hostoperation_types.go)</dd>
 </dl>
@@ -77,21 +75,14 @@ The steps below show one operation from the proposal to its end.
 An operation needs approval unless [`spec.approval.required`](kind:HostOperation#spec.approval.required) is `false`.
 Omitted means `true`: the safe default is a closed gate.
 
-A [ValidatingAdmissionPolicy](/repo/metal/config/policy/hostoperation-approval.yaml) enforces these rules:
-
-1. Nobody can create an operation that is already approved.
-2. `spec.proposedBy` must be the user who creates the operation.
-3. Only the operator or an admin can create an operation with `required: false`.
-4. `approvedBy` must be the user who approves.
-5. The proposer cannot approve the proposal.
-6. An approval cannot change after it is set.
+The admission policy [`hostoperation-approval`](ref:admission-policies#the-approval-policies) checks who proposes and who approves.
 
 <Callout type="note">
 Read `spec.actions` before you approve. [](cli:approve) shows each action in plain words, then asks.
 After your yes, it reads the operation again and approves only if the plan did not change.
 </Callout>
 
-To refuse a proposal, delete it. To stop new proposals for a claim, use [](cli:hold).
+If you delete an operation that the operator proposed, the operator proposes it again. To say no, change its cause: hold the claim with [](cli:hold), remove `spec.os`, or change the profile.
 
 ### Rollout operations
 

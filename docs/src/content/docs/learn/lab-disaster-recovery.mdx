@@ -166,7 +166,7 @@ If a step does not give its checkpoint, see [](lab:page/troubleshooting).
 ## What you learned
 
 - The operator sees the loss of etcd data, and it does not bootstrap the cluster again without a person.
-- A restore needs two persons and an approval, as each other change does: [](concept:approval).
+- A restore needs an approval, as each other change does: [](concept:approval). In the lab (`selfApproval: Forbidden`), that takes two persons.
 - The operator stores only encrypted snapshots. You keep the key.
 - A restore brings back the state of the snapshot. You lose later changes.
 

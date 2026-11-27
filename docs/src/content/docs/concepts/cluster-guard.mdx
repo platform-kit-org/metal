@@ -57,7 +57,7 @@ The last member still needs the override.
 ## What the guard does not hold
 
 - Workers.
-- Control planes that are not etcd members: they still join, or they already left.
+- For check 2, a control plane that is not an etcd member: it still joins, or it already left. Check 1 still holds it.
 - A cluster that was never bootstrapped. On day 0 all control planes install at once.
 
 ## Override
@@ -65,11 +65,13 @@ The last member still needs the override.
 <Callout type="caution">
 Use `metal.platform-kit.org/override-cluster-guard` only to repair an etcd that is already broken, or for a cluster with one control plane.
 It lifts check 2 only. Check 1 and [](concept:self-protection) stay.
+The value is `<username>: <reason>`. See [Named guard lifts](ref:audit-trail#named-guard-lifts).
 </Callout>
 
 ## In the reference
 
 - [](ctrl:hostoperation)
+- [](ctrl:protection)
 - [](concept:node-lifecycle): the same rules for join and leave
 
 ## Do it

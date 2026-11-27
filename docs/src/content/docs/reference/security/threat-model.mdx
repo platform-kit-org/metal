@@ -54,7 +54,7 @@ pk-metal can wipe disks, flash firmware and boot any image on a machine. This pa
 | # | Crossing | What crosses | Control |
 | --- | --- | --- | --- |
 | 1 | Person to API server | Approvals | RBAC and the [](ref:admission-policies). A person proposes, and a person approves as themselves. The site setting `selfApproval` decides if that can be the same person. The operator never approves. Two identities can create work that needs no approval: the operator service account and a member of the admin group. See [Who can skip the gate](#who-can-skip-the-gate). |
-| 2 | Manager or CLI to BMC | BMC login, power and boot commands | Redfish over TLS. The client logs in with a Redfish session: the password crosses the network one time for each session, not with each request. A BMC without sessions gets HTTP Basic, and `status.authentication` of the endpoint shows `Basic`. Each [](kind:ManagementEndpoint) has its own `spec.tls`. Without a CA, the manager pins the key of the BMC on first use. See [BMC certificates](#bmc-certificates). The CLI checks the BMC certificate against `--bmc-ca`; `--insecure` turns the check off and prints a warning. |
+| 2 | Manager or CLI to BMC | BMC login, power and boot commands | Redfish over TLS. The client logs in with a Redfish session: the password crosses the network one time for each session, not with each request. A BMC without sessions gets HTTP Basic, and `status.authentication` of the endpoint shows `Basic`. Each [](kind:ManagementEndpoint) has its own `spec.tls`. Without a CA, the manager pins the key of the BMC on first use. See [BMC certificates](#bmc-certificates). |
 | 3 | BMC to media service | Each boot medium, maybe with a node config | HTTPS that the BMC does not verify. A grant token in the URL, bound to the first source address. A user and password for each grant that carries a secret. The digest of each medium. A NetworkPolicy for the BMC network. See [Media grants](#media-grants). |
 | 4 | Manager to node | Talos API calls | Mutual TLS with the cluster certificates. To observe a node, the manager can also call the maintenance service without authentication. That call reads the version only. It sends no configuration. |
 | 5 | Manager to sink | Etcd snapshots | Age encryption to public recipients. Only the holder of the age identity can decrypt, on their own machine. Only an admin chooses the recipients and the sink. |
@@ -73,12 +73,8 @@ pk-metal can wipe disks, flash firmware and boot any image on a machine. This pa
   <dd>The admin talosconfig and kubeconfig of each cluster, in Secrets in `pk-metal`.</dd>
   <dt>Etcd snapshots</dt>
   <dd>The full state of a cluster, including its Secrets.</dd>
-  <dt>The approval gate</dt>
-  <dd>A bypass lets one identity wipe or reboot machines alone. The operator service account and the admin group can bypass it by design today. Protect both as you protect the gate. With `selfApproval: Allowed`, one person who can propose and approve can also change a machine alone. See [Known limits](#known-limits).</dd>
-  <dt>The operator service account</dt>
-  <dd>Its token can create an operation with `approval.required: false`, with any actions. The executor runs it with no person. The operator code decides when it does this: the node steps of an approved rollout, an install with `provisioning.approval: Automatic`, and a release that needs no person. Admission does not limit the actions. The executor runs such an operation in the name of the operator only if it is one of these three kinds. It refuses each other kind before it acts, with the reason `WaiverRefused`. A person with the token can still copy the shape of one of these kinds.</dd>
   <dt>The admin group</dt>
-  <dd>A member can create an operation that needs no approval. A member can also set a claim to `Automatic`, name the TalosNode of a claim, change the backup recipients, and change an EndpointProfile. One member can do these alone. Keep the group small, and audit each create with `approval.required: false` by a person. See [Get into the admin group](ref:rbac#get-into-the-admin-group).</dd>
+  <dd>A member makes the decisions that no approval covers. [Who may do what](ref:rbac#who-may-do-what) lists them. One member can do these alone, and can also set `selfApproval: Allowed`. Keep the group small, and audit each create with `approval.required: false` by a person. See [Get into the admin group](ref:rbac#get-into-the-admin-group).</dd>
   <dt>Data at rest</dt>
   <dd>Rendered configs, BMC logins, the secrets bundle of each cluster, the published credentials and the S3 keys are Kubernetes Secrets. They are plain text in etcd unless the management cluster encrypts Secrets at rest. Set encryption at rest to on. Embedded installers that carry a node config stay on the volume of the [media store](term:media-service) until the install ends or fails. Then the operator deletes them, and the config ISO Secrets too. A delete is an unlink: the data can stay on the disk. Use an encrypted StorageClass for it.</dd>
 </dl>
@@ -87,10 +83,11 @@ pk-metal can wipe disks, flash firmware and boot any image on a machine. This pa
 
 | Identity | What it can do alone | What checks it |
 | --- | --- | --- |
-| Operator service account | Create an operation that needs no approval. It cannot approve an operation or a rollout, with each `selfApproval` value. | RBAC (no `patch`) and rule 6 of `hostoperation-approval` |
-| Admin group | Create an operation that needs no approval, and the other admin changes above. | `hostoperation-approval`, `hostclaim-provisioning`, `etcdbackuppolicy-guard`, `endpointprofile-guard` |
-| A person with `create` and `patch` on operations or rollouts, if `selfApproval` is `Allowed` | Propose a change, or make the edit that the operator proposes a change for, and approve it. The record names the person as proposer, and as approver. It names the person as requester if the edit set `metal.platform-kit.org/requested-by`, as the pk-metal commands and the policy `requested-by-stamp` do. | Rules 7 and 8 of `hostoperation-approval`, rules 6 and 7 of `talosrollout-approval`, `requested-by`, `requested-by-patches`, and the `selfApproved` field of the [](ref:audit-trail) |
+| Operator service account | Create an operation that needs no approval. It cannot approve an operation or a rollout, with each `selfApproval` value. | RBAC (no `patch`) and rule 6 of the [approval policies](ref:admission-policies#the-approval-policies) |
+| Admin group | Create an operation that needs no approval, and the other admin changes above. Set `selfApproval: Allowed`, then approve their own change. | The admission policies that check the admin group. See [Who may do what](ref:rbac#who-may-do-what). |
+| A person with `create` and `patch` on operations or rollouts, if `selfApproval` is `Allowed` | Propose a change, or make the edit that the operator proposes a change for, and approve it. The record names the person as proposer, and as approver. It names the person as requester if the edit set `metal.platform-kit.org/requested-by`, as the pk-metal commands and the policy `requested-by-stamp` do. | Rules 7 and 8 of the approval policies, `requested-by`, `requested-by-patches`, and the `selfApproved` field of the [](ref:audit-trail) |
 | Holder of `patch` on operations | Lift a maintenance window or the cluster guard on an operation that a person approved. The value must name the person and a reason. | RBAC, `guard-lift`, and the [](ref:audit-trail) |
+| Holder of `patch` on Hosts, claims or nodes (`pk-metal-oncall`, `pk-metal-admin`) | Lift self-protection or waive a wipe on a Host, or accept an etcd risk on a claim or a node. The plan of [](cli:approve) does not show these lifts. The value must name the person and a reason. | RBAC, `guard-lift`, and the [](ref:audit-trail) |
 
 ### Known limits
 
@@ -98,7 +95,7 @@ pk-metal can wipe disks, flash firmware and boot any image on a machine. This pa
   <dt>Self-approval</dt>
   <dd>The default of `selfApproval` is `Allowed`. Then one person with propose and approve rights can change a machine alone. The record still names them in `spec.proposedBy` or `spec.requestedBy`, and in `spec.approval.approvedBy`. If one account must not change a machine alone, set `Forbidden`. `Forbidden` also stops the person whose edit made the operator propose the change. Only `Forbidden` makes the edit name its user. An edit made under `Allowed` without the annotation names nobody, also in a proposal that the operator makes after the change to `Forbidden`. A GitOps service account is the requester of what it applies, so `Forbidden` does not stop the author of the commit. A rollout that a person created is not checked again when other persons change the cluster. A person can put a label on a Host directly. That label can select a BIOS or firmware profile. The change that follows does not name that person. See [](howto:approval-permissions).</dd>
   <dt>Operator work without approval</dt>
-  <dd>The identity of the operator can create operations that need no approval. These are the node steps of an approved rollout, an install of a claim with `provisioning.approval: Automatic`, and a release that needs no person. `selfApproval: Forbidden` does not change this. Admission does not limit the actions of these operations. The executor refuses an operation in the name of the operator that needs no approval and is none of these kinds. Protect the token of the operator service account: give nobody `impersonate` on it, or `create` on `serviceaccounts/token` in `pk-metal`, and do not copy its token out of the cluster.</dd>
+  <dd>The identity of the operator can create operations that need no approval. These are the node steps of an approved rollout, an install of a claim with `provisioning.approval: Automatic`, and a release that needs no person. `selfApproval: Forbidden` does not change this. Admission does not limit the actions of these operations. The executor refuses an operation in the name of the operator that needs no approval and is none of these kinds, with the reason `WaiverRefused`. A person with the token can still copy the shape of one of these kinds. Protect the token of the operator service account. Give nobody `impersonate` on it, or `create` on `serviceaccounts/token`, Secrets, pods, Jobs or Deployments in `pk-metal`. Do not copy its token out of the cluster. `pk-metal-admin` has `create` on Secrets in `pk-metal`, so a member of the admin group can get a token of the operator, and act in its name.</dd>
 </dl>
 
 ## Controls
@@ -145,7 +142,7 @@ The identity lane of an EndpointProfile is in sync only when the BMC serves the 
 
 `insecureSkipVerify` checks nothing, and pins nothing. Use it for simulated BMCs only. The approval plan of each operation on such a BMC says `TLS not checked`. The operator does not send a private key over it: the key-upload identity dialect stops with the reason `TLSNotVerified`.
 
-`pk-metal` on a workstation ([](cli:check), [](cli:inventory), [](cli:boot)) checks the BMC certificate against the CA file of `--bmc-ca`, else the system CAs. `--insecure` turns the check off.
+`pk-metal` on a workstation ([](cli:check), [](cli:inventory), [](cli:boot)) checks the BMC certificate against the CA file of `--bmc-ca`, else the system CAs. `--insecure` turns the check off and prints a warning.
 
 Watch `ManagementEndpoint.spec.tls` and `EndpointProfile.spec.tls`. A change there changes whom the manager trusts, and whom it sends the BMC login to.
 
@@ -165,12 +162,9 @@ The [relay](concept:relay) lets the CLI drive a BMC through a jump host on day 0
 
 ### Credentials
 
-- Published cluster credentials live 24 hours by default, and 720 hours at most. The operator renews them when one third of the time is left.
-- Only the admin group sets `spec.credentials.ttl` of a [](kind:TalosCluster) to more than 24 hours (`taloscluster-credentials-guard`). The on-call and approver roles can patch a cluster, but they cannot make a published credential live longer.
-- [](cli:render) writes credentials that live 24 hours by default, and 720 hours at most.
-- `readerTalosconfig` publishes a talosconfig with the `os:reader` role only.
+- Only the admin group sets `spec.credentials.ttl` of a [](kind:TalosCluster) to more than 24 hours (`taloscluster-credentials-guard`). `pk-metal-oncall` can patch a cluster, but cannot make a published credential live longer.
 - The client certificate for the install check-in lives 10 minutes.
-- The metric `pk_metal_credentials_expiry_timestamp_seconds` shows each expiry.
+- The TTL, the renewal, the reader talosconfig and the expiry metric: see [](concept:credentials) and [](cli:render).
 
 ### Record Secret reads
 

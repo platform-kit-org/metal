@@ -11,9 +11,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
 	"github.com/dennisklein/platform-kit/metal/internal/phase"
 )
@@ -208,5 +210,22 @@ func TestAPI(t *testing.T) {
 			}
 			assert.Error(t, cl.Create(ctx, o), name)
 		}
+	})
+
+	// The drain budget is part of the approved plan: the schema keeps it as
+	// it was created, defaulted or not.
+	st.run(t, "a rollout's drain budget is frozen", func(t *testing.T) {
+		ro := &osv1alpha1.TalosRollout{
+			ObjectMeta: metav1.ObjectMeta{Name: "drain-frozen"},
+			Spec: osv1alpha1.TalosRolloutSpec{ClusterRef: osv1alpha1.Reference{Name: "c"},
+				Kind: osv1alpha1.RolloutReboot, ProposedBy: "alice"},
+		}
+		require.NoError(t, cl.Create(ctx, ro))
+		assert.Equal(t, int32(900), ro.Spec.DrainTimeoutSeconds, "the schema default")
+
+		ro.Spec.DrainTimeoutSeconds = 60
+		err := cl.Update(ctx, ro)
+		require.True(t, apierrors.IsInvalid(err), "a changed drain budget is refused: %v", err)
+		assert.Contains(t, err.Error(), "drainTimeoutSeconds is frozen")
 	})
 }

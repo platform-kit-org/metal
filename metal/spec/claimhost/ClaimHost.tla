@@ -122,7 +122,7 @@ Unbound(h) == [h EXCEPT !.ref = Nil, !.os = Nil, !.powerOff = FALSE]
 (* that the hand-off moves. Inspected and Verified are True; Maintenance   *)
 (* and Booted are not modelled.                                            *)
 
-\* go: phase.ForHost dc136979b851
+\* go: phase.ForHost 00522918bc63
 ForHost(osReady, claimed, releasing) ==
     IF releasing THEN "Releasing"
     ELSE IF osReady = "False" /\ (Rule = "cache" \/ claimed) THEN "Failed"
@@ -142,7 +142,7 @@ Facts(h, cc) ==
                             ELSE claimed /\ (~held \/ cc[h.ref[1]].deleting)>>
 
 \* projectOS: OSReady mirrors the Ready condition of the hand-off's node.
-\* go: controller.projectOS cea7f4b857c8
+\* go: controller.projectOS 545f08af7ada
 OSReadyOf(h, nodes) ==
     IF h.os = Nil THEN "absent"
     ELSE CASE nodes[h.os] = "absent" -> "Unknown"
@@ -173,8 +173,8 @@ DeleteClaim(c) ==
 
 \* The cached claim exists and is not being deleted: AddFinalizer, bind,
 \* writeStatus. Each write is an Update; the first conflict ends the pass.
-\* go: controller.HostClaimReconciler.Reconcile 51a5a5343ca6
-\* go: controller.HostClaimReconciler.bind df7b6b5fb51d
+\* go: controller.HostClaimReconciler.Reconcile f483186c1bc6
+\* go: controller.HostClaimReconciler.bind 158f537988a0
 \* go: controller.HostClaimReconciler.writeStatus eaf9514465d0
 ClaimBind(c) ==
     LET cl   == cache.claims[c]
@@ -203,7 +203,7 @@ ClaimBind(c) ==
 \* (liveBoundHosts); the release operations from the cache.
 \* go: controller.HostClaimReconciler.finishRelease 0988f8ac9564
 \* go: controller.HostClaimReconciler.liveBoundHosts d4c505783ee8
-\* go: controller.HostClaimReconciler.release cf6dcf39fdc7
+\* go: controller.HostClaimReconciler.release 35999f23f29c
 \* go: controller.HostClaimReconciler.recordPowerOff c0f1bdd325c8
 \* go: controller.HostClaimReconciler.releaseAll 38f0c45990cc
 \* go: controller.runsNode 0029e5e5ef0d
@@ -261,7 +261,7 @@ ClaimGone(c) ==
 \* HostReconciler.Reconcile: projectOS from the cached node, factsFor with
 \* the cached claim, StampHost, and a status apply when the result differs
 \* from the cached status.
-\* go: controller.HostReconciler.Reconcile fc50c1c8de21
+\* go: controller.HostReconciler.Reconcile 41ad054df8d5
 \* go: controller.HostReconciler.applyStatus 1f380381ef89
 HostReconcile ==
     LET h  == cache.hosts

@@ -1161,7 +1161,11 @@ func (r *HostClaimReconciler) release(ctx context.Context, claim *metalv1alpha1.
 			// could not wipe is gone too.
 			delete(host.Annotations, metalv1alpha1.AnnotationDiskNotWiped)
 		}
-		if err := r.releaseAll(ctx, []metalv1alpha1.Host{*host}, ""); err != nil {
+		how := "unbound as it is: no boot of the claim ran on it"
+		if op != nil {
+			how = "released by operation " + op.Namespace + "/" + op.Name
+		}
+		if err := r.releaseAll(ctx, []metalv1alpha1.Host{*host}, how); err != nil {
 			return false, err
 		}
 	}

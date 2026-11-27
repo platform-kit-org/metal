@@ -57,8 +57,10 @@ type Config struct {
 	// another key fails the handshake, before any credential is sent. Wins
 	// over Insecure when set.
 	PinnedKeys []string
-	// ReadOnly refuses every mutating call at this layer — the read-only rail: pointing the
-	// client at real hardware is safe by construction until explicitly unlocked.
+	// ReadOnly refuses every request that could change the BMC, with
+	// ErrReadOnly — the read-only rail: pointing the client at real hardware
+	// is safe by construction until explicitly unlocked. Only GET and HEAD
+	// go out, and the login and logout of the session.
 	ReadOnly bool
 	// RequestTimeout bounds one request, from the send to the last byte of
 	// the answer. Zero is DefaultRequestTimeout. A request that uploads a
@@ -79,9 +81,8 @@ const UploadTimeout = 15 * time.Minute
 const bulkBody = 1 << 20
 
 type client struct {
-	api      *gf.APIClient
-	svc      *gf.Service
-	readOnly bool
+	api *gf.APIClient
+	svc *gf.Service
 	// auth is how the requests authenticate: AuthSession or AuthBasic.
 	auth string
 	// renew logs in again when the manager forgets the session.
@@ -137,7 +138,9 @@ func (c *client) root() (rootLinks, error) {
 	})
 }
 
-var errReadOnly = fmt.Errorf("bmc: mutating call refused (read-only client)")
+// ErrReadOnly is the answer of a read-only client to a request that could
+// change the BMC.
+var ErrReadOnly = errors.New("bmc: mutating call refused (read-only client)")
 
 // Connect dials the endpoint and returns a bmc.Client.
 //
@@ -171,7 +174,7 @@ func Connect(ctx context.Context, cfg Config) (bmc.Client, error) {
 	// The header timeout starts after the request body is sent, so it also
 	// holds for an upload.
 	t.ResponseHeaderTimeout = timeout
-	g := guard{next: t, timeout: timeout, renew: &renewal{}}
+	g := &guard{next: t, timeout: timeout, renew: &renewal{}, readOnly: cfg.ReadOnly}
 	g.renew.send = g.send
 	hc := &http.Client{Transport: g}
 	fail := func(err error) (bmc.Client, error) {
@@ -185,6 +188,7 @@ func Connect(ctx context.Context, cfg Config) (bmc.Client, error) {
 	if err != nil {
 		return fail(err)
 	}
+	g.sessions = root.Links.Sessions.ODataID
 	gcfg := gf.ClientConfig{
 		Endpoint:         cfg.Endpoint,
 		Username:         cfg.Username,
@@ -222,7 +226,7 @@ func Connect(ctx context.Context, cfg Config) (bmc.Client, error) {
 			return fail(err)
 		}
 	}
-	c := &client{api: api, svc: api.GetService(), readOnly: cfg.ReadOnly, auth: auth, renew: g.renew}
+	c := &client{api: api, svc: api.GetService(), auth: auth, renew: g.renew}
 	c.memo.root = &root.rootLinks
 	return c, nil
 }
@@ -396,15 +400,25 @@ func readBody(r io.Reader) ([]byte, error) {
 // can catch, so such an answer must never reach it.
 //
 // The guard also bounds each request, the body read included: gofish sets no
-// deadline of its own. And it renews a session that the manager forgot (see
-// renewal).
+// deadline of its own. It renews a session that the manager forgot (see
+// renewal). And it is the read-only rail: every request of the client passes
+// it, so a method that forgets to ask cannot write.
 type guard struct {
-	next    http.RoundTripper
-	timeout time.Duration
-	renew   *renewal
+	next     http.RoundTripper
+	timeout  time.Duration
+	renew    *renewal
+	readOnly bool
+	sessions string // the path of the Sessions collection; "" when none
 }
 
-func (g guard) RoundTrip(req *http.Request) (*http.Response, error) {
+func (g *guard) RoundTrip(req *http.Request) (*http.Response, error) {
+	if g.readOnly && req.Method != http.MethodGet && req.Method != http.MethodHead &&
+		(g.sessions == "" || !strings.HasPrefix(req.URL.Path, g.sessions)) {
+		if req.Body != nil {
+			_ = req.Body.Close()
+		}
+		return nil, ErrReadOnly
+	}
 	if !g.renew.covers(req) {
 		return g.send(req)
 	}
@@ -426,7 +440,7 @@ func (g guard) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 // send is one bounded request and its checked answer.
-func (g guard) send(req *http.Request) (*http.Response, error) {
+func (g *guard) send(req *http.Request) (*http.Response, error) {
 	timeout := g.timeout
 	if req.ContentLength > bulkBody {
 		timeout = max(timeout, UploadTimeout)
@@ -456,7 +470,7 @@ func (g guard) send(req *http.Request) (*http.Response, error) {
 
 // explain names the request timeout when it, and not the caller, ended the
 // request.
-func (guard) explain(ctx context.Context, req *http.Request, timeout time.Duration, err error) error {
+func (*guard) explain(ctx context.Context, req *http.Request, timeout time.Duration, err error) error {
 	var ne net.Error
 	timedOut := errors.Is(ctx.Err(), context.DeadlineExceeded) || (errors.As(err, &ne) && ne.Timeout())
 	if timedOut && req.Context().Err() == nil {
@@ -467,7 +481,7 @@ func (guard) explain(ctx context.Context, req *http.Request, timeout time.Durati
 
 // CloseIdleConnections closes the kept-open connections of the transport
 // underneath, so that http.Client.CloseIdleConnections reaches them.
-func (g guard) CloseIdleConnections() {
+func (g *guard) CloseIdleConnections() {
 	if c, ok := g.next.(interface{ CloseIdleConnections() }); ok {
 		c.CloseIdleConnections()
 	}
@@ -1109,9 +1123,6 @@ func (c *client) Power(ctx context.Context, systemID string) (bmc.PowerState, er
 }
 
 func (c *client) SetPower(ctx context.Context, systemID string, action bmc.PowerAction) error {
-	if c.readOnly {
-		return errReadOnly
-	}
 	s, err := c.systemByID(systemID)
 	if err != nil {
 		return err
@@ -1128,9 +1139,6 @@ func (c *client) SetPower(ctx context.Context, systemID string, action bmc.Power
 // the mode: firmware that serves no mode property rejects a PATCH naming it.
 // A raw PATCH of exactly these properties, with the system's ETag as If-Match.
 func (c *client) SetBootOverride(ctx context.Context, systemID string, o bmc.BootOverride) error {
-	if c.readOnly {
-		return errReadOnly
-	}
 	s, err := c.systemByID(systemID)
 	if err != nil {
 		return err
@@ -1149,9 +1157,6 @@ func (c *client) SetBootOverride(ctx context.Context, systemID string, o bmc.Boo
 }
 
 func (c *client) ResetManager(ctx context.Context, action bmc.PowerAction) error {
-	if c.readOnly {
-		return errReadOnly
-	}
 	m, err := c.manager()
 	if err != nil {
 		return err

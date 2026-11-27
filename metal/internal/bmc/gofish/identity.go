@@ -153,9 +153,6 @@ func (c *client) certificateService() (*certService, error) {
 
 // GenerateCSR has the manager create a key and a signing request for it.
 func (c *client) GenerateCSR(ctx context.Context, subject bmc.CSRSubject) ([]byte, error) {
-	if c.readOnly {
-		return nil, errReadOnly
-	}
 	uri, err := c.httpsCertURI()
 	if err != nil {
 		return nil, err
@@ -292,9 +289,6 @@ func (c *client) pendingCSR(uri string) (string, error) {
 // ImportServerCertificate hands the signed chain back to the manager that
 // generated the request.
 func (c *client) ImportServerCertificate(ctx context.Context, chainPEM []byte) error {
-	if c.readOnly {
-		return errReadOnly
-	}
 	uri, err := c.httpsCertURI()
 	if err != nil {
 		return err
@@ -342,9 +336,6 @@ func (c *client) ImportServerCertificate(ctx context.Context, chainPEM []byte) e
 // UploadServerIdentity is the X12 OEM route: one multipart POST, parts
 // cert_file and key_file exactly as the action advertises, leaf-only PEM.
 func (c *client) UploadServerIdentity(ctx context.Context, certPEM, keyPEM []byte) error {
-	if c.readOnly {
-		return errReadOnly
-	}
 	if !c.hasSmcSSLCert() {
 		return fmt.Errorf("bmc: endpoint exposes no identity upload")
 	}

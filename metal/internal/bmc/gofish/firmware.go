@@ -108,9 +108,6 @@ func (c *client) FirmwareInventory(ctx context.Context) ([]bmc.Firmware, error) 
 // manager, and its tasks with it. Acceptance, even a completed task, is still
 // not proof: callers judge by the version and LastResetTime reading back.
 func (c *client) UpdateFirmware(ctx context.Context, image []byte) error {
-	if c.readOnly {
-		return errReadOnly
-	}
 	us, err := c.updateService()
 	if err != nil {
 		return err
@@ -143,9 +140,6 @@ func (c *client) UpdateFirmware(ctx context.Context, image []byte) error {
 // answer is not followed to its end: a task for a staged update stays
 // pending until the system resets, which is a later step's business.
 func (c *client) StageFirmware(_ context.Context, image []byte, entryID string) error {
-	if c.readOnly {
-		return errReadOnly
-	}
 	us, err := c.updateService()
 	if err != nil {
 		return err

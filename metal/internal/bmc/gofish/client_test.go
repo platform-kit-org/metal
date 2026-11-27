@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/stmcginnis/gofish/schemas"
@@ -159,23 +160,77 @@ func TestConformanceBehindDeflate(t *testing.T) {
 	bmctest.Run(t, c, f, false)
 }
 
-// TestReadOnlyRefusesMutation is the read-only rail: a read-only client refuses every write at
-// this layer, regardless of what the caller asks.
+// TestReadOnlyRefusesMutation is the read-only rail: a read-only client
+// refuses every write, whatever the caller asks, and no write reaches the
+// BMC. The login and the logout of the session still do. Each method runs
+// on a fixture where it gets as far as its write.
 func TestReadOnlyRefusesMutation(t *testing.T) {
-	f, err := sim.LoadFixture("supermicro-x12")
-	require.NoError(t, err)
-	c := connect(t, serve(t, f).URL, f, readOnly)
-	ctx := context.Background()
-
-	_, err = c.Systems(ctx)
-	require.NoError(t, err, "read path must work")
-
-	assert.Error(t, c.SetPower(ctx, "1", bmc.ActionForceOff), "SetPower on read-only")
-	assert.Error(t, c.InsertMedia(ctx, "VirtualMedia1", "https://x/i.iso", nil), "InsertMedia on read-only")
-	assert.Error(t, c.SetBootOverride(ctx, "1", bmc.BootOverride{Target: "UsbCd"}), "SetBootOverride on read-only")
-	assert.Error(t, c.UpdateFirmware(ctx, []byte("SIMFW 1")), "UpdateFirmware on read-only")
-	assert.Error(t, c.ResetManager(ctx, bmc.ActionGracefulRestart), "ResetManager on read-only")
-	assert.Error(t, c.SetBiosAttributes(ctx, "1", map[string]any{"QuietBoot": false}), "SetBiosAttributes on read-only")
+	const pem = "-----BEGIN CERTIFICATE-----\nAA==\n-----END CERTIFICATE-----\n"
+	for name, tc := range map[string]struct {
+		fixture string
+		call    func(context.Context, bmc.Client) error
+	}{
+		"SetPower": {"generic", func(ctx context.Context, c bmc.Client) error {
+			return c.SetPower(ctx, "1", bmc.ActionForceOff)
+		}},
+		"SetBootOverride": {"generic", func(ctx context.Context, c bmc.Client) error {
+			return c.SetBootOverride(ctx, "1", bmc.BootOverride{Target: "Cd"})
+		}},
+		"InsertMedia": {"generic", func(ctx context.Context, c bmc.Client) error {
+			return c.InsertMedia(ctx, "2", "https://x/i.iso", nil)
+		}},
+		"VmmControl": {"huawei-2288h-v5", func(ctx context.Context, c bmc.Client) error {
+			return c.InsertMedia(ctx, "CD", "https://x/i.iso", nil)
+		}},
+		"EjectMedia": {"generic", func(ctx context.Context, c bmc.Client) error {
+			return c.EjectMedia(ctx, "2")
+		}},
+		"UpdateFirmware": {"generic", func(ctx context.Context, c bmc.Client) error {
+			return c.UpdateFirmware(ctx, []byte("SIMFW 1"))
+		}},
+		"StageFirmware": {"generic", func(ctx context.Context, c bmc.Client) error {
+			return c.StageFirmware(ctx, []byte("SIMFW 1"), "BIOS")
+		}},
+		"ResetManager": {"generic", func(ctx context.Context, c bmc.Client) error {
+			return c.ResetManager(ctx, bmc.ActionGracefulRestart)
+		}},
+		"SetBiosAttributes": {"generic", func(ctx context.Context, c bmc.Client) error {
+			return c.SetBiosAttributes(ctx, "1", map[string]any{"QuietBoot": false})
+		}},
+		"EnsureAccount": {"generic", func(ctx context.Context, c bmc.Client) error {
+			return c.EnsureAccount(ctx, "pk-metal", "managed-pass-1")
+		}},
+		"DisableAccount": {"generic", func(ctx context.Context, c bmc.Client) error {
+			return c.DisableAccount(ctx, "admin")
+		}},
+		"SetNTP": {"generic", func(ctx context.Context, c bmc.Client) error {
+			return c.SetNTP(ctx, bmc.NTPConfig{Enabled: true, Servers: []string{"ntp.example.org"}})
+		}},
+		"GenerateCSR": {"generic", func(ctx context.Context, c bmc.Client) error {
+			_, err := c.GenerateCSR(ctx, bmc.CSRSubject{CommonName: "bmc.example.internal", Country: "XX"})
+			return err
+		}},
+		"ImportServerCertificate": {"generic", func(ctx context.Context, c bmc.Client) error {
+			return c.ImportServerCertificate(ctx, []byte(pem))
+		}},
+		"UploadServerIdentity": {"supermicro-x12", func(ctx context.Context, c bmc.Client) error {
+			return c.UploadServerIdentity(ctx, []byte(pem), []byte("key"))
+		}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f, err := sim.LoadFixture(tc.fixture)
+			require.NoError(t, err)
+			srv, counts := countingSim(t, f)
+			c := connect(t, srv.URL, f, readOnly)
+			before := counts()
+			require.ErrorIs(t, tc.call(t.Context(), c), gofishclient.ErrReadOnly)
+			for req, n := range counts() {
+				if n > before[req] {
+					assert.True(t, strings.HasPrefix(req, "GET "), "%s reached the BMC", req)
+				}
+			}
+		})
+	}
 }
 
 // A manager that says it cannot serve the request now is busy; one that

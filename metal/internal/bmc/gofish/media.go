@@ -193,9 +193,6 @@ func (c *client) InsertMedia(ctx context.Context, mediaID, imageURL string, cred
 }
 
 func (c *client) insertMedia(ctx context.Context, mediaID, imageURL string, creds *bmc.MediaCredentials) error {
-	if c.readOnly {
-		return errReadOnly
-	}
 	vm, err := c.slotByID(mediaID)
 	if err != nil {
 		return err
@@ -278,9 +275,6 @@ func (c *client) EjectMedia(ctx context.Context, mediaID string) error {
 }
 
 func (c *client) ejectMedia(ctx context.Context, mediaID string) error {
-	if c.readOnly {
-		return errReadOnly
-	}
 	vm, err := c.slotByID(mediaID)
 	if err != nil {
 		return err

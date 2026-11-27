@@ -226,3 +226,13 @@ func TestExecutorAsksTheGuardAgainBeforeTheReboot(t *testing.T) {
 	require.True(t, opSucceeded(got), "%+v", got.Status)
 	assert.Len(t, lab.machines["cp-2"].Reboots(), 1)
 }
+
+func TestClusterGuardEmptyOverrideHolds(t *testing.T) {
+	lab := newTalosLab(t)
+	lab.machines["cp-3"].SetUnreachable(true)
+	msg := guardCheck(t, lab, "cp-2", func(op *metalv1alpha1.HostOperation) {
+		op.Annotations = map[string]string{metalv1alpha1.AnnotationOverrideClusterGuard: " "}
+	})
+	assert.Contains(t, msg, "1 healthy voting member(s) of 3", "a blank override lifts nothing")
+	assert.Contains(t, msg, "an empty reason does not count")
+}

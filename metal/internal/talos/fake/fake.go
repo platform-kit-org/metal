@@ -342,6 +342,16 @@ func (f *Fleet) Add(address, hostname string, m *Machine) {
 	f.machines[address] = m
 }
 
+// AddRunning places a new machine of version at address under a hostname,
+// configured with config and in the running stage, and returns it.
+func (f *Fleet) AddRunning(address, hostname, version string, config []byte) *Machine {
+	m := NewMachine(version)
+	m.Configure(config)
+	m.SetStage("running", true)
+	f.Add(address, hostname, m)
+	return m
+}
+
 // Dialer routes each target to the machine at its host.
 func (f *Fleet) Dialer() talos.Dialer {
 	return func(_ context.Context, t talos.Target) (talos.Client, error) {

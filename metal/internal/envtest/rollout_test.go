@@ -11,8 +11,6 @@ package envtest_test
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -20,14 +18,12 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/yaml"
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
@@ -67,27 +63,13 @@ func (w *stubWorkload) SyncKubeProxy(_ context.Context, image string) (bool, str
 	return true, "kube-proxy: done", nil
 }
 
-// installRolloutPolicy loads the committed rollout approval policy; its
-// params are the ones installApprovalPolicy created.
-func installRolloutPolicy(t *testing.T, ctx context.Context, cl client.Client) {
-	t.Helper()
-	docs := strings.Split(readFile(t, filepath.Join("..", "..", "config", "policy", "talosrollout-approval.yaml")), "\n---")
-	require.Len(t, docs, 2)
-	vap := &admissionregistrationv1.ValidatingAdmissionPolicy{}
-	require.NoError(t, yaml.Unmarshal([]byte(docs[0]), vap))
-	require.NoError(t, cl.Create(ctx, vap))
-	binding := &admissionregistrationv1.ValidatingAdmissionPolicyBinding{}
-	require.NoError(t, yaml.Unmarshal([]byte(docs[1]), binding))
-	require.NoError(t, cl.Create(ctx, binding))
-}
-
 func TestRollout(t *testing.T) {
 	st := startEnv(t)
 	cl := st.cl
 	ctx := t.Context()
 	operator := whoAmI(t, ctx, cl)
 	installApprovalPolicy(t, ctx, cl, operator)
-	installRolloutPolicy(t, ctx, cl)
+	installPolicy(t, ctx, cl, "talosrollout-approval.yaml")
 	aliceCl := st.userClient(t, "alice")
 	bobCl := st.userClient(t, "bob")
 
@@ -98,22 +80,13 @@ func TestRollout(t *testing.T) {
 	machinesByName := map[string]*fake.Machine{}
 	addrs := map[string]string{"cp-1": "10.88.0.11", "cp-2": "10.88.0.12", "w-1": "10.88.0.21", "w-2": "10.88.0.22"}
 	for name, addr := range addrs {
-		m := fake.NewMachine("v1.14.5")
-		m.Configure([]byte("running config"))
-		m.SetStage("running", true)
-		fleet.Add(addr, name, m)
-		machinesByName[name] = m
+		machinesByName[name] = fleet.AddRunning(addr, name, "v1.14.5", []byte("running config"))
 	}
 	machinesByName["cp-1"].JoinEtcd(etcd, false)
 	machinesByName["cp-2"].JoinEtcd(etcd, false)
 	workload := &stubWorkload{notReady: map[string]bool{}}
 
-	bundle, err := os.ReadFile(filepath.Join("..", "talos", "render", "testdata", "secrets.yaml"))
-	require.NoError(t, err)
-	require.NoError(t, cl.Create(ctx, &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: "fleet-secrets", Namespace: "default"},
-		Data:       map[string][]byte{render.BundleKey: bundle},
-	}))
+	require.NoError(t, cl.Create(ctx, bundleSecret(t, "default", "fleet-secrets")))
 	require.NoError(t, cl.Create(ctx, &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Name: "fleet-kubeconfig", Namespace: "default"},
 		Data:       map[string][]byte{controller.KubeconfigKey: []byte("stub")},
@@ -161,7 +134,7 @@ func TestRollout(t *testing.T) {
 		Workload:             func([]byte) (k8supgrade.Workload, error) { return workload, nil },
 		GateInterval:         100 * time.Millisecond,
 	}, controller.LaneTalosRollout))
-	runManager(t, ctx, mgr)
+	startManager(t, mgr)
 
 	getRollout := func(name string) *osv1alpha1.TalosRollout {
 		ro := &osv1alpha1.TalosRollout{}
@@ -234,7 +207,7 @@ func TestRollout(t *testing.T) {
 		assert.Empty(t, opsOf(upgrade), "nothing runs before an approval")
 	})
 
-	st.run(t, "the operator approves nothing, and a person only as themselves", func(t *testing.T) {
+	st.run(t, "an approval names the plan, and is write-once", func(t *testing.T) {
 		ro := getRollout(upgrade)
 		approve := func(c client.Client, who, hash string) error {
 			patch := client.MergeFrom(ro.DeepCopy())
@@ -242,8 +215,6 @@ func TestRollout(t *testing.T) {
 			cp.Spec.Approval = osv1alpha1.RolloutApproval{ApprovedBy: who, PlanHash: hash}
 			return c.Patch(ctx, cp, patch)
 		}
-		assert.ErrorContains(t, approve(cl, operator, ro.Status.PlanHash), "the operator approves nothing")
-		assert.ErrorContains(t, approve(aliceCl, "bob", ro.Status.PlanHash), "only approve as yourself")
 		assert.Error(t, approve(bobCl, "bob", ""), "an approval names the plan it approves")
 		require.NoError(t, approve(bobCl, "bob", ro.Status.PlanHash))
 		ro = getRollout(upgrade)
@@ -384,7 +355,7 @@ func TestRollout(t *testing.T) {
 			CredentialsNamespace: "default", OperationsNamespace: "default", Proposer: operator,
 			WaitInterval: 100 * time.Millisecond,
 		}, controller.LaneHostOperation))
-		runManager(t, ctx, exec)
+		startManager(t, exec)
 
 		real := opFor(upgrade, "cp-2")
 		require.NotNil(t, real)

@@ -5,15 +5,15 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
-	godigest "github.com/opencontainers/go-digest"
 	"github.com/stmcginnis/gofish/schemas"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -99,6 +99,16 @@ func testScheme(t *testing.T) *runtime.Scheme {
 	return s
 }
 
+// opStore is the fake API of an executor: objs, and the status subresource
+// and the host index that the API server and the manager give operations.
+func opStore(t *testing.T, objs ...client.Object) client.WithWatch {
+	t.Helper()
+	return fake.NewClientBuilder().WithScheme(testScheme(t)).
+		WithStatusSubresource(&metalv1alpha1.HostOperation{}).
+		WithIndex(&metalv1alpha1.HostOperation{}, opHostIndex, opHostRef).
+		WithObjects(objs...).Build()
+}
+
 // executorFor builds an executor over a fake API and the named sim fixture.
 func executorFor(t *testing.T, fixture string, objs ...client.Object) (*HostOperationReconciler, *sim.State, *recordingClient) {
 	t.Helper()
@@ -107,14 +117,8 @@ func executorFor(t *testing.T, fixture string, objs ...client.Object) (*HostOper
 	st := sim.NewState(f)
 	rec := &recordingClient{Client: st}
 	host := &metalv1alpha1.Host{ObjectMeta: metav1.ObjectMeta{Name: "host-a"}}
-	cl := fake.NewClientBuilder().WithScheme(testScheme(t)).
-		WithStatusSubresource(&metalv1alpha1.HostOperation{}).
-		WithIndex(&metalv1alpha1.HostOperation{}, opHostIndex, func(o client.Object) []string {
-			return []string{o.(*metalv1alpha1.HostOperation).Spec.HostRef.Name}
-		}).
-		WithObjects(append(objs, host)...).Build()
 	r := &HostOperationReconciler{
-		Client:   cl,
+		Client:   opStore(t, append(objs, host)...),
 		Recorder: events.NewFakeRecorder(100),
 		Connect: func(context.Context, *metalv1alpha1.Host) (bmc.Client, string, string, string, error) {
 			return rec, f.Systems[0].ID, "", "", nil
@@ -136,17 +140,36 @@ func preClearedOp(actions ...metalv1alpha1.HostOperationAction) *metalv1alpha1.H
 	}
 }
 
+// getOp reads the operation pk-metal/name.
+func getOp(t *testing.T, r *HostOperationReconciler, name string) *metalv1alpha1.HostOperation {
+	t.Helper()
+	op := &metalv1alpha1.HostOperation{}
+	require.NoError(t, r.Get(t.Context(), client.ObjectKey{Namespace: "pk-metal", Name: name}, op))
+	return op
+}
+
+func opCond(t *testing.T, r *HostOperationReconciler, name, typ string) *metav1.Condition {
+	t.Helper()
+	c := meta.FindStatusCondition(getOp(t, r, name).Status.Conditions, typ)
+	require.NotNil(t, c, "%s has no %s condition", name, typ)
+	return c
+}
+
+// reconcileOp runs one executor pass of the operation pk-metal/name.
+func reconcileOp(t *testing.T, r *HostOperationReconciler, name string) {
+	t.Helper()
+	_, err := r.Reconcile(t.Context(), ctrl.Request{NamespacedName: client.ObjectKey{Namespace: "pk-metal", Name: name}})
+	require.NoError(t, err)
+}
+
 // runOp reconciles until the operation finishes (or the budget runs out) and
 // returns its final state.
 func runOp(t *testing.T, r *HostOperationReconciler) *metalv1alpha1.HostOperation {
 	t.Helper()
-	key := client.ObjectKey{Namespace: "pk-metal", Name: "op"}
-	op := &metalv1alpha1.HostOperation{}
+	var op *metalv1alpha1.HostOperation
 	for range 10 {
-		_, err := r.Reconcile(t.Context(), ctrl.Request{NamespacedName: key})
-		require.NoError(t, err)
-		require.NoError(t, r.Get(t.Context(), key, op))
-		if op.Finished() {
+		reconcileOp(t, r, "op")
+		if op = getOp(t, r, "op"); op.Finished() {
 			return op
 		}
 	}
@@ -442,29 +465,10 @@ func resumedStatus(n int) metalv1alpha1.HostOperationStatus {
 
 func TestResumedOperationRemountsAForgottenGrant(t *testing.T) {
 	ctx := t.Context()
-	iso, err := asset.BuildConfigISO([]byte("version: v1alpha1\n"))
-	require.NoError(t, err)
-	digest := godigest.FromBytes(iso).String()
-	artifact := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: "node-config-artifact", Namespace: "pk-metal"},
-		Data:       map[string][]byte{artifactKey: iso},
-	}
-	config := &osv1alpha1.BootAsset{
-		ObjectMeta: metav1.ObjectMeta{Name: "node-config"},
-		Spec:       osv1alpha1.BootAssetSpec{Strategy: osv1alpha1.StrategyConfigISO, NodeRef: &osv1alpha1.Reference{Name: "node"}},
-		Status: osv1alpha1.BootAssetStatus{
-			Digest:            digest,
-			ArtifactSecretRef: &osv1alpha1.SecretReference{Namespace: "pk-metal", Name: artifact.Name},
-			Conditions: []metav1.Condition{{Type: osv1alpha1.ConditionReady, Status: metav1.ConditionTrue,
-				Reason: "Built", LastTransitionTime: metav1.Now()}},
-		},
-	}
-	op := preClearedOp(
-		metalv1alpha1.HostOperationAction{InsertMedia: &metalv1alpha1.InsertMediaAction{
-			MediaID: "VirtualMedia1", BootAssetRef: &metalv1alpha1.Reference{Name: config.Name}, Digest: digest,
-		}},
-		metalv1alpha1.HostOperationAction{PowerCycle: &metalv1alpha1.PowerCycleAction{}},
-	)
+	iso := buildISO(t, "version: v1alpha1\n")
+	config, artifact := configAsset(t, iso)
+	op := preClearedOp(insertAsset(config.Name, config.Status.Digest),
+		metalv1alpha1.HostOperationAction{PowerCycle: &metalv1alpha1.PowerCycleAction{}})
 	// The medium was mounted and the step recorded; then the process that
 	// held the grant went away, and the new one's table is empty.
 	op.Status = resumedStatus(1)
@@ -477,13 +481,13 @@ func TestResumedOperationRemountsAForgottenGrant(t *testing.T) {
 	require.NoError(t, err)
 	g, err := r.Media.Grants.Issue(grantHandle(client.ObjectKeyFromObject(op)), "node-config.iso", iso, time.Hour, creds)
 	require.NoError(t, err)
-	require.NoError(t, st.InsertMedia(ctx, "VirtualMedia1", r.Media.URL(g),
+	require.NoError(t, st.InsertMedia(ctx, mediaSlot, r.Media.URL(g),
 		&bmc.MediaCredentials{Username: creds.Username, Password: creds.Password}))
 	r.Media.Grants.Revoke(g.Token)
 
 	got := runOp(t, r)
 	require.True(t, opSucceeded(got), "%+v", got.Status)
-	assert.Equal(t, iso, st.BootImage("VirtualMedia1"), "the machine booted the config, not a dead URL")
+	assert.Equal(t, iso, st.BootImage(mediaSlot), "the machine booted the config, not a dead URL")
 }
 
 // A granted medium that a later recorded step replaced in the same slot is not
@@ -491,39 +495,11 @@ func TestResumedOperationRemountsAForgottenGrant(t *testing.T) {
 // back over the image the later step mounted, and the machine booted from it.
 func TestRemountLeavesAReplacedMediumAlone(t *testing.T) {
 	ctx := t.Context()
-	iso, err := asset.BuildConfigISO([]byte("version: v1alpha1\n"))
-	require.NoError(t, err)
-	digest := godigest.FromBytes(iso).String()
-	artifact := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: "node-config-artifact", Namespace: "pk-metal"},
-		Data:       map[string][]byte{artifactKey: iso},
-	}
-	config := &osv1alpha1.BootAsset{
-		ObjectMeta: metav1.ObjectMeta{Name: "node-config"},
-		Spec:       osv1alpha1.BootAssetSpec{Strategy: osv1alpha1.StrategyConfigISO, NodeRef: &osv1alpha1.Reference{Name: "node"}},
-		Status: osv1alpha1.BootAssetStatus{
-			Digest:            digest,
-			ArtifactSecretRef: &osv1alpha1.SecretReference{Namespace: "pk-metal", Name: artifact.Name},
-			Conditions: []metav1.Condition{{Type: osv1alpha1.ConditionReady, Status: metav1.ConditionTrue,
-				Reason: "Built", LastTransitionTime: metav1.Now()}},
-		},
-	}
-	installer := []byte("installer image")
-	images := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write(installer)
-	}))
-	t.Cleanup(images.Close)
+	config, artifact := configAsset(t, buildISO(t, "version: v1alpha1\n"))
+	images := isoServer(t)
 	imageURL := images.URL + "/installer.iso"
-
-	op := preClearedOp(
-		metalv1alpha1.HostOperationAction{InsertMedia: &metalv1alpha1.InsertMediaAction{
-			MediaID: "VirtualMedia1", BootAssetRef: &metalv1alpha1.Reference{Name: config.Name}, Digest: digest,
-		}},
-		metalv1alpha1.HostOperationAction{InsertMedia: &metalv1alpha1.InsertMediaAction{
-			MediaID: "VirtualMedia1", ImageURL: imageURL, Digest: godigest.FromBytes(installer).String(),
-		}},
-		metalv1alpha1.HostOperationAction{PowerCycle: &metalv1alpha1.PowerCycleAction{}},
-	)
+	op := preClearedOp(insertAsset(config.Name, config.Status.Digest), insertURL(imageURL),
+		metalv1alpha1.HostOperationAction{PowerCycle: &metalv1alpha1.PowerCycleAction{}})
 	// Both mounts are recorded, the slot holds the image; then the process
 	// went away, and the new one holds no grant for the config.
 	op.Status = resumedStatus(2)
@@ -531,12 +507,12 @@ func TestRemountLeavesAReplacedMediumAlone(t *testing.T) {
 	op.Status.OffObserved = nil
 	r, st, _ := executorFor(t, "supermicro-x12", op, config, artifact)
 	withImages(t, r, images)
-	downloaded(t, r, imageURL, godigest.FromBytes(installer).String())
-	require.NoError(t, st.InsertMedia(ctx, "VirtualMedia1", imageURL, nil))
+	downloaded(t, r, imageURL, isoDigest)
+	require.NoError(t, st.InsertMedia(ctx, mediaSlot, imageURL, nil))
 
 	got := runOp(t, r)
 	require.True(t, opSucceeded(got), "%+v", got.Status)
-	assert.Equal(t, installer, st.BootImage("VirtualMedia1"), "the machine booted the image the last step mounted")
+	assert.Equal(t, isoImage, st.BootImage(mediaSlot), "the machine booted the image the last step mounted")
 }
 
 func TestUnreachableMachineHoldsTheStep(t *testing.T) {
@@ -711,27 +687,15 @@ func TestBootRecordsItsStartPastAStaleCache(t *testing.T) {
 	host.Spec.ClaimRef = &metalv1alpha1.ClaimReference{Namespace: claim.Namespace, Name: claim.Name, UID: claim.UID}
 	require.NoError(t, r.Update(ctx, host))
 	r.APIReader = r.Client
-	r.Client = &staleHost{Client: r.Client, host: free}
+	r.Client = staleGet(r.Client, func(_ client.ObjectKey, h *metalv1alpha1.Host) error {
+		free.DeepCopyInto(h)
+		return nil
+	})
 
 	got := runOp(t, r)
 	require.True(t, opSucceeded(got), "%+v", got.Status)
 	require.NoError(t, r.APIReader.Get(ctx, client.ObjectKey{Name: "host-a"}, host))
 	assert.True(t, powerOffDecided(host, claim), "the boot's start is on the host")
-}
-
-// staleHost answers reads of the host from a cache that has not seen its
-// latest write; everything else goes to the API server.
-type staleHost struct {
-	client.Client
-	host *metalv1alpha1.Host
-}
-
-func (c *staleHost) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
-	if h, ok := obj.(*metalv1alpha1.Host); ok && key.Name == c.host.Name {
-		c.host.DeepCopyInto(h)
-		return nil
-	}
-	return c.Client.Get(ctx, key, obj, opts...)
 }
 
 // A boot does not start once its claim is being deleted, or once the claim no
@@ -816,4 +780,70 @@ func TestUnimplementedActionFailsBeforeAnythingRuns(t *testing.T) {
 	assert.Nil(t, got.Status.Baseline, "the operation never started")
 	assert.Empty(t, rec.powers, "nothing was done to the machine")
 	assert.Equal(t, metalv1alpha1.OperationFailed, got.Status.Phase)
+}
+
+// The grant of a config medium ends when the node checks in: from then on
+// the machine runs its config, and a URL that still serves its secrets is
+// only a risk.
+func TestCheckInRevokesTheGrants(t *testing.T) {
+	check := metalv1alpha1.HostOperationAction{AwaitCheckIn: &metalv1alpha1.AwaitCheckInAction{
+		NodeRef: metalv1alpha1.Reference{Name: "node-a"}, TimeoutSeconds: 600}}
+	op := preClearedOp(check)
+	node := &osv1alpha1.TalosNode{ObjectMeta: metav1.ObjectMeta{Name: "node-a"}}
+	r, _, rec := executorFor(t, "generic", op, node)
+	r.Media = startMedia(t)
+	handle := grantHandle(client.ObjectKeyFromObject(op))
+	creds, err := asset.MintCredentials()
+	require.NoError(t, err)
+	_, err = r.Media.Grants.Issue(handle, "node-a.iso", []byte("config"), time.Hour, creds)
+	require.NoError(t, err)
+
+	x := &exec{r: r, op: op, cl: rec, systemID: "1", host: &metalv1alpha1.Host{ObjectMeta: metav1.ObjectMeta{Name: "host-a"}}}
+	st, err := x.awaitCheckIn(t.Context(), check.AwaitCheckIn)
+	require.NoError(t, err)
+	require.False(t, st.done)
+	_, live := r.Media.Grants.Live(handle, "node-a.iso")
+	assert.True(t, live, "the grant lives while the machine boots")
+
+	node.Status.Conditions = []metav1.Condition{{Type: osv1alpha1.ConditionMachineReachable,
+		Status: metav1.ConditionTrue, Reason: osv1alpha1.ReasonMachineAPI, LastTransitionTime: metav1.Now()}}
+	require.NoError(t, r.Update(t.Context(), node))
+	st, err = x.awaitCheckIn(t.Context(), check.AwaitCheckIn)
+	require.NoError(t, err)
+	require.True(t, st.done)
+	_, live = r.Media.Grants.Live(handle, "node-a.iso")
+	assert.False(t, live, "the check-in ends the grant")
+}
+
+// slowFixture writes the generic fixture with the timing of a real BMC: a
+// reset takes a while to show in the power state, and every answer is late.
+func slowFixture(t *testing.T) string {
+	t.Helper()
+	raw, err := os.ReadFile("../bmc/sim/fixtures/generic.yaml")
+	require.NoError(t, err)
+	slow := strings.Replace(string(raw), "protocol:\n",
+		"protocol:\n  power_transition: 700ms\n  latency: 5ms\n", 1)
+	require.NotEqual(t, string(raw), slow)
+	path := filepath.Join(t.TempDir(), "slow.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(slow), 0o600))
+	return path
+}
+
+// On a BMC that reports PoweringOff and PoweringOn while a reset takes
+// effect, a power cycle is still one off and one on: a pass that finds the
+// machine on its way does not send the action again.
+func TestPowerCycleOnASlowBMC(t *testing.T) {
+	r, st, rec := executorFor(t, slowFixture(t),
+		preClearedOp(metalv1alpha1.HostOperationAction{PowerCycle: &metalv1alpha1.PowerCycleAction{}}))
+	require.NoError(t, st.SetPower(t.Context(), "1", bmc.ActionOn))
+	require.Eventually(t, func() bool {
+		p, err := st.Power(t.Context(), "1")
+		return err == nil && p == bmc.PowerOn
+	}, 5*time.Second, 50*time.Millisecond)
+	before := st.Resets("1")
+
+	op := runOp(t, r)
+	require.True(t, opSucceeded(op), "%+v", op.Status)
+	assert.Equal(t, []bmc.PowerAction{bmc.ActionForceOff, bmc.ActionOn}, rec.powers, "one off, one on")
+	assert.Equal(t, before+1, st.Resets("1"), "exactly one boot")
 }

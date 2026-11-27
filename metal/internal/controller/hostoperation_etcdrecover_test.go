@@ -5,17 +5,13 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
@@ -23,7 +19,6 @@ import (
 	"github.com/dennisklein/platform-kit/metal/internal/etcdbackup/etcdbackuptest"
 	"github.com/dennisklein/platform-kit/metal/internal/talos"
 	talosfake "github.com/dennisklein/platform-kit/metal/internal/talos/fake"
-	"github.com/dennisklein/platform-kit/metal/internal/talos/render"
 )
 
 // recoverWorld is a cluster of two control planes whose etcd is gone, a
@@ -42,8 +37,6 @@ func newRecoverWorld(t *testing.T, bootstrapped bool) *recoverWorld {
 	sum := sha256.Sum256(snap)
 	sha := "sha256:" + hex.EncodeToString(sum[:])
 
-	bundle, err := os.ReadFile(filepath.Join("..", "talos", "render", "testdata", "secrets.yaml"))
-	require.NoError(t, err)
 	cluster := &osv1alpha1.TalosCluster{
 		ObjectMeta: metav1.ObjectMeta{Name: "dr"},
 		Spec: osv1alpha1.TalosClusterSpec{
@@ -56,8 +49,7 @@ func newRecoverWorld(t *testing.T, bootstrapped bool) *recoverWorld {
 	}
 	objs := []client.Object{
 		cluster,
-		&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "pk-metal", Name: "dr-secrets"},
-			Data: map[string][]byte{render.BundleKey: bundle}},
+		bundleSecret(t, "pk-metal", "dr-secrets"),
 		&osv1alpha1.EtcdSnapshot{
 			ObjectMeta: metav1.ObjectMeta{Name: "dr-daily-20261123-060000"},
 			Spec:       osv1alpha1.EtcdSnapshotSpec{PolicyRef: osv1alpha1.Reference{Name: "dr-daily"}},
@@ -102,11 +94,8 @@ func newRecoverWorld(t *testing.T, bootstrapped bool) *recoverWorld {
 // pass runs one reconcile and returns the operation and its Executed condition.
 func (w *recoverWorld) pass(t *testing.T) (*metalv1alpha1.HostOperation, *metav1.Condition) {
 	t.Helper()
-	key := client.ObjectKey{Namespace: "pk-metal", Name: "op"}
-	_, err := w.r.Reconcile(t.Context(), ctrl.Request{NamespacedName: key})
-	require.NoError(t, err)
-	op := &metalv1alpha1.HostOperation{}
-	require.NoError(t, w.r.Get(t.Context(), key, op))
+	reconcileOp(t, w.r, "op")
+	op := getOp(t, w.r, "op")
 	return op, meta.FindStatusCondition(op.Status.Conditions, metalv1alpha1.ConditionExecuted)
 }
 

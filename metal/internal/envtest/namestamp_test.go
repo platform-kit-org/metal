@@ -1,7 +1,6 @@
 package envtest_test
 
 import (
-	"context"
 	"encoding/json"
 	"path/filepath"
 	"regexp"
@@ -15,7 +14,6 @@ import (
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -35,8 +33,7 @@ func TestRequestedByStamp(t *testing.T) {
 	ctx := t.Context()
 
 	installApprovalPolicy(t, ctx, cl, "op-sa")
-	installPolicy(t, ctx, cl, "requested-by.yaml")
-	installPolicy(t, ctx, cl, "requested-by-patches.yaml")
+	installPolicy(t, ctx, cl, "requested-by.yaml", "requested-by-patches.yaml")
 	installStamp(t, ctx, cl)
 	setSelfApproval(t, ctx, cl, ptr.To("Forbidden"))
 	alice := st.userClient(t, "alice")
@@ -263,17 +260,4 @@ func TestNameStampMatchesTheValidatingPolicies(t *testing.T) {
 		lifts = append(lifts, q[1])
 	}
 	assert.ElementsMatch(t, metalv1alpha1.NamedGuardLifts, lifts, "guard-lift.yaml and the API list other lifts")
-}
-
-// installStamp creates the committed MutatingAdmissionPolicies of
-// config/name-stamp and their bindings.
-func installStamp(t *testing.T, ctx context.Context, cl client.Client) {
-	t.Helper()
-	for _, file := range []string{"requested-by-stamp.yaml", "guard-lift-stamp.yaml"} {
-		for _, doc := range strings.Split(readFile(t, filepath.Join("..", "..", "config", "name-stamp", file)), "\n---") {
-			u := &unstructured.Unstructured{}
-			require.NoError(t, yaml.Unmarshal([]byte(doc), &u.Object))
-			require.NoError(t, cl.Create(ctx, u))
-		}
-	}
 }

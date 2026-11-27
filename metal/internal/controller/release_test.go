@@ -9,7 +9,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
@@ -25,6 +24,34 @@ func boundHost(claim *metalv1alpha1.HostClaim) *metalv1alpha1.Host {
 			OS:       &metalv1alpha1.HostOS{NodeRef: metalv1alpha1.Reference{Name: "node-b"}},
 		},
 	})
+}
+
+// claimOn is a claim that runs node on host-a, recorded as installed by us.
+func claimOn(node string) (*metalv1alpha1.HostClaim, *metalv1alpha1.Host) {
+	claim := testClaim(node)
+	claim.Status.HandOff = &metalv1alpha1.ClaimHandOff{Host: "host-a", Node: node, Operation: "pk-metal/boot", At: metav1.Now()}
+	host := boundHost(claim)
+	host.Spec.OS.NodeRef.Name = node
+	return claim, host
+}
+
+// recordWrites records each create, delete and update, in order, as "verb name".
+func recordWrites(w *[]string) interceptor.Funcs {
+	record := func(verb string, obj client.Object) { *w = append(*w, verb+" "+obj.GetName()) }
+	return interceptor.Funcs{
+		Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+			record("create", obj)
+			return c.Create(ctx, obj, opts...)
+		},
+		Delete: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.DeleteOption) error {
+			record("delete", obj)
+			return c.Delete(ctx, obj, opts...)
+		},
+		Update: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.UpdateOption) error {
+			record("update", obj)
+			return c.Update(ctx, obj, opts...)
+		},
+	}
 }
 
 // releasePass runs one release pass with the host as the API holds it now.
@@ -81,9 +108,8 @@ func provisionedCond(t *testing.T, claim *metalv1alpha1.HostClaim) *metav1.Condi
 }
 
 func TestFailedReleaseKeepsTheMachineBound(t *testing.T) {
-	claim := testClaim("node-b")
-	claim.Status.HandOff = &metalv1alpha1.ClaimHandOff{Host: "host-a", Node: "node-b", Operation: "pk-metal/boot", At: metav1.Now()}
-	r := claimReconcilerFor(t, boundHost(claim))
+	claim, host := claimOn("node-b")
+	r := claimReconcilerFor(t, host)
 
 	require.False(t, releasePass(t, r, claim))
 	rel := releaseOps(t, r, claim)
@@ -116,9 +142,7 @@ func TestFailedReleaseKeepsTheMachineBound(t *testing.T) {
 }
 
 func TestHoldWithdrawsAPendingReleaseProposal(t *testing.T) {
-	claim := testClaim("node-b")
-	claim.Status.HandOff = &metalv1alpha1.ClaimHandOff{Host: "host-a", Node: "node-b", Operation: "pk-metal/boot", At: metav1.Now()}
-	host := boundHost(claim)
+	claim, host := claimOn("node-b")
 	// A running node: the release waits for a person.
 	host.Status.Conditions = []metav1.Condition{{Type: metalv1alpha1.ConditionOSReady, Status: metav1.ConditionTrue,
 		Reason: "NodeReady", LastTransitionTime: metav1.Now()}}
@@ -198,9 +222,7 @@ func TestReleaseApprovalIsDecidedOnceAtCreation(t *testing.T) {
 }
 
 func TestReleaseEjectsEveryInsertableSlot(t *testing.T) {
-	claim := testClaim("node-b")
-	claim.Status.HandOff = &metalv1alpha1.ClaimHandOff{Host: "host-a", Node: "node-b", Operation: "pk-metal/boot", At: metav1.Now()}
-	host := boundHost(claim)
+	claim, host := claimOn("node-b")
 	host.Status.ManagedBy = []metalv1alpha1.ManagementPath{{EndpointRef: metalv1alpha1.Reference{Name: "ep"}, SystemID: "1", Reachable: true}}
 	ep := &metalv1alpha1.ManagementEndpoint{ObjectMeta: metav1.ObjectMeta{Name: "ep"}}
 	ep.Status.VirtualMedia = []metalv1alpha1.DiscoveredMedia{
@@ -243,23 +265,7 @@ func TestClaimDeletedMidBootProposesTheReleaseBeforeStoppingTheBoot(t *testing.T
 				op.Status.Steps = append(op.Status.Steps, metalv1alpha1.OperationStep{Action: actionName(a), Phase: "Succeeded"})
 			}
 			var writes []string
-			cl := fake.NewClientBuilder().WithScheme(testScheme(t)).
-				WithStatusSubresource(&metalv1alpha1.HostOperation{}, &metalv1alpha1.HostClaim{}).
-				WithObjects(slotlessEndpoint(), boundHost(claim), op).
-				WithInterceptorFuncs(interceptor.Funcs{
-					Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
-						writes = append(writes, "create "+obj.GetName())
-						return c.Create(ctx, obj, opts...)
-					},
-					Delete: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.DeleteOption) error {
-						writes = append(writes, "delete "+obj.GetName())
-						return c.Delete(ctx, obj, opts...)
-					},
-					Update: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.UpdateOption) error {
-						writes = append(writes, "update "+obj.GetName())
-						return c.Update(ctx, obj, opts...)
-					},
-				}).Build()
+			cl := claimStore(t, boundHost(claim), op).WithInterceptorFuncs(recordWrites(&writes)).Build()
 			r := &HostClaimReconciler{Client: cl, OperationsNamespace: "pk-metal", Proposer: "operator"}
 
 			require.False(t, releasePass(t, r, claim))
@@ -315,21 +321,11 @@ func TestStaleCacheDoesNotHideABootThatRan(t *testing.T) {
 	claim := testClaim("node-b")
 	// The API server holds the boot's baseline; the informer cache has not
 	// seen that write yet, and lists the operation as never taken up.
-	live := fake.NewClientBuilder().WithScheme(testScheme(t)).
-		WithStatusSubresource(&metalv1alpha1.HostOperation{}, &metalv1alpha1.HostClaim{}).
-		WithObjects(slotlessEndpoint(), boundHost(claim), bootOp("boot", "node-b", false, true)).Build()
-	cached := interceptor.NewClient(live, interceptor.Funcs{
-		List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
-			if err := c.List(ctx, list, opts...); err != nil {
-				return err
-			}
-			if ops, ok := list.(*metalv1alpha1.HostOperationList); ok {
-				for i := range ops.Items {
-					ops.Items[i].Status = metalv1alpha1.HostOperationStatus{}
-				}
-			}
-			return nil
-		},
+	live := claimStore(t, boundHost(claim), bootOp("boot", "node-b", false, true)).Build()
+	cached := staleList(live, func(ops *metalv1alpha1.HostOperationList) {
+		for i := range ops.Items {
+			ops.Items[i].Status = metalv1alpha1.HostOperationStatus{}
+		}
 	})
 	r := &HostClaimReconciler{Client: cached, APIReader: live, OperationsNamespace: "pk-metal", Proposer: "operator"}
 
@@ -341,9 +337,7 @@ func TestStaleCacheDoesNotHideABootThatRan(t *testing.T) {
 func TestReleaseFencesABootThatStartsWhileItDecides(t *testing.T) {
 	claim := testClaim("node-b")
 	boot := bootOp("boot", "node-b", false, false)
-	live := fake.NewClientBuilder().WithScheme(testScheme(t)).
-		WithStatusSubresource(&metalv1alpha1.HostOperation{}, &metalv1alpha1.HostClaim{}).
-		WithObjects(slotlessEndpoint(), boundHost(claim), boot).Build()
+	live := claimStore(t, boundHost(claim), boot).Build()
 	// The executor captures the boot's baseline right after the release's
 	// uncached read saw none.
 	started := false
@@ -380,19 +374,8 @@ func TestReleaseFencesABootThatStartsWhileItDecides(t *testing.T) {
 func TestReleaseDeletesAnUnstartedBootBeforeItUnbinds(t *testing.T) {
 	claim := testClaim("node-b")
 	var writes []string
-	live := fake.NewClientBuilder().WithScheme(testScheme(t)).
-		WithStatusSubresource(&metalv1alpha1.HostOperation{}, &metalv1alpha1.HostClaim{}).
-		WithObjects(slotlessEndpoint(), boundHost(claim), bootOp("boot", "node-b", false, false)).
-		WithInterceptorFuncs(interceptor.Funcs{
-			Delete: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.DeleteOption) error {
-				writes = append(writes, "delete "+obj.GetName())
-				return c.Delete(ctx, obj, opts...)
-			},
-			Update: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.UpdateOption) error {
-				writes = append(writes, "update "+obj.GetName())
-				return c.Update(ctx, obj, opts...)
-			},
-		}).Build()
+	live := claimStore(t, boundHost(claim), bootOp("boot", "node-b", false, false)).
+		WithInterceptorFuncs(recordWrites(&writes)).Build()
 	r := &HostClaimReconciler{Client: live, OperationsNamespace: "pk-metal", Proposer: "operator"}
 
 	require.True(t, releasePass(t, r, claim))
@@ -403,9 +386,7 @@ func TestReleaseDeletesAnUnstartedBootBeforeItUnbinds(t *testing.T) {
 }
 
 func TestReleaseWaitsForTheMediaSlotsBeforeItIsProposed(t *testing.T) {
-	claim := testClaim("node-b")
-	claim.Status.HandOff = &metalv1alpha1.ClaimHandOff{Host: "host-a", Node: "node-b", Operation: "pk-metal/boot", At: metav1.Now()}
-	host := boundHost(claim)
+	claim, host := claimOn("node-b")
 	// The only path to the machine is down: its slots cannot be read.
 	host.Status.ManagedBy = []metalv1alpha1.ManagementPath{{EndpointRef: metalv1alpha1.Reference{Name: "ep"}, SystemID: "1", Reachable: false}}
 	ep := &metalv1alpha1.ManagementEndpoint{ObjectMeta: metav1.ObjectMeta{Name: "ep"}}
@@ -435,15 +416,8 @@ func TestReleaseWaitsForTheMediaSlotsBeforeItIsProposed(t *testing.T) {
 }
 
 func TestReleaseOfAMachineWithoutSlotsIsProposedAtOnce(t *testing.T) {
-	claim := testClaim("node-b")
-	claim.Status.HandOff = &metalv1alpha1.ClaimHandOff{Host: "host-a", Node: "node-b", Operation: "pk-metal/boot", At: metav1.Now()}
-	host := boundHost(claim)
-	host.Status.ManagedBy = []metalv1alpha1.ManagementPath{{EndpointRef: metalv1alpha1.Reference{Name: "ep"}, SystemID: "1", Reachable: true}}
-	// Inventoried, and no slot can take an image.
-	ep := &metalv1alpha1.ManagementEndpoint{ObjectMeta: metav1.ObjectMeta{Name: "ep"}}
-	ep.Status.Conditions = []metav1.Condition{{Type: metalv1alpha1.ConditionInventoried, Status: metav1.ConditionTrue,
-		Reason: "InventoryGathered", LastTransitionTime: metav1.Now()}}
-	r := claimReconcilerFor(t, host, ep)
+	claim, host := claimOn("node-b") // behind slotlessEndpoint
+	r := claimReconcilerFor(t, host)
 
 	require.False(t, releasePass(t, r, claim))
 	rel := releaseOps(t, r, claim)

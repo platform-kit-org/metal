@@ -14,14 +14,12 @@ package envtest_test
 import (
 	"bytes"
 	"crypto/tls"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"net"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
@@ -30,7 +28,6 @@ import (
 	"time"
 
 	"github.com/opencontainers/go-digest"
-	"github.com/siderolabs/image-factory/pkg/schematic"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
@@ -50,38 +47,7 @@ import (
 	"github.com/dennisklein/platform-kit/metal/internal/bmc/sim"
 	"github.com/dennisklein/platform-kit/metal/internal/controller"
 	talosfake "github.com/dennisklein/platform-kit/metal/internal/talos/fake"
-	"github.com/dennisklein/platform-kit/metal/internal/talos/render"
 )
-
-// fakeFactory answers schematic registrations with the locally computed id
-// and serves a stand-in install ISO under any .iso path.
-func fakeFactory(t *testing.T) *httptest.Server {
-	t.Helper()
-	installer := []byte("stand-in installer image")
-	mux := http.NewServeMux()
-	mux.HandleFunc("POST /schematics", func(w http.ResponseWriter, r *http.Request) {
-		body, _ := io.ReadAll(r.Body)
-		s, err := schematic.Unmarshal(body)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		id, _ := s.ID()
-		normalized, _ := s.Marshal()
-		w.WriteHeader(http.StatusCreated)
-		_ = json.NewEncoder(w).Encode(map[string]string{"id": id, "schematic": string(normalized)})
-	})
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if !strings.HasSuffix(r.URL.Path, ".iso") {
-			http.NotFound(w, r)
-			return
-		}
-		http.ServeContent(w, r, "installer.iso", time.Time{}, strings.NewReader(string(installer)))
-	})
-	srv := httptest.NewTLSServer(mux)
-	t.Cleanup(srv.Close)
-	return srv
-}
 
 // freeAddr reserves a loopback port for a listener started later.
 func freeAddr(t *testing.T) string {
@@ -103,7 +69,7 @@ func TestProvisioning(t *testing.T) {
 	singleFix, err := sim.LoadFixture("huawei-2288h-v5")
 	require.NoError(t, err)
 	single, singleState := simServer(t, "huawei-2288h-v5")
-	factory := fakeFactory(t)
+	imageFactory, _ := stubFactory(t)
 
 	led := writeLedger(t, fmt.Sprintf("%q: %s\n%q: %s\n",
 		dualFix.Manager.MAC, dual.URL, singleFix.Manager.MAC, single.URL))
@@ -126,7 +92,7 @@ func TestProvisioning(t *testing.T) {
 	operator := whoAmI(t, ctx, managerCl)
 	require.Equal(t, managerUser, operator)
 	installApprovalPolicy(t, ctx, cl, operator)
-	installClaimPolicy(t, ctx, cl)
+	installPolicy(t, ctx, cl, "hostclaim-provisioning.yaml")
 
 	// Alice approves with the committed approver role and nothing else.
 	aliceCl := st.approverClient(t, ctx, "alice")
@@ -139,8 +105,6 @@ func TestProvisioning(t *testing.T) {
 	media, err := asset.NewService(mediaAddr, "https://"+mediaAddr, cert)
 	require.NoError(t, err)
 
-	imageFactory := render.NewFactory(strings.TrimPrefix(factory.URL, "https://"))
-	imageFactory.HTTPClient = factory.Client()
 	store, err := asset.NewStore(t.TempDir())
 	require.NoError(t, err)
 
@@ -150,13 +114,6 @@ func TestProvisioning(t *testing.T) {
 	// API is this apiserver, reached with an admin kubeconfig as the
 	// TalosCluster reconciler would publish it.
 	fleet := talosfake.NewFleet()
-	runningMachine := func(node string) *talosfake.Machine {
-		m := talosfake.NewMachine("v1.14.0")
-		m.Configure([]byte("machine: {}"))
-		m.SetStage("running", true)
-		fleet.Add("192.0.2.11", node, m)
-		return m
-	}
 	workloadNode := func(name string) {
 		require.NoError(t, cl.Create(ctx, &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: name}}))
 	}
@@ -184,7 +141,7 @@ func TestProvisioning(t *testing.T) {
 		Factory:      imageFactory,
 	}, controller.LaneAsset, controller.LaneEndpoint, controller.LaneHost, controller.LaneHostClaim,
 		controller.LaneProtection, controller.LaneHostOperation, controller.LaneBootAsset))
-	runManager(t, ctx, mgr)
+	startManager(t, mgr)
 
 	// --- helpers -----------------------------------------------------------
 
@@ -221,14 +178,7 @@ func TestProvisioning(t *testing.T) {
 		return h, cl.Get(ctx, client.ObjectKey{Name: name}, &h)
 	}
 	waitHost := func(name string, ok func(metalv1alpha1.Host) bool) metalv1alpha1.Host {
-		var last metalv1alpha1.Host
-		if !assert.Eventually(t, func() bool {
-			last, _ = getHost(name)
-			return ok(last)
-		}, waitFor, tick) {
-			t.Fatalf("host %s: condition never met, last %+v", name, last.Status)
-		}
-		return last
+		return waitUntil(t, ctx, cl, client.ObjectKey{Name: name}, ok)
 	}
 	claimOf := func(name string) (metalv1alpha1.HostClaim, error) {
 		c := metalv1alpha1.HostClaim{}
@@ -238,14 +188,7 @@ func TestProvisioning(t *testing.T) {
 		return meta.FindStatusCondition(c.Status.Conditions, metalv1alpha1.ConditionProvisioned)
 	}
 	waitClaim := func(name string, ok func(metalv1alpha1.HostClaim) bool) metalv1alpha1.HostClaim {
-		var last metalv1alpha1.HostClaim
-		if !assert.Eventually(t, func() bool {
-			last, _ = claimOf(name)
-			return ok(last)
-		}, waitFor, tick) {
-			t.Fatalf("claim %s: condition never met, last %+v", name, last.Status)
-		}
-		return last
+		return waitUntil(t, ctx, cl, client.ObjectKey{Namespace: "default", Name: name}, ok)
 	}
 	provisionedReason := func(reason string) func(metalv1alpha1.HostClaim) bool {
 		return func(c metalv1alpha1.HostClaim) bool {
@@ -266,15 +209,7 @@ func TestProvisioning(t *testing.T) {
 		return out
 	}
 	waitOp := func(key types.NamespacedName, ok func(metalv1alpha1.HostOperation) bool) metalv1alpha1.HostOperation {
-		var last metalv1alpha1.HostOperation
-		if !assert.Eventually(t, func() bool {
-			last = metalv1alpha1.HostOperation{}
-			_ = cl.Get(ctx, key, &last)
-			return ok(last)
-		}, waitFor, tick) {
-			t.Fatalf("operation %s: condition never met, last %+v", key, last.Status)
-		}
-		return last
+		return waitUntil(t, ctx, cl, key, ok)
 	}
 	executing := func(step string) func(metalv1alpha1.HostOperation) bool {
 		return func(op metalv1alpha1.HostOperation) bool {
@@ -390,14 +325,9 @@ func TestProvisioning(t *testing.T) {
 		require.NoError(t, err)
 		kubeconfig, err := workloadAdmin.KubeConfig()
 		require.NoError(t, err)
-		bundle, err := os.ReadFile(filepath.Join("..", "talos", "render", "testdata", "secrets.yaml"))
-		require.NoError(t, err)
-		for name, data := range map[string]map[string][]byte{
-			"lab-secrets":    {render.BundleKey: bundle},
-			"lab-kubeconfig": {controller.KubeconfigKey: kubeconfig},
-		} {
-			require.NoError(t, cl.Create(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: name}, Data: data}))
-		}
+		require.NoError(t, cl.Create(ctx, bundleSecret(t, "default", "lab-secrets")))
+		require.NoError(t, cl.Create(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "lab-kubeconfig"},
+			Data: map[string][]byte{controller.KubeconfigKey: kubeconfig}}))
 		labCluster.Status.KubeconfigSecretRef = &osv1alpha1.SecretReference{Namespace: "default", Name: "lab-kubeconfig"}
 		require.NoError(t, cl.Status().Update(ctx, labCluster))
 	}
@@ -602,7 +532,7 @@ func TestProvisioning(t *testing.T) {
 		mounted := mediaOf(dualState)
 		assert.True(t, strings.HasPrefix(mounted["VirtualMedia1"], media.BaseURL+"/grants/"),
 			"the installer from the media service, not from the factory: %v", mounted)
-		assert.Equal(t, []byte("stand-in installer image"), dualState.BootImage("VirtualMedia1"),
+		assert.Equal(t, installerImage, dualState.BootImage("VirtualMedia1"),
 			"the machine booted the installer the operator downloaded from the factory")
 		configURL := mounted["VirtualMedia2"]
 		require.True(t, strings.HasPrefix(configURL, media.BaseURL+"/grants/"), "config under a grant: %v", mounted)
@@ -668,7 +598,7 @@ func TestProvisioning(t *testing.T) {
 	})
 
 	st.run(t, "deleting the claim of a running node waits for approval, then removes and resets it", func(t *testing.T) {
-		machine := runningMachine("node-dual")
+		machine := fleet.AddRunning("192.0.2.11", "node-dual", "v1.14.0", []byte("machine: {}"))
 		workloadNode("node-dual")
 		c, err := claimOf("dual")
 		require.NoError(t, err)
@@ -853,7 +783,7 @@ func TestProvisioning(t *testing.T) {
 		assert.Empty(t, mediaOf(singleState))
 		waitClaim("single-disk", provisionedReason(metalv1alpha1.ReasonHandedOff))
 
-		machine := runningMachine("node-single-disk")
+		machine := fleet.AddRunning("192.0.2.11", "node-single-disk", "v1.14.0", []byte("machine: {}"))
 		workloadNode("node-single-disk")
 		c, err := claimOf("single-disk")
 		require.NoError(t, err)

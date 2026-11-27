@@ -15,7 +15,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -51,9 +50,12 @@ import (
 
 const labTalos = "v1.14.6"
 
+// installerImage is what stubFactory serves under any .iso path.
+var installerImage = []byte("stand-in installer image")
+
 // stubFactory stands in for the image factory: it answers a schematic POST the
 // way the real one does (201 with the id the posted content hashes to),
-// serves a stand-in image under any .iso path, and records what it was asked
+// serves installerImage under any .iso path, and records what it was asked
 // to register. Registration is a network call on the
 // render path, so the suite runs its own factory instead of the public one, and
 // gets to watch what the reconcilers tell it.
@@ -61,16 +63,16 @@ func stubFactory(t *testing.T) (*render.Factory, func() []string) {
 	t.Helper()
 	var mu sync.Mutex
 	var ids []string
-	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, ".iso") {
-			// The install image, which the operator downloads.
-			_, _ = w.Write([]byte("install image " + r.URL.Path))
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, ".iso") {
+			http.NotFound(w, r)
 			return
 		}
-		if r.Method != http.MethodPost || r.URL.Path != "/schematics" {
-			http.Error(w, "not the schematic endpoint", http.StatusNotFound)
-			return
-		}
+		// The install image, which the operator downloads.
+		http.ServeContent(w, r, "installer.iso", time.Time{}, bytes.NewReader(installerImage))
+	})
+	mux.HandleFunc("POST /schematics", func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -92,7 +94,8 @@ func stubFactory(t *testing.T) (*render.Factory, func() []string) {
 		normalized, _ := sch.Marshal()
 		w.WriteHeader(http.StatusCreated)
 		_ = json.NewEncoder(w).Encode(map[string]string{"id": id, "schematic": string(normalized)})
-	}))
+	})
+	srv := httptest.NewTLSServer(mux)
 	t.Cleanup(srv.Close)
 	factory := &render.Factory{
 		RegistryURL: strings.TrimPrefix(srv.URL, "https://"),
@@ -150,17 +153,8 @@ func TestOSLane(t *testing.T) {
 	cl := st.cl
 	ctx := t.Context()
 
-	// The cluster secrets bundle, as a person creates it from the output of
-	// `talosctl gen secrets`: the render package's throwaway test bundle.
-	bundle, err := os.ReadFile(filepath.Join("..", "talos", "render", "testdata", "secrets.yaml"))
-	require.NoError(t, err)
-	createBundle := func(name string) {
-		require.NoError(t, cl.Create(ctx, &corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
-			Data:       map[string][]byte{render.BundleKey: bundle},
-		}))
-	}
-	createBundle("lab-talos-secrets")
+	labBundle := bundleSecret(t, "default", "lab-talos-secrets")
+	require.NoError(t, cl.Create(ctx, labBundle))
 
 	mgr := st.newManager(t)
 	factory, posted := stubFactory(t)
@@ -181,7 +175,7 @@ func TestOSLane(t *testing.T) {
 		Proposer:        "pk-metal-operator",
 		ResolveImage:    pinImage,
 	}, controller.LaneTalosNode, controller.LaneTalosCluster, controller.LaneBootAsset, controller.LaneTalosRollout))
-	runManager(t, ctx, mgr)
+	startManager(t, mgr)
 
 	lab := labSample(t)
 	lab.Cluster.Spec.SecretsRef.Namespace = "default"
@@ -399,9 +393,7 @@ func TestOSLane(t *testing.T) {
 		assert.Regexp(t,
 			`^https://`+regexp.QuoteMeta(factory.RegistryURL)+`/image/[0-9a-f]{64}/v1\.14\.6/metal-amd64\.iso$`,
 			ba.Status.URL, "the URL must name the factory the operator was given, not the public one")
-		u, err := url.Parse(ba.Status.URL)
-		require.NoError(t, err)
-		assert.Equal(t, digest.FromString("install image "+u.Path).String(), ba.Status.Digest,
+		assert.Equal(t, digest.FromBytes(installerImage).String(), ba.Status.Digest,
 			"the operator downloaded the image and records its digest")
 		assert.True(t, store.Has(ba.Name, ba.Status.BuildKey), "the image rests in the media store")
 
@@ -471,7 +463,7 @@ func TestOSLane(t *testing.T) {
 			return b != nil && b.Reason == osv1alpha1.ReasonSecretsUnavailable
 		}, waitFor, tick)
 
-		createBundle("other-talos-secrets")
+		require.NoError(t, cl.Create(ctx, bundleSecret(t, "default", "other-talos-secrets")))
 		require.Eventually(t, func() bool {
 			_, c := nodeCondition("other-1", osv1alpha1.ConditionRendered)
 			return c != nil && c.Reason == osv1alpha1.ReasonPatchesUnresolvable
@@ -751,7 +743,7 @@ func TestOSLane(t *testing.T) {
 		assert.Equal(t, node1.Status.ConfigDigest, n1.Status.ConfigDigest, "configs still render from the bundle the machines run")
 
 		require.NoError(t, cl.Get(ctx, types.NamespacedName{Namespace: "default", Name: "lab-talos-secrets"}, &sec))
-		sec.Data[render.BundleKey] = bundle
+		sec.Data[render.BundleKey] = labBundle.Data[render.BundleKey]
 		require.NoError(t, cl.Update(ctx, &sec))
 		require.Eventually(t, func() bool {
 			_, c := clusterCondition("lab", osv1alpha1.ConditionSecretsBundleHeld)

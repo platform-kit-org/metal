@@ -91,6 +91,18 @@ func TestBootstrapOnceAndEtcd(t *testing.T) {
 	require.Error(t, err, "an address with no machine has no route")
 }
 
+func TestAddRunning(t *testing.T) {
+	fleet := NewFleet()
+	m := fleet.AddRunning("10.77.0.12", "node-2", "v1.14.6", []byte("cfg"))
+	c, err := fleet.Dialer()(context.Background(), talos.Target{Endpoint: "10.77.0.12", Talosconfig: []byte("tc")})
+	require.NoError(t, err, "a configured machine serves the cluster PKI")
+	got, err := c.Status(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, "running", got.Stage)
+	assert.True(t, got.Ready)
+	assert.Equal(t, "v1.14.6", m.Version())
+}
+
 func TestUnreachable(t *testing.T) {
 	ctx := context.Background()
 	m := NewMachine("v1.14.6")

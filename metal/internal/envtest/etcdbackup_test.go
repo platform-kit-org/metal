@@ -7,16 +7,19 @@ package envtest_test
 
 import (
 	"bytes"
+	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"slices"
+	"sync"
 	"testing"
 	"time"
 
 	"filippo.io/age"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -26,6 +29,7 @@ import (
 	"github.com/dennisklein/platform-kit/metal/internal/controller"
 	"github.com/dennisklein/platform-kit/metal/internal/etcdbackup"
 	"github.com/dennisklein/platform-kit/metal/internal/etcdbackup/etcdbackuptest"
+	"github.com/dennisklein/platform-kit/metal/internal/talos"
 	"github.com/dennisklein/platform-kit/metal/internal/talos/fake"
 	"github.com/dennisklein/platform-kit/metal/internal/talos/render"
 )
@@ -36,11 +40,8 @@ func etcdFleet(fleet *fake.Fleet, net int, names []string, snap []byte) map[stri
 	etcd := fake.NewEtcdCluster()
 	out := map[string]*fake.Machine{}
 	for i, name := range names {
-		m := fake.NewMachine(labTalos)
-		m.Configure([]byte("config of " + name))
-		m.SetStage("running", true)
+		m := fleet.AddRunning(fmt.Sprintf("10.%d.0.1%d", net, i+1), name, labTalos, []byte("config of "+name))
 		m.SetSnapshot(snap)
-		fleet.Add(fmt.Sprintf("10.%d.0.1%d", net, i+1), name, m)
 		m.JoinEtcd(etcd, false)
 		out[name] = m
 	}
@@ -52,12 +53,7 @@ func etcdFleet(fleet *fake.Fleet, net int, names []string, snap []byte) map[stri
 func createTalosCluster(t *testing.T, cl client.Client, name string, net int, nodes []string) {
 	t.Helper()
 	ctx := t.Context()
-	bundle, err := os.ReadFile(filepath.Join("..", "talos", "render", "testdata", "secrets.yaml"))
-	require.NoError(t, err)
-	require.NoError(t, cl.Create(ctx, &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: name + "-talos-secrets", Namespace: "default"},
-		Data:       map[string][]byte{render.BundleKey: bundle},
-	}))
+	require.NoError(t, cl.Create(ctx, bundleSecret(t, "default", name+"-talos-secrets")))
 	require.NoError(t, cl.Create(ctx, &osv1alpha1.TalosCluster{
 		ObjectMeta: metav1.ObjectMeta{Name: name},
 		Spec: osv1alpha1.TalosClusterSpec{
@@ -129,7 +125,7 @@ func TestEtcdBackupLane(t *testing.T) {
 		NodeName:             "own-cp-1",
 		CheckInterval:        200 * time.Millisecond,
 	}, controller.LaneEtcdBackup))
-	runManager(t, ctx, mgr)
+	startManager(t, mgr)
 
 	getSnap := func(name string) *osv1alpha1.EtcdSnapshot {
 		s := &osv1alpha1.EtcdSnapshot{}
@@ -291,4 +287,90 @@ func TestEtcdBackupLane(t *testing.T) {
 			return s != nil && meta.IsStatusConditionTrue(s.Status.Conditions, osv1alpha1.ConditionVerified)
 		}, 2*waitFor, tick, "the snapshot is taken once a member is healthy again")
 	})
+}
+
+// roleLog records the Talos roles of the certificate each etcd call came
+// with.
+type roleLog struct {
+	mu    sync.Mutex
+	calls map[string][][]string // method → roles of each call
+}
+
+func (l *roleLog) add(method string, tc []byte) {
+	roles, _ := render.TalosconfigRoles(tc)
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.calls[method] = append(l.calls[method], roles)
+}
+
+func (l *roleLog) get(method string) [][]string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return slices.Clone(l.calls[method])
+}
+
+type loggedClient struct {
+	talos.Client
+	log *roleLog
+	tc  []byte
+}
+
+func (c loggedClient) EtcdStatus(ctx context.Context) (talos.EtcdStatus, error) {
+	c.log.add("EtcdStatus", c.tc)
+	return c.Client.EtcdStatus(ctx)
+}
+
+func (c loggedClient) EtcdSnapshot(ctx context.Context, w io.Writer) (int64, error) {
+	c.log.add("EtcdSnapshot", c.tc)
+	return c.Client.EtcdSnapshot(ctx, w)
+}
+
+// A backup reads etcd's status with os:reader and streams the snapshot with
+// os:etcd:backup. Neither certificate can change a machine; os:admin is not
+// needed for a read.
+func TestEtcdBackupLeastPrivilege(t *testing.T) {
+	st := startEnv(t)
+	cl := st.cl
+	ctx := t.Context()
+
+	id, err := age.GenerateX25519Identity()
+	require.NoError(t, err)
+	fleet := fake.NewFleet()
+	etcdFleet(fleet, 83, []string{"rl-cp-1", "rl-cp-2"}, etcdbackuptest.Snapshot(7))
+	createTalosCluster(t, cl, "rl", 83, []string{"rl-cp-1", "rl-cp-2"})
+
+	log := &roleLog{calls: map[string][][]string{}}
+	dial := fleet.Dialer()
+	mgr := st.newManager(t)
+	require.NoError(t, controller.SetupAll(mgr, controller.Options{
+		CredentialsNamespace: "default",
+		TalosDial: func(ctx context.Context, tg talos.Target) (talos.Client, error) {
+			c, err := dial(ctx, tg)
+			if err != nil {
+				return nil, err
+			}
+			return loggedClient{Client: c, log: log, tc: tg.Talosconfig}, nil
+		},
+		EtcdBackupDir:    t.TempDir(),
+		EtcdBackupVolume: "pk-metal-etcd-backups",
+		CheckInterval:    200 * time.Millisecond,
+	}, controller.LaneEtcdBackup))
+	startManager(t, mgr)
+
+	require.NoError(t, cl.Create(ctx, pvcPolicy("rl-daily", "rl", id.Recipient().String(), 2)))
+	require.Eventually(t, func() bool {
+		p := &osv1alpha1.EtcdBackupPolicy{}
+		return cl.Get(ctx, types.NamespacedName{Name: "rl-daily"}, p) == nil &&
+			meta.IsStatusConditionTrue(p.Status.Conditions, osv1alpha1.ConditionBackedUp)
+	}, waitFor, tick, "the snapshot is taken and verified with the narrow roles")
+
+	status, snaps := log.get("EtcdStatus"), log.get("EtcdSnapshot")
+	require.NotEmpty(t, status)
+	require.NotEmpty(t, snaps)
+	for _, r := range status {
+		assert.Equal(t, []string{"os:reader"}, r, "the status probe reads only")
+	}
+	for _, r := range snaps {
+		assert.Equal(t, []string{"os:etcd:backup"}, r, "the stream may take a snapshot and nothing else")
+	}
 }

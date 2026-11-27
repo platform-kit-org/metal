@@ -3,7 +3,6 @@ package controller
 import (
 	"bytes"
 	"context"
-	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -14,6 +13,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
@@ -22,26 +22,52 @@ import (
 	gofishclient "github.com/dennisklein/platform-kit/metal/internal/bmc/gofish"
 )
 
-// staleSecrets is a client whose reads of the named Secrets answer from an
-// older snapshot, the way an informer cache that has not caught up yet
-// answers: nil in the map is a Secret the cache has not seen at all. Writes
-// go through to the store.
-type staleSecrets struct {
-	client.Client
-	old map[types.NamespacedName]*corev1.Secret
+// The clients below answer reads as an informer cache that has not caught up
+// with the store yet; writes go to the store. Give the reconciler one of them
+// as Client, and the store as APIReader. A test of a stale-cache fix asserts
+// the safe outcome, then sets APIReader to nil and sees it go.
+
+// staleGet answers each Get of a T from the store, then old turns the object
+// into what the cache shows, or returns the error the cache gives.
+func staleGet[T client.Object](live client.Client, old func(key client.ObjectKey, obj T) error) client.Client {
+	return interceptor.NewClient(live.(client.WithWatch), interceptor.Funcs{
+		Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+			if err := c.Get(ctx, key, obj, opts...); err != nil {
+				return err
+			}
+			if o, ok := obj.(T); ok {
+				return old(key, o)
+			}
+			return nil
+		},
+	})
 }
 
-func (c staleSecrets) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
-	if sec, ok := obj.(*corev1.Secret); ok {
-		if snap, stale := c.old[key]; stale {
-			if snap == nil {
-				return apierrors.NewNotFound(corev1.Resource("secrets"), key.Name)
+// staleList answers each List of an L from the store, then old turns the
+// list into what the cache shows.
+func staleList[L client.ObjectList](live client.Client, old func(list L)) client.Client {
+	return interceptor.NewClient(live.(client.WithWatch), interceptor.Funcs{
+		List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+			if err := c.List(ctx, list, opts...); err != nil {
+				return err
 			}
-			snap.DeepCopyInto(sec)
+			if l, ok := list.(L); ok {
+				old(l)
+			}
 			return nil
-		}
-	}
-	return c.Client.Get(ctx, key, obj, opts...)
+		},
+	})
+}
+
+// staleLists answers every list from a second store, the cache, which holds
+// older objects.
+type staleLists struct {
+	client.Client
+	cache client.Client
+}
+
+func (c *staleLists) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
+	return c.cache.List(ctx, list, opts...)
 }
 
 // A pass that reads a managed Secret older than the last promotion must
@@ -62,7 +88,12 @@ func TestRotationReadsTheManagedSecretFromTheAPIServer(t *testing.T) {
 
 	var trail bytes.Buffer
 	g.r.Audit = audit.New(&trail, testOperator)
-	g.r.Client = staleSecrets{Client: g.cl, old: map[types.NamespacedName]*corev1.Secret{key: before}}
+	g.r.Client = staleGet(g.cl, func(k client.ObjectKey, sec *corev1.Secret) error {
+		if k == key {
+			before.DeepCopyInto(sec)
+		}
+		return nil
+	})
 	g.r.APIReader = g.cl
 	status, reason, msg := g.pass(t)
 	assert.Equal(t, "True", string(status), "%s: %s", reason, msg)
@@ -106,26 +137,16 @@ func TestIdentityInFlightIsReadFromTheAPIServer(t *testing.T) {
 	require.Equal(t, 1, n)
 
 	key := types.NamespacedName{Namespace: "pk-metal", Name: identitySecretName(s.ep.Name)}
-	r.Client = staleSecrets{Client: s.cl, old: map[types.NamespacedName]*corev1.Secret{key: nil}}
+	r.Client = staleGet(s.cl, func(k client.ObjectKey, _ *corev1.Secret) error {
+		if k == key {
+			return apierrors.NewNotFound(corev1.Resource("secrets"), k.Name)
+		}
+		return nil
+	})
 	_, again, err := r.ensureIdentityInFlight(t.Context(), s.ep, desired, hash, bmc.DialectCSRNative)
 	require.NoError(t, err)
 	assert.Equal(t, 1, n, "the manager makes no second request")
 	assert.Equal(t, first, again, "the stored request is the one the manager holds the key of")
-}
-
-// staleClaims is a client whose list of claims answers from an older
-// snapshot, as an informer cache that has not caught up yet.
-type staleClaims struct {
-	client.Client
-	old []metalv1alpha1.HostClaim
-}
-
-func (c staleClaims) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
-	if l, ok := list.(*metalv1alpha1.HostClaimList); ok {
-		l.Items = slices.Clone(c.old)
-		return nil
-	}
-	return c.Client.List(ctx, list, opts...)
 }
 
 // The member finalizer is released once, and the node is gone for good. It
@@ -142,8 +163,8 @@ func TestMemberFinalizerReadsTheClaimsFromTheAPIServer(t *testing.T) {
 	installed.Status.HandOff = &metalv1alpha1.ClaimHandOff{Host: "box-1", Node: "w-1"}
 	api := fake.NewClientBuilder().WithScheme(s).WithObjects(node, installed).WithStatusSubresource(node, installed).Build()
 
-	r := &TalosNodeMemberReconciler{Client: staleClaims{Client: api, old: []metalv1alpha1.HostClaim{*claim}},
-		APIReader: api, OperationsNamespace: "pk-metal"}
+	cache := staleList(api, func(l *metalv1alpha1.HostClaimList) { l.Items = []metalv1alpha1.HostClaim{*claim} })
+	r := &TalosNodeMemberReconciler{Client: cache, APIReader: api, OperationsNamespace: "pk-metal"}
 	reason, _, err := r.blocked(t.Context(), node)
 	require.NoError(t, err)
 	assert.Equal(t, osv1alpha1.ReasonMachineAssigned, reason, "the claim's record of the install holds the node")
@@ -154,20 +175,6 @@ func TestMemberFinalizerReadsTheClaimsFromTheAPIServer(t *testing.T) {
 	assert.Empty(t, reason, "from the stale cache alone, the node would go")
 }
 
-// staleBootstrap answers reads of a TalosCluster as a cache from before the
-// bootstrap does.
-type staleBootstrap struct{ client.Client }
-
-func (c staleBootstrap) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
-	if err := c.Client.Get(ctx, key, obj, opts...); err != nil {
-		return err
-	}
-	if cl, ok := obj.(*osv1alpha1.TalosCluster); ok {
-		cl.Status.BootstrappedAt = nil
-	}
-	return nil
-}
-
 // The member finalizer of a control plane waits while etcd lists the node.
 // It reads the cluster from the API server: a cache from before the
 // bootstrap would skip the etcd check, and the member would stay in etcd
@@ -176,7 +183,11 @@ func TestMemberFinalizerReadsTheClusterFromTheAPIServer(t *testing.T) {
 	lab := newLifecycleLab(t, []string{"cp-1", "cp-2"}, nil)
 	node := &osv1alpha1.TalosNode{}
 	require.NoError(t, lab.r.Get(t.Context(), client.ObjectKey{Name: "cp-2"}, node))
-	r := &TalosNodeMemberReconciler{Client: staleBootstrap{lab.r.Client}, APIReader: lab.r.Client,
+	cache := staleGet(lab.r.Client, func(_ client.ObjectKey, c *osv1alpha1.TalosCluster) error {
+		c.Status.BootstrappedAt = nil // from before the bootstrap
+		return nil
+	})
+	r := &TalosNodeMemberReconciler{Client: cache, APIReader: lab.r.Client,
 		Dial: lab.fleet.Dialer(), CredentialsNamespace: "pk-metal", OperationsNamespace: "pk-metal"}
 
 	reason, _, err := r.blocked(t.Context(), node)

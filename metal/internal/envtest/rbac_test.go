@@ -25,9 +25,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/config"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
-	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/yaml"
 
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
@@ -149,13 +147,9 @@ func (s *suite) approverClient(t *testing.T, ctx context.Context, name string) c
 // Role does not allow.
 func (s *suite) newManagerAs(t *testing.T, cfg *rest.Config, credentialsNamespace string) ctrl.Manager {
 	t.Helper()
-	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
-		Scheme:     s.scheme,
-		NewClient:  s.reads.newClient,
-		Cache:      cache.Options{ByObject: controller.CacheByObject(credentialsNamespace)},
-		Metrics:    metricsserver.Options{BindAddress: "0"},
-		Controller: config.Controller{SkipNameValidation: ptr.To(true)},
-	})
+	opts := s.managerOptions()
+	opts.Cache = cache.Options{ByObject: controller.CacheByObject(credentialsNamespace)}
+	mgr, err := ctrl.NewManager(cfg, opts)
 	require.NoError(t, err)
 	return mgr
 }

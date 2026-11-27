@@ -21,9 +21,7 @@ func TestReleaseOfAnInstalledNodeWaitsWhileItIsNotReady(t *testing.T) {
 		Reason: "Converging", Message: "stage upgrading", LastTransitionTime: metav1.Now()}}
 
 	t.Run("the claim's hand-off names the host", func(t *testing.T) {
-		claim := testClaim("node-b")
-		claim.Status.HandOff = &metalv1alpha1.ClaimHandOff{Host: "host-a", Node: "node-b", Operation: "pk-metal/boot", At: metav1.Now()}
-		host := boundHost(claim)
+		claim, host := claimOn("node-b")
 		host.Status.Conditions = notReady
 		r := claimReconcilerFor(t, host)
 
@@ -51,10 +49,9 @@ func TestReleaseOfAnInstalledNodeWaitsWhileItIsNotReady(t *testing.T) {
 	})
 
 	t.Run("the claim waived approval", func(t *testing.T) {
-		claim := testClaim("node-b")
+		claim, host := claimOn("node-b")
 		claim.Spec.Provisioning = &metalv1alpha1.ClaimProvisioning{Approval: metalv1alpha1.ProvisioningApprovalAutomatic}
-		claim.Status.HandOff = &metalv1alpha1.ClaimHandOff{Host: "host-a", Node: "node-b", Operation: "pk-metal/boot", At: metav1.Now()}
-		r := claimReconcilerFor(t, boundHost(claim))
+		r := claimReconcilerFor(t, host)
 
 		require.False(t, releasePass(t, r, claim))
 		rel := releaseOps(t, r, claim)

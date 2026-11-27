@@ -9,13 +9,18 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
@@ -25,9 +30,17 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/config"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
+	"sigs.k8s.io/yaml"
 
 	"github.com/dennisklein/platform-kit/metal/internal/ledger"
 	pkscheme "github.com/dennisklein/platform-kit/metal/internal/scheme"
+	"github.com/dennisklein/platform-kit/metal/internal/talos/render"
+)
+
+const (
+	pollInterval = 200 * time.Millisecond
+	waitFor      = 20 * time.Second
+	tick         = 100 * time.Millisecond
 )
 
 // suite is one running kube-apiserver and etcd with the operator's CRDs, and
@@ -41,16 +54,21 @@ type suite struct {
 }
 
 // startEnv starts a control plane with the operator's CRDs and any extra CRD
-// directories, and stops it when the test ends. It skips the test when the
-// control-plane binaries are not set up.
+// directories.
 func startEnv(t *testing.T, extraCRDDirs ...string) *suite {
+	t.Helper()
+	return startControlPlane(t, &envtest.Environment{
+		CRDDirectoryPaths:     append([]string{filepath.Join("..", "..", "config", "crd")}, extraCRDDirs...),
+		ErrorIfCRDPathMissing: true,
+	})
+}
+
+// startControlPlane starts env, and stops it when the test ends. It skips
+// the test when the control-plane binaries are not set up.
+func startControlPlane(t *testing.T, env *envtest.Environment) *suite {
 	t.Helper()
 	if os.Getenv("KUBEBUILDER_ASSETS") == "" {
 		t.Skip("KUBEBUILDER_ASSETS unset: run via `mise run envtest`")
-	}
-	env := &envtest.Environment{
-		CRDDirectoryPaths:     append([]string{filepath.Join("..", "..", "config", "crd")}, extraCRDDirs...),
-		ErrorIfCRDPathMissing: true,
 	}
 	// envtest is loopback-only; without this the apiserver enumerates routes via
 	// netlink to pick an advertise address, which sandboxes may forbid.
@@ -80,28 +98,49 @@ func (s *suite) userClient(t *testing.T, name string, groups ...string) client.C
 	return c
 }
 
-// newManager is a manager on the suite's control plane, without metrics.
-// Several suites run the same controllers in this one process, and controller
-// names are process-global (metrics uniqueness), so the name check is off.
-func (s *suite) newManager(t *testing.T) ctrl.Manager {
-	t.Helper()
-	mgr, err := ctrl.NewManager(s.cfg, ctrl.Options{
+// managerOptions are the options of a manager on the suite's control plane,
+// without metrics. Several suites run the same controllers in this one
+// process, and controller names are process-global (metrics uniqueness), so
+// the name check is off.
+func (s *suite) managerOptions() ctrl.Options {
+	return ctrl.Options{
 		Scheme:     s.scheme,
 		NewClient:  s.reads.newClient,
 		Metrics:    metricsserver.Options{BindAddress: "0"},
 		Controller: config.Controller{SkipNameValidation: ptr.To(true)},
-	})
+	}
+}
+
+// newManager is a manager on the suite's control plane.
+func (s *suite) newManager(t *testing.T) ctrl.Manager {
+	t.Helper()
+	mgr, err := ctrl.NewManager(s.cfg, s.managerOptions())
 	require.NoError(t, err)
 	return mgr
 }
 
-// runManager starts mgr in the background until ctx ends.
-func runManager(t *testing.T, ctx context.Context, mgr ctrl.Manager) {
+// startManager runs mgr until the returned stop is called or the test ends,
+// and stop waits until the manager has returned: no pass of it runs after,
+// and it is stopped before the control plane.
+func startManager(t *testing.T, mgr interface{ Start(context.Context) error }) (stop func()) {
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		if err := mgr.Start(ctx); err != nil {
 			t.Logf("manager: %v", err)
 		}
 	}()
+	stopped := false
+	stop = func() {
+		if !stopped {
+			stopped = true
+			cancel()
+			<-done
+		}
+	}
+	t.Cleanup(stop)
+	return stop
 }
 
 // writeLedger writes the ledger text to a file and loads it, the way the
@@ -131,6 +170,102 @@ func seedBMCSecrets(t *testing.T, ctx context.Context, cl client.Client, certs .
 	} {
 		require.NoError(t, cl.Create(ctx, sec))
 	}
+}
+
+// waitUntil reads the object at key until ok accepts it, and returns it. It
+// fails the test with the last object it read.
+func waitUntil[T any, P interface {
+	*T
+	client.Object
+}](t *testing.T, ctx context.Context, cl client.Client, key client.ObjectKey, ok func(T) bool) T {
+	t.Helper()
+	var last T
+	if !assert.Eventually(t, func() bool {
+		var obj T
+		if cl.Get(ctx, key, P(&obj)) != nil {
+			return false
+		}
+		last = obj
+		return ok(obj)
+	}, waitFor, tick) {
+		P(&last).SetManagedFields(nil)
+		t.Fatalf("%T %s: condition never met, last %+v", last, key, last)
+	}
+	return last
+}
+
+// installSettings creates the site settings ConfigMap
+// (pk-metal/hostoperation-approval) from the committed one, naming operator
+// as the operator, unless it exists: the policies that take it as params
+// deny everything without it. The manager in these suites runs as the
+// envtest admin, not as the deployed service account.
+func installSettings(t *testing.T, ctx context.Context, cl client.Client, operator string) {
+	t.Helper()
+	docs := strings.Split(readFile(t, filepath.Join("..", "..", "config", "policy", "hostoperation-approval.yaml")), "\n---")
+	require.Len(t, docs, 3)
+	params := &corev1.ConfigMap{}
+	require.NoError(t, yaml.Unmarshal([]byte(docs[2]), params))
+	params.Data["operator"] = operator
+	ensureNamespace(t, ctx, cl, params.Namespace)
+	if err := cl.Create(ctx, params); err != nil && !apierrors.IsAlreadyExists(err) {
+		require.NoError(t, err)
+	}
+}
+
+// installApprovalPolicy loads the committed approval policy, with the site
+// settings of installSettings. The gate under test is the one in
+// config/policy, not a test-local copy.
+func installApprovalPolicy(t *testing.T, ctx context.Context, cl client.Client, operator string) {
+	t.Helper()
+	installSettings(t, ctx, cl, operator)
+	installPolicy(t, ctx, cl, "hostoperation-approval.yaml")
+}
+
+// installPolicy loads committed policies and their bindings from
+// config/policy. Their params are the site settings of installSettings.
+func installPolicy(t *testing.T, ctx context.Context, cl client.Client, files ...string) {
+	t.Helper()
+	installConfig(t, ctx, cl, "policy", files...)
+}
+
+// installStamp loads the committed MutatingAdmissionPolicies of
+// config/name-stamp and their bindings.
+func installStamp(t *testing.T, ctx context.Context, cl client.Client) {
+	t.Helper()
+	installConfig(t, ctx, cl, "name-stamp", "requested-by-stamp.yaml", "guard-lift-stamp.yaml")
+}
+
+// installConfig creates the objects of the files in config/<dir>, except
+// the site settings, which installSettings creates.
+func installConfig(t *testing.T, ctx context.Context, cl client.Client, dir string, files ...string) {
+	t.Helper()
+	for _, file := range files {
+		for _, doc := range strings.Split(readFile(t, filepath.Join("..", "..", "config", dir, file)), "\n---") {
+			u := &unstructured.Unstructured{}
+			require.NoError(t, yaml.Unmarshal([]byte(doc), &u.Object))
+			if u.GetKind() != "ConfigMap" {
+				require.NoError(t, cl.Create(ctx, u))
+			}
+		}
+	}
+}
+
+// whoAmI is the username a client acts as.
+func whoAmI(t *testing.T, ctx context.Context, cl client.Client) string {
+	t.Helper()
+	ssr := &authenticationv1.SelfSubjectReview{}
+	require.NoError(t, cl.Create(ctx, ssr))
+	return ssr.Status.UserInfo.Username
+}
+
+// bundleSecret is a Secret that holds the render package's test secrets
+// bundle, as a person creates it from the output of `talosctl gen secrets`.
+func bundleSecret(t *testing.T, namespace, name string) *corev1.Secret {
+	t.Helper()
+	bundle, err := os.ReadFile(filepath.Join("..", "talos", "render", "testdata", "secrets.yaml"))
+	require.NoError(t, err)
+	return &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: name},
+		Data: map[string][]byte{render.BundleKey: bundle}}
 }
 
 // barrierAnnotation carries the token that settle stamps on an object.

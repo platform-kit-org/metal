@@ -40,7 +40,7 @@ func TestSelfApproval(t *testing.T) {
 
 	const operator = "op-sa"
 	installApprovalPolicy(t, ctx, cl, operator)
-	installRolloutPolicy(t, ctx, cl)
+	installPolicy(t, ctx, cl, "talosrollout-approval.yaml")
 	operatorCl := st.userClient(t, operator)
 	alice := st.userClient(t, "alice")
 	bob := st.userClient(t, "bob")

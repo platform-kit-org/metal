@@ -7,7 +7,6 @@ import (
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
@@ -57,11 +56,8 @@ func TestAbortUndoesTheMountAndTheOverride(t *testing.T) {
 	r, st, rec := executorFor(t, "supermicro-x12", op)
 	withImages(t, r, srv)
 	downloaded(t, r, srv.URL+"/installer.iso", isoDigest)
-	key := client.ObjectKey{Namespace: "pk-metal", Name: "op"}
-	_, err := r.Reconcile(t.Context(), ctrl.Request{NamespacedName: key})
-	require.NoError(t, err)
-	got := &metalv1alpha1.HostOperation{}
-	require.NoError(t, r.Get(t.Context(), key, got))
+	reconcileOp(t, r, "op")
+	got := getOp(t, r, "op")
 	require.Len(t, got.Status.Steps, 2, "override and mount done; waiting for the check-in")
 	require.NotEmpty(t, mounted(t.Context(), st, mediaSlot))
 

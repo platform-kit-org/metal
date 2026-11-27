@@ -13,7 +13,6 @@ import (
 	"os"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -31,12 +30,6 @@ import (
 	"github.com/dennisklein/platform-kit/metal/internal/bmc"
 	"github.com/dennisklein/platform-kit/metal/internal/bmc/sim"
 	"github.com/dennisklein/platform-kit/metal/internal/controller"
-)
-
-const (
-	pollInterval = 200 * time.Millisecond
-	waitFor      = 20 * time.Second
-	tick         = 100 * time.Millisecond
 )
 
 func simServer(t *testing.T, fixture string) (*httptest.Server, *sim.State) {
@@ -108,7 +101,7 @@ func TestReconcile(t *testing.T) {
 		PollInterval:         pollInterval,
 	}, controller.LaneAsset, controller.LaneEndpoint, controller.LaneHost, controller.LaneHostClaim,
 		controller.LaneHostOperation))
-	runManager(t, ctx, mgr)
+	startManager(t, mgr)
 
 	asset := func(name, serial, mac string) *metalv1alpha1.Asset {
 		return &metalv1alpha1.Asset{
@@ -129,15 +122,9 @@ func TestReconcile(t *testing.T) {
 		return ep, ep.Status.Phase
 	}
 	waitPhase := func(name string, want metalv1alpha1.EndpointPhase) metalv1alpha1.ManagementEndpoint {
-		var last metalv1alpha1.ManagementEndpoint
-		if !assert.Eventually(t, func() bool {
-			ep, p := endpointPhase(name)
-			last = ep
-			return p == want
-		}, waitFor, tick) {
-			t.Fatalf("endpoint %s: want phase %s, last status %+v", name, want, last.Status)
-		}
-		return last
+		return waitUntil(t, ctx, cl, client.ObjectKey{Name: name}, func(ep metalv1alpha1.ManagementEndpoint) bool {
+			return ep.Status.Phase == want
+		})
 	}
 	hostByName := func(name string) (metalv1alpha1.Host, metalv1alpha1.HostPhase) {
 		h := metalv1alpha1.Host{}
@@ -147,15 +134,7 @@ func TestReconcile(t *testing.T) {
 		return h, h.Status.Phase
 	}
 	waitHost := func(name string, ok func(metalv1alpha1.Host) bool) metalv1alpha1.Host {
-		var last metalv1alpha1.Host
-		if !assert.Eventually(t, func() bool {
-			h, _ := hostByName(name)
-			last = h
-			return ok(h)
-		}, waitFor, tick) {
-			t.Fatalf("host %s: condition never met, last status %+v", name, last.Status)
-		}
-		return last
+		return waitUntil(t, ctx, cl, client.ObjectKey{Name: name}, ok)
 	}
 	hostPhaseIs := func(want metalv1alpha1.HostPhase) func(metalv1alpha1.Host) bool {
 		return func(h metalv1alpha1.Host) bool { return h.Status.Phase == want }
@@ -176,14 +155,7 @@ func TestReconcile(t *testing.T) {
 		}))
 	}
 	waitClaim := func(name string, ok func(metalv1alpha1.HostClaim) bool) metalv1alpha1.HostClaim {
-		var last metalv1alpha1.HostClaim
-		if !assert.Eventually(t, func() bool {
-			last = claimByName(name)
-			return ok(last)
-		}, waitFor, tick) {
-			t.Fatalf("claim %s: condition never met, last status %+v", name, last.Status)
-		}
-		return last
+		return waitUntil(t, ctx, cl, client.ObjectKey{Namespace: "default", Name: name}, ok)
 	}
 	claimPhaseIs := func(want metalv1alpha1.ClaimPhase) func(metalv1alpha1.HostClaim) bool {
 		return func(c metalv1alpha1.HostClaim) bool { return c.Status.Phase == want }
@@ -194,14 +166,7 @@ func TestReconcile(t *testing.T) {
 		return op
 	}
 	waitOp := func(name string, ok func(metalv1alpha1.HostOperation) bool) metalv1alpha1.HostOperation {
-		var last metalv1alpha1.HostOperation
-		if !assert.Eventually(t, func() bool {
-			last = opByName(name)
-			return ok(last)
-		}, waitFor, tick) {
-			t.Fatalf("operation %s: condition never met, last status %+v", name, last.Status)
-		}
-		return last
+		return waitUntil(t, ctx, cl, client.ObjectKey{Namespace: "default", Name: name}, ok)
 	}
 	opPhaseIs := func(want metalv1alpha1.OperationPhase) func(metalv1alpha1.HostOperation) bool {
 		return func(op metalv1alpha1.HostOperation) bool { return op.Status.Phase == want }

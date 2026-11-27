@@ -29,7 +29,6 @@ import (
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
@@ -414,23 +413,8 @@ func runExecutorCase(t *testing.T, seed uint64, image func(string) string, image
 	})
 	handle := grantHandle(types.NamespacedName{Namespace: "pk-metal", Name: "op"})
 	media.Grants.RevokeAsset(handle)
-	iso, err := asset.BuildConfigISO([]byte("version: v1alpha1\n"))
-	require.NoError(t, err)
-	digest := godigest.FromBytes(iso).String()
-	artifact := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: "node-config-artifact", Namespace: "pk-metal"},
-		Data:       map[string][]byte{artifactKey: iso},
-	}
-	config := &osv1alpha1.BootAsset{
-		ObjectMeta: metav1.ObjectMeta{Name: modelConfig},
-		Spec:       osv1alpha1.BootAssetSpec{Strategy: osv1alpha1.StrategyConfigISO, NodeRef: &osv1alpha1.Reference{Name: "node-a"}},
-		Status: osv1alpha1.BootAssetStatus{
-			Digest:            digest,
-			ArtifactSecretRef: &osv1alpha1.SecretReference{Namespace: "pk-metal", Name: artifact.Name},
-			Conditions: []metav1.Condition{{Type: osv1alpha1.ConditionReady, Status: metav1.ConditionTrue,
-				Reason: "Built", LastTransitionTime: metav1.Now()}},
-		},
-	}
+	config, artifact := configAsset(t, buildISO(t, "version: v1alpha1\n")) // named modelConfig
+	digest := config.Status.Digest
 	r := rand.New(rand.NewPCG(5, seed))
 	c := &chaos{r: r, refuseAt: -1, deletedAt: -1}
 	// A third of the cases are calm, so the oracle is reached without noise;
@@ -480,12 +464,7 @@ func runExecutorCase(t *testing.T, seed uint64, image func(string) string, image
 	}
 	node := &osv1alpha1.TalosNode{ObjectMeta: metav1.ObjectMeta{Name: "node-a"}}
 	host := &metalv1alpha1.Host{ObjectMeta: metav1.ObjectMeta{Name: "host-a"}}
-	store := fake.NewClientBuilder().WithScheme(testScheme(t)).
-		WithStatusSubresource(&metalv1alpha1.HostOperation{}).
-		WithIndex(&metalv1alpha1.HostOperation{}, opHostIndex, func(o client.Object) []string {
-			return []string{o.(*metalv1alpha1.HostOperation).Spec.HostRef.Name}
-		}).
-		WithObjects(op, node, host, artifact, config, site).Build()
+	store := opStore(t, op, node, host, artifact, config, site)
 	key := client.ObjectKeyFromObject(op)
 	c.deleteOp = func() {
 		c.deletedAt = c.applied

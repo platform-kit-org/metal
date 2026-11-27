@@ -40,7 +40,7 @@ func TestTLSKeyPin(t *testing.T) {
 		PollInterval:         pollInterval,
 		Audit:                audit.New(trail, "op"),
 	}, controller.LaneAsset, controller.LaneEndpoint))
-	runManager(t, ctx, mgr)
+	startManager(t, mgr)
 
 	require.NoError(t, cl.Create(ctx, &metalv1alpha1.Asset{
 		ObjectMeta: metav1.ObjectMeta{Name: "ci-smc"},
@@ -48,20 +48,11 @@ func TestTLSKeyPin(t *testing.T) {
 			BMCMac: "02:00:5a:3a:cc:18", VLAN: 100,
 			CredentialsRef: corev1.LocalObjectReference{Name: "ibmc-factory"}},
 	}))
-	endpoint := func() metalv1alpha1.ManagementEndpoint {
-		ep := metalv1alpha1.ManagementEndpoint{}
-		_ = cl.Get(ctx, client.ObjectKey{Name: "ci-smc"}, &ep)
-		return ep
-	}
 	reachable := func(ep metalv1alpha1.ManagementEndpoint) *metav1.Condition {
 		return meta.FindStatusCondition(ep.Status.Conditions, metalv1alpha1.ConditionReachable)
 	}
 	wait := func(ok func(metalv1alpha1.ManagementEndpoint) bool) metalv1alpha1.ManagementEndpoint {
-		var last metalv1alpha1.ManagementEndpoint
-		if !assert.Eventually(t, func() bool { last = endpoint(); return ok(last) }, waitFor, tick) {
-			t.Fatalf("condition never met, last %+v", last.Status)
-		}
-		return last
+		return waitUntil(t, ctx, cl, client.ObjectKey{Name: "ci-smc"}, ok)
 	}
 
 	first := gofishclient.PublicKeyPin(seed)

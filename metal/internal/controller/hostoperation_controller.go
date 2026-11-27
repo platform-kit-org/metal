@@ -100,11 +100,9 @@ type HostOperationReconciler struct {
 	// too large for a Secret: the installers, and the images an operation
 	// names by URL. Nil fails the mount of one, saying so.
 	Store *asset.Store
-	// Fetches downloads the images an operation names by URL into Store.
-	// Nil makes one.
-	Fetches   *mediaFetcher
-	fetchOnce sync.Once
-	Recorder  events.EventRecorder
+	// fetches downloads the images an operation names by URL into Store.
+	fetches  mediaFetcher
+	Recorder events.EventRecorder
 
 	// Connect opens a write-capable session to the host's machine; nil dials
 	// the first reachable management path. A test seam.
@@ -707,15 +705,6 @@ func (r *HostOperationReconciler) forget(key types.NamespacedName) {
 			logf.Log.WithName("hostoperation").Error(err, "remove the images the operation downloaded", "operation", key.String())
 		}
 	}
-}
-
-func (r *HostOperationReconciler) fetcher() *mediaFetcher {
-	r.fetchOnce.Do(func() {
-		if r.Fetches == nil {
-			r.Fetches = &mediaFetcher{}
-		}
-	})
-	return r.Fetches
 }
 
 // imageClient downloads the images operations name by URL. It trusts what

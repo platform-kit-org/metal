@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/opencontainers/go-digest"
@@ -52,9 +51,8 @@ type BootAssetReconciler struct {
 	// holds those assets with a message naming the flags.
 	Store  *asset.Store
 	Imager *Imager
-	// Fetches downloads the factory installers into Store. Nil makes one.
-	Fetches   *mediaFetcher
-	fetchOnce sync.Once
+	// fetches downloads the factory installers into Store.
+	fetches mediaFetcher
 }
 
 // +kubebuilder:rbac:groups=os.platform-kit.org,resources=bootassets,verbs=get;list;watch
@@ -144,7 +142,7 @@ func (r *BootAssetReconciler) fetchImage(ctx context.Context, ba *osv1alpha1.Boo
 		setCondition(&ba.Status.Conditions, ba.Generation, osv1alpha1.ConditionReady, metav1.ConditionTrue, osv1alpha1.ReasonImageDownloaded, "")
 		return ctrl.Result{}
 	}
-	st := r.fetcher().start(r.Store, r.Factory.ImageClient(), url, ba.Name, key, "")
+	st := r.fetches.start(r.Store, r.Factory.ImageClient(), url, ba.Name, key, "")
 	switch {
 	case st.running:
 		r.hold(ba, osv1alpha1.ReasonBuilding, fmt.Sprintf(
@@ -173,15 +171,6 @@ const (
 func imageKey(url string) string {
 	sum := sha256.Sum256([]byte(url))
 	return hex.EncodeToString(sum[:16])
-}
-
-func (r *BootAssetReconciler) fetcher() *mediaFetcher {
-	r.fetchOnce.Do(func() {
-		if r.Fetches == nil {
-			r.Fetches = &mediaFetcher{}
-		}
-	})
-	return r.Fetches
 }
 
 // nodeConfig loads the rendered config of the asset's node. A missing

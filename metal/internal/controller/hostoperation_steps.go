@@ -379,7 +379,7 @@ func (x *exec) insertURL(ctx context.Context, cl bmc.Client, i int, a *metalv1al
 	key := types.NamespacedName{Namespace: x.op.Namespace, Name: x.op.Name}
 	name, sum := urlStoreName(key), strings.TrimPrefix(a.Digest, "sha256:")
 	if !x.r.Store.Has(name, sum) {
-		st := x.r.fetcher().start(x.r.Store, x.r.imageClient(), a.ImageURL, name, sum, a.Digest)
+		st := x.r.fetches.start(x.r.Store, x.r.imageClient(), a.ImageURL, name, sum, a.Digest)
 		switch {
 		case st.running:
 			return &artifactPending{msg: fmt.Sprintf("the operator downloads %s into its media store", redact.String(a.ImageURL))}

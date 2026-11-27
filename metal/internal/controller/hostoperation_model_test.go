@@ -517,8 +517,6 @@ func runExecutorCase(t *testing.T, seed uint64, image func(string) string, image
 
 		// Each pass is a fresh reconciler: whatever the last one held in
 		// memory is gone, as after a restart.
-		fetches := &mediaFetcher{}
-		fetchers = append(fetchers, fetches)
 		rc := &HostOperationReconciler{
 			Client:               api,
 			CredentialsNamespace: "pk-metal",
@@ -528,11 +526,11 @@ func runExecutorCase(t *testing.T, seed uint64, image func(string) string, image
 			},
 			Media:          media,
 			Store:          mediaStore,
-			Fetches:        fetches,
 			RegistryClient: images,
 			PowerSettle:    10 * time.Millisecond,
 			PassTimeout:    time.Duration(1+r.IntN(30)) * time.Second,
 		}
+		fetchers = append(fetchers, &rc.fetches)
 		func() {
 			defer func() {
 				if p := recover(); p != nil {

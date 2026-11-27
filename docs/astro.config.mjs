@@ -1,7 +1,6 @@
 // @ts-check
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
-import starlightLinksValidator from 'starlight-links-validator';
 import { satteri } from '@astrojs/markdown-satteri';
 import baseLinks from './scripts/base-links.mjs';
 import xref from './scripts/xref.mjs';
@@ -9,13 +8,6 @@ import glossary from './scripts/glossary.mjs';
 import { loadRedirects } from './scripts/registry.mjs';
 import { sidebar } from './scripts/sidebar.mjs';
 import { site, base, repoUrl, branch } from './scripts/site.mjs';
-
-// Anchors that components make: the validator sees only the anchors of Markdown headings.
-// scripts/check-xrefs.mjs checks these in dist/ instead.
-//   #spec.x, #status.x   field tables (kind pages)
-//   #--flag, #-f          flag tables (command pages); #exit-1 exit status tables
-//   /phases/#…, /conditions/#…, /labels-annotations/#…, /glossary/#…   catalog rows
-const componentAnchor = /#((spec|status)\.|--?[a-z]|[a-z]+\.--?[a-z]|exit-\d)|\/reference\/(phases|conditions|labels-annotations|glossary)\/#/;
 
 // Fonts of the "Control room" theme: Inter for text, IBM Plex Mono for code and names.
 const fonts = [
@@ -59,12 +51,6 @@ export default defineConfig({
       expressiveCode: { themes: ['github-dark-default', 'github-light-default'] },
       components: overrides,
       sidebar: sidebar(),
-      plugins: [
-        starlightLinksValidator({
-          errorOnRelativeLinks: false,
-          exclude: ({ link }) => componentAnchor.test(link),
-        }),
-      ],
     }),
   ],
 });

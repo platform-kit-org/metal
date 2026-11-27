@@ -7,20 +7,10 @@
 //   - an id two times (for example a marker that each diagram defines again; the
 //     shared markers are in src/components/diagram/SvgDefs.astro).
 // Usage: node scripts/check-html.mjs [dist]
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { join } from 'node:path';
-import { root } from './root.mjs';
+import { readFileSync } from 'node:fs';
+import { builtPages } from './root.mjs';
 
-const dist = process.argv[2] ?? join(root, 'dist');
-if (!existsSync(dist)) {
-  console.error(`check-html: ${dist} does not exist. Run mise run docs:build first.`);
-  process.exit(1);
-}
-
-const walk = (d) => readdirSync(d).flatMap((n) => {
-  const p = join(d, n);
-  return statSync(p).isDirectory() ? walk(p) : n.endsWith('.html') ? [p] : [];
-});
+const { dist, files } = builtPages('check-html');
 
 /** The <svg> elements with role="img", each with its whole body (nested SVGs included). */
 function imgSvgs(html) {
@@ -44,7 +34,7 @@ function imgSvgs(html) {
 
 const errors = [];
 let pages = 0;
-for (const file of walk(dist)) {
+for (const file of files) {
   const html = readFileSync(file, 'utf8');
   const page = file.slice(dist.length + 1);
   pages++;

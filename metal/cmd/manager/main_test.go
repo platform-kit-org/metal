@@ -32,6 +32,7 @@ func TestParseFlagsDefaults(t *testing.T) {
 	assert.Equal(t, 30*time.Minute, c.checkIn)
 	assert.Equal(t, 5*time.Minute, c.poll)
 	assert.Equal(t, render.PublicFactory, c.imageFactory)
+	assert.Equal(t, render.ArchAMD64, c.machineArch)
 	assert.Equal(t, ":8443", c.mediaListen)
 	assert.Empty(t, c.mediaURL, "no media service unless a URL is given")
 	assert.Equal(t, "0", c.metricsAddr)
@@ -77,6 +78,7 @@ func TestParseFlagsRefuses(t *testing.T) {
 		{"claim without store", []string{"--ledger=l", "--media-store-claim=c"}, "needs --media-store"},
 		{"imager digest without version", []string{"--ledger=l", "--imager-digest=sha256:" + strings.Repeat("a", 64)}, "want <talos version>="},
 		{"imager digest not a digest", []string{"--ledger=l", "--imager-digest=v1.14.7=latest"}, "want <talos version>="},
+		{"unknown architecture", []string{"--ledger=l", "--machine-arch=x86_64"}, "--machine-arch must be one of amd64, arm64"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var out bytes.Buffer

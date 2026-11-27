@@ -48,26 +48,23 @@ const (
 // listener dies. advertise overrides the front address reported to the
 // registering operator (the address as BMCs reach it); empty means front.Addr().
 // secret is the shared secret every tunnel connection must prove it holds
-// (ParseSecret, LoadSecret); the relay refuses to run without one. Without
-// WithAllow, a DIAL may name any target.
-func Serve(ctx context.Context, tunnel, front net.Listener, advertise string, secret []byte, opts ...Option) error {
+// (ParseSecret, LoadSecret); the relay refuses to run without one. allow
+// limits the onward dials (ParseAllow); an empty list refuses each one.
+func Serve(ctx context.Context, tunnel, front net.Listener, advertise string, secret []byte, allow Allow) error {
 	if len(secret) < minSecret {
 		return fmt.Errorf("relay: a secret of at least %d characters is required", minSecret)
 	}
 	if advertise == "" {
 		advertise = front.Addr().String()
 	}
-	r := newRelay(advertise, secret)
-	for _, opt := range opts {
-		opt(r)
-	}
-	return r.serve(ctx, tunnel, front)
+	return newRelay(advertise, secret, allow).serve(ctx, tunnel, front)
 }
 
-func newRelay(advertise string, secret []byte) *relay {
+func newRelay(advertise string, secret []byte, allow Allow) *relay {
 	return &relay{
 		advertise:         advertise,
 		secret:            secret,
+		allow:             allow,
 		pending:           map[string]chan net.Conn{},
 		dial:              net.DialTimeout,
 		lookup:            lookupHost,
@@ -98,7 +95,7 @@ func (r *relay) serve(ctx context.Context, tunnel, front net.Listener) error {
 type relay struct {
 	advertise string
 	secret    []byte
-	// allow limits the onward dials; nil allows every target.
+	// allow limits the onward dials; an empty list refuses each one.
 	allow Allow
 	// dial, lookup and the two timeouts are fields so that tests can record onward
 	// dials and wait milliseconds, not seconds.

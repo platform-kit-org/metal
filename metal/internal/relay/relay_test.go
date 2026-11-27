@@ -33,7 +33,7 @@ func startRelay(t *testing.T, wrapFront func(net.Listener) net.Listener) (tunnel
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	go func() { _ = Serve(ctx, tunnel, front, "", testSecret) }()
+	go func() { _ = Serve(ctx, tunnel, front, "", testSecret, anyTarget) }()
 	return tunnel.Addr().String(), front.Addr().String()
 }
 
@@ -184,6 +184,10 @@ func TestAcceptUnknownID(t *testing.T) {
 // testSecret is the secret the test relays run with.
 var testSecret = []byte("0123456789abcdef0123456789abcdef")
 
+// anyTarget is the allow list of the test relays: one rule for any address
+// and any port.
+var anyTarget = Allow{{}}
+
 // signedOpen opens a tunnel connection, reads the greeting and sends verb
 // and arg signed with secret.
 func signedOpen(t testing.TB, tunnel string, secret []byte, verb, arg string) (net.Conn, *bufio.Reader) {
@@ -203,7 +207,7 @@ func signedOpen(t testing.TB, tunnel string, secret []byte, verb, arg string) (n
 // TestTunnelNeedsTheSecret: a peer without the secret can neither take the
 // control slot from the registered operator nor dial onward.
 func TestTunnelNeedsTheSecret(t *testing.T) {
-	tr := startTestRelay(t, time.Second)
+	tr := startTestRelay(t, time.Second, anyTarget)
 	ctl, _ := register(t, tr.tunnel)
 	defer ctl.Close()
 
@@ -232,7 +236,7 @@ func TestTunnelNeedsTheSecret(t *testing.T) {
 // TestSignedLineIsBoundToItsConnection: a line seen on the wire is worthless
 // on another connection (another nonce) and with another target.
 func TestSignedLineIsBoundToItsConnection(t *testing.T) {
-	tr := startTestRelay(t, time.Second)
+	tr := startTestRelay(t, time.Second, anyTarget)
 
 	c, err := net.Dial("tcp", tr.tunnel)
 	require.NoError(t, err)
@@ -279,7 +283,7 @@ func TestServeRefusesWithoutSecret(t *testing.T) {
 	front, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	defer front.Close()
-	assert.ErrorContains(t, Serve(context.Background(), tunnel, front, "", nil), "secret")
+	assert.ErrorContains(t, Serve(context.Background(), tunnel, front, "", nil, nil), "secret")
 }
 
 func TestLoadSecret(t *testing.T) {

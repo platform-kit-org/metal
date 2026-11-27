@@ -74,7 +74,8 @@ func startRelay(t *testing.T) (tunnel, front string) {
 	require.NoError(t, err)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	go func() { _ = relay.Serve(ctx, tl, fl, "", relaySecret) }()
+	// The ladder dials nothing onward: the allow list is empty.
+	go func() { _ = relay.Serve(ctx, tl, fl, "", relaySecret, nil) }()
 	return tl.Addr().String(), fl.Addr().String()
 }
 

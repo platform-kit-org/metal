@@ -46,7 +46,7 @@ func TestBootSendsRedfishThroughTheRelay(t *testing.T) {
 		require.NoError(t, err)
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		go func() { _ = relay.Serve(ctx, tunnel, front, "", []byte(secret), relay.WithAllow(a)) }()
+		go func() { _ = relay.Serve(ctx, tunnel, front, "", []byte(secret), a) }()
 		code, stderr = runCLI(t, "boot", "--config", config, "--node", "n", "--relay", tunnel.Addr().String(),
 			"--user", f.Accounts[0].Username, "--insecure", bmcSrv.URL)
 		return code, stderr, u.Host

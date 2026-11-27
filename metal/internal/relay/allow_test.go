@@ -52,13 +52,12 @@ func TestAllowTarget(t *testing.T) {
 	}
 
 	var none Allow
-	got, err := none.target(ctx, lookup, "anything:22")
-	require.NoError(t, err)
-	assert.Equal(t, "anything:22", got, "no allow list: every target, unchanged")
+	_, err := none.target(ctx, lookup, "10.0.0.21:443")
+	assert.ErrorContains(t, err, "not in the relay's allow list", "an empty allow list refuses every target")
 
 	cidr, err := ParseAllow("10.0.0.0/24:443")
 	require.NoError(t, err)
-	got, err = cidr.target(ctx, lookup, "10.0.0.21:443")
+	got, err := cidr.target(ctx, lookup, "10.0.0.21:443")
 	require.NoError(t, err)
 	assert.Equal(t, "10.0.0.21:443", got)
 	_, err = cidr.target(ctx, lookup, "10.0.0.21:22")
@@ -89,7 +88,7 @@ func TestAllowTarget(t *testing.T) {
 func TestDialOutsideAllowListIsRefused(t *testing.T) {
 	allow, err := ParseAllow("10.0.0.0/24:443")
 	require.NoError(t, err)
-	tr := startTestRelay(t, time.Second, WithAllow(allow))
+	tr := startTestRelay(t, time.Second, allow)
 
 	for _, target := range []string{"10.0.0.21:22", "192.0.2.1:443"} {
 		c, br := signedOpen(t, tr.tunnel, testSecret, "DIAL", target)

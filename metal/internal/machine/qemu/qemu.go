@@ -59,8 +59,12 @@ type Options struct {
 	// InstallerISO is attached as the CD behind the disk in boot order;
 	// empty attaches none. DetachInstaller withdraws it for later boots.
 	InstallerISO string
-	// OVMFCode/OVMFVars point at the UEFI firmware pair; empty probes the
-	// well-known distro locations (PK_METAL_OVMF_CODE/PK_METAL_OVMF_VARS override).
+	// Arch is the guest's CPU architecture, amd64 or arm64; empty is the
+	// host's. It selects the emulator, the board and the firmware.
+	Arch string
+	// OVMFCode/OVMFVars point at the UEFI firmware pair (OVMF for amd64,
+	// AAVMF for arm64); empty probes the well-known distro locations
+	// (PK_METAL_OVMF_CODE/PK_METAL_OVMF_VARS override).
 	OVMFCode string
 	OVMFVars string
 	// MemoryMiB defaults to 4096, CPUs to 2, DiskGiB to 8.
@@ -70,7 +74,8 @@ type Options struct {
 	// DiskSerial is the udev-visible serial of the virtio disk — what an
 	// installDiskSelector matches on. Empty sets none.
 	DiskSerial string
-	// Accel is the qemu accelerator; default kvm (Ensure verifies /dev/kvm).
+	// Accel is the qemu accelerator, kvm or tcg; default kvm (Ensure
+	// verifies /dev/kvm). kvm runs only a guest of the host's architecture.
 	Accel string
 	// HostIP is the loopback address the forwarded guest ports surface on;
 	// default 127.0.0.1. Any 127/8 address works on Linux. User-mode only.
@@ -146,8 +151,11 @@ func New(o Options) *Machine {
 	if o.DiskGiB == 0 {
 		o.DiskGiB = 8
 	}
+	if o.Arch == "" {
+		o.Arch = HostArch()
+	}
 	if o.Accel == "" {
-		o.Accel = "kvm"
+		o.Accel = AccelKVM
 	}
 	if o.HostIP == "" {
 		o.HostIP = "127.0.0.1"
@@ -168,7 +176,10 @@ func New(o Options) *Machine {
 // Ensure prepares the VM's world: the working directory, the firmware pair,
 // and a blank disk if none exists. Nothing runs until Start.
 func (m *Machine) Ensure(ctx context.Context) error {
-	if m.o.Accel == "kvm" {
+	if err := checkArch(m.o.Arch, m.o.Accel); err != nil {
+		return err
+	}
+	if m.o.Accel == AccelKVM {
 		if _, err := os.Stat("/dev/kvm"); err != nil {
 			return fmt.Errorf("qemu: no usable /dev/kvm (is the kvm module loaded?): %w", err)
 		}
@@ -280,7 +291,7 @@ func (m *Machine) Start(ctx context.Context) error {
 		m.mu.Unlock()
 		return err
 	}
-	cmd := exec.Command(qemuBinary(), args...)
+	cmd := exec.Command(qemuBinary(m.o.Arch), args...)
 	cmd.Stdout, cmd.Stderr = logf, logf
 	if err := cmd.Start(); err != nil {
 		_ = logf.Close()
@@ -646,13 +657,17 @@ func (m *Machine) mediaPath(i int) string {
 // the bootable devices the line creates, in the machine's own order. Caller
 // holds mu.
 func (m *Machine) args() ([]string, []string, error) {
+	spec, ok := archSpecs[m.o.Arch]
+	if !ok {
+		return nil, nil, fmt.Errorf("qemu: architecture %q is not one of %v", m.o.Arch, Arches())
+	}
 	cpu := "host"
-	if m.o.Accel != "kvm" {
-		cpu = "max"
+	if m.o.Accel != AccelKVM {
+		cpu = spec.tcgCPU
 	}
 	a := []string{
 		"-name", m.o.Name,
-		"-machine", "q35",
+		"-machine", spec.machine,
 		"-accel", m.o.Accel,
 		"-cpu", cpu,
 		"-smp", strconv.Itoa(m.o.CPUs),
@@ -694,25 +709,32 @@ func (m *Machine) args() ([]string, []string, error) {
 		diskDev += ",serial=" + m.o.DiskSerial
 	}
 	a = append(a, "-device", diskDev)
-	// Each CD gets its own AHCI port (q35 exposes six as ide.0–ide.5, one
-	// device per port — qemu's auto-placement would try "unit 1" on a shared
-	// port and fail the spawn).
-	port := 0
+	// On q35 each CD gets its own AHCI port (q35 exposes six as ide.0–ide.5,
+	// one device per port — qemu's auto-placement would try "unit 1" on a
+	// shared port and fail the spawn). The virt board has no AHCI: its CDs
+	// share one virtio-scsi controller.
+	type cd struct{ drive, device, file string }
+	var cds []cd
 	if m.o.InstallerISO != "" {
-		a = append(a,
-			"-drive", "if=none,id=install,format=raw,readonly=on,file="+m.o.InstallerISO,
-			"-device", "ide-cd,drive=install,id="+devInstaller+",bus=ide.0"+bootindex(devInstaller))
-		port++
+		cds = append(cds, cd{"install", devInstaller, m.o.InstallerISO})
 	}
 	for i, iso := range media {
-		if port > 5 {
-			return nil, nil, fmt.Errorf("qemu: %d CDs exceed the q35 AHCI ports", port+1)
+		cds = append(cds, cd{"media" + strconv.Itoa(i), "cd" + strconv.Itoa(i), iso})
+	}
+	if spec.scsiCD && len(cds) > 0 {
+		a = append(a, "-device", "virtio-scsi-pci,id=scsi0")
+	}
+	for port, c := range cds {
+		device := "scsi-cd,drive=" + c.drive + ",id=" + c.device + ",bus=scsi0.0"
+		if !spec.scsiCD {
+			if port > 5 {
+				return nil, nil, fmt.Errorf("qemu: %d CDs exceed the q35 AHCI ports", len(cds))
+			}
+			device = "ide-cd,drive=" + c.drive + ",id=" + c.device + ",bus=ide." + strconv.Itoa(port)
 		}
-		drive, device := "media"+strconv.Itoa(i), "cd"+strconv.Itoa(i)
 		a = append(a,
-			"-drive", "if=none,id="+drive+",format=raw,readonly=on,file="+iso,
-			"-device", "ide-cd,drive="+drive+",id="+device+",bus=ide."+strconv.Itoa(port)+bootindex(device))
-		port++
+			"-drive", "if=none,id="+c.drive+",format=raw,readonly=on,file="+c.file,
+			"-device", device+bootindex(c.device))
 	}
 
 	nic := "virtio-net-pci,netdev=net0,id=" + devNIC
@@ -798,10 +820,10 @@ func readReturn(br *bufio.Reader) error {
 	}
 }
 
-// ensureFirmware resolves the OVMF pair and gives the VM its private,
-// writable variables copy.
+// ensureFirmware resolves the UEFI firmware pair and gives the VM its
+// private, writable variables copy.
 func (m *Machine) ensureFirmware() error {
-	code, vars, err := findOVMF(m.o.OVMFCode, m.o.OVMFVars)
+	code, vars, err := findFirmware(m.o.Arch, m.o.OVMFCode, m.o.OVMFVars)
 	if err != nil {
 		return err
 	}
@@ -811,37 +833,30 @@ func (m *Machine) ensureFirmware() error {
 	}
 	raw, err := os.ReadFile(vars)
 	if err != nil {
-		return fmt.Errorf("qemu: read OVMF vars template: %w", err)
+		return fmt.Errorf("qemu: read UEFI vars template: %w", err)
 	}
 	return os.WriteFile(m.varsPath(), raw, 0o600)
 }
 
-// ovmfPairs are the distro locations worth probing, in preference order.
-var ovmfPairs = [][2]string{
-	{"/usr/share/edk2/ovmf/OVMF_CODE.fd", "/usr/share/edk2/ovmf/OVMF_VARS.fd"},
-	{"/usr/share/OVMF/OVMF_CODE.fd", "/usr/share/OVMF/OVMF_VARS.fd"},
-	{"/usr/share/OVMF/OVMF_CODE_4M.fd", "/usr/share/OVMF/OVMF_VARS_4M.fd"},
-	{"/usr/share/edk2-ovmf/x64/OVMF_CODE.fd", "/usr/share/edk2-ovmf/x64/OVMF_VARS.fd"},
-}
-
-// findOVMF resolves the firmware pair: explicit options win, then the
-// PK_METAL_OVMF_CODE/PK_METAL_OVMF_VARS environment, then the probe list.
-func findOVMF(code, vars string) (string, string, error) {
+// findFirmware resolves the firmware pair of arch: explicit options win, then
+// the PK_METAL_OVMF_CODE/PK_METAL_OVMF_VARS environment, then the probe list.
+func findFirmware(arch, code, vars string) (string, string, error) {
 	if code == "" {
 		code, vars = os.Getenv("PK_METAL_OVMF_CODE"), os.Getenv("PK_METAL_OVMF_VARS")
 	}
 	if code != "" {
 		if vars == "" {
-			return "", "", errors.New("qemu: OVMF code given without its vars template")
+			return "", "", errors.New("qemu: UEFI firmware code given without its vars template")
 		}
 		return code, vars, nil
 	}
-	for _, p := range ovmfPairs {
+	pairs := firmwarePairs(arch)
+	for _, p := range pairs {
 		if fileReadable(p[0]) && fileReadable(p[1]) {
 			return p[0], p[1], nil
 		}
 	}
-	return "", "", fmt.Errorf("qemu: no OVMF firmware found (probed %v; set PK_METAL_OVMF_CODE/PK_METAL_OVMF_VARS)", ovmfPairs)
+	return "", "", fmt.Errorf("qemu: no UEFI firmware for %s found (probed %v; set PK_METAL_OVMF_CODE/PK_METAL_OVMF_VARS)", arch, pairs)
 }
 
 func fileReadable(path string) bool {
@@ -870,20 +885,4 @@ func (m *Machine) logTail() string {
 	}
 	raw, _ := io.ReadAll(f)
 	return string(raw)
-}
-
-// qemuBinary names the QEMU system emulator: $PK_METAL_QEMU when set, else
-// qemu-system-x86_64 on PATH, else RHEL's /usr/libexec/qemu-kvm, which
-// RHEL ships off PATH and under another name.
-func qemuBinary() string {
-	if b := os.Getenv("PK_METAL_QEMU"); b != "" {
-		return b
-	}
-	if _, err := exec.LookPath("qemu-system-x86_64"); err == nil {
-		return "qemu-system-x86_64"
-	}
-	if _, err := os.Stat("/usr/libexec/qemu-kvm"); err == nil {
-		return "/usr/libexec/qemu-kvm"
-	}
-	return "qemu-system-x86_64"
 }

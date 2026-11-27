@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -69,6 +70,33 @@ func TestRotationReadsTheManagedSecretFromTheAPIServer(t *testing.T) {
 	assert.True(t, g.state.Authenticate("pk-metal", promoted), "the promoted password still logs in")
 	assert.Equal(t, failed, g.d.failedLogins, "no login with the old password")
 	assert.NotContains(t, trail.String(), "Repaired", "nothing is repaired")
+}
+
+// The lanes after a promotion in the same pass dial with the promoted
+// password. Before, the ntp lane read the managed Secret from a cache that
+// had not seen the promotion yet, and the manager refused the replaced
+// password once on each rotation.
+func TestLanesAfterAPromotionReadTheManagedSecretFromTheAPIServer(t *testing.T) {
+	g := newRotationRig(t)
+	g.pass(t) // adoption
+	key := types.NamespacedName{Namespace: "pk-metal", Name: managedCredsName(g.ep.Name)}
+	before := g.secret(t)
+	g.age(t)
+	failed := g.d.failedLogins
+	g.r.Client = staleSecrets{Client: g.cl, old: map[types.NamespacedName]*corev1.Secret{key: before}}
+	g.r.APIReader = g.cl
+	meta.SetStatusCondition(&g.ep.Status.Conditions, metav1.Condition{
+		Type: metalv1alpha1.ConditionVerified, Status: metav1.ConditionTrue, Reason: "Matched"})
+
+	status, reason, msg, err := g.r.converge(t.Context(), g.ep, []metalv1alpha1.EndpointProfile{{
+		ObjectMeta: metav1.ObjectMeta{Name: "site"},
+		Spec:       metalv1alpha1.EndpointProfileSpec{Credentials: g.pol, NTP: &metalv1alpha1.NTPPolicy{Servers: []string{"192.0.2.10"}}},
+	}})
+
+	require.NoError(t, err)
+	assert.Equal(t, metav1.ConditionTrue, status, "%s: %s", reason, msg)
+	assert.NotEqual(t, string(before.Data["password"]), string(g.secret(t).Data["password"]), "the pass rotated")
+	assert.Equal(t, failed, g.d.failedLogins, "no login with the replaced password")
 }
 
 // csrCounter counts the requests a csr-native manager is asked to make.

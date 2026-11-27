@@ -523,8 +523,8 @@ func runExecutorCase(t *testing.T, seed uint64, image func(string) string, image
 			Client:               api,
 			CredentialsNamespace: "pk-metal",
 			Recorder:             events.NewFakeRecorder(1000),
-			Connect: func(context.Context, *metalv1alpha1.Host) (bmc.Client, string, string, string, error) {
-				return rec, "1", "", "", nil
+			Connect: func(context.Context, *metalv1alpha1.Host) (bmc.Client, string, error) {
+				return rec, "1", nil
 			},
 			Media:          media,
 			Store:          mediaStore,

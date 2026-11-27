@@ -10,7 +10,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
 	"github.com/dennisklein/platform-kit/metal/internal/bmc"
@@ -29,40 +28,21 @@ func managerProfiles(profiles []metalv1alpha1.FirmwareProfile) []metalv1alpha1.F
 }
 
 // mergeSystemFirmware resolves the system targets of the matched profiles,
-// per component, with the same layering as everything else: (layer, name)
-// order, a later layer overrides the whole target, two profiles on one
-// layer that disagree on a component are a conflict.
+// per component, with the same layering as everything else (mergeLayered):
+// a later layer overrides the whole target of a component.
 func mergeSystemFirmware(profiles []metalv1alpha1.FirmwareProfile) ([]metalv1alpha1.SystemFirmwareTarget, []string) {
-	sorted := slices.Clone(profiles)
-	slices.SortFunc(sorted, func(a, b metalv1alpha1.FirmwareProfile) int {
-		if c := int(a.Spec.Layer) - int(b.Spec.Layer); c != 0 {
-			return c
-		}
-		return strings.Compare(a.Name, b.Name)
-	})
-	type won struct {
-		target  metalv1alpha1.SystemFirmwareTarget
-		profile string
-		layer   int32
-	}
-	by := map[string]won{}
-	var conflicts []string
-	for _, p := range sorted {
+	var in []layered[metalv1alpha1.SystemFirmwareTarget]
+	for _, p := range profiles {
 		for _, t := range p.Spec.System {
-			if prev, ok := by[t.Component]; ok && prev.layer == p.Spec.Layer && prev.target != t {
-				conflicts = append(conflicts, fmt.Sprintf("profiles %s and %s disagree on component %s on layer %d",
-					prev.profile, p.Name, t.Component, p.Spec.Layer))
-				continue
-			}
-			by[t.Component] = won{t, p.Name, p.Spec.Layer}
+			in = append(in, layered[metalv1alpha1.SystemFirmwareTarget]{key: t.Component, profile: p.Name, layer: p.Spec.Layer, value: t})
 		}
 	}
-	out := make([]metalv1alpha1.SystemFirmwareTarget, 0, len(by))
-	for _, w := range by {
-		out = append(out, w.target)
+	won, conflicts := mergeLayered(in, func(a, b metalv1alpha1.SystemFirmwareTarget) bool { return a == b })
+	out := make([]metalv1alpha1.SystemFirmwareTarget, 0, len(won))
+	for _, w := range won {
+		out = append(out, w.value)
 	}
 	slices.SortFunc(out, func(a, b metalv1alpha1.SystemFirmwareTarget) int { return strings.Compare(a.Component, b.Component) })
-	slices.Sort(conflicts)
 	return out, conflicts
 }
 
@@ -134,7 +114,7 @@ func (r *ConvergenceReconciler) systemFirmware(ctx context.Context, host *metalv
 	targets, conflicts := mergeSystemFirmware(profiles)
 	cond := metalv1alpha1.ConditionSystemFirmwareConverged
 	if len(targets) == 0 && len(conflicts) == 0 {
-		if err := r.withdrawObsolete(ctx, host.Status.SystemFirmwareProposed); err != nil {
+		if err := r.withdrawPlan(ctx, &host.Status.SystemFirmwareProposed, whyMovedOn); err != nil {
 			return false, err
 		}
 		meta.RemoveStatusCondition(&host.Status.Conditions, cond)
@@ -187,62 +167,21 @@ func (r *ConvergenceReconciler) systemFirmware(ctx context.Context, host *metalv
 		return false, nil
 	}
 
-	node, nodeHold, err := r.installedNode(ctx, host)
-	if err != nil {
-		return false, err
-	}
-	if nodeHold != "" {
-		if err := r.withdrawPlan(ctx, &host.Status.SystemFirmwareProposed); err != nil {
-			return false, err
-		}
-		setCond(cond, metav1.ConditionFalse, metalv1alpha1.ReasonInstalledNodeMissing, what+"; "+nodeHold)
-		return false, nil
-	}
-	hash := disruptiveHash(stages, node)
-	if plan := host.Status.SystemFirmwareProposed; plan != nil && plan.PlanHash == hash {
-		reason, msg, again, err := r.planVerdict(ctx, plan)
-		if err != nil {
-			return false, err
-		}
-		if !again {
-			setCond(cond, metav1.ConditionFalse, reason, msg)
-			return false, nil
-		}
-		host.Status.SystemFirmwareProposed = nil
-	}
-	if !push {
-		setCond(cond, metav1.ConditionFalse, metalv1alpha1.ReasonNoUpdateTransport,
-			what+" — no path advertises the proven multipart-push transport")
-		return false, nil
-	}
-	if err := r.withdrawObsolete(ctx, host.Status.SystemFirmwareProposed); err != nil {
-		return false, err
-	}
-	// Applying it reboots the machine, like a BIOS change.
-	guard, err := r.Self.Check(ctx, host)
-	if err != nil {
-		return false, err
-	}
-	if guard != "" {
-		setCond(cond, metav1.ConditionFalse, metalv1alpha1.ReasonSelfDisruption, what+"; no firmware change is proposed: "+guard)
-		return false, nil
-	}
 	stage := make([]metalv1alpha1.HostOperationAction, 0, len(stages))
 	for _, st := range stages {
 		stage = append(stage, metalv1alpha1.HostOperationAction{StageFirmware: &metalv1alpha1.StageFirmwareAction{
 			Image: st.Image, Version: st.Version, Targets: st.Entries,
 		}})
 	}
-	op := r.proposal(host.Name, "sysfw", hash, metalv1alpha1.OperationReasonSystemFirmwareConvergence, disruptivePlan(node, stage))
-	if op.Spec.RequestedBy, err = convergenceRequesters(ctx, r.Client, host, profiles); err != nil {
+	reason, msg, err := r.proposePlan(ctx, host, lanePlan{
+		memory: &host.Status.SystemFirmwareProposed, domain: "sysfw",
+		reason: metalv1alpha1.OperationReasonSystemFirmwareConvergence, desired: stages, stage: stage,
+		reboots: true, drift: what, noTransport: !push,
+		requesters: func() ([]string, error) { return convergenceRequesters(ctx, r.Client, host, profiles) },
+	})
+	if err != nil {
 		return false, err
 	}
-	if err := r.propose(ctx, op); err != nil {
-		return false, err
-	}
-	logf.FromContext(ctx).Info("proposed operation", "operation", op.Namespace+"/"+op.Name, "host", host.Name, "reason", op.Spec.Reason)
-	host.Status.SystemFirmwareProposed = &metalv1alpha1.ProposedPlan{PlanHash: hash, Operation: op.Namespace + "/" + op.Name}
-	setCond(cond, metav1.ConditionFalse, metalv1alpha1.ReasonAwaitingOperation,
-		fmt.Sprintf("%s; operation %s/%s proposed", what, op.Namespace, op.Name))
+	setCond(cond, metav1.ConditionFalse, reason, msg)
 	return false, nil
 }

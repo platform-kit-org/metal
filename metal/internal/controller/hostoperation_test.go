@@ -116,8 +116,8 @@ func executorFor(t *testing.T, fixture string, objs ...client.Object) (*HostOper
 	r := &HostOperationReconciler{
 		Client:   cl,
 		Recorder: events.NewFakeRecorder(100),
-		Connect: func(context.Context, *metalv1alpha1.Host) (bmc.Client, string, string, string, error) {
-			return rec, f.Systems[0].ID, "", "", nil
+		Connect: func(context.Context, *metalv1alpha1.Host) (bmc.Client, string, error) {
+			return rec, f.Systems[0].ID, nil
 		},
 		PowerSettle: 50 * time.Millisecond,
 	}
@@ -542,8 +542,8 @@ func TestRemountLeavesAReplacedMediumAlone(t *testing.T) {
 func TestUnreachableMachineHoldsTheStep(t *testing.T) {
 	for name, breakIt := range map[string]func(r *HostOperationReconciler, rec *recordingClient){
 		"no reachable path": func(r *HostOperationReconciler, _ *recordingClient) {
-			r.Connect = func(context.Context, *metalv1alpha1.Host) (bmc.Client, string, string, string, error) {
-				return nil, "", metalv1alpha1.ReasonNoReachablePath, "host host-a has no reachable management path", nil
+			r.Connect = func(context.Context, *metalv1alpha1.Host) (bmc.Client, string, error) {
+				return nil, "", &holdError{reason: metalv1alpha1.ReasonNoReachablePath, msg: "host host-a has no reachable management path"}
 			}
 		},
 		"deadline": func(_ *HostOperationReconciler, rec *recordingClient) {
@@ -595,8 +595,8 @@ func TestStartHeldByAnUnreachableBMCComesBack(t *testing.T) {
 	op := preClearedOp(metalv1alpha1.HostOperationAction{PowerOff: &metalv1alpha1.PowerOffAction{}})
 	r, _, _ := executorFor(t, "huawei-2288h-v5", op)
 	connect := r.Connect
-	r.Connect = func(context.Context, *metalv1alpha1.Host) (bmc.Client, string, string, string, error) {
-		return nil, "", "", "", fmt.Errorf("connect: %w", &schemas.Error{HTTPReturnedStatusCode: http.StatusServiceUnavailable})
+	r.Connect = func(context.Context, *metalv1alpha1.Host) (bmc.Client, string, error) {
+		return nil, "", fmt.Errorf("connect: %w", &schemas.Error{HTTPReturnedStatusCode: http.StatusServiceUnavailable})
 	}
 
 	key := client.ObjectKeyFromObject(op)
@@ -612,6 +612,56 @@ func TestStartHeldByAnUnreachableBMCComesBack(t *testing.T) {
 
 	r.Connect = connect
 	require.True(t, opSucceeded(runOp(t, r)))
+}
+
+// A start held on the way to the BMC says why. Before, every hold was
+// NoReachablePath, and the error of a path that refused the session was
+// dropped.
+func TestStartHeldNamesItsCause(t *testing.T) {
+	f, err := sim.LoadFixture("generic") // accounts enforced: admin/admin-pass
+	require.NoError(t, err)
+	srv := httptest.NewTLSServer(sim.NewServer(sim.NewState(f)))
+	t.Cleanup(srv.Close)
+	secret := func(name, pass string) *corev1.Secret {
+		return &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "pk-metal", Name: name},
+			Data: map[string][]byte{"username": []byte("admin"), "password": []byte(pass)}}
+	}
+	for name, tc := range map[string]struct {
+		factory     *corev1.LocalObjectReference
+		objs        []client.Object
+		reason, msg string
+	}{
+		"no credentials": {reason: "CredentialsMissing", msg: "spec.credentialsRef is not set"},
+		"refused password": {
+			factory: &corev1.LocalObjectReference{Name: "bmc-a-factory"},
+			objs:    []client.Object{secret("bmc-a-factory", "admin-pass"), secret(managedCredsName("bmc-a"), "wrong")},
+			reason:  metalv1alpha1.ReasonNoReachablePath, msg: "401",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			op := preClearedOp(metalv1alpha1.HostOperationAction{PowerOff: &metalv1alpha1.PowerOffAction{}})
+			ep := &metalv1alpha1.ManagementEndpoint{ObjectMeta: metav1.ObjectMeta{Name: "bmc-a"},
+				Spec: metalv1alpha1.ManagementEndpointSpec{Address: srv.URL, CredentialsRef: tc.factory,
+					TLS: &metalv1alpha1.EndpointTLS{InsecureSkipVerify: true}}}
+			r, _, _ := executorFor(t, "generic", append(tc.objs, op, ep)...)
+			r.Connect, r.CredentialsNamespace = nil, "pk-metal"
+			host := &metalv1alpha1.Host{}
+			require.NoError(t, r.Get(t.Context(), client.ObjectKey{Name: "host-a"}, host))
+			host.Status.ManagedBy = []metalv1alpha1.ManagementPath{{
+				EndpointRef: metalv1alpha1.Reference{Name: "bmc-a"}, SystemID: f.Systems[0].ID, Reachable: true}}
+			require.NoError(t, r.Update(t.Context(), host))
+
+			key := client.ObjectKeyFromObject(op)
+			_, err := r.Reconcile(t.Context(), ctrl.Request{NamespacedName: key})
+			require.NoError(t, err)
+			got := &metalv1alpha1.HostOperation{}
+			require.NoError(t, r.Get(t.Context(), key, got))
+			ex := meta.FindStatusCondition(got.Status.Conditions, metalv1alpha1.ConditionExecuted)
+			require.NotNil(t, ex)
+			assert.Equal(t, tc.reason, ex.Reason, ex.Message)
+			assert.Contains(t, ex.Message, tc.msg)
+		})
+	}
 }
 
 func TestPassStopsBeforeItsBudgetRunsOut(t *testing.T) {

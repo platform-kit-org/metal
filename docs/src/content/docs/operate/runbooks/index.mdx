@@ -36,7 +36,7 @@ Each alert links to one runbook in its `runbook_url` annotation.
 | You see | Where | Runbook |
 | --- | --- | --- |
 | `Mismatch`, `SerialMismatch`, `MACMismatch`, `IdentityDiverged` | Endpoint phase, `Verified=False` | [](rb:host-mismatch) |
-| `Unreachable`, `Reachable=False`, `NoReachablePath` | Endpoint phase, operation | [](rb:bmc-unreachable) |
+| `Unreachable`, `Reachable=False`, `NoReachablePath`, `CredentialsMissing`, `CAMissing`, `TLSKeyNotPinned` | Endpoint phase, operation | [](rb:bmc-unreachable) |
 | `NoLedgerEntry`, `NoBMCMac`, `LedgerEntryInvalid` | Asset `Materialized=False` | [](rb:bmc-unreachable) |
 | `Ambiguous`, `AmbiguousSystem`, `HostAlreadyClaimed` | Claim phase, `BLOCKED` | [](rb:claim-ambiguous) |
 | `InstalledNodeRemains`, `DiskNotWiped` | Host `DiskWiped=False`, claim | [](rb:disk-not-wiped) |

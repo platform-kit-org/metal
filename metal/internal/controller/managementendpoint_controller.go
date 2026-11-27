@@ -156,7 +156,8 @@ func (r *ManagementEndpointReconciler) observe(ctx context.Context, ep *metalv1a
 	if pinsKeys(ep) && !r.checkPin(ctx, ep) {
 		return
 	}
-	cfg, reason, err := r.connectConfig(ctx, ep)
+	// The read-only rail: this reconciler writes nothing to a BMC.
+	cfg, reason, err := endpointClientConfig(ctx, r.Client, r.CredentialsNamespace, ep, true)
 	if err != nil {
 		setCond(metalv1alpha1.ConditionReachable, metav1.ConditionFalse, reason, err.Error())
 		return
@@ -205,12 +206,6 @@ func (r *ManagementEndpointReconciler) noteAuthentication(ctx context.Context, e
 	ep.Status.Authentication = auth
 }
 
-// connectConfig resolves the read-only observation config (the read-only rail — nothing
-// in the endpoint reconciler writes to a BMC).
-func (r *ManagementEndpointReconciler) connectConfig(ctx context.Context, ep *metalv1alpha1.ManagementEndpoint) (gofishclient.Config, string, error) {
-	return endpointClientConfig(ctx, r.Client, r.CredentialsNamespace, ep, true)
-}
-
 // managedCredsName is the managed-credential Secret an EndpointProfile
 // rotation maintains for this endpoint (operator namespace, owned by the
 // endpoint — GC'd with it).
@@ -221,7 +216,7 @@ func managedCredsName(epName string) string { return "endpoint-creds-" + epName 
 // operation executor, and the convergence lanes. The managed-credential
 // Secret, when present, wins over spec.credentialsRef (the factory
 // break-glass). The reason accompanies a non-nil error as a condition reason.
-func endpointClientConfig(ctx context.Context, c client.Client, credentialsNamespace string, ep *metalv1alpha1.ManagementEndpoint, readOnly bool) (gofishclient.Config, string, error) {
+func endpointClientConfig(ctx context.Context, c client.Reader, credentialsNamespace string, ep *metalv1alpha1.ManagementEndpoint, readOnly bool) (gofishclient.Config, string, error) {
 	cfg, reason, err := endpointTLSConfig(ctx, c, credentialsNamespace, ep, readOnly)
 	if err != nil {
 		return cfg, reason, err
@@ -245,7 +240,7 @@ func endpointClientConfig(ctx context.Context, c client.Client, credentialsNames
 // endpointTLSConfig resolves everything but the credentials — address and
 // TLS policy. The convergence lanes use it directly with explicit
 // credentials (probing a specific password, repairing through the factory).
-func endpointTLSConfig(ctx context.Context, c client.Client, credentialsNamespace string, ep *metalv1alpha1.ManagementEndpoint, readOnly bool) (gofishclient.Config, string, error) {
+func endpointTLSConfig(ctx context.Context, c client.Reader, credentialsNamespace string, ep *metalv1alpha1.ManagementEndpoint, readOnly bool) (gofishclient.Config, string, error) {
 	cfg := gofishclient.Config{
 		Endpoint: ep.Spec.Address,
 		ReadOnly: readOnly,
@@ -280,7 +275,7 @@ var errNoCredentials = errors.New("needs username and password keys")
 // secretCreds reads username/password out of one credentials Secret. The
 // NotFound goes back verbatim so callers can distinguish an absent Secret
 // (fall back / adopt) from a malformed one (hold).
-func secretCreds(ctx context.Context, c client.Client, namespace, name string) (string, string, error) {
+func secretCreds(ctx context.Context, c client.Reader, namespace, name string) (string, string, error) {
 	creds := &corev1.Secret{}
 	key := types.NamespacedName{Namespace: namespace, Name: name}
 	if err := c.Get(ctx, key, creds); err != nil {

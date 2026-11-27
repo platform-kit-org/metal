@@ -44,7 +44,8 @@ Read the `BLOCKED` value and the note line in [](cli:status). Then find it in th
 | `EtcdRiskRefused` | The removal leaves etcd unsafe | Choose an odd size, or set `metal.platform-kit.org/ack-etcd-risk`. See [](howto:scale-control-planes). |
 | `RemovalWaiting` | Another control plane leaves first | Wait. |
 | `RolloutRefused` | The rollout approval does not cover this operation | See [](rb:rollout-paused). The machine did not change. |
-| `NoReachablePath` | The BMC does not answer | [](rb:bmc-unreachable) |
+| `NoReachablePath` | No BMC path opens a session. The message gives the error of each path. | [](rb:bmc-unreachable) |
+| `CredentialsMissing`, `CAMissing`, `TLSKeyNotPinned` | The operator cannot read the credentials, the CA or the pinned key of the BMC | [](rb:bmc-unreachable) |
 
 ## Verify
 

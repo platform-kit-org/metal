@@ -38,11 +38,11 @@ It never changes a machine itself. It proposes a [](kind:HostOperation), and a p
 
 | Kind | Relation | Why a change starts a pass |
 | --- | --- | --- |
-| [](kind:BiosSettings) | `For` | The desired settings changed. |
-| [](kind:Host) | `Watches`, same name | Labels, claim or maintenance changed. |
+| [](kind:BiosSettings) | `For`, spec changes only | The desired settings changed. |
+| [](kind:Host) | `Watches`, same name; spec, labels, annotations and `status.managedBy` only | The claim, the profile selection, maintenance or a management path changed. The conditions of this reconciler start no pass. |
 | [](kind:BiosProfile), [](kind:FirmwareProfile) | `Watches`, all Hosts | A profile changed. Matching is per Host. |
 | [](kind:ManagementEndpoint) | `Watches`, the Hosts it fronts | A new firmware version arrived through the poll. |
-| [](kind:HostOperation) | `Watches` | A proposal was approved, failed or succeeded. |
+| [](kind:HostOperation) | `Watches`; spec, annotations and the status of `Approved` and `Executed` only | A proposal came or went, got an approval or the retry mark, failed or succeeded. A step of the executor starts no pass. |
 | [](kind:HostClaim) | `Watches` | A claim changes how a reboot must happen. |
 | [](kind:TalosNode) | `Watches`, spec changes only | A node came or went. Its status moves too often. |
 
@@ -80,9 +80,9 @@ It never changes a machine itself. It proposes a [](kind:HostOperation), and a p
   <dt>Firmware before BIOS</dt>
   <dd>The BIOS lane waits with `AwaitingFirmware` until both firmware lanes are converged.</dd>
   <dt>Old install on disk</dt>
-  <dd>The controller does not power on a Host with `metal.platform-kit.org/disk-not-wiped` for a BIOS change. It would boot the old node back into its cluster.</dd>
+  <dd>The controller does not power on a Host with `metal.platform-kit.org/disk-not-wiped` for a BIOS or system firmware change. It would boot the old node back into its cluster.</dd>
   <dt>Self guard</dt>
-  <dd>The controller does not propose a BIOS change on a machine that the operator runs on. See [](ctrl:protection).</dd>
+  <dd>The controller does not propose a BIOS or system firmware change on a machine that the operator runs on. See [](ctrl:protection).</dd>
 </dl>
 
 ## Writes
@@ -99,8 +99,8 @@ It never changes a machine itself. It proposes a [](kind:HostOperation), and a p
 | Condition | True | False or Unknown |
 | --- | --- | --- |
 | `FirmwareConverged` | `InSync` | `ProfileConflict`, `NoUpdateTransport`, `AwaitingOperation`, `OperationFailed`, `NoReachablePath` |
-| `SystemFirmwareConverged` | `InSync` | `ProfileConflict`, `NoMatchingComponent`, `AwaitingFirmware`, `InstalledNodeMissing`, `NoUpdateTransport`, `SelfDisruption`, `AwaitingOperation`, `OperationFailed`, `NoReachablePath` |
-| `BiosConverged` | `InSync` | `ProfileConflict`, `SchemaViolation`, `AwaitingFirmware`, `InstalledNodeMissing`, `DiskNotWiped`, `SelfDisruption`, `AwaitingOperation`, `NoReachablePath` |
+| `SystemFirmwareConverged` | `InSync` | `ProfileConflict`, `NoMatchingComponent`, `AwaitingFirmware`, `InstalledNodeMissing`, `NoUpdateTransport`, `DiskNotWiped`, `SelfDisruption`, `AwaitingOperation`, `OperationFailed`, `NoReachablePath` |
+| `BiosConverged` | `InSync` | `ProfileConflict`, `SchemaViolation`, `AwaitingFirmware`, `InstalledNodeMissing`, `DiskNotWiped`, `SelfDisruption`, `AwaitingOperation`, `NoReachablePath`, `CredentialsMissing`, `CAMissing`, `TLSKeyNotPinned`, `BiosReadFailed` |
 
 ## Failure modes
 

@@ -76,6 +76,8 @@ type EndpointConvergenceReconciler struct {
 	APIReader client.Reader
 	// Dial opens the sessions to the endpoint; nil dials over gofish.
 	Dial Dialer
+	// Probe reads the certificate the BMC presents; nil reads it over TLS.
+	Probe TLSProbe
 	// Audit writes a line for each change the lanes make to a BMC: a
 	// password set, an account disabled, an identity pushed, a restart.
 	Audit *audit.Logger
@@ -382,12 +384,7 @@ func (r *EndpointConvergenceReconciler) credentials(ctx context.Context, ep *met
 
 	var failures []string
 	if curOK {
-		cfg, _, err := endpointTLSConfig(ctx, r.Client, r.CredentialsNamespace, ep, false)
-		if err != nil {
-			return "", "", "", err
-		}
-		cfg.Username, cfg.Password = cur.user, cur.pass
-		setErr := withSession(ctx, r.Dial, cfg, func(ctx context.Context, cl bmc.Client) error {
+		setErr := r.sessionAs(ctx, ep, cur, false, func(ctx context.Context, cl bmc.Client) error {
 			return cl.EnsureAccount(ctx, next.user, next.pass)
 		})
 		if landed(setErr) {
@@ -500,12 +497,7 @@ func (r *EndpointConvergenceReconciler) promote(ctx context.Context, ep *metalv1
 // session of the new account, which has just been seen to log in. The
 // annotation goes only once the manager took the change.
 func (r *EndpointConvergenceReconciler) retire(ctx context.Context, ep *metalv1alpha1.ManagementEndpoint, sec *corev1.Secret, cur managedCred, old string) (metav1.ConditionStatus, string, string, error) {
-	cfg, _, err := endpointTLSConfig(ctx, r.Client, r.CredentialsNamespace, ep, false)
-	if err != nil {
-		return "", "", "", err
-	}
-	cfg.Username, cfg.Password = cur.user, cur.pass
-	if err := withSession(ctx, r.Dial, cfg, func(ctx context.Context, cl bmc.Client) error {
+	if err := r.sessionAs(ctx, ep, cur, false, func(ctx context.Context, cl bmc.Client) error {
 		return cl.DisableAccount(ctx, old)
 	}); err != nil {
 		return metav1.ConditionFalse, metalv1alpha1.ReasonAccountRetireFailed,
@@ -534,9 +526,11 @@ func (r *EndpointConvergenceReconciler) isFactoryAccount(ctx context.Context, ep
 }
 
 // ntp converges the manager's time sources: read, write on drift, prove by
-// re-reading — the write succeeding proves nothing.
+// re-reading — the write succeeding proves nothing. It reads the managed
+// credentials from the API server: the credentials lane can have promoted a
+// new password in this pass, and the cache can still hold the old one.
 func (r *EndpointConvergenceReconciler) ntp(ctx context.Context, ep *metalv1alpha1.ManagementEndpoint, pol *metalv1alpha1.NTPPolicy) (metav1.ConditionStatus, string, string, error) {
-	cfg, reason, err := endpointClientConfig(ctx, r.Client, r.CredentialsNamespace, ep, false)
+	cfg, reason, err := endpointClientConfig(ctx, r.reader(), r.CredentialsNamespace, ep, false)
 	if err != nil {
 		return metav1.ConditionFalse, reason, err.Error(), nil
 	}
@@ -598,12 +592,7 @@ func (r *EndpointConvergenceReconciler) probe(ctx context.Context, ep *metalv1al
 	if wait := r.logins.wait(key); wait > 0 {
 		return fmt.Errorf("the manager refused this password for %s before; the next login with it is in %s", user, wait.Round(time.Second))
 	}
-	cfg, _, err := endpointTLSConfig(ctx, r.Client, r.CredentialsNamespace, ep, true)
-	if err != nil {
-		return err
-	}
-	cfg.Username, cfg.Password = user, pass
-	err = withSession(ctx, r.Dial, cfg, func(ctx context.Context, cl bmc.Client) error {
+	err := r.sessionAs(ctx, ep, managedCred{user, pass}, true, func(ctx context.Context, cl bmc.Client) error {
 		_, err := cl.Manager(ctx)
 		return err
 	})
@@ -626,12 +615,7 @@ func (r *EndpointConvergenceReconciler) repair(ctx context.Context, ep *metalv1a
 	if err != nil {
 		return fmt.Errorf("factory credentials: %w", err)
 	}
-	cfg, _, err := endpointTLSConfig(ctx, r.Client, r.CredentialsNamespace, ep, false)
-	if err != nil {
-		return err
-	}
-	cfg.Username, cfg.Password = fuser, fpass
-	if err := withSession(ctx, r.Dial, cfg, func(ctx context.Context, cl bmc.Client) error {
+	if err := r.sessionAs(ctx, ep, managedCred{fuser, fpass}, false, func(ctx context.Context, cl bmc.Client) error {
 		return cl.EnsureAccount(ctx, user, pass)
 	}); err != nil {
 		return fmt.Errorf("factory session: %w", err)
@@ -642,30 +626,26 @@ func (r *EndpointConvergenceReconciler) repair(ctx context.Context, ep *metalv1a
 	return nil
 }
 
-// matchedEndpointProfiles selects profiles against the endpoint's labels,
-// sorted by (layer, name) — merge order.
+// sessionAs runs fn in a session to the endpoint as the given account.
+func (r *EndpointConvergenceReconciler) sessionAs(ctx context.Context, ep *metalv1alpha1.ManagementEndpoint, as managedCred, readOnly bool,
+	fn func(context.Context, bmc.Client) error) error {
+	cfg, _, err := endpointTLSConfig(ctx, r.Client, r.CredentialsNamespace, ep, readOnly)
+	if err != nil {
+		return err
+	}
+	cfg.Username, cfg.Password = as.user, as.pass
+	return withSession(ctx, r.Dial, cfg, fn)
+}
+
+// matchedEndpointProfiles selects profiles against the endpoint's labels.
 func (r *EndpointConvergenceReconciler) matchedEndpointProfiles(ctx context.Context, ep *metalv1alpha1.ManagementEndpoint) ([]metalv1alpha1.EndpointProfile, error) {
 	list := &metalv1alpha1.EndpointProfileList{}
 	if err := r.List(ctx, list); err != nil {
 		return nil, err
 	}
-	var matched []metalv1alpha1.EndpointProfile
-	for _, p := range list.Items {
-		ok, err := selectorMatches(p.Spec.Match, ep.Labels)
-		if err != nil {
-			return nil, fmt.Errorf("profile %s: %w", p.Name, err)
-		}
-		if ok {
-			matched = append(matched, p)
-		}
-	}
-	slices.SortFunc(matched, func(a, b metalv1alpha1.EndpointProfile) int {
-		if a.Spec.Layer != b.Spec.Layer {
-			return int(a.Spec.Layer - b.Spec.Layer)
-		}
-		return strings.Compare(a.Name, b.Name)
+	return selected(list.Items, ep.Labels, func(p *metalv1alpha1.EndpointProfile) (string, metav1.LabelSelector) {
+		return p.Name, p.Spec.Match
 	})
-	return matched, nil
 }
 
 // endpointDesired is the merged endpoint configuration — one winner per
@@ -676,9 +656,9 @@ type endpointDesired struct {
 	tls         *metalv1alpha1.IdentityPolicy
 }
 
-// mergeEndpointProfiles merges by (layer, name): a later layer overrides a
-// whole stanza; two same-layer profiles disagreeing on a stanza is a
-// conflict that holds the endpoint whole. Profiles arrive sorted.
+// mergeEndpointProfiles merges stanza by stanza (mergeLayered): a later layer
+// overrides a whole stanza, and a conflict on one stanza holds the endpoint
+// whole.
 func mergeEndpointProfiles(profiles []metalv1alpha1.EndpointProfile) (endpointDesired, string) {
 	var d endpointDesired
 	var conflict string
@@ -700,24 +680,15 @@ func mergeEndpointProfiles(profiles []metalv1alpha1.EndpointProfile) (endpointDe
 	return d, ""
 }
 
-// mergeStanza runs the per-stanza merge rule: last writer in (layer, name)
-// order wins the whole stanza, same-layer disagreement is a conflict.
+// mergeStanza merges one stanza of the profiles.
 func mergeStanza[T any](profiles []metalv1alpha1.EndpointProfile, stanza string, get func(*metalv1alpha1.EndpointProfileSpec) *T) (*T, string) {
-	var winner *T
-	var layer int32
-	var name string
+	var in []layered[*T]
 	for i := range profiles {
-		p := &profiles[i]
-		v := get(&p.Spec)
-		if v == nil {
-			continue
+		if v := get(&profiles[i].Spec); v != nil {
+			in = append(in, layered[*T]{key: stanza, profile: profiles[i].Name, layer: profiles[i].Spec.Layer, value: v})
 		}
-		if winner != nil && layer == p.Spec.Layer && !equality.Semantic.DeepEqual(winner, v) {
-			return nil, fmt.Sprintf("%s: profiles %s and %s disagree on layer %d", stanza, name, p.Name, p.Spec.Layer)
-		}
-		winner, layer, name = v, p.Spec.Layer, p.Name
 	}
-	return winner, ""
+	return mergeOne(in, func(a, b *T) bool { return equality.Semantic.DeepEqual(a, b) })
 }
 
 // rotationDue reports whether the managed password has outlived the

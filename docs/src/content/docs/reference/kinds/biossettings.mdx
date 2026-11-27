@@ -76,7 +76,9 @@ The steps with `*` are for a control plane only. Without a node, the operation i
 | `SelfDisruption` | False | The machine runs the operator. The operator proposes no change. |
 | `DiskNotWiped` | False | The machine can hold a released node. It is not powered on. |
 | `InstalledNodeMissing` | False | The Host runs a node that has no TalosNode. The operator cannot drain it. |
-| `NoReachablePath` | Unknown | The BMC does not answer. |
+| `NoReachablePath` | Unknown | No BMC path opens a session. The message gives the error of each path. |
+| `CredentialsMissing`, `CAMissing`, `TLSKeyNotPinned` | Unknown | The operator cannot read the credentials, the CA or the pinned key of the BMC. |
+| `BiosReadFailed` | Unknown | A session is open, but the read of the BIOS fails. |
 
 A deleted proposal refuses it. The operator makes a new proposal only after a profile changes.
 To try a failed proposal again, use [](cli:retry).

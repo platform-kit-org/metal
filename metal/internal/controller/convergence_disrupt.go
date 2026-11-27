@@ -127,29 +127,33 @@ func disruptiveHash(desired any, node *osv1alpha1.TalosNode) string {
 	}{desired, node.Name, string(node.Spec.Role)})
 }
 
+// The reasons withdrawPlan records in the audit trail.
+const (
+	whyMovedOn  = "the desired state moved on before anyone approved it"
+	whyNodeGone = "the node it was planned for is gone before anyone approved it"
+)
+
 // withdrawPlan takes back a plan's proposal while nobody approved it, and
-// forgets the plan when it did: the plan was made for a situation that is
-// gone, and a plan memory pointing at a withdrawn proposal would later read
-// as a person's refusal. An approved, running or finished operation stays,
-// and so does the memory of it.
-func (r *ConvergenceReconciler) withdrawPlan(ctx context.Context, plan **metalv1alpha1.ProposedPlan) error {
+// forgets the plan when it did. The plan was made for a situation that is
+// gone (the desired state moved on, or the node it drains), and a plan
+// memory that points at a withdrawn proposal would later read as a person's
+// refusal. An approved, running or finished operation stays, and so does the
+// memory of it: it is active work or history.
+func (r *ConvergenceReconciler) withdrawPlan(ctx context.Context, plan **metalv1alpha1.ProposedPlan, why string) error {
 	if *plan == nil {
 		return nil
 	}
 	ns, name, _ := strings.Cut((*plan).Operation, "/")
 	op := &metalv1alpha1.HostOperation{}
 	if err := r.Get(ctx, client.ObjectKey{Namespace: ns, Name: name}, op); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil
-		}
-		return err
+		return client.IgnoreNotFound(err)
 	}
 	if !op.AwaitsApproval() {
 		return nil
 	}
-	logf.FromContext(ctx).Info("withdrew proposal for a node that is gone", "operation", (*plan).Operation)
-	if err := deleteOp(ctx, r.Client, r.Audit, op, audit.DeleteWithdrawn,
-		"the node it was planned for is gone before anyone approved it", client.Preconditions{UID: &op.UID}); client.IgnoreNotFound(err) != nil {
+	logf.FromContext(ctx).Info("withdrew proposal", "operation", (*plan).Operation, "why", why)
+	if err := deleteOp(ctx, r.Client, r.Audit, op, audit.DeleteWithdrawn, why,
+		client.Preconditions{UID: &op.UID}); client.IgnoreNotFound(err) != nil {
 		return err
 	}
 	*plan = nil

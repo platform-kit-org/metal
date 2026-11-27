@@ -2,7 +2,6 @@ package controller
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -18,6 +17,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
@@ -26,6 +26,7 @@ import (
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
 	"github.com/dennisklein/platform-kit/metal/internal/audit"
 	"github.com/dennisklein/platform-kit/metal/internal/bmc"
+	"github.com/dennisklein/platform-kit/metal/internal/redact"
 )
 
 // proposalTTL marks a convergence proposal as one the operator may delete
@@ -42,11 +43,11 @@ const proposalTTL = int32(24 * 60 * 60)
 // depends on firmware). An unchanged planHash never spawns a second
 // operation: every hold below is alert-and-hold, unstuck by a profile edit.
 //
-// It holds its own read-only BMC session for the BIOS observation (attribute
-// maps are too big to cache on the endpoint), writes the Host's
-// FirmwareConverged/BiosConverged conditions and the firmware plan memory —
-// fields the HostReconciler leaves untouched — and is, with the executor, the
-// second deliberate opening of the read-only rail.
+// It reads the BMC only through a read-only session of its own, for the BIOS
+// observation (attribute maps are too big to cache on the endpoint). It
+// writes the Host's FirmwareConverged, SystemFirmwareConverged and
+// BiosConverged conditions and both firmware plan memories — fields the
+// HostReconciler leaves untouched.
 type ConvergenceReconciler struct {
 	client.Client
 	// Audit writes the audit trail; nil writes none.
@@ -155,35 +156,28 @@ func (r *ConvergenceReconciler) matchedProfiles(ctx context.Context, host *metal
 	if err := r.List(ctx, fw); err != nil {
 		return nil, nil, err
 	}
-	var matchedBios []metalv1alpha1.BiosProfile
-	for _, p := range bios.Items {
-		ok, err := selectorMatches(p.Spec.Match, host.Labels)
-		if err != nil {
-			return nil, nil, fmt.Errorf("profile %s: %w", p.Name, err)
-		}
-		if ok {
-			matchedBios = append(matchedBios, p)
-		}
+	matchedBios, err := selected(bios.Items, host.Labels, func(p *metalv1alpha1.BiosProfile) (string, metav1.LabelSelector) {
+		return p.Name, p.Spec.Match
+	})
+	if err != nil {
+		return nil, nil, err
 	}
-	var matchedFw []metalv1alpha1.FirmwareProfile
-	for _, p := range fw.Items {
-		ok, err := selectorMatches(p.Spec.Match, host.Labels)
-		if err != nil {
-			return nil, nil, fmt.Errorf("profile %s: %w", p.Name, err)
-		}
-		if ok {
-			matchedFw = append(matchedFw, p)
-		}
+	matchedFw, err := selected(fw.Items, host.Labels, func(p *metalv1alpha1.FirmwareProfile) (string, metav1.LabelSelector) {
+		return p.Name, p.Spec.Match
+	})
+	if err != nil {
+		return nil, nil, err
 	}
 	return matchedBios, matchedFw, nil
 }
 
-// firmware converges the manager firmware and reports whether the BIOS lane
-// may proceed (converged, or nothing desired). The observation is a pure
-// cluster-state join — the endpoint poll already serves the manager version.
+// firmware converges the manager firmware and reports whether the lanes
+// after it, system firmware and BIOS, may proceed (converged, or nothing
+// desired). The observation is a pure cluster-state join — the endpoint poll
+// already serves the manager version.
 func (r *ConvergenceReconciler) firmware(ctx context.Context, host *metalv1alpha1.Host, profiles []metalv1alpha1.FirmwareProfile, setCond func(string, metav1.ConditionStatus, string, string)) (bool, error) {
 	if len(profiles) == 0 {
-		if err := r.withdrawObsolete(ctx, host.Status.FirmwareProposed); err != nil {
+		if err := r.withdrawPlan(ctx, &host.Status.FirmwareProposed, whyMovedOn); err != nil {
 			return false, err
 		}
 		meta.RemoveStatusCondition(&host.Status.Conditions, metalv1alpha1.ConditionFirmwareConverged)
@@ -231,47 +225,19 @@ func (r *ConvergenceReconciler) firmware(ctx context.Context, host *metalv1alpha
 		return true, nil
 	}
 
-	hash := planHash(target)
-	if plan := host.Status.FirmwareProposed; plan != nil && plan.PlanHash == hash {
-		reason, msg, again, err := r.planVerdict(ctx, plan)
-		if err != nil {
-			return false, err
-		}
-		if !again {
-			setCond(metalv1alpha1.ConditionFirmwareConverged, metav1.ConditionFalse, reason, msg)
-			return false, nil
-		}
-		host.Status.FirmwareProposed = nil
-	}
-	if !push {
-		setCond(metalv1alpha1.ConditionFirmwareConverged, metav1.ConditionFalse,
-			metalv1alpha1.ReasonNoUpdateTransport,
-			drifted+" — no path advertises the proven multipart-push transport")
-		return false, nil
-	}
-	if err := r.withdrawObsolete(ctx, host.Status.FirmwareProposed); err != nil {
-		return false, err
-	}
-	op := r.proposal(host.Name, "firmware", hash, metalv1alpha1.OperationReasonFirmwareConvergence, []metalv1alpha1.HostOperationAction{
-		{FlashFirmware: &metalv1alpha1.FlashFirmwareAction{Image: target.Image, Version: target.Version}},
+	reason, msg, err := r.proposePlan(ctx, host, lanePlan{
+		memory: &host.Status.FirmwareProposed, domain: "firmware",
+		reason: metalv1alpha1.OperationReasonFirmwareConvergence, desired: target,
+		stage: []metalv1alpha1.HostOperationAction{
+			{FlashFirmware: &metalv1alpha1.FlashFirmwareAction{Image: target.Image, Version: target.Version}},
+		},
+		drift: drifted, noTransport: !push,
+		requesters: func() ([]string, error) { return convergenceRequesters(ctx, r.Client, host, profiles) },
 	})
-	requesters, err := convergenceRequesters(ctx, r.Client, host, profiles)
 	if err != nil {
 		return false, err
 	}
-	op.Spec.RequestedBy = requesters
-	// Create before recording: a crash between the two re-proposes into
-	// AlreadyExists (benign), the reverse order would hold on a ghost.
-	if err := r.propose(ctx, op); err != nil {
-		return false, err
-	}
-	logf.FromContext(ctx).Info("proposed operation", "operation", op.Namespace+"/"+op.Name, "host", host.Name, "reason", op.Spec.Reason)
-	host.Status.FirmwareProposed = &metalv1alpha1.ProposedPlan{
-		PlanHash: hash, Operation: op.Namespace + "/" + op.Name,
-	}
-	setCond(metalv1alpha1.ConditionFirmwareConverged, metav1.ConditionFalse,
-		metalv1alpha1.ReasonAwaitingOperation,
-		fmt.Sprintf("%s; operation %s/%s proposed", drifted, op.Namespace, op.Name))
+	setCond(metalv1alpha1.ConditionFirmwareConverged, metav1.ConditionFalse, reason, msg)
 	return false, nil
 }
 
@@ -286,7 +252,7 @@ func (r *ConvergenceReconciler) bios(ctx context.Context, host *metalv1alpha1.Ho
 		case err != nil:
 			return false, err
 		default:
-			if err := r.withdrawObsolete(ctx, settings.Status.Proposed); err != nil {
+			if err := r.withdrawPlan(ctx, &settings.Status.Proposed, whyMovedOn); err != nil {
 				return false, err
 			}
 			if err := r.Delete(ctx, settings); err != nil && !apierrors.IsNotFound(err) {
@@ -315,7 +281,6 @@ func (r *ConvergenceReconciler) bios(ctx context.Context, host *metalv1alpha1.Ho
 
 	origSettings := settings.DeepCopy()
 	status, reason, msg := metav1.ConditionFalse, "", ""
-	requeue := true
 	switch {
 	case len(conflicts) > 0:
 		reason, msg = metalv1alpha1.ReasonProfileConflict, strings.Join(conflicts, "; ")
@@ -323,7 +288,9 @@ func (r *ConvergenceReconciler) bios(ctx context.Context, host *metalv1alpha1.Ho
 		settings.Status.Provenance = provenance
 		state, schema, obsErr := r.observeBios(ctx, host)
 		if obsErr != nil {
-			status, reason, msg = metav1.ConditionUnknown, metalv1alpha1.ReasonNoReachablePath, obsErr.Error()
+			status = metav1.ConditionUnknown
+			reason, msg = holdOf(obsErr, metalv1alpha1.ReasonBiosReadFailed)
+			msg = redact.String(msg)
 			break
 		}
 		if err := r.materializeSchema(ctx, host, state.Registry, schema); err != nil {
@@ -350,74 +317,22 @@ func (r *ConvergenceReconciler) bios(ctx context.Context, host *metalv1alpha1.Ho
 			msg = "drift on " + strings.Join(drifted, ", ") + " — firmware converges first"
 			break
 		}
-		// A host that runs a node gets the change applied the way a running
-		// node needs: drained first, waited for after (disruptivePlan).
-		node, nodeHold, err := r.installedNode(ctx, host)
-		if err != nil {
-			return false, err
-		}
-		if nodeHold != "" {
-			// A proposal made while the node was there names it in every
-			// drain step: take it back while nobody approved it yet.
-			if err := r.withdrawPlan(ctx, &settings.Status.Proposed); err != nil {
-				return false, err
-			}
-			reason = metalv1alpha1.ReasonInstalledNodeMissing
-			msg = "drift on " + strings.Join(drifted, ", ") + "; " + nodeHold
-			break
-		}
-		hash := disruptiveHash(desired, node)
-		if plan := settings.Status.Proposed; plan != nil && plan.PlanHash == hash {
-			again := false
-			var err error
-			if reason, msg, again, err = r.planVerdict(ctx, plan); err != nil {
-				return false, err
-			}
-			if !again {
-				break
-			}
-			settings.Status.Proposed = nil
-		}
-		if err := r.withdrawObsolete(ctx, settings.Status.Proposed); err != nil {
-			return false, err
-		}
-		// The change takes effect at a reboot, which the operation does.
-		// A machine that may still hold a released node's install is not
-		// powered on for it: it would boot that node back into its cluster.
-		if hold := notWipedPowerHold(host); hold != "" {
-			reason, msg = metalv1alpha1.ReasonDiskNotWiped, "drift on "+strings.Join(drifted, ", ")+"; "+hold
-			break
-		}
-		guard, err := r.Self.Check(ctx, host)
-		if err != nil {
-			return false, err
-		}
-		if guard != "" {
-			reason = metalv1alpha1.ReasonSelfDisruption
-			msg = "drift on " + strings.Join(drifted, ", ") + "; no BIOS change is proposed: " + guard
-			break
-		}
-		op := r.proposal(host.Name, "bios", hash, metalv1alpha1.OperationReasonBiosConvergence, disruptivePlan(node, []metalv1alpha1.HostOperationAction{
+		var err error
+		if reason, msg, err = r.proposePlan(ctx, host, lanePlan{
+			memory: &settings.Status.Proposed, domain: "bios",
+			reason: metalv1alpha1.OperationReasonBiosConvergence, desired: desired,
 			// The attributes travel inside the operation: the approver sees
 			// exactly what will be staged, and a later edit of the settings
 			// cannot change an approved operation.
-			{ApplyBios: &metalv1alpha1.ApplyBiosAction{
+			stage: []metalv1alpha1.HostOperationAction{{ApplyBios: &metalv1alpha1.ApplyBiosAction{
 				SettingsRef: &metalv1alpha1.Reference{Name: settings.Name},
 				Attributes:  settings.Spec.Attributes,
-			}},
-		}))
-		if op.Spec.RequestedBy, err = convergenceRequesters(ctx, r.Client, host, profiles); err != nil {
+			}}},
+			reboots: true, drift: "drift on " + strings.Join(drifted, ", "),
+			requesters: func() ([]string, error) { return convergenceRequesters(ctx, r.Client, host, profiles) },
+		}); err != nil {
 			return false, err
 		}
-		if err := r.propose(ctx, op); err != nil {
-			return false, err
-		}
-		logf.FromContext(ctx).Info("proposed operation", "operation", op.Namespace+"/"+op.Name, "host", host.Name, "reason", op.Spec.Reason)
-		settings.Status.Proposed = &metalv1alpha1.ProposedPlan{
-			PlanHash: hash, Operation: op.Namespace + "/" + op.Name,
-		}
-		reason = metalv1alpha1.ReasonAwaitingOperation
-		msg = fmt.Sprintf("drift on %s; operation %s/%s proposed", strings.Join(drifted, ", "), op.Namespace, op.Name)
 	}
 
 	setCondition(&settings.Status.Conditions, settings.Generation, metalv1alpha1.ConditionConverged, status, reason, msg)
@@ -425,29 +340,90 @@ func (r *ConvergenceReconciler) bios(ctx context.Context, host *metalv1alpha1.Ho
 		return false, client.IgnoreNotFound(err)
 	}
 	setCond(metalv1alpha1.ConditionBiosConverged, status, reason, msg)
-	return requeue, nil
+	return true, nil
 }
 
-// withdrawObsolete deletes a superseded proposal that never got its gate —
-// when the desired state moves on (a profile edit, a transient partial merge
-// completing), the controller retracts its own un-actioned request instead of
-// stranding it in front of the approver. An approved, running, or finished
-// operation is not touched: it is active work or history.
-func (r *ConvergenceReconciler) withdrawObsolete(ctx context.Context, plan *metalv1alpha1.ProposedPlan) error {
-	if plan == nil {
-		return nil
+// lanePlan is a lane's drifted desired state, for proposePlan.
+type lanePlan struct {
+	memory      **metalv1alpha1.ProposedPlan // the lane's plan memory
+	domain      string                       // the middle of the operation name
+	reason      string                       // the operation's spec.reason
+	desired     any                          // what the plan hash binds
+	stage       []metalv1alpha1.HostOperationAction
+	reboots     bool   // the change applies at a reset of the machine
+	drift       string // what drifts, in words
+	noTransport bool   // no path advertises the multipart-push transport
+	requesters  func() ([]string, error)
+}
+
+// proposePlan proposes a lane's plan once, and returns the lane's condition
+// reason and message. The steps run in one order for every lane:
+//
+//  1. A change that reboots a machine that runs a node drains the node first
+//     (disruptivePlan). A node that is gone holds the plan, and the proposal
+//     made for it is withdrawn.
+//  2. A remembered plan with the same hash is not proposed again: its
+//     operation, or the lack of one, gives the verdict (planVerdict).
+//  3. A remembered plan with another hash is withdrawn while nobody approved
+//     it, before any hold below.
+//  4. The holds: no update transport; for a reboot, a disk that can still
+//     hold a released node's install (powering it on would boot that node
+//     back into its cluster), and the machine the operator runs on.
+//  5. The operation is created, and then remembered.
+func (r *ConvergenceReconciler) proposePlan(ctx context.Context, host *metalv1alpha1.Host, p lanePlan) (reason, msg string, err error) {
+	var node *osv1alpha1.TalosNode
+	if p.reboots {
+		var nodeHold string
+		if node, nodeHold, err = r.installedNode(ctx, host); err != nil {
+			return "", "", err
+		}
+		if nodeHold != "" {
+			// A proposal made while the node was there names it in every
+			// drain step: take it back while nobody approved it yet.
+			return metalv1alpha1.ReasonInstalledNodeMissing, p.drift + "; " + nodeHold, r.withdrawPlan(ctx, p.memory, whyNodeGone)
+		}
 	}
-	ns, name, _ := strings.Cut(plan.Operation, "/")
-	op := &metalv1alpha1.HostOperation{}
-	if err := r.Get(ctx, types.NamespacedName{Namespace: ns, Name: name}, op); err != nil {
-		return client.IgnoreNotFound(err)
+	hash := disruptiveHash(p.desired, node)
+	if plan := *p.memory; plan != nil && plan.PlanHash == hash {
+		var again bool
+		if reason, msg, again, err = r.planVerdict(ctx, plan); err != nil || !again {
+			return reason, msg, err
+		}
+		*p.memory = nil
 	}
-	if !op.AwaitsApproval() {
-		return nil
+	if err = r.withdrawPlan(ctx, p.memory, whyMovedOn); err != nil {
+		return "", "", err
 	}
-	logf.FromContext(ctx).Info("withdrew obsolete proposal", "operation", plan.Operation)
-	return client.IgnoreNotFound(deleteOp(ctx, r.Client, r.Audit, op, audit.DeleteWithdrawn,
-		"the desired state moved on before anyone approved it", client.Preconditions{UID: &op.UID}))
+	if p.noTransport {
+		return metalv1alpha1.ReasonNoUpdateTransport, p.drift + " — no path advertises the proven multipart-push transport", nil
+	}
+	actions := p.stage
+	if p.reboots {
+		if hold := notWipedPowerHold(host); hold != "" {
+			return metalv1alpha1.ReasonDiskNotWiped, p.drift + "; " + hold, nil
+		}
+		var guard string
+		if guard, err = r.Self.Check(ctx, host); err != nil {
+			return "", "", err
+		}
+		if guard != "" {
+			return metalv1alpha1.ReasonSelfDisruption, p.drift + "; no change that reboots the machine is proposed: " + guard, nil
+		}
+		actions = disruptivePlan(node, p.stage)
+	}
+	op := r.proposal(host.Name, p.domain, hash, p.reason, actions)
+	if op.Spec.RequestedBy, err = p.requesters(); err != nil {
+		return "", "", err
+	}
+	// Create before recording: a crash between the two re-proposes into
+	// AlreadyExists (benign), the reverse order would hold on a ghost.
+	if err = r.propose(ctx, op); err != nil {
+		return "", "", err
+	}
+	ref := op.Namespace + "/" + op.Name
+	logf.FromContext(ctx).Info("proposed operation", "operation", ref, "host", host.Name, "reason", p.reason)
+	*p.memory = &metalv1alpha1.ProposedPlan{PlanHash: hash, Operation: ref}
+	return metalv1alpha1.ReasonAwaitingOperation, p.drift + "; operation " + ref + " proposed", nil
 }
 
 // planVerdict derives a held plan's condition live from the operation or its
@@ -593,17 +569,16 @@ func selectsByClaim(selectors []metav1.LabelSelector, claim *metalv1alpha1.HostC
 func (r *ConvergenceReconciler) observeBios(ctx context.Context, host *metalv1alpha1.Host) (bmc.BiosState, []bmc.BiosAttribute, error) {
 	cctx, cancel := context.WithTimeout(ctx, connectTimeout)
 	defer cancel()
-	cl, _, holdMsg := hostPathClient(cctx, r.Client, r.CredentialsNamespace, host, true)
-	if holdMsg != "" {
-		return bmc.BiosState{}, nil, errors.New(holdMsg)
-	}
-	defer cl.Close() //nolint:errcheck // read-only session
-	pc := cl.(*pathClient)
-	state, err := cl.Bios(cctx, pc.systemID)
+	cl, systemID, err := hostPathClient(cctx, r.Client, r.CredentialsNamespace, host, true)
 	if err != nil {
 		return bmc.BiosState{}, nil, err
 	}
-	schema, err := cl.BiosSchema(cctx, pc.systemID)
+	defer cl.Close() //nolint:errcheck // read-only session
+	state, err := cl.Bios(cctx, systemID)
+	if err != nil {
+		return bmc.BiosState{}, nil, err
+	}
+	schema, err := cl.BiosSchema(cctx, systemID)
 	if err != nil {
 		return bmc.BiosState{}, nil, err
 	}
@@ -661,21 +636,66 @@ func driftedKeys(desired, observed, pending map[string]any) []string {
 }
 
 func (r *ConvergenceReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	// Each pass reads the BIOS over the BMC. The filters drop the status
+	// writes that change no input of a lane: this reconciler's own
+	// conditions, a step of the executor, a check-in of a node.
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&metalv1alpha1.BiosSettings{}).
-		Watches(&metalv1alpha1.Host{}, handler.EnqueueRequestsFromMapFunc(sameName)).
+		For(&metalv1alpha1.BiosSettings{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
+		Watches(&metalv1alpha1.Host{}, handler.EnqueueRequestsFromMapFunc(sameName),
+			builder.WithPredicates(convergenceHostEvents)).
 		Watches(&metalv1alpha1.BiosProfile{}, handler.EnqueueRequestsFromMapFunc(r.allHosts)).
 		Watches(&metalv1alpha1.FirmwareProfile{}, handler.EnqueueRequestsFromMapFunc(r.allHosts)).
 		Watches(&metalv1alpha1.ManagementEndpoint{}, handler.EnqueueRequestsFromMapFunc(r.hostsBehindEndpoint)).
-		Watches(&metalv1alpha1.HostOperation{}, handler.EnqueueRequestsFromMapFunc(hostForOperation)).
+		Watches(&metalv1alpha1.HostOperation{}, handler.EnqueueRequestsFromMapFunc(hostForOperation),
+			builder.WithPredicates(convergenceOperationEvents)).
 		Watches(&metalv1alpha1.HostClaim{}, handler.EnqueueRequestsFromMapFunc(hostOfClaim)).
-		// Only a node's coming, going and spec matter to the plan; its status
-		// moves with every check-in, and each pass here reads the BIOS over
-		// the BMC.
+		// Only a node's coming, going and spec matter to the plan.
 		Watches(&osv1alpha1.TalosNode{}, handler.EnqueueRequestsFromMapFunc(r.hostsRunningNode),
 			builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Named("convergence").
 		Complete(r)
+}
+
+// convergenceHostEvents passes the Host events that change an input of a
+// lane: the spec (claim, OS), the labels (profile selection), the
+// annotations (maintenance, the guard allowances) and the management paths
+// that hostPathClient dials.
+var convergenceHostEvents = predicate.Or(
+	predicate.GenerationChangedPredicate{},
+	predicate.LabelChangedPredicate{},
+	predicate.AnnotationChangedPredicate{},
+	predicate.Funcs{UpdateFunc: func(e event.UpdateEvent) bool {
+		return !equality.Semantic.DeepEqual(e.ObjectOld.(*metalv1alpha1.Host).Status.ManagedBy,
+			e.ObjectNew.(*metalv1alpha1.Host).Status.ManagedBy)
+	}},
+)
+
+// convergenceOperationEvents passes the HostOperation events that change
+// the verdict of a plan (planVerdict, withdrawPlan): a new or deleted
+// operation, an approval (spec), a retry mark (annotation), and a new status
+// of the Approved or Executed condition.
+var convergenceOperationEvents = predicate.Or(
+	predicate.GenerationChangedPredicate{},
+	predicate.AnnotationChangedPredicate{},
+	predicate.Funcs{UpdateFunc: func(e event.UpdateEvent) bool {
+		old := e.ObjectOld.(*metalv1alpha1.HostOperation).Status.Conditions
+		cur := e.ObjectNew.(*metalv1alpha1.HostOperation).Status.Conditions
+		for _, t := range []string{metalv1alpha1.ConditionApproved, metalv1alpha1.ConditionExecuted} {
+			if conditionStatus(old, t) != conditionStatus(cur, t) {
+				return true
+			}
+		}
+		return false
+	}},
+)
+
+// conditionStatus is the status of the condition of type t, or "" when
+// there is none.
+func conditionStatus(conds []metav1.Condition, t string) metav1.ConditionStatus {
+	if c := meta.FindStatusCondition(conds, t); c != nil {
+		return c.Status
+	}
+	return ""
 }
 
 // sameName: the reconcile key IS the host name (BiosSettings share it).

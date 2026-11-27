@@ -91,19 +91,14 @@ func desiredIdentity(ep *metalv1alpha1.ManagementEndpoint, pol *metalv1alpha1.Id
 	return d
 }
 
-// identity converges the manager's HTTPS identity against the profile.
+// identity converges the manager's HTTPS identity against the profile and
+// the certificate that the manager serves now.
 func (r *EndpointConvergenceReconciler) identity(ctx context.Context, ep *metalv1alpha1.ManagementEndpoint, pol *metalv1alpha1.IdentityPolicy) (metav1.ConditionStatus, string, string, error) {
-	leaf, err := servedLeaf(ctx, ep.Spec.Address)
+	leaf, err := r.Probe.orDefault()(ctx, ep.Spec.Address)
 	if err != nil {
 		return metav1.ConditionUnknown, metalv1alpha1.ReasonNoReachablePath,
 			"cannot observe the served certificate: " + err.Error(), nil
 	}
-	return r.identityWith(ctx, ep, pol, leaf)
-}
-
-// identityWith converges the identity against the certificate the manager
-// serves now.
-func (r *EndpointConvergenceReconciler) identityWith(ctx context.Context, ep *metalv1alpha1.ManagementEndpoint, pol *metalv1alpha1.IdentityPolicy, leaf *x509.Certificate) (metav1.ConditionStatus, string, string, error) {
 	desired := desiredIdentity(ep, pol)
 	hash := planHash(desired)
 	renewBefore := identityDefaultRenewBefore
@@ -307,7 +302,8 @@ const csrTimeout = 5 * time.Minute
 // managerCSR has a csr-native manager build the request — the key never
 // leaves it.
 func (r *EndpointConvergenceReconciler) managerCSR(ctx context.Context, ep *metalv1alpha1.ManagementEndpoint, desired identityDesired) ([]byte, error) {
-	cfg, _, err := endpointClientConfig(ctx, r.Client, r.CredentialsNamespace, ep, false)
+	// The password can be new in this pass: see ntp.
+	cfg, _, err := endpointClientConfig(ctx, r.reader(), r.CredentialsNamespace, ep, false)
 	if err != nil {
 		return nil, err
 	}
@@ -375,7 +371,8 @@ func (r *EndpointConvergenceReconciler) pushIdentity(ctx context.Context, ep *me
 	if err != nil {
 		return nil, err
 	}
-	cfg, _, err := endpointClientConfig(ctx, r.Client, r.CredentialsNamespace, ep, false)
+	// The password can be new in this pass: see ntp.
+	cfg, _, err := endpointClientConfig(ctx, r.reader(), r.CredentialsNamespace, ep, false)
 	if err != nil {
 		return nil, err
 	}

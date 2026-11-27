@@ -577,6 +577,20 @@
       "context": "Reasons on the convergence conditions (BiosSettings' Converged, the Host's FirmwareConverged / BiosConverged). Each hold alerts and holds: the condition blocks, and nothing destructive follows. An unchanged planHash never makes a second operation. To continue, a person changes the desired state (a profile edit), which changes the hash."
     },
     {
+      "name": "ReasonBiosReadFailed",
+      "value": "BiosReadFailed",
+      "group": "metal.platform-kit.org",
+      "source": "metal/api/v1alpha1/conditions.go",
+      "description": "a session to the BMC was up, but the read of the BIOS attributes or of their registry failed.",
+      "on": [
+        {
+          "condition": "Converged",
+          "status": "Unknown"
+        }
+      ],
+      "context": "Reasons on the convergence conditions (BiosSettings' Converged, the Host's FirmwareConverged / BiosConverged). Each hold alerts and holds: the condition blocks, and nothing destructive follows. An unchanged planHash never makes a second operation. To continue, a person changes the desired state (a profile edit), which changes the hash."
+    },
+    {
       "name": "ReasonAwaitingFirmware",
       "value": "AwaitingFirmware",
       "group": "metal.platform-kit.org",

@@ -115,11 +115,11 @@ func TestKeyUploadRefusedWithoutVerification(t *testing.T) {
 	s := newSimEndpoint(t, "supermicro-x12")
 	s.ep.Spec.TLS = &metalv1alpha1.EndpointTLS{InsecureSkipVerify: true}
 	s.ep.Status.Capabilities = &metalv1alpha1.EndpointCapabilities{IdentityDialect: string(bmc.DialectKeyUpload)}
-	r := &EndpointConvergenceReconciler{Client: s.cl, CredentialsNamespace: "pk-metal", Dial: s.dial}
+	r := &EndpointConvergenceReconciler{Client: s.cl, CredentialsNamespace: "pk-metal", Dial: s.dial, Probe: s.probe}
 	pol := &metalv1alpha1.IdentityPolicy{IssuerRef: metalv1alpha1.IssuerRef{Name: "ca"}}
 
 	// A served certificate that the operator never pushed.
-	status, reason, msg, err := r.identityWith(t.Context(), s.ep, pol, s.leaf)
+	status, reason, msg, err := r.identity(t.Context(), s.ep, pol)
 	require.NoError(t, err)
 	assert.Equal(t, metav1.ConditionFalse, status)
 	assert.Equal(t, metalv1alpha1.ReasonTLSNotVerified, reason, msg)
@@ -135,13 +135,15 @@ func TestKeyUploadRefusedWithoutVerification(t *testing.T) {
 func TestIdentityInSyncOnlyForThePushedCertificate(t *testing.T) {
 	s := newSimEndpoint(t, "huawei-2288h-v5")
 	s.ep.Status.Capabilities = &metalv1alpha1.EndpointCapabilities{IdentityDialect: string(bmc.DialectNoIdentity)}
-	r := &EndpointConvergenceReconciler{Client: s.cl, CredentialsNamespace: "pk-metal", Dial: s.dial}
 	pol := &metalv1alpha1.IdentityPolicy{IssuerRef: metalv1alpha1.IssuerRef{Name: "ca"}, RenewBefore: &metav1.Duration{}}
 	desired := desiredIdentity(s.ep, pol)
 	claims := newLeafNamed(t, desired.CommonName)
+	served := claims
+	r := &EndpointConvergenceReconciler{Client: s.cl, CredentialsNamespace: "pk-metal", Dial: s.dial,
+		Probe: func(context.Context, string) (*x509.Certificate, error) { return served, nil }}
 
 	// Right names, never pushed: not in sync (the lane would push).
-	status, reason, _, err := r.identityWith(t.Context(), s.ep, pol, claims)
+	status, reason, _, err := r.identity(t.Context(), s.ep, pol)
 	require.NoError(t, err)
 	assert.NotEqual(t, metav1.ConditionTrue, status, reason)
 
@@ -149,12 +151,13 @@ func TestIdentityInSyncOnlyForThePushedCertificate(t *testing.T) {
 	s.ep.Status.IdentityPushed = &metalv1alpha1.IdentityPush{
 		PlanHash: planHash(desired), Fingerprint: certFingerprint(claims), PublicKey: gofishclient.PublicKeyPin(claims),
 	}
-	status, reason, msg, err := r.identityWith(t.Context(), s.ep, pol, claims)
+	status, reason, msg, err := r.identity(t.Context(), s.ep, pol)
 	require.NoError(t, err)
 	assert.Equal(t, metav1.ConditionTrue, status, "%s: %s", reason, msg)
 
 	// Another certificate with the same names, after the push: held.
-	status, reason, msg, err = r.identityWith(t.Context(), s.ep, pol, newLeafNamed(t, desired.CommonName))
+	served = newLeafNamed(t, desired.CommonName)
+	status, reason, msg, err = r.identity(t.Context(), s.ep, pol)
 	require.NoError(t, err)
 	assert.Equal(t, metav1.ConditionFalse, status)
 	assert.Equal(t, metalv1alpha1.ReasonIdentityPushFailed, reason)

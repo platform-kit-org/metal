@@ -1,15 +1,20 @@
 package controller
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
 	"github.com/dennisklein/platform-kit/metal/internal/bmc"
+	"github.com/dennisklein/platform-kit/metal/internal/bmc/sim"
 )
 
 func biosProfile(name string, layer int32, attrs map[string]apiextensionsv1.JSON) metalv1alpha1.BiosProfile {
@@ -154,4 +159,37 @@ func TestDriftedKeys(t *testing.T) {
 		driftedKeys(desired, map[string]any{"A": "x", "B": true, "C": float64(3)},
 			map[string]any{"A": "x", "E": "unmanaged"}),
 		"agreeing or unmanaged pending entries are not drift")
+}
+
+// A BIOS read that fails on an open session is not a path that is down.
+// Before, the lane reported every observation error as NoReachablePath.
+func TestBiosReadErrorIsNoUnreachablePath(t *testing.T) {
+	f, err := sim.LoadFixture("generic")
+	require.NoError(t, err)
+	served := sim.NewServer(sim.NewState(f))
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/Bios") {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		served.ServeHTTP(w, r)
+	}))
+	t.Cleanup(srv.Close)
+	ep := &metalv1alpha1.ManagementEndpoint{Spec: metalv1alpha1.ManagementEndpointSpec{Address: srv.URL,
+		CredentialsRef: &corev1.LocalObjectReference{Name: "bmc-a-factory"}, TLS: &metalv1alpha1.EndpointTLS{InsecureSkipVerify: true}}}
+	creds := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "pk-metal", Name: "bmc-a-factory"},
+		Data: map[string][]byte{"username": []byte("admin"), "password": []byte("admin-pass")}}
+	host := &metalv1alpha1.Host{}
+	r, _ := laneRig(t, ep, host, creds)
+	r.CredentialsNamespace = "pk-metal"
+	host.Status.ManagedBy[0].SystemID = f.Systems[0].ID
+	var c laneCond
+
+	_, err = r.bios(t.Context(), host, []metalv1alpha1.BiosProfile{
+		biosProfile("p", 0, map[string]apiextensionsv1.JSON{"QuietBoot": jsonOf(false)}),
+	}, true, c.set)
+
+	require.NoError(t, err)
+	assert.Equal(t, metalv1alpha1.ReasonBiosReadFailed, c.reason, c.msg)
+	assert.Contains(t, c.msg, "500")
 }

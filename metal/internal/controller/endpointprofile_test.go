@@ -3,6 +3,7 @@ package controller
 import (
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"math"
 	"net"
 	"strings"
 	"testing"
@@ -12,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
 )
@@ -89,6 +91,21 @@ func TestMergeEndpointProfiles(t *testing.T) {
 		assert.Contains(t, conflict, "ntp: profiles a and b disagree on layer 0")
 		assert.Nil(t, d.credentials, "an agreed stanza is still held by the conflicted one")
 	})
+}
+
+// The merge order holds over the whole range of a layer, which the API does
+// not bound: the difference of two layers can be beyond an int32.
+func TestEndpointProfilesOnFarLayers(t *testing.T) {
+	low := epProfile("low", -2, &metalv1alpha1.CredentialsPolicy{Username: "low"})
+	high := epProfile("high", math.MaxInt32, &metalv1alpha1.CredentialsPolicy{Username: "high"})
+	r := &EndpointConvergenceReconciler{Client: fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(&low, &high).Build()}
+
+	profiles, err := r.matchedEndpointProfiles(t.Context(), &metalv1alpha1.ManagementEndpoint{})
+	require.NoError(t, err)
+	d, conflict := mergeEndpointProfiles(profiles)
+
+	require.Empty(t, conflict)
+	assert.Equal(t, "high", d.credentials.Username, "the higher layer overrides")
 }
 
 func TestRotationDue(t *testing.T) {

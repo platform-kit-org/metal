@@ -56,6 +56,7 @@ func TestStalledRequestEndsWithinTheTimeout(t *testing.T) {
 	require.Error(t, err)
 	assert.Less(t, time.Since(start), 5*time.Second)
 	assert.Contains(t, err.Error(), "no answer within 200ms")
+	assert.Equal(t, 1, strings.Count(err.Error(), "/redfish/v1/Managers"), "the error names the request once: %v", err)
 }
 
 // Cancelling the context the session was opened with (Ctrl-C in the CLI)

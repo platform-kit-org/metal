@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -247,4 +248,33 @@ func TestBusy(t *testing.T) {
 	}
 	assert.False(t, gofishclient.Busy(errors.New("no status")))
 	assert.False(t, gofishclient.Busy(nil))
+}
+
+// An error names the request that failed once. gofish's error for an HTTP
+// status names no request, and http.Client names the request of every
+// other error.
+func TestErrorsNameTheRequestOnce(t *testing.T) {
+	f, err := sim.LoadFixture("generic")
+	require.NoError(t, err)
+	next := sim.NewServer(sim.NewState(f))
+	const system, protocol = "/redfish/v1/Systems/1", "/redfish/v1/Managers/1/NetworkProtocol"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPatch && r.URL.Path == system:
+			http.Error(w, "the resource changed", http.StatusPreconditionFailed)
+		case r.URL.Path == protocol:
+			_, _ = io.WriteString(w, "null")
+		default:
+			next.ServeHTTP(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	c := connect(t, srv.URL, f)
+
+	err = c.SetBootOverride(t.Context(), "1", bmc.BootOverride{Target: "Cd"})
+	require.Error(t, err)
+	assert.Equal(t, 1, strings.Count(err.Error(), "PATCH "+system), err.Error())
+	_, err = c.NTP(t.Context())
+	require.Error(t, err)
+	assert.Equal(t, 1, strings.Count(err.Error(), protocol), err.Error())
 }

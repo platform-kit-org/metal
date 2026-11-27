@@ -361,7 +361,7 @@ type ref struct {
 func (c *client) getRaw(uri string) (body []byte, etag string, err error) {
 	resp, err := c.api.Get(uri)
 	if err != nil {
-		return nil, "", err
+		return nil, "", at(http.MethodGet, uri, err)
 	}
 	defer resp.Body.Close()
 	if body, err = readBody(resp.Body); err != nil {
@@ -459,11 +459,11 @@ func (g *guard) send(req *http.Request) (*http.Response, error) {
 	body, err := readBody(resp.Body)
 	_ = resp.Body.Close()
 	if err != nil {
-		return nil, fmt.Errorf("%s %s: %w", req.Method, req.URL.Path, g.explain(ctx, req, timeout, err))
+		return nil, g.explain(ctx, req, timeout, err)
 	}
 	if req.Method == http.MethodGet && resp.StatusCode/100 == 2 &&
 		resp.StatusCode != http.StatusAccepted && !jsonObjectOrEmpty(body) {
-		return nil, fmt.Errorf("GET %s: answer is not a JSON object", req.URL.Path)
+		return nil, errors.New("answer is not a JSON object")
 	}
 	resp.Body = io.NopCloser(bytes.NewReader(body))
 	resp.ContentLength = int64(len(body))
@@ -540,9 +540,18 @@ func (c *client) patch(uri string, body any) error {
 			return nil
 		}
 		if attempt > 0 || statusOf(err) != http.StatusPreconditionFailed {
-			return err
+			return at(http.MethodPatch, uri, err)
 		}
 	}
+}
+
+// at names the request of an error for an HTTP status, which gofish makes
+// without it. Any other error is a *url.Error, which names it already.
+func at(method, uri string, err error) error {
+	if statusOf(err) == 0 {
+		return err
+	}
+	return fmt.Errorf("%s %s: %w", method, uri, err)
 }
 
 // statusOf is the HTTP status behind a gofish error; 0 when the request never

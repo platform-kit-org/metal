@@ -448,13 +448,13 @@ Moves the operator from kind to the first Talos cluster, deletes kind, and insta
   <dt>Needs</dt>
   <dd>A second cluster in the spec (`PK_LAB_WORKLOAD`), and a first cluster with all nodes Ready.</dd>
   <dt>Uses</dt>
-  <dd>[](cli:pivot) with `--media-store ephemeral`</dd>
+  <dd>[](cli:pivot)</dd>
   <dt>Writes</dt>
   <dd>`.lab/second.kubeconfig`, `.lab/second.talosconfig` and the mark file `.lab/pivoted`</dd>
 </dl>
 
 1. It starts an image registry at `10.77.0.1:5000` and pushes the operator image.
-2. It runs `pk-metal pivot --to .lab/workload.kubeconfig`.
+2. It runs `pk-metal pivot --to .lab/workload.kubeconfig --image <registry>/<image> --media-url https://<node>:30443 --media-store ephemeral --timeout 600s --yes`.
 3. It deletes the kind cluster. `.lab/kubeconfig` now names the first Talos cluster.
 4. It applies `.lab/generated/workload/`, approves, and waits for the nodes of the second cluster.
 

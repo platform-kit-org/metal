@@ -102,15 +102,15 @@ During the move, [](cli:pivot) stops the operator in kind before it starts the o
 
 <TermReplay src="casts/lab-pivot.json" caption="A replay with example data." />
 
-| Part | What happens |
+| Part in the output | What happens |
 | --- | --- |
-| Image registry | A registry at `10.77.0.1:5000` gets the operator image. The first cluster pulls it from there. |
-| `pk-metal pivot` | The operator stops in kind. Its objects move. The operator starts on the cluster `lab`. |
-| Delete kind | The task deletes the kind cluster. `.lab/kubeconfig` now names the cluster `lab`. |
-| Second cluster | The task applies `.lab/generated/workload/`, approves the install, and waits. |
+| `image registry on 10.77.0.1:5000` | The task starts an image registry on the workstation. |
+| `operator image to 10.77.0.1:5000` | The task pushes the operator image to the registry. The first cluster pulls it from there. |
+| `pk-metal pivot to TalosCluster lab` | The operator stops in kind. Its objects move. The operator starts on the cluster `lab`. |
+| `deleting the kind cluster pk-metal` | The task deletes the kind cluster. `.lab/kubeconfig` now names the cluster `lab`. |
+| `TalosCluster work, installed by the operator on lab` | The task applies `.lab/generated/workload/`, approves the install, and waits. |
 
-The move fails if the operator proposes an operation for a machine that has an installed system. See [](concept:pivot-model).
-[](lab:pivot) gives the flags that the task uses.
+The move fails if the new operator proposes an operation while pk-metal watches it (`--settle`, 90 seconds). See [](cli:pivot).
 
 <Checkpoint>
 The output has `settled: no new operation in 1m30s`. It ends with `The operator runs on TalosCluster lab and installed work from there.`
@@ -129,7 +129,7 @@ The output has `settled: no new operation in 1m30s`. It ends with `The operator 
 2. Show the operator on the first Talos cluster.
 
    ```sh
-   kubectl --kubeconfig .lab/kubeconfig -n pk-metal get pods
+   kubectl --kubeconfig .lab/kubeconfig -n pk-metal get pods -o wide
    ```
 
 3. Show the nodes of the second cluster.
@@ -161,9 +161,7 @@ Two Hosts are `Provisioned`. The operator pod runs on `node-1`. The second clust
    mise run lab:down && mise run lab:reset
    ```
 
-   The disk of `node-1` holds the moved operator. Do not start a new lab from that disk.
-
-`lab:up` refuses to start kind again until you run `lab:down`. See [lab troubleshooting](lab:page/troubleshooting#the-lab-refuses-to-start-after-a-pivot).
+   The disk of `node-1` holds the moved operator. `lab:reset` wipes it.
 
 ## What you learned
 
@@ -175,3 +173,4 @@ Two Hosts are `Provisioned`. The operator pod runs on `node-1`. The second clust
 
 - [](tut:lab-disaster-recovery)
 - [](tut:first-real-server)
+- [](howto:pivot): the same move on a real site.

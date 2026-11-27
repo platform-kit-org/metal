@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -134,20 +135,22 @@ func reinstallCmd(args []string) {
 		badUsage(fs, "give exactly one claim or node")
 	}
 	onCluster(func(ctx context.Context, cl client.Client) error {
-		return reinstall(ctx, cl, *ns, fs.Arg(0), *ack, os.Stdout)
+		return reinstall(ctx, cl, *ns, flagGiven(fs, "n"), fs.Arg(0), *ack, os.Stdout)
 	})
 }
 
 // findClaim reads a claim by namespace/name or name, or else the claim whose
 // OS intent names the node.
-func findClaim(ctx context.Context, cl client.Client, namespace, ref string) (*metalv1alpha1.HostClaim, error) {
-	ns, name, err := splitRef(ref, namespace, false)
+func findClaim(ctx context.Context, cl client.Client, namespace string, nsGiven bool, ref string) (*metalv1alpha1.HostClaim, error) {
+	ns, name, err := splitRef(ref, namespace, nsGiven)
 	if err != nil {
 		return nil, err
 	}
 	c := &metalv1alpha1.HostClaim{}
 	if err := cl.Get(ctx, types.NamespacedName{Namespace: ns, Name: name}, c); err == nil {
 		return c, nil
+	} else if !apierrors.IsNotFound(err) {
+		return nil, fmt.Errorf("read claim %s/%s: %w", ns, name, err)
 	}
 	claims := &metalv1alpha1.HostClaimList{}
 	if err := cl.List(ctx, claims); err != nil {
@@ -162,8 +165,8 @@ func findClaim(ctx context.Context, cl client.Client, namespace, ref string) (*m
 }
 
 // reinstall asks for the claim's node to be installed again.
-func reinstall(ctx context.Context, cl client.Client, namespace, ref, ack string, w io.Writer) error {
-	c, err := findClaim(ctx, cl, namespace, ref)
+func reinstall(ctx context.Context, cl client.Client, namespace string, nsGiven bool, ref, ack string, w io.Writer) error {
+	c, err := findClaim(ctx, cl, namespace, nsGiven, ref)
 	if err != nil {
 		return err
 	}
@@ -199,7 +202,7 @@ func replaceCmd(args []string) {
 		badUsage(fs, "give one claim or node, and --host")
 	}
 	onCluster(func(ctx context.Context, cl client.Client) error {
-		return replace(ctx, cl, *ns, fs.Arg(0), *hostName, *ack, os.Stdout)
+		return replace(ctx, cl, *ns, flagGiven(fs, "n"), fs.Arg(0), *hostName, *ack, os.Stdout)
 	})
 }
 
@@ -228,8 +231,8 @@ func freeHost(host *metalv1alpha1.Host) string {
 }
 
 // replace points the claim at another machine.
-func replace(ctx context.Context, cl client.Client, namespace, ref, hostName, ack string, w io.Writer) error {
-	c, err := findClaim(ctx, cl, namespace, ref)
+func replace(ctx context.Context, cl client.Client, namespace string, nsGiven bool, ref, hostName, ack string, w io.Writer) error {
+	c, err := findClaim(ctx, cl, namespace, nsGiven, ref)
 	if err != nil {
 		return err
 	}

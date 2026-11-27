@@ -2,9 +2,6 @@
   "name": "render",
   "summary": "write Talos machine configs, talosconfig and kubeconfig from TalosCluster and TalosNode files (touches no machine)",
   "synopsis": "--dir <manifests> --secrets <secrets.yaml|-> [flags]",
-  "usage": [
-    "pk-metal render --dir <manifests> --secrets <secrets.yaml|-> [flags]"
-  ],
   "changes": false,
   "needsCluster": false,
   "description": "",
@@ -15,50 +12,43 @@
       "name": "credentials-ttl",
       "type": "duration",
       "default": "24h0m0s",
-      "usage": "lifetime of the admin talosconfig and kubeconfig (at most 720h); they cannot be revoked short of a CA rotation",
-      "global": false
+      "usage": "lifetime of the admin talosconfig and kubeconfig (at most 720h); they cannot be revoked short of a CA rotation"
     },
     {
       "name": "dir",
       "type": "string",
       "default": "",
-      "usage": "directory with TalosCluster/TalosNode (and patch ConfigMap) manifests (required)",
-      "global": false
+      "usage": "directory with TalosCluster/TalosNode (and patch ConfigMap) manifests (required)"
     },
     {
       "name": "image-factory",
       "type": "string",
       "default": "factory.talos.dev",
-      "usage": "image factory host the installer image is named on",
-      "global": false
+      "usage": "image factory host the installer image is named on"
     },
     {
       "name": "no-credentials",
       "type": "bool",
-      "default": "",
-      "usage": "write the node configs only, no admin talosconfig or kubeconfig",
-      "global": false
+      "default": "false",
+      "usage": "write the node configs only, no admin talosconfig or kubeconfig"
     },
     {
       "name": "out",
       "type": "string",
       "default": "clusterconfig",
-      "usage": "output directory: <node>.yaml per node, talosconfig, kubeconfig",
-      "global": false
+      "usage": "output directory: <node>.yaml per node, talosconfig, kubeconfig"
     },
     {
       "name": "register",
       "type": "bool",
-      "default": "",
-      "usage": "tell the image factory about each schematic (needs network); off computes ids offline",
-      "global": false
+      "default": "false",
+      "usage": "tell the image factory about each schematic (needs network); off computes ids offline"
     },
     {
       "name": "secrets",
-      "type": "talosctl gen secrets",
+      "type": "string",
       "default": "",
-      "usage": "secrets bundle from talosctl gen secrets, or - for stdin (required)",
-      "global": false
+      "usage": "secrets bundle from `talosctl gen secrets`, or - for stdin (required)"
     }
   ],
   "subcommands": []

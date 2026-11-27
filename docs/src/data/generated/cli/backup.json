@@ -1,17 +1,14 @@
 {
   "name": "backup",
   "summary": "take an etcd snapshot now, list the snapshots, download one, or decrypt one on this machine",
-  "synopsis": "now <cluster> | list [<cluster>] | get <snapshot> -o <file> | decrypt ...",
-  "usage": [
-    "pk-metal backup now <cluster> | list [<cluster>] | get <snapshot> -o <file> | decrypt ..."
-  ],
+  "synopsis": "now <cluster> | list [<cluster>] | get <snapshot> --to-file <file> | decrypt (<snapshot> | --in <file.age>) --identity <file> [--plaintext-file <file.db>]",
   "changes": true,
   "needsCluster": true,
-  "description": "etcd snapshots are taken by the operator, on the schedule an EtcdBackupPolicy\nsets, and kept encrypted to the age public keys the policy names. The operator\nholds no private key: it can store a snapshot but not read one. Decrypting\nneeds one of the matching age identities, on your own machine.\n\nsubcommands:\n  now <cluster>              take a snapshot now (it waits until stored; --wait=false returns at once)\n  list [<cluster>]           list the snapshots, newest first; RECIPIENTS shows the\n                             last 8 characters of each age public key a snapshot is\n                             encrypted to (compare with: age-keygen -y <identity file>)\n  get <snapshot> -o <file>   download the encrypted snapshot (s3 sinks; pvc sinks: see the message)\n  decrypt (<snapshot> | --in <file.age>) --identity <file> [-o <file.db>]\n                             decrypt on this machine and check it is an intact etcd snapshot;\n                             with -o, also write the plaintext (it holds every Secret of the cluster)\n\n\nRestoring is pk-metal restore; https://metal.platform-kit.org/operate/day-2/restore-etcd/ walks through it.",
+  "description": "etcd snapshots are taken by the operator, on the schedule an EtcdBackupPolicy\nsets, and kept encrypted to the age public keys the policy names. The operator\nholds no private key: it can store a snapshot but not read one. Decrypting\nneeds one of the matching age identities, on your own machine.\n\nRestoring is pk-metal restore; https://metal.platform-kit.org/operate/day-2/restore-etcd/ walks through it.",
   "examples": [
     "pk-metal backup now lab",
     "pk-metal backup list lab",
-    "pk-metal backup get lab-daily-20261124-060000 -o lab.db.age",
+    "pk-metal backup get lab-daily-20261124-060000 --to-file lab.db.age",
     "pk-metal backup decrypt lab-daily-20261124-060000 --identity ~/.config/age/keys.txt"
   ],
   "exitStatus": [],
@@ -19,123 +16,68 @@
   "subcommands": [
     {
       "name": "now",
+      "summary": "take a snapshot now (it waits until stored; --wait=false returns at once)",
       "synopsis": "now <cluster>",
+      "description": "",
       "flags": [
-        {
-          "name": "context",
-          "type": "string",
-          "default": "",
-          "usage": "kubeconfig context to use (default: the current context)",
-          "global": true
-        },
-        {
-          "name": "kubeconfig",
-          "type": "string",
-          "default": "",
-          "usage": "kubeconfig file (default: $KUBECONFIG, then ~/.kube/config, then the in-cluster account)",
-          "global": true
-        },
         {
           "name": "timeout",
           "type": "duration",
           "default": "35m0s",
-          "usage": "how long --wait waits",
-          "global": false
+          "usage": "how long --wait waits"
         },
         {
           "name": "wait",
           "type": "bool",
           "default": "true",
-          "usage": "wait until the snapshot is stored and verified",
-          "global": false
+          "usage": "wait until the snapshot is stored and verified"
         }
       ]
     },
     {
       "name": "list",
+      "summary": "list the snapshots, newest first; RECIPIENTS shows the last 8 characters of each age public key a snapshot is encrypted to (compare with: age-keygen -y <identity file>)",
       "synopsis": "list [<cluster>]",
-      "flags": [
-        {
-          "name": "context",
-          "type": "string",
-          "default": "",
-          "usage": "kubeconfig context to use (default: the current context)",
-          "global": true
-        },
-        {
-          "name": "kubeconfig",
-          "type": "string",
-          "default": "",
-          "usage": "kubeconfig file (default: $KUBECONFIG, then ~/.kube/config, then the in-cluster account)",
-          "global": true
-        }
-      ]
+      "description": "",
+      "flags": []
     },
     {
       "name": "get",
-      "synopsis": "get <snapshot> -o <file>",
+      "summary": "download the encrypted snapshot (s3 sinks; pvc sinks: see the message)",
+      "synopsis": "get <snapshot> --to-file <file>",
+      "description": "",
       "flags": [
         {
-          "name": "context",
+          "name": "to-file",
           "type": "string",
           "default": "",
-          "usage": "kubeconfig context to use (default: the current context)",
-          "global": true
-        },
-        {
-          "name": "kubeconfig",
-          "type": "string",
-          "default": "",
-          "usage": "kubeconfig file (default: $KUBECONFIG, then ~/.kube/config, then the in-cluster account)",
-          "global": true
-        },
-        {
-          "name": "o",
-          "type": "string",
-          "default": "",
-          "usage": "file to write the encrypted snapshot to (required; it must not exist)",
-          "global": false
+          "usage": "file to write the encrypted snapshot to (required; it must not exist)"
         }
       ]
     },
     {
       "name": "decrypt",
-      "synopsis": "decrypt ...",
+      "summary": "decrypt on this machine and check it is an intact etcd snapshot; with --plaintext-file, also write the plaintext (it holds every Secret of the cluster)",
+      "synopsis": "decrypt (<snapshot> | --in <file.age>) --identity <file> [--plaintext-file <file.db>]",
+      "description": "",
       "flags": [
-        {
-          "name": "context",
-          "type": "string",
-          "default": "",
-          "usage": "kubeconfig context to use (default: the current context)",
-          "global": true
-        },
         {
           "name": "identity",
           "type": "string",
           "default": "",
-          "usage": "age identity file (required): the secret key, as age-keygen writes it",
-          "global": false
+          "usage": "age identity file (required): the secret key, as age-keygen writes it"
         },
         {
           "name": "in",
           "type": "string",
           "default": "",
-          "usage": "decrypt this file instead of downloading the snapshot",
-          "global": false
+          "usage": "decrypt this file instead of downloading the snapshot"
         },
         {
-          "name": "kubeconfig",
+          "name": "plaintext-file",
           "type": "string",
           "default": "",
-          "usage": "kubeconfig file (default: $KUBECONFIG, then ~/.kube/config, then the in-cluster account)",
-          "global": true
-        },
-        {
-          "name": "o",
-          "type": "string",
-          "default": "",
-          "usage": "also write the plaintext snapshot here (mode 0600; it must not exist)",
-          "global": false
+          "usage": "also write the plaintext snapshot here (mode 0600; it must not exist)"
         }
       ]
     }

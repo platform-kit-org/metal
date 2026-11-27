@@ -1,0 +1,165 @@
+{
+  "path": "pk-metal",
+  "use": "pk-metal",
+  "short": "manage bare-metal machines through their BMCs (Redfish) and the pk-metal operator that runs in a Kubernetes cluster",
+  "long": "exit status:\n  0  success\n  1  error; the message is on stderr, as \"pk-metal: <message>\"\n  2  pk-metal status only: something is blocked or failed and needs a person",
+  "flags": [
+    {
+      "name": "context",
+      "type": "string",
+      "default": "",
+      "usage": "kubeconfig context to use (default: the current context)",
+      "persistent": true
+    },
+    {
+      "name": "kubeconfig",
+      "type": "string",
+      "default": "",
+      "usage": "kubeconfig file (default: $KUBECONFIG, then ~/.kube/config, then the in-cluster account)",
+      "persistent": true
+    }
+  ],
+  "commands": [
+    {
+      "path": "pk-metal status",
+      "use": "status [-o table|json]",
+      "short": "show machines, BMCs, claims and operations, with the reason when something is stuck (reads only)",
+      "long": "Tables:\n  HOST       one row per machine: its asset, vendor, phase, the claim that\n             holds it, the Talos node it runs (name and address), how many of\n             its BMC paths answer, and what blocks it\n  OPERATION  each operation that has not succeeded: waiting for approval,\n             running, or failed (failed ones stay until you retry them)\n  ENDPOINT   one row per BMC\n  CLAIM      claims that have no machine yet\n  CLUSTER    one row per TalosCluster: Talos and Kubernetes versions wanted\n             and running, ready control planes and workers, etcd health,\n             when it was bootstrapped, the backup state, and whether its\n             Kubernetes API is available\n  NODE       one row per TalosNode: its cluster, role, the host it runs on,\n             address, Talos version, boot stage and readiness\n  ROLLOUT    each TalosRollout that has not succeeded: its cluster, kind,\n             nodes done of the plan, where it stands (the reason it waits)\n             and who approved it\nUnder each table, every blocked or failed row gets a line that says why, in\nthe operator's own words, and what to run next when there is a command for it.\n\n-o json prints the same facts as one JSON object, for scripts:\n  {\"version\": 1, \"needsAttention\": bool,\n   \"hosts\":      [{\"name\", \"asset\", \"vendor\", \"phase\", \"claim\",\n                   \"node\": {\"name\", \"address\"} or null,\n                   \"pathsUp\", \"pathsTotal\", \"blockedOn\", \"message\", \"needsAttention\"}],\n   \"operations\": [{\"namespace\", \"name\", \"host\", \"phase\", \"approvedBy\",\n                   \"blockedOn\", \"message\", \"needsAttention\"}],\n   \"endpoints\":  [{\"name\", \"asset\", \"vendor\", \"phase\", \"address\",\n                   \"blockedOn\", \"message\", \"needsAttention\"}],\n   \"claims\":     [{\"namespace\", \"name\", \"asset\", \"host\", \"phase\",\n                   \"blockedOn\", \"message\", \"onHold\", \"needsAttention\"}],\n   \"clusters\":   [{\"name\", \"talosVersion\", \"talosVersionsRunning\",\n                   \"kubernetesVersion\", \"kubernetesVersionRunning\",\n                   \"controlPlanes\", \"readyControlPlanes\", \"workers\",\n                   \"readyWorkers\", \"available\", \"etcd\", \"bootstrappedAt\",\n                   \"backup\", \"backupMessage\", \"message\", \"needsAttention\"}],\n   \"nodes\":      [{\"name\", \"cluster\", \"role\", \"host\", \"address\", \"version\",\n                   \"stage\", \"ready\", \"message\", \"needsAttention\"}],\n   \"rollouts\":   [{\"name\", \"cluster\", \"kind\", \"nodesDone\", \"nodesTotal\",\n                   \"state\", \"approvedBy\", \"message\", \"needsAttention\"}]}\n  Every key is always present; a missing value is \"\" (or null for node).\n  \"operations\", \"claims\" and \"rollouts\" list all of them, also succeeded and\n  bound ones.\n  New keys may be added; existing keys keep their meaning while version is 1.\n\nexit status:\n  0  nothing needs a person\n  1  error: the cluster could not be read\n  2  something is blocked or failed (a row has needsAttention), including\n     operations that wait for approval, a bootstrapped cluster whose etcd or\n     Kubernetes API is unhealthy or whose backup is stale, a node of a\n     running cluster that is not Ready, and a rollout that waits for\n     approval, cannot plan, pauses after its first node, or failed",
+      "example": "  pk-metal status\n  watch -n 10 pk-metal status\n  pk-metal status -o json | jq '.hosts[] | select(.needsAttention)'",
+      "group": "reads",
+      "annotations": {
+        "pk-metal/needs-cluster": "true"
+      },
+      "flags": [
+        {
+          "name": "output",
+          "shorthand": "o",
+          "type": "string",
+          "default": "table",
+          "usage": "output format: table or json"
+        }
+      ]
+    },
+    {
+      "path": "pk-metal restore",
+      "use": "restore",
+      "short": "say what is wrong with a cluster's etcd and propose the operations that restore it; upload an approved snapshot",
+      "long": "restore looks at a cluster's etcd on every control plane and says what is\nwrong and what would fix it. It changes nothing on a machine itself: with\n--propose it creates the operations of the plan, and each waits for another\nperson's approval like any other.\n\nThe talosconfig is read from the cluster's published Secret\n(<cluster>-talosconfig in pk-metal) unless --talosconfig names a file.\n\nhttps://metal.platform-kit.org/operate/day-2/restore-etcd/ walks through each case.",
+      "example": "  pk-metal restore plan lab\n  pk-metal restore plan lab --snapshot lab-daily-20261124-060000 --propose\n  pk-metal approve pk-metal/lab-etcd-recover-node-1          (a person; see selfApproval)\n  pk-metal restore upload pk-metal/lab-etcd-recover-node-1 --identity ~/.config/age/keys.txt",
+      "group": "changes",
+      "annotations": {
+        "pk-metal/needs-cluster": "true"
+      },
+      "flags": [
+        {
+          "name": "talosconfig",
+          "type": "string",
+          "default": "",
+          "usage": "talosconfig file (default: the cluster's published Secret)",
+          "persistent": true
+        }
+      ],
+      "commands": [
+        {
+          "path": "pk-metal restore plan",
+          "use": "plan <cluster> [--snapshot name] [--node name] [--propose]",
+          "short": "say what is wrong with the cluster's etcd and what would fix it; --propose creates the operations",
+          "long": "One member lost (its etcd does not run or reports errors while the\nothers keep their majority): remove that member, wipe the node's etcd\ndata (EPHEMERAL) and let it join again.\nMajority or everything lost (no control plane lists etcd members):\nwipe the etcd data of the members that still run a stuck etcd, then\nrestore one control plane from a snapshot (etcdRecover); the others\njoin it. The newest verified snapshot is used unless --snapshot names\none.",
+          "flags": [
+            {
+              "name": "node",
+              "type": "string",
+              "default": "",
+              "usage": "control plane to restore on (default: the first by name that answers)"
+            },
+            {
+              "name": "propose",
+              "type": "bool",
+              "default": "false",
+              "usage": "create the plan's operations (each waits for approval)"
+            },
+            {
+              "name": "snapshot",
+              "type": "string",
+              "default": "",
+              "usage": "EtcdSnapshot to restore (default: the cluster's newest verified one)"
+            }
+          ]
+        },
+        {
+          "path": "pk-metal restore upload",
+          "use": "upload <operation> --identity <file> [--from-file <file.age>]",
+          "short": "stream the snapshot of an approved etcdRecover operation to its node",
+          "long": "For an approved etcdRecover operation: decrypt the snapshot on this\nmachine with your age identity, check it against the snapshot record,\nand stream it to the node over the Talos API with your talosconfig.\nThe operator then starts etcd from it.",
+          "flags": [
+            {
+              "name": "from-file",
+              "type": "string",
+              "default": "",
+              "usage": "the encrypted snapshot as a file (needed for a pvc sink)"
+            },
+            {
+              "name": "identity",
+              "type": "string",
+              "default": "",
+              "usage": "age identity file (required)"
+            },
+            {
+              "name": "namespace",
+              "shorthand": "n",
+              "type": "string",
+              "default": "pk-metal",
+              "usage": "namespace of the operation"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "pk-metal rollout",
+      "use": "rollout",
+      "short": "see the rollouts that change a Talos cluster node by node (config, upgrade, reboot), approve one, resume it after its pause, or abort it",
+      "long": "A rollout changes the nodes of one Talos cluster one at a time: a config\nchange, a Talos upgrade, a Kubernetes upgrade or a rolling reboot. The\noperator proposes rollouts on its own when the cluster spec and the machines\ndisagree; it never starts one. A person approves the plan.\n\nThe approval names the plan by its hash. If the plan changes before the\nfirst node starts (a node was added, the spec changed again), the approval\nno longer covers it: the rollout ends as PlanChanged and the operator\nproposes a fresh one.\n\nAfter the first node the rollout always pauses, so you can look at that node\nbefore the rest follow. Control planes go first, one at a time, then workers.",
+      "example": "  pk-metal rollout list\n  pk-metal rollout show lab-talosupgrade-1a2b3c4d\n  pk-metal rollout approve lab-talosupgrade-1a2b3c4d\n  pk-metal rollout resume lab-talosupgrade-1a2b3c4d",
+      "group": "changes",
+      "annotations": {
+        "pk-metal/needs-cluster": "true"
+      },
+      "flags": [],
+      "commands": [
+        {
+          "path": "pk-metal rollout list",
+          "use": "list",
+          "short": "every rollout, newest last, with its state",
+          "flags": []
+        },
+        {
+          "path": "pk-metal rollout approve",
+          "use": "approve [--yes] <rollout>",
+          "short": "show the plan, ask, and approve exactly that plan",
+          "flags": [
+            {
+              "name": "yes",
+              "type": "bool",
+              "default": "false",
+              "usage": "do not ask (for scripts); the plan is still printed and still approved only as read"
+            }
+          ]
+        },
+        {
+          "path": "pk-metal rollout abort",
+          "use": "abort [--yes] <rollout>",
+          "short": "stop for good: no further node starts; the node that runs now finishes. An abort cannot be taken back",
+          "flags": [
+            {
+              "name": "yes",
+              "type": "bool",
+              "default": "false",
+              "usage": "do not ask (for scripts)"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

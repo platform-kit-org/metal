@@ -2,9 +2,6 @@
   "name": "inventory",
   "summary": "read the hardware inventory from a BMC and print it as YAML (reads only)",
   "synopsis": "[flags] <bmc-url>",
-  "usage": [
-    "pk-metal inventory [flags] <bmc-url>"
-  ],
   "changes": false,
   "needsCluster": false,
   "description": "",
@@ -15,43 +12,37 @@
       "name": "address",
       "type": "string",
       "default": "",
-      "usage": "address label for the fact file (default: endpoint host)",
-      "global": false
+      "usage": "address label for the fact file (default: endpoint host)"
     },
     {
       "name": "bmc-ca",
       "type": "string",
       "default": "",
-      "usage": "PEM file with the CA certificates that the BMC's TLS certificate must chain to",
-      "global": false
+      "usage": "PEM file with the CA certificates that the BMC's TLS certificate must chain to"
     },
     {
       "name": "insecure",
       "type": "bool",
-      "default": "",
-      "usage": "skip TLS verification of the BMC (prefer --bmc-ca)",
-      "global": false
+      "default": "false",
+      "usage": "skip TLS verification of the BMC (prefer --bmc-ca)"
     },
     {
       "name": "node",
       "type": "string",
       "default": "",
-      "usage": "node name for the fact file (default: derived from the endpoint host)",
-      "global": false
+      "usage": "node name for the fact file (default: derived from the endpoint host)"
     },
     {
       "name": "system",
       "type": "string",
       "default": "",
-      "usage": "system id to describe (default: the BMC's only system)",
-      "global": false
+      "usage": "system id to describe (default: the BMC's only system)"
     },
     {
       "name": "user",
       "type": "string",
       "default": "admin",
-      "usage": "BMC username (password via PK_METAL_BMC_PASSWORD)",
-      "global": false
+      "usage": "BMC username (password via PK_METAL_BMC_PASSWORD)"
     }
   ],
   "subcommands": []

@@ -27,7 +27,7 @@ func main() {
 	flag.StringVar(&cfg.generatedRole, "rbac-role", "pk-metal-manager", "name of the role controller-gen writes from the +kubebuilder:rbac markers")
 	flag.StringVar(&cfg.controllerDir, "controllers", "internal/controller", "controller package: its Named(...) controllers")
 	flag.StringVar(&cfg.glossary, "glossary", "../docs/src/data/glossary.yaml", "hand-written glossary to check (empty: skip the check)")
-	flag.StringVar(&cfg.pkMetal, "pk-metal", "", "pk-metal binary to read the help from (default: build ./cmd/pk-metal into a temporary directory)")
+	flag.StringVar(&cfg.pkMetal, "pk-metal", "", "pk-metal binary to read the command tree from (default: build ./cmd/pk-metal into a temporary directory)")
 	apiDirs := flag.String("api", "api/v1alpha1,api/os/v1alpha1", "comma-separated API packages: actions, phases, conditions and enums")
 	scanDirs := flag.String("scan", "api,internal,cmd", "comma-separated trees searched for +kubebuilder:rbac markers and metal.platform-kit.org/os.platform-kit.org keys")
 	flag.Parse()
@@ -47,7 +47,7 @@ func main() {
 			fail(fmt.Errorf("build pk-metal: %w", err))
 		}
 	}
-	if err := run(cfg, execHelp(cfg.pkMetal)); err != nil {
+	if err := run(cfg, execTree(cfg.pkMetal)); err != nil {
 		fail(err)
 	}
 }
@@ -74,7 +74,7 @@ type config struct {
 
 // run reads every input first and writes only when all of them parsed, so a
 // failure never leaves a half-written data directory behind.
-func run(cfg config, help helpFunc) error {
+func run(cfg config, tree treeFunc) error {
 	if cfg.glossary != "" {
 		if err := checkGlossary(cfg.glossary); err != nil {
 			return err
@@ -90,9 +90,9 @@ func run(cfg config, help helpFunc) error {
 		files[filepath.Join("crds", lowerKind(c.Kind)+".json")] = c
 	}
 
-	index, cmds, err := readCLI(help)
+	index, cmds, err := readCLI(tree)
 	if err != nil {
-		return fmt.Errorf("pk-metal help: %w", err)
+		return fmt.Errorf("pk-metal: %w", err)
 	}
 	files[filepath.Join("cli", "index.json")] = index
 	for _, c := range cmds {

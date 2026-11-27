@@ -4,7 +4,6 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -13,18 +12,12 @@ import (
 
 var update = flag.Bool("update", false, "rewrite the golden files under testdata/golden")
 
-// fixtureHelp answers `pk-metal <args>` from testdata/help: "help" reads
-// help.txt, "rollout approve -h" reads rollout_approve.txt.
-func fixtureHelp(args ...string) (string, error) {
-	name := "help"
-	if args[0] != "help" {
-		name = strings.Join(args[:len(args)-1], "_")
-	}
-	b, err := os.ReadFile(filepath.Join("testdata", "help", name+".txt"))
-	return string(b), err
+// fixtureTree answers `pk-metal __docs` from testdata/tree.json.
+func fixtureTree() ([]byte, error) {
+	return os.ReadFile(filepath.Join("testdata", "tree.json"))
 }
 
-// TestGolden runs docgen over the fixture API, CRD, RBAC and help text and
+// TestGolden runs docgen over the fixture API, CRD, RBAC and command tree and
 // compares every file it writes with testdata/golden.
 func TestGolden(t *testing.T) {
 	out := t.TempDir()
@@ -43,7 +36,7 @@ func TestGolden(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(out, "crds"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(out, "crds", "gone.json"), []byte("{}"), 0o644))
 
-	require.NoError(t, run(cfg, fixtureHelp))
+	require.NoError(t, run(cfg, fixtureTree))
 
 	got := readTree(t, out)
 	golden := filepath.Join("testdata", "golden")
@@ -87,44 +80,6 @@ func keys(m map[string][]byte) []string {
 		out = append(out, k)
 	}
 	return out
-}
-
-func TestParseFlagsSection(t *testing.T) {
-	text := "flags:\n" +
-		"  -o string\n    \toutput format (default \"table\")\n" +
-		"  -secrets talosctl gen secrets\n    \tthe bundle,\n    \tor - for stdin\n" +
-		"  -context string\n    \tkubeconfig context (default: the current context)\n" +
-		"  -wait\n    \twait (default true)\n"
-	flags, err := parseFlagsSection("x\n" + text)
-	require.NoError(t, err)
-	assert.Equal(t, []cliFlag{
-		{Name: "o", Type: "string", Default: "table", Usage: "output format"},
-		{Name: "secrets", Type: "talosctl gen secrets", Usage: "the bundle, or - for stdin"},
-		{Name: "context", Type: "string", Usage: "kubeconfig context (default: the current context)", Global: true},
-		{Name: "wait", Type: "bool", Default: "true", Usage: "wait"},
-	}, flags)
-
-	_, err = parseFlagsSection("x\nflags:\nnot a flag line\n")
-	require.Error(t, err, "an unknown line must fail, not vanish from the table")
-}
-
-func TestSubcommands(t *testing.T) {
-	for _, tc := range []struct {
-		synopsis string
-		want     []string
-	}{
-		{"list | show <rollout> | approve [--yes] <rollout>", []string{"list", "show", "approve"}},
-		{"serve [flags] | fleet --config <file>", []string{"serve", "fleet"}},
-		{"[-n namespace] [--yes] [<operation> | <namespace>/<operation>]", nil},
-		{"[--wait 2m] talos|kubernetes <cluster> <version>", nil},
-		{"<bmc-url>", nil},
-	} {
-		var got []string
-		for _, s := range subcommands(tc.synopsis, "x") {
-			got = append(got, s.Name)
-		}
-		assert.Equal(t, tc.want, got, tc.synopsis)
-	}
 }
 
 func TestStripName(t *testing.T) {

@@ -642,8 +642,7 @@ func (r *EndpointConvergenceReconciler) repair(ctx context.Context, ep *metalv1a
 	return nil
 }
 
-// matchedEndpointProfiles selects profiles against the endpoint's labels,
-// sorted by (layer, name) — merge order.
+// matchedEndpointProfiles selects profiles against the endpoint's labels.
 func (r *EndpointConvergenceReconciler) matchedEndpointProfiles(ctx context.Context, ep *metalv1alpha1.ManagementEndpoint) ([]metalv1alpha1.EndpointProfile, error) {
 	list := &metalv1alpha1.EndpointProfileList{}
 	if err := r.List(ctx, list); err != nil {
@@ -659,12 +658,6 @@ func (r *EndpointConvergenceReconciler) matchedEndpointProfiles(ctx context.Cont
 			matched = append(matched, p)
 		}
 	}
-	slices.SortFunc(matched, func(a, b metalv1alpha1.EndpointProfile) int {
-		if a.Spec.Layer != b.Spec.Layer {
-			return int(a.Spec.Layer - b.Spec.Layer)
-		}
-		return strings.Compare(a.Name, b.Name)
-	})
 	return matched, nil
 }
 
@@ -676,9 +669,9 @@ type endpointDesired struct {
 	tls         *metalv1alpha1.IdentityPolicy
 }
 
-// mergeEndpointProfiles merges by (layer, name): a later layer overrides a
-// whole stanza; two same-layer profiles disagreeing on a stanza is a
-// conflict that holds the endpoint whole. Profiles arrive sorted.
+// mergeEndpointProfiles merges stanza by stanza (mergeLayered): a later layer
+// overrides a whole stanza, and a conflict on one stanza holds the endpoint
+// whole.
 func mergeEndpointProfiles(profiles []metalv1alpha1.EndpointProfile) (endpointDesired, string) {
 	var d endpointDesired
 	var conflict string
@@ -700,24 +693,15 @@ func mergeEndpointProfiles(profiles []metalv1alpha1.EndpointProfile) (endpointDe
 	return d, ""
 }
 
-// mergeStanza runs the per-stanza merge rule: last writer in (layer, name)
-// order wins the whole stanza, same-layer disagreement is a conflict.
+// mergeStanza merges one stanza of the profiles.
 func mergeStanza[T any](profiles []metalv1alpha1.EndpointProfile, stanza string, get func(*metalv1alpha1.EndpointProfileSpec) *T) (*T, string) {
-	var winner *T
-	var layer int32
-	var name string
+	var in []layered[*T]
 	for i := range profiles {
-		p := &profiles[i]
-		v := get(&p.Spec)
-		if v == nil {
-			continue
+		if v := get(&profiles[i].Spec); v != nil {
+			in = append(in, layered[*T]{key: stanza, profile: profiles[i].Name, layer: profiles[i].Spec.Layer, value: v})
 		}
-		if winner != nil && layer == p.Spec.Layer && !equality.Semantic.DeepEqual(winner, v) {
-			return nil, fmt.Sprintf("%s: profiles %s and %s disagree on layer %d", stanza, name, p.Name, p.Spec.Layer)
-		}
-		winner, layer, name = v, p.Spec.Layer, p.Name
 	}
-	return winner, ""
+	return mergeOne(in, func(a, b *T) bool { return equality.Semantic.DeepEqual(a, b) })
 }
 
 // rotationDue reports whether the managed password has outlived the

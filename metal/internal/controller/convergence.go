@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -33,61 +34,78 @@ func selectorMatches(sel metav1.LabelSelector, lbls map[string]string) (bool, er
 	return s.Matches(labels.Set(lbls)), nil
 }
 
-// mergeBios renders matched profiles into one desired attribute map. Merge
-// order is (layer, name); a later layer deliberately overrides an earlier one,
-// same-name determinism comes from the name sort. Two profiles on the SAME
-// layer setting the same key to different values are a conflict — conflicts
-// hold the whole materialization, so the caller must not apply attrs when any
-// are returned. Provenance names the winning profile per key.
-func mergeBios(profiles []metalv1alpha1.BiosProfile) (attrs map[string]apiextensionsv1.JSON, provenance map[string]string, conflicts []string) {
-	slices.SortFunc(profiles, func(a, b metalv1alpha1.BiosProfile) int {
-		if c := int(a.Spec.Layer) - int(b.Spec.Layer); c != 0 {
-			return c
-		}
-		return strings.Compare(a.Name, b.Name)
+// layered is one profile's value for one key, for mergeLayered.
+type layered[V any] struct {
+	key, profile string
+	layer        int32
+	value        V
+}
+
+// mergeLayered is the merge rule of every profile kind. It takes the entries
+// in (layer, profile name) order, and a later layer overrides the value of a
+// key. Two profiles on the same layer that disagree on a key are a conflict,
+// and the first of them keeps the key. won holds the winner of each key;
+// conflicts come back sorted.
+func mergeLayered[V any](in []layered[V], equal func(a, b V) bool) (won map[string]layered[V], conflicts []string) {
+	sorted := slices.Clone(in)
+	slices.SortFunc(sorted, func(a, b layered[V]) int {
+		return cmp.Or(cmp.Compare(a.layer, b.layer), strings.Compare(a.profile, b.profile))
 	})
-	attrs = map[string]apiextensionsv1.JSON{}
-	provenance = map[string]string{}
-	layer := map[string]int32{}
+	won = map[string]layered[V]{}
+	for _, e := range sorted {
+		if prev, ok := won[e.key]; ok && prev.layer == e.layer && !equal(prev.value, e.value) {
+			conflicts = append(conflicts, fmt.Sprintf("%s: profiles %s and %s disagree on layer %d", e.key, prev.profile, e.profile, e.layer))
+			continue
+		}
+		won[e.key] = e
+	}
+	slices.Sort(conflicts)
+	return won, conflicts
+}
+
+// mergeBios renders matched profiles into one desired attribute map, key by
+// key (mergeLayered). Conflicts hold the whole materialization, so the
+// caller must not apply attrs when any are returned. Provenance names the
+// winning profile per key.
+func mergeBios(profiles []metalv1alpha1.BiosProfile) (attrs map[string]apiextensionsv1.JSON, provenance map[string]string, conflicts []string) {
+	var in []layered[apiextensionsv1.JSON]
 	for _, p := range profiles {
 		for k, v := range p.Spec.Attributes {
-			if prev, ok := attrs[k]; ok && layer[k] == p.Spec.Layer && !jsonEqual(jsonAny(prev), jsonAny(v)) {
-				conflicts = append(conflicts,
-					fmt.Sprintf("%s: profiles %s and %s disagree on layer %d", k, provenance[k], p.Name, p.Spec.Layer))
-				continue
-			}
-			attrs[k] = v
-			provenance[k] = p.Name
-			layer[k] = p.Spec.Layer
+			in = append(in, layered[apiextensionsv1.JSON]{key: k, profile: p.Name, layer: p.Spec.Layer, value: v})
 		}
 	}
-	sort.Strings(conflicts)
+	won, conflicts := mergeLayered(in, func(a, b apiextensionsv1.JSON) bool { return jsonEqual(jsonAny(a), jsonAny(b)) })
+	attrs, provenance = map[string]apiextensionsv1.JSON{}, map[string]string{}
+	for k, w := range won {
+		attrs[k], provenance[k] = w.value, w.profile
+	}
 	return attrs, provenance, conflicts
 }
 
-// mergeFirmware resolves matched profiles to one firmware target, same
-// layering rules — the target overrides whole, not per field.
+// mergeFirmware resolves matched profiles to one firmware target, which a
+// later layer overrides whole, not per field.
 func mergeFirmware(profiles []metalv1alpha1.FirmwareProfile) (target metalv1alpha1.FirmwareTarget, conflict string) {
-	slices.SortFunc(profiles, func(a, b metalv1alpha1.FirmwareProfile) int {
-		if c := int(a.Spec.Layer) - int(b.Spec.Layer); c != 0 {
-			return c
-		}
-		return strings.Compare(a.Name, b.Name)
-	})
-	winner := ""
-	var layer int32
+	var in []layered[metalv1alpha1.FirmwareTarget]
 	for _, p := range profiles {
-		if p.Spec.Manager == nil {
-			continue // a system-firmware-only profile says nothing about the manager
+		// A system-firmware-only profile says nothing about the manager.
+		if p.Spec.Manager != nil {
+			in = append(in, layered[metalv1alpha1.FirmwareTarget]{key: "manager", profile: p.Name, layer: p.Spec.Layer, value: *p.Spec.Manager})
 		}
-		if winner != "" && layer == p.Spec.Layer && *p.Spec.Manager != target {
-			return target, fmt.Sprintf("profiles %s and %s disagree on layer %d", winner, p.Name, p.Spec.Layer)
-		}
-		target = *p.Spec.Manager
-		winner = p.Name
-		layer = p.Spec.Layer
 	}
-	return target, ""
+	return mergeOne(in, func(a, b metalv1alpha1.FirmwareTarget) bool { return a == b })
+}
+
+// mergeOne is mergeLayered for the entries of one key: the winner, or the
+// first conflict.
+func mergeOne[V any](in []layered[V], equal func(a, b V) bool) (v V, conflict string) {
+	won, conflicts := mergeLayered(in, equal)
+	if len(conflicts) > 0 {
+		return v, conflicts[0]
+	}
+	for _, w := range won {
+		v = w.value
+	}
+	return v, ""
 }
 
 // validateBios checks desired values against the discovered attribute

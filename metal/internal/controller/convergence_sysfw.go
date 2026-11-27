@@ -28,40 +28,21 @@ func managerProfiles(profiles []metalv1alpha1.FirmwareProfile) []metalv1alpha1.F
 }
 
 // mergeSystemFirmware resolves the system targets of the matched profiles,
-// per component, with the same layering as everything else: (layer, name)
-// order, a later layer overrides the whole target, two profiles on one
-// layer that disagree on a component are a conflict.
+// per component, with the same layering as everything else (mergeLayered):
+// a later layer overrides the whole target of a component.
 func mergeSystemFirmware(profiles []metalv1alpha1.FirmwareProfile) ([]metalv1alpha1.SystemFirmwareTarget, []string) {
-	sorted := slices.Clone(profiles)
-	slices.SortFunc(sorted, func(a, b metalv1alpha1.FirmwareProfile) int {
-		if c := int(a.Spec.Layer) - int(b.Spec.Layer); c != 0 {
-			return c
-		}
-		return strings.Compare(a.Name, b.Name)
-	})
-	type won struct {
-		target  metalv1alpha1.SystemFirmwareTarget
-		profile string
-		layer   int32
-	}
-	by := map[string]won{}
-	var conflicts []string
-	for _, p := range sorted {
+	var in []layered[metalv1alpha1.SystemFirmwareTarget]
+	for _, p := range profiles {
 		for _, t := range p.Spec.System {
-			if prev, ok := by[t.Component]; ok && prev.layer == p.Spec.Layer && prev.target != t {
-				conflicts = append(conflicts, fmt.Sprintf("profiles %s and %s disagree on component %s on layer %d",
-					prev.profile, p.Name, t.Component, p.Spec.Layer))
-				continue
-			}
-			by[t.Component] = won{t, p.Name, p.Spec.Layer}
+			in = append(in, layered[metalv1alpha1.SystemFirmwareTarget]{key: t.Component, profile: p.Name, layer: p.Spec.Layer, value: t})
 		}
 	}
-	out := make([]metalv1alpha1.SystemFirmwareTarget, 0, len(by))
-	for _, w := range by {
-		out = append(out, w.target)
+	won, conflicts := mergeLayered(in, func(a, b metalv1alpha1.SystemFirmwareTarget) bool { return a == b })
+	out := make([]metalv1alpha1.SystemFirmwareTarget, 0, len(won))
+	for _, w := range won {
+		out = append(out, w.value)
 	}
 	slices.SortFunc(out, func(a, b metalv1alpha1.SystemFirmwareTarget) int { return strings.Compare(a.Component, b.Component) })
-	slices.Sort(conflicts)
 	return out, conflicts
 }
 

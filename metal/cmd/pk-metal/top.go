@@ -32,6 +32,7 @@ import (
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
 	"github.com/dennisklein/platform-kit/metal/internal/bmc/sim/fleet"
+	"github.com/dennisklein/platform-kit/metal/internal/poll"
 )
 
 func init() {
@@ -226,10 +227,8 @@ func (w *workloadWatch) run(ctx context.Context, connect func(context.Context) (
 			w.mu.Unlock()
 			return
 		}
-		select {
-		case <-ctx.Done():
+		if poll.Sleep(ctx, retry) != nil {
 			return
-		case <-time.After(retry):
 		}
 	}
 }

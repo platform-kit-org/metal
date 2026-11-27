@@ -21,6 +21,7 @@ import (
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
 	"github.com/dennisklein/platform-kit/metal/internal/etcdbackup"
+	"github.com/dennisklein/platform-kit/metal/internal/poll"
 )
 
 func init() {
@@ -208,10 +209,8 @@ func waitSnapshot(ctx context.Context, cl client.Client, name string, every time
 			fmt.Fprintf(w, "  %s\n", c.Message)
 			last = c.Message
 		}
-		select {
-		case <-ctx.Done():
+		if poll.Sleep(ctx, every) != nil {
 			return fmt.Errorf("snapshot %s did not end in time; see: kubectl get etcdsnapshot %s -o yaml", name, name)
-		case <-time.After(every):
 		}
 	}
 }

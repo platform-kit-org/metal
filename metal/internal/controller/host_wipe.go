@@ -68,11 +68,7 @@ func (r *hostWipeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 	version = strings.TrimSpace(version)
 	name := fmt.Sprintf("wipe-%s-%s", host.Name, hash8(planHash([]string{version, mark})))
-	for i := range ops.Items {
-		op := &ops.Items[i]
-		if op.Name != name {
-			continue
-		}
+	if op := findOp(ops.Items, name); op != nil {
 		if opSucceeded(op) {
 			delete(host.Annotations, metalv1alpha1.AnnotationWipe)
 			delete(host.Annotations, metalv1alpha1.AnnotationDiskNotWiped)

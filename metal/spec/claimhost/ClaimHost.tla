@@ -202,7 +202,7 @@ ClaimBind(c) ==
 \* (liveBoundHosts); the release operations from the cache.
 \* go: controller.HostClaimReconciler.finishRelease 0988f8ac9564
 \* go: controller.HostClaimReconciler.liveBoundHosts d4c505783ee8
-\* go: controller.HostClaimReconciler.release b012e85fc6be
+\* go: controller.HostClaimReconciler.release a12710d39d4e
 \* go: controller.HostClaimReconciler.recordPowerOff c0f1bdd325c8
 \* go: controller.HostClaimReconciler.releaseAll 38f0c45990cc
 \* go: controller.runsNode 0029e5e5ef0d

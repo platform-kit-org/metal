@@ -168,12 +168,7 @@ func (r *HostClaimReconciler) removeNode(ctx context.Context, claim *metalv1alph
 		return err
 	}
 	name := fmt.Sprintf("remove-%s-%s", host.Name, hash8(planHash([]string{string(claim.UID), string(node.UID)})))
-	var op *metalv1alpha1.HostOperation
-	for i := range removals {
-		if removals[i].Name == name {
-			op = &removals[i]
-		}
-	}
+	op := findOp(removals, name)
 	if !touched && op == nil {
 		// Nothing to remove lets the TalosNode go, which cannot be taken
 		// back: confirm against the API server that no boot of the node
@@ -192,15 +187,8 @@ func (r *HostClaimReconciler) removeNode(ctx context.Context, claim *metalv1alph
 	}
 	// No boot of a node on its way out goes on: one waiting for approval is
 	// withdrawn, one running stops between steps.
-	for i := range boots {
-		if boots[i].Finished() || !boots[i].DeletionTimestamp.IsZero() {
-			continue
-		}
-		logf.FromContext(ctx).Info("stopped boot operation of a deleted node", "operation", boots[i].Namespace+"/"+boots[i].Name)
-		if err := deleteOp(ctx, r.Client, r.Audit, &boots[i], audit.DeleteStopped,
-			"TalosNode "+node.Name+" is being deleted"); client.IgnoreNotFound(err) != nil {
-			return err
-		}
+	if err := r.deleteOps(ctx, boots, unfinished, audit.DeleteStopped, "TalosNode "+node.Name+" is being deleted"); err != nil {
+		return err
 	}
 	if op == nil {
 		if why, held := heldBy(claim); held {
@@ -267,14 +255,9 @@ func (r *HostClaimReconciler) removeNode(ctx context.Context, claim *metalv1alph
 		if h != nil && h.Host == host.Name && h.Node == node.Name {
 			claim.Status.HandOff = nil
 		}
-		for i := range boots {
-			if !boots[i].DeletionTimestamp.IsZero() {
-				continue
-			}
-			if err := deleteOp(ctx, r.Client, r.Audit, &boots[i], audit.DeleteRecordOfRemoved,
-				"TalosNode "+node.Name+" was removed from host "+host.Name+" by operation "+ref); client.IgnoreNotFound(err) != nil {
-				return err
-			}
+		if err := r.deleteOps(ctx, boots, nil, audit.DeleteRecordOfRemoved,
+			"TalosNode "+node.Name+" was removed from host "+host.Name+" by operation "+ref); err != nil {
+			return err
 		}
 		msg := fmt.Sprintf("TalosNode %s was removed from its cluster by operation %s; the claim keeps host %s for the node it names next", node.Name, ref, host.Name)
 		if !wipesDisk(op) {

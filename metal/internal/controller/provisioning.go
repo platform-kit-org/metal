@@ -163,17 +163,8 @@ func (r *HostClaimReconciler) provision(ctx context.Context, claim *metalv1alpha
 		// steps. The node a claim boots changes only through here, so no boot
 		// for the old node survives into the new intent.
 		meta.RemoveStatusCondition(&claim.Status.Conditions, metalv1alpha1.ConditionProvisioned)
-		for i := range ops {
-			if ops[i].Finished() || !ops[i].DeletionTimestamp.IsZero() {
-				continue
-			}
-			logf.FromContext(ctx).Info("stopped boot operation of a dropped OS intent", "operation", ops[i].Namespace+"/"+ops[i].Name)
-			if err := deleteOp(ctx, r.Client, r.Audit, &ops[i], audit.DeleteStopped,
-				"claim "+claim.Namespace+"/"+claim.Name+" no longer names an OS"); client.IgnoreNotFound(err) != nil {
-				return err
-			}
-		}
-		return nil
+		return r.deleteOps(ctx, ops, unfinished, audit.DeleteStopped,
+			"claim "+claim.Namespace+"/"+claim.Name+" no longer names an OS")
 	}
 
 	host := &metalv1alpha1.Host{}
@@ -705,14 +696,37 @@ func (r *HostClaimReconciler) claimOps(ctx context.Context, claim *metalv1alpha1
 // withdraw retracts the claim's proposals that never got their gate, except
 // keep — a superseded plan is not left in front of the approver.
 func (r *HostClaimReconciler) withdraw(ctx context.Context, ops []metalv1alpha1.HostOperation, keep string) error {
+	return r.deleteOps(ctx, ops, func(op *metalv1alpha1.HostOperation) bool { return op.Name != keep && op.AwaitsApproval() },
+		audit.DeleteWithdrawn, "a newer boot plan replaces it before anyone approved it")
+}
+
+// deleteOps deletes each operation of ops that pick selects (each one when
+// pick is nil) and that is not being deleted yet, with a line in the manager
+// log and in the audit trail. An operation that is gone is no error.
+func (r *HostClaimReconciler) deleteOps(ctx context.Context, ops []metalv1alpha1.HostOperation,
+	pick func(*metalv1alpha1.HostOperation) bool, reason audit.DeleteReason, why string) error {
 	for i := range ops {
-		if ops[i].Name == keep || !ops[i].AwaitsApproval() {
+		op := &ops[i]
+		if !op.DeletionTimestamp.IsZero() || (pick != nil && !pick(op)) {
 			continue
 		}
-		logf.FromContext(ctx).Info("withdrew obsolete boot proposal", "operation", ops[i].Namespace+"/"+ops[i].Name)
-		if err := deleteOp(ctx, r.Client, r.Audit, &ops[i], audit.DeleteWithdrawn,
-			"a newer boot plan replaces it before anyone approved it"); client.IgnoreNotFound(err) != nil {
+		logf.FromContext(ctx).Info("deleted operation", "operation", op.Namespace+"/"+op.Name, "reason", reason, "why", why)
+		if err := deleteOp(ctx, r.Client, r.Audit, op, reason, why); client.IgnoreNotFound(err) != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+// unfinished: the operation has not ended. Deleted, a running one stops
+// between steps.
+func unfinished(op *metalv1alpha1.HostOperation) bool { return !op.Finished() }
+
+// findOp is the operation of ops with that name, or nil.
+func findOp(ops []metalv1alpha1.HostOperation, name string) *metalv1alpha1.HostOperation {
+	for i := range ops {
+		if ops[i].Name == name {
+			return &ops[i]
 		}
 	}
 	return nil
@@ -1057,12 +1071,8 @@ func (r *HostClaimReconciler) release(ctx context.Context, claim *metalv1alpha1.
 			continue
 		}
 		name := fmt.Sprintf("release-%s-%s", host.Name, short8(string(claim.UID)))
-		var op *metalv1alpha1.HostOperation
-		for j := range releaseOps {
-			if releaseOps[j].Name == name {
-				op = &releaseOps[j]
-			}
-		}
+		op := findOp(releaseOps, name)
+		existed := op != nil
 		// The decision to power off is made once, while the boot records are
 		// still there to read; the release operation then carries it.
 		// A node found already running when the claim was made counts too:
@@ -1141,7 +1151,7 @@ func (r *HostClaimReconciler) release(ctx context.Context, claim *metalv1alpha1.
 			if err := r.recordPowerOff(ctx, host, claim, marked); err != nil {
 				return false, err
 			}
-			if !opExists(releaseOps, name) {
+			if !existed {
 				if err := r.Create(ctx, op); err != nil && !apierrors.IsAlreadyExists(err) {
 					return false, err
 				}
@@ -1186,13 +1196,9 @@ func (r *HostClaimReconciler) release(ctx context.Context, claim *metalv1alpha1.
 	// Running boot operations stop between steps once deleted; their grants
 	// die with them. They go only after the release operations exist, so a
 	// failed pass never loses the record that a boot ran.
-	for i := range provisionOps {
-		if !provisionOps[i].Finished() && provisionOps[i].DeletionTimestamp.IsZero() {
-			if err := deleteOp(ctx, r.Client, r.Audit, &provisionOps[i], audit.DeleteStopped,
-				"claim "+claim.Namespace+"/"+claim.Name+" "+cause); client.IgnoreNotFound(err) != nil {
-				return false, err
-			}
-		}
+	if err := r.deleteOps(ctx, provisionOps, unfinished, audit.DeleteStopped,
+		"claim "+claim.Namespace+"/"+claim.Name+" "+cause); err != nil {
+		return false, err
 	}
 	if !done {
 		return false, nil
@@ -1201,14 +1207,9 @@ func (r *HostClaimReconciler) release(ctx context.Context, claim *metalv1alpha1.
 	// are the claim's working state, not only its history, so they go with
 	// the machine and are not kept for the site's retention; the audit trail
 	// keeps what they decided.
-	for i := range provisionOps {
-		if !provisionOps[i].DeletionTimestamp.IsZero() {
-			continue
-		}
-		if err := deleteOp(ctx, r.Client, r.Audit, &provisionOps[i], audit.DeleteRecordOfRemoved,
-			"claim "+claim.Namespace+"/"+claim.Name+" "+cause+"; the machine it held is released"); client.IgnoreNotFound(err) != nil {
-			return false, err
-		}
+	if err := r.deleteOps(ctx, provisionOps, nil, audit.DeleteRecordOfRemoved,
+		"claim "+claim.Namespace+"/"+claim.Name+" "+cause+"; the machine it held is released"); err != nil {
+		return false, err
 	}
 	return true, nil
 }
@@ -1285,11 +1286,6 @@ func (r *HostClaimReconciler) recordPowerOff(ctx context.Context, host *metalv1a
 	}
 	host.Annotations[annotationReleasePowerOff] = string(claim.UID)
 	return r.Update(ctx, host)
-}
-
-// opExists: an operation of that name is among ops.
-func opExists(ops []metalv1alpha1.HostOperation, name string) bool {
-	return slices.ContainsFunc(ops, func(op metalv1alpha1.HostOperation) bool { return op.Name == name })
 }
 
 // releaseOp builds the release of host: the exit operation (exitOp) of the

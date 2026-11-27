@@ -150,11 +150,13 @@ type HostOperationReconciler struct {
 	// locks keeps two passes off one host and off one BMC. startMu makes a
 	// guarded start (the self guard's verdict through the baseline write)
 	// one at a time across hosts. clock remembers when each waiting step
-	// was first looked at. All three are process memory: a restart loses
-	// no pass, since none runs then.
-	locks   passLocks
-	startMu sync.Mutex
-	clock   stepClocks
+	// was first looked at, and silences since when a node has not answered.
+	// All four are process memory: a restart loses no pass, since none runs
+	// then.
+	locks    passLocks
+	startMu  sync.Mutex
+	clock    stepClocks
+	silences silenceBook
 	// recoveries remembers, by operation UID, when Talos accepted an
 	// etcdRecover request, so a pass soon after does not ask again.
 	recoveries sync.Map
@@ -692,10 +694,11 @@ func (c *stepClocks) forget(key types.NamespacedName) {
 }
 
 // forget drops what this process holds for an operation that ended: its
-// grants, and its step clock.
+// grants, its step clock and its silences.
 func (r *HostOperationReconciler) forget(key types.NamespacedName) {
 	r.revokeGrants(key)
 	r.clock.forget(key)
+	r.silences.forgetOp(key)
 	// The images the operation downloaded by URL go with it.
 	if r.Store != nil {
 		if err := r.Store.RemoveAsset(urlStoreName(key)); err != nil {

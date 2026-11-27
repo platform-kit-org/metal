@@ -13,6 +13,7 @@ import (
 	"google.golang.org/grpc/status"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
@@ -124,6 +125,18 @@ func TestTalosShutdownIsNotDoneOnOneSilentLook(t *testing.T) {
 	m.SetUnreachable(true)
 	op := runOp(t, lab.r)
 	require.True(t, opSucceeded(op), "%+v", op.Status)
+}
+
+// An operation that ends while its node is silent takes the silence with it,
+// as it takes its step clock.
+func TestForgetDropsTheSilencesOfTheOperation(t *testing.T) {
+	r := &HostOperationReconciler{}
+	ended := types.NamespacedName{Namespace: "pk-metal", Name: "reset"}
+	running := silenceKey{op: types.NamespacedName{Namespace: "pk-metal", Name: "shutdown"}, uid: "2"}
+	r.silences.note(silenceKey{op: ended, uid: "1", step: 1}, time.Now())
+	r.silences.note(running, time.Now())
+	r.forget(ended)
+	assert.Equal(t, map[silenceKey]silence{running: r.silences.m[running]}, r.silences.m)
 }
 
 func TestRestartedNeedsMoreThanAClockStep(t *testing.T) {

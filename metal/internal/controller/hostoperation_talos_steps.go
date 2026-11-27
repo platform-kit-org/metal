@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -599,7 +600,7 @@ func (x *exec) talosReset(ctx context.Context, i int, a *metalv1alpha1.TalosRese
 	case err != nil:
 		return waitingOn("asked node %s to reset; its boot time does not read (%v)", node.Name, err), nil
 	}
-	silences.forget(x.silenceKey(i))
+	x.r.silences.forget(x.silenceKey(i))
 	if p.RequestedAt == nil || talosClock().Sub(p.RequestedAt.Time) >= talosResendAfter {
 		return x.askReset(ctx, i, node, acc, opts, p)
 	}
@@ -674,7 +675,7 @@ func (x *exec) talosShutdown(ctx context.Context, i int, a *metalv1alpha1.TalosS
 		case err != nil:
 			return waitingOn("asked node %s to shut down; it answers with an error (%v)", node.Name, err), nil
 		}
-		silences.forget(x.silenceKey(i))
+		x.r.silences.forget(x.silenceKey(i))
 		if p.RequestedAt != nil {
 			return waitingOn("asked node %s to shut down at %s; it still answers",
 				node.Name, p.RequestedAt.UTC().Format(time.RFC3339)), nil
@@ -729,7 +730,6 @@ type silence struct {
 }
 
 type silenceKey struct {
-	r    *HostOperationReconciler
 	op   types.NamespacedName
 	uid  types.UID
 	step int
@@ -742,8 +742,6 @@ type silenceBook struct {
 	mu sync.Mutex
 	m  map[silenceKey]silence
 }
-
-var silences silenceBook
 
 // note adds a silent look and returns the silence so far.
 func (b *silenceBook) note(k silenceKey, now time.Time) silence {
@@ -767,8 +765,15 @@ func (b *silenceBook) forget(k silenceKey) {
 	delete(b.m, k)
 }
 
+// forgetOp drops each silence of the operation op.
+func (b *silenceBook) forgetOp(op types.NamespacedName) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	maps.DeleteFunc(b.m, func(k silenceKey, _ silence) bool { return k.op == op })
+}
+
 func (x *exec) silenceKey(i int) silenceKey {
-	return silenceKey{r: x.r, op: types.NamespacedName{Namespace: x.op.Namespace, Name: x.op.Name}, uid: x.op.UID, step: i}
+	return silenceKey{op: types.NamespacedName{Namespace: x.op.Namespace, Name: x.op.Name}, uid: x.op.UID, step: i}
 }
 
 // silent records one look at a node that did not answer, and reports the
@@ -776,7 +781,7 @@ func (x *exec) silenceKey(i int) silenceKey {
 func (x *exec) silent(i int, node *osv1alpha1.TalosNode, what string, err error) stepState {
 	now := talosClock()
 	gone := min(talosGoneAfter, 6*x.r.waitInterval())
-	s := silences.note(x.silenceKey(i), now)
+	s := x.r.silences.note(x.silenceKey(i), now)
 	if s.looks >= talosGoneLooks && now.Sub(s.since) >= gone {
 		return x.left(i)
 	}
@@ -786,7 +791,7 @@ func (x *exec) silent(i int, node *osv1alpha1.TalosNode, what string, err error)
 
 // left ends a reset or shutdown step: the node is gone.
 func (x *exec) left(i int) stepState {
-	silences.forget(x.silenceKey(i))
+	x.r.silences.forget(x.silenceKey(i))
 	return stepDone
 }
 

@@ -226,10 +226,24 @@ func (r *TalosRolloutReconciler) planPass(ctx context.Context, ro *osv1alpha1.Ta
 		r.set(ro, osv1alpha1.ConditionComplete, metav1.ConditionFalse, osv1alpha1.ReasonRolloutAborted, "aborted before it was approved")
 		return ctrl.Result{}, nil
 	}
-	if stop, err := r.requestersMoved(ctx, ro); stop || err != nil {
+	cluster := &osv1alpha1.TalosCluster{}
+	if err := r.Get(ctx, types.NamespacedName{Name: ro.Spec.ClusterRef.Name}, cluster); err != nil {
+		if client.IgnoreNotFound(err) != nil {
+			return ctrl.Result{}, err
+		}
+		ro.Status.Plan, ro.Status.PlanHash, ro.Status.Steps = nil, planHashOf(ro, nil), nil
+		r.set(ro, osv1alpha1.ConditionPlanned, metav1.ConditionFalse, osv1alpha1.ReasonPlanBlocked,
+			"cluster "+ro.Spec.ClusterRef.Name+" does not exist")
+		return ctrl.Result{RequeueAfter: replanInterval}, nil
+	}
+	members, err := clusterMembers(ctx, r.Client, cluster.Name)
+	if err != nil {
 		return ctrl.Result{}, err
 	}
-	plan, blocked, err := r.plan(ctx, ro)
+	if stop, err := r.requestersMoved(ctx, ro, cluster, members); stop || err != nil {
+		return ctrl.Result{}, err
+	}
+	plan, blocked, err := r.plan(ctx, ro, cluster, members)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -258,17 +272,10 @@ func (r *TalosRolloutReconciler) planPass(ctx context.Context, ro *osv1alpha1.Ta
 // since: the plan, re-made on every pass, would carry their change, and
 // they could approve it. The rollout ends as PlanChanged, unrun, and the
 // proposer proposes it again with their name.
-func (r *TalosRolloutReconciler) requestersMoved(ctx context.Context, ro *osv1alpha1.TalosRollout) (bool, error) {
+func (r *TalosRolloutReconciler) requestersMoved(ctx context.Context, ro *osv1alpha1.TalosRollout,
+	cluster *osv1alpha1.TalosCluster, members []osv1alpha1.TalosNode) (bool, error) {
 	if r.Proposer == "" || ro.Spec.ProposedBy != r.Proposer {
 		return false, nil
-	}
-	cluster := &osv1alpha1.TalosCluster{}
-	if err := r.Get(ctx, types.NamespacedName{Name: ro.Spec.ClusterRef.Name}, cluster); err != nil {
-		return false, client.IgnoreNotFound(err)
-	}
-	members, err := clusterMembers(ctx, r.Client, cluster.Name)
-	if err != nil {
-		return false, err
 	}
 	now, err := clusterRequesters(ctx, r.Client, r.Namespace, cluster, members)
 	if err != nil {
@@ -769,21 +776,12 @@ func (r *TalosRolloutReconciler) etcdGate(ctx context.Context, cluster *osv1alph
 	return "", nil
 }
 
-// plan computes the rollout's plan from the world as it is now. blocked says
-// why a plan cannot be made yet (a node not ready to be planned); the steps
-// planned so far are still returned for the person to read.
-func (r *TalosRolloutReconciler) plan(ctx context.Context, ro *osv1alpha1.TalosRollout) ([]osv1alpha1.RolloutStep, string, error) {
-	cluster := &osv1alpha1.TalosCluster{}
-	if err := r.Get(ctx, types.NamespacedName{Name: ro.Spec.ClusterRef.Name}, cluster); err != nil {
-		if client.IgnoreNotFound(err) != nil {
-			return nil, "", err
-		}
-		return nil, "cluster " + ro.Spec.ClusterRef.Name + " does not exist", nil
-	}
-	members, err := clusterMembers(ctx, r.Client, cluster.Name)
-	if err != nil {
-		return nil, "", err
-	}
+// plan computes the rollout's plan for cluster and its members as they are
+// now. blocked says why a plan cannot be made yet (a node not ready to be
+// planned); the steps planned so far are still returned for the person to
+// read.
+func (r *TalosRolloutReconciler) plan(ctx context.Context, ro *osv1alpha1.TalosRollout, cluster *osv1alpha1.TalosCluster,
+	members []osv1alpha1.TalosNode) ([]osv1alpha1.RolloutStep, string, error) {
 	hosts, err := hostsByNode(ctx, r.Client)
 	if err != nil {
 		return nil, "", err

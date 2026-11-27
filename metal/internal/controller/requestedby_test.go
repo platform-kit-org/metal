@@ -51,13 +51,13 @@ func TestRolloutEndsWhenItsRequestersMove(t *testing.T) {
 	cl := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(cluster).Build()
 	r := &TalosRolloutReconciler{Client: cl, Namespace: "pk-metal", Proposer: "operator"}
 
-	stop, err := r.requestersMoved(t.Context(), ro)
+	stop, err := r.requestersMoved(t.Context(), ro, cluster, nil)
 	require.NoError(t, err)
 	assert.False(t, stop, "the same requesters: the rollout goes on")
 
 	cluster.Annotations = requested("bob")
 	require.NoError(t, cl.Update(t.Context(), cluster))
-	stop, err = r.requestersMoved(t.Context(), ro)
+	stop, err = r.requestersMoved(t.Context(), ro, cluster, nil)
 	require.NoError(t, err)
 	require.True(t, stop)
 	c := meta.FindStatusCondition(ro.Status.Conditions, osv1alpha1.ConditionComplete)
@@ -68,7 +68,7 @@ func TestRolloutEndsWhenItsRequestersMove(t *testing.T) {
 	person := ro.DeepCopy()
 	person.Status = osv1alpha1.TalosRolloutStatus{}
 	person.Spec.ProposedBy = "dave"
-	stop, err = r.requestersMoved(t.Context(), person)
+	stop, err = r.requestersMoved(t.Context(), person, cluster, nil)
 	require.NoError(t, err)
 	assert.False(t, stop, "a rollout a person created names that person; the check is for the operator's")
 }

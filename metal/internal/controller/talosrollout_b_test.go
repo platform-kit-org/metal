@@ -22,7 +22,7 @@ func TestPlanRefusesASkippedKubernetesMinor(t *testing.T) {
 		ClusterRef: osv1alpha1.Reference{Name: "c"}, Kind: osv1alpha1.RolloutKubernetesUpgrade,
 		Target: &osv1alpha1.RolloutTarget{KubernetesVersion: "v1.36.2"}}}
 
-	plan, why, err := r.plan(t.Context(), ro)
+	plan, why, err := r.plan(t.Context(), ro, cluster, nil)
 	require.NoError(t, err)
 	assert.Empty(t, plan)
 	assert.Contains(t, why, "one minor at a time")
@@ -61,7 +61,7 @@ func TestPlanBlocksConfigWhileTheBundleIsHeld(t *testing.T) {
 	ro := &osv1alpha1.TalosRollout{Spec: osv1alpha1.TalosRolloutSpec{
 		ClusterRef: osv1alpha1.Reference{Name: "c"}, Kind: osv1alpha1.RolloutConfig}}
 
-	plan, why, err := r.plan(t.Context(), ro)
+	plan, why, err := r.plan(t.Context(), ro, cluster, nil)
 	require.NoError(t, err)
 	assert.Empty(t, plan)
 	assert.Contains(t, why, "SecretsBundleHeld=True")

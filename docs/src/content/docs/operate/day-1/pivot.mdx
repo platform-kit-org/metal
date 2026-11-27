@@ -4,6 +4,7 @@ description: Move the operator and its objects from the bootstrap cluster onto t
 type: howto
 day: 1
 xref: { cat: howto, id: pivot }
+redirectFrom: [operate/day-2/move-back/]
 sidebar:
   order: 9
 sources:
@@ -88,7 +89,66 @@ Their finalizers wait for an operator that does not run there, and the deletion 
 
 ## Roll back
 
-See [](howto:move-back).
+Run the operator in the bootstrap cluster again. You need the kubeconfigs of both clusters, for example `bootstrap.kubeconfig` and `mgmt.kubeconfig`. The pivot output says if the new manager runs.
+
+| The new manager | Method |
+| --- | --- |
+| Does not run | Stop it, then scale the old manager up again. |
+| Runs | Pivot in the other direction. |
+
+<Callout type="warning">
+Do not run the two managers at the same time. Two operators then act on the same machines.
+</Callout>
+
+### The new manager does not run
+
+<Steps>
+
+1. Stop the new manager. If the move stopped before it started the new manager, this step changes nothing.
+
+   ```sh
+   kubectl --kubeconfig mgmt.kubeconfig -n pk-metal scale deployment pk-metal-manager --replicas=0
+   ```
+
+2. Make sure that the list shows no manager pod.
+
+   ```sh
+   kubectl --kubeconfig mgmt.kubeconfig -n pk-metal get pods
+   ```
+
+3. Give the source its manager back.
+
+   ```sh
+   kubectl --kubeconfig bootstrap.kubeconfig -n pk-metal scale deployment pk-metal-manager --replicas=1
+   ```
+
+4. Make sure that the manager runs.
+
+   ```sh
+   pk-metal --kubeconfig bootstrap.kubeconfig status
+   ```
+
+</Steps>
+
+The objects on the target are a copy that nothing acts on. Remove them, or keep them for the next move.
+
+### The new manager runs
+
+<Steps>
+
+1. Move from the new cluster to the bootstrap cluster.
+
+   ```sh
+   pk-metal --kubeconfig mgmt.kubeconfig pivot --to bootstrap.kubeconfig
+   ```
+
+   The source of the first move accepts the move back. The move removes objects that are gone on the new source.
+
+2. Type `y` to start.
+
+</Steps>
+
+After the roll back, `pk-metal --kubeconfig bootstrap.kubeconfig status` shows each Host in its phase. The manager on the other cluster has zero replicas.
 
 ## If it fails
 
@@ -99,7 +159,7 @@ See [](howto:move-back).
 | The target has no storage | Give it a default StorageClass, or use `--media-store=ephemeral`. |
 | The manager pod on the target shows `ImagePullBackOff` | The nodes cannot pull the image. Push it to a registry, then run the command again with `--image`. |
 | The manager pod on the target stays `Pending` | No node accepts the pod. Add a worker, or set `controlPlane.allowScheduling: true` and let the rollout complete. Then run the command again. |
-| The new operator proposed an operation | The move fails and names it. See [](howto:move-back). |
+| The new operator proposed an operation | The move fails and names it. See [Roll back](#roll-back). |
 
 ## Related
 

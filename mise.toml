@@ -183,14 +183,21 @@ go run ./hack/crddiff ${CRD_DIFF_STRICT:+-strict} "$old" config/crd
 '''
 
 [tasks."generate:check"]
-description = "Fail when a generated file is out of date with its source"
-depends = ["generate"]
+description = "Fail when a generated file is out of date with its source (mise run generate changes a file)"
+# Compare the files before and after generate, not with HEAD: the edits that are not
+# committed yet are in both states, so only a file that generate writes counts.
 run = '''
-drift=$(git status --porcelain -- metal/api metal/config docs/src/data/generated)
-if [ -n "$drift" ]; then
-  echo "generate:check: generated files are out of date. Run 'mise run generate' and commit the result:" >&2
-  echo "$drift" >&2
-  git --no-pager diff --stat -- metal/api metal/config docs/src/data/generated >&2
+paths="metal/api metal/config docs/src/data/generated"
+state() {
+  { git diff --name-only HEAD -- $paths; git ls-files -o --exclude-standard -- $paths; } |
+    while read -r f; do echo "$f $(git hash-object "$f" 2>/dev/null || echo deleted)"; done
+}
+before=$(state)
+mise run generate
+after=$(state)
+if [ "$after" != "$before" ]; then
+  echo "generate:check: generated files are out of date. 'mise run generate' changed these; commit them:" >&2
+  printf '%s\n' "$before" "$after" | sort | uniq -u | sed -n 's/ .*//p' | sort -u >&2
   exit 1
 fi
 echo "generate:check: clean"

@@ -79,8 +79,8 @@ The controllers reconcile the [kinds](kind:index) of the API group. [](ctrl:inde
 | `--media-listen` | `:8443` | The address of the media service (HTTPS). |
 | `--media-url` | empty | `https://host[:port]` where BMCs reach the media service. Empty stops the media service, and with it installs. |
 | `--media-cert-secret` | empty | Secret with the media certificate, read again each minute. Empty uses a self-signed certificate, replaced 10 days before it expires. |
-| `--media-store` | empty | Directory of the media store for embedded installers. |
-| `--media-store-claim` | empty | PersistentVolumeClaim at `--media-store`, which the imager Jobs mount. Needs `--media-store`. |
+| `--media-store` | empty | Directory of the media store for embedded installers. Empty: a directory in the temporary directory of the pod, which holds the downloads only. Then the operator cannot install machines behind a [one-slot BMC](concept:one-slot-bmc). |
+| `--media-store-claim` | empty | PersistentVolumeClaim at `--media-store`, which the imager Jobs mount. Needs `--media-store`. Empty: the imager builds no installer. |
 | `--imager-repository` | upstream | Where the imager image comes from. The default is `ghcr.io/siderolabs/imager`. |
 | `--imager-digest` | current release | `<version>=sha256:<digest>`. Can repeat. |
 | `--imager-helper-image` | pod image | The image with the manager binary for the imager Jobs. |
@@ -91,6 +91,7 @@ The controllers reconcile the [kinds](kind:index) of the API group. [](ctrl:inde
 | `--operation-workers` | `4` | How many operations the manager works on at the same time, each on a different host. From 1 to 64. A firmware flash keeps one for up to 15 minutes, and keeps its image in memory. If you set more, give the manager more memory. |
 | `--node-name` | `$NODE_NAME` | The Kubernetes node of the pod. With it, the self guard works. See [](ctrl:protection). |
 | `--metrics-bind-address` | `0` (off) | Address of `/metrics`. |
+| `--metrics-secure` | `true` | Serve `/metrics` over HTTPS, only to a caller whose token may get the URL `/metrics`. `false` serves plain HTTP to each caller. |
 | `--health-probe-bind-address` | `0` (off) | Address of `/healthz` and `/readyz`. |
 | `--leader-elect` | `false` | Use leader election. |
 | `--version` | | Print the version and stop. |

@@ -124,11 +124,15 @@ This stage is a short form of [](howto:install-operator). That page explains eac
 
 8. In `overlays/site/ledger.yaml`, write one line: the BMC MAC and `https://192.0.2.21`.
 
-9. Decide how the manager checks the BMC certificate. See [BMC certificates](howto:install-operator#bmc-certificates). For this first test on a closed BMC network, you can remove `--bmc-ca-secret=bmc-ca`. The manager then pins the key that the BMC shows at the first contact.
+9. In `overlays/site/networkpolicy.yaml`, set the CIDR of your BMC network. Until you set it, each mount fails with a connection error. See [](ref:media-store#network-policy).
 
-10. If the BMC has one slot, remove the comment mark from the component `media-store` in `overlays/site/kustomization.yaml`.
+10. In `overlays/site/kustomization.yaml`, remove the comment marks from the patch of `pk-metal-media`. kind replaces the BMC address with a node address (SNAT), and the patch prevents this.
 
-11. Apply the overlay.
+11. Decide how the manager checks the BMC certificate. See [BMC certificates](howto:install-operator#bmc-certificates). For this first test on a closed BMC network, you can remove `--bmc-ca-secret=bmc-ca`. The manager then pins the key that the BMC shows at the first contact.
+
+12. If the BMC has one slot, remove the comment mark from the component `media-store` in `overlays/site/kustomization.yaml`.
+
+13. Apply the overlay.
 
     ```sh
     kubectl apply --server-side -k overlays/site
@@ -269,7 +273,7 @@ If no Host comes and `kubectl get managementendpoints` shows `Unreachable`, the 
 | --- | --- |
 | The manager pod is not `Running` | [If it fails](howto:install-operator#if-it-fails) of the install how-to |
 | The endpoint is `Unreachable` | [](rb:bmc-unreachable) |
-| The operation fails at `insertMedia` | [](rb:media-slot-busy), and [The BMC and the image factory](howto:network-checklist#the-bmc-and-the-image-factory) |
+| The operation fails at `insertMedia` | If the BMC log shows a connection error: steps 9 and 10 of stage 2. Else [](rb:media-slot-busy), and [The BMC and the image factory](howto:network-checklist#the-bmc-and-the-image-factory) |
 | The Host stays `Provisioning`, and the console shows no boot | [](rb:node-not-ready), and the boot mode and Secure Boot in [](ref:hardware) |
 | The operation is `Failed` | [](rb:operation-failed) |
 

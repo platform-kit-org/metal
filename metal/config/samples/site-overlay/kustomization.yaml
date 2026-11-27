@@ -70,6 +70,10 @@ patches:
       version: v1
       kind: NetworkPolicy
       name: pk-metal-manager
+  # A cluster with one node, such as kind: keep the BMC address for the
+  # NetworkPolicy. Without it, the node address replaces it (SNAT).
+  # - target: {version: v1, kind: Service, name: pk-metal-media}
+  #   patch: '[{"op": "add", "path": "/spec/externalTrafficPolicy", "value": "Local"}]'
   - path: manager_args.yaml
     target:
       group: apps

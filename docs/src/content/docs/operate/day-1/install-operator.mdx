@@ -118,7 +118,9 @@ The overlay is a kustomize directory. It adds the values of your site to the bas
 
 12. On Kubernetes older than 1.36, remove the component `name-stamp` from `kustomization.yaml`. See [](ref:admission-policies#requested-by-stamp).
 
-13. In `networkpolicy.yaml`, set the CIDR of your BMC network. Only that network can fetch boot media. Until you set it, each mount fails with a connection error. Behind SNAT, add the node network too. See [](ref:media-store#network-policy).
+13. In `networkpolicy.yaml`, set the CIDR of your BMC network. Only that network can fetch boot media. Until you set it, each mount fails with a connection error. See [](ref:media-store#network-policy).
+
+14. On kind, remove the comment marks from the patch of `pk-metal-media` in `kustomization.yaml`. Then the policy sees the BMC address, not a node address. On a cluster with more nodes, add the node network to `networkpolicy.yaml`. See [](ref:media-store#source-addresses-and-nat).
 
 </Steps>
 
@@ -126,13 +128,13 @@ The overlay is a kustomize directory. It adds the values of your site to the bas
 
 <Steps>
 
-14. Show what the overlay makes. Read the Deployment at the end.
+15. Show what the overlay makes. Read the Deployment at the end.
 
     ```sh
     kubectl kustomize overlays/site | less
     ```
 
-15. Apply the overlay. Server-side apply is necessary, because the CRDs are large.
+16. Apply the overlay. Server-side apply is necessary, because the CRDs are large.
 
     ```sh
     kubectl apply --server-side --force-conflicts -k overlays/site
@@ -140,7 +142,7 @@ The overlay is a kustomize directory. It adds the values of your site to the bas
 
     Use this command for each later apply. After a [pivot](howto:pivot), `--force-conflicts` makes the overlay the owner of its fields again.
 
-16. Wait for the manager.
+17. Wait for the manager.
 
     ```sh
     kubectl -n pk-metal rollout status deployment/pk-metal-manager --timeout=180s

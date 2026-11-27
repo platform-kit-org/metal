@@ -64,7 +64,7 @@ const steps = [
   {
     title: 'Restored',
     caption: 'Talos starts etcd on one node from the snapshot. The other control planes join it. Bootstrapped is True again.',
-    code: 'kubectl get taloscluster lab',
+    code: 'pk-metal status',
     state: { etcd: 'ok', ops: 'ok', snap: 'ok' },
     text: { 'etcd-ph': '3 healthy', 'snap-ph': 'Verified', 'sink-ph': 'ciphertext', 'ops-ph': 'Succeeded' },
   },

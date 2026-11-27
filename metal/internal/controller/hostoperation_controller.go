@@ -917,9 +917,6 @@ func (r *HostOperationReconciler) expire(ctx context.Context, op *metalv1alpha1.
 		return ctrl.Result{}, err
 	}
 	if keep.forever {
-		if keep.problem != "" {
-			logf.FromContext(ctx).Info(keep.problem)
-		}
 		return ctrl.Result{RequeueAfter: settingsRecheck}, nil
 	}
 	ttl := time.Duration(*op.Spec.TTLSecondsAfterFinished) * time.Second

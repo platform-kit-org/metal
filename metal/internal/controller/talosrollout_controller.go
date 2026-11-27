@@ -22,7 +22,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
@@ -164,9 +163,6 @@ func (r *TalosRolloutReconciler) expire(ctx context.Context, ro *osv1alpha1.Talo
 		return ctrl.Result{}, err
 	}
 	if keep.forever {
-		if keep.problem != "" {
-			logf.FromContext(ctx).Info(keep.problem)
-		}
 		return ctrl.Result{RequeueAfter: settingsRecheck}, nil
 	}
 	if wait := time.Until(c.LastTransitionTime.Add(keep.keep)); wait > 0 {

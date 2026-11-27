@@ -9,7 +9,11 @@ export const collections = {
     loader: docsLoader(),
     schema: docsSchema({
       extend: z.object({
-        /** Page type. It selects the page template and the checks in scripts/check-pages.mjs. */
+        /**
+         * Page type. It sets the eyebrow (PageTitle), the type in the <title> (Head) and the counts
+         * of NavCards. It keeps a landing page out of the sidebar, and selects the back-link rule
+         * of scripts/check-xrefs.mjs.
+         */
         type: z
           .enum(['landing', 'start', 'kind', 'controller', 'cli', 'lab', 'concept', 'workflow', 'howto', 'runbook', 'tutorial', 'reference', 'project'])
           .optional(),
@@ -41,8 +45,6 @@ export const collections = {
         eyebrow: z.string().optional(),
         /** Day 1 (install) or day 2 (operation) for how-to pages. */
         day: z.union([z.literal(1), z.literal(2)]).optional(),
-        /** Source files that the page describes, as `/repo/<path>`. */
-        sources: z.array(z.string()).default([]),
       }),
     }),
   }),

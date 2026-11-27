@@ -3,10 +3,6 @@ title: Operation workers busy
 description: Each HostOperation worker of the manager has been busy for an hour. Approved operations of other hosts wait. Wait for a planned change, or give the manager more workers.
 type: runbook
 xref: { cat: rb, id: workers-busy }
-sources:
-  - /repo/metal/config/prometheus/rules.yaml
-  - /repo/metal/cmd/manager/main.go
-  - /repo/metal/internal/controller/hostoperation_controller.go
 ---
 
 import { Steps } from '@astrojs/starlight/components';

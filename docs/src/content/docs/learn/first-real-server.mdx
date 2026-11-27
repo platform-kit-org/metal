@@ -180,8 +180,7 @@ This stage is a short form of [](howto:install-operator). That page explains eac
 
 </Steps>
 
-**Checkpoint.** One Host is `Available`. If it shows `Mismatch`, see [](rb:host-mismatch).
-If no Host comes and `kubectl get managementendpoints` shows `Unreachable`, the cause is usually the BMC certificate. See [](rb:bmc-unreachable).
+**Checkpoint.** One Host is `Available`. If the Host stays `Inspecting`, or no Host comes, run `kubectl get managementendpoints` and use the table at the end.
 
 ### 4. Define the cluster
 
@@ -333,6 +332,7 @@ If no Host comes and `kubectl get managementendpoints` shows `Unreachable`, the 
 | --- | --- |
 | The manager pod is not `Running` | [If it fails](howto:install-operator#if-it-fails) of the install how-to |
 | The endpoint is `Unreachable` | [](rb:bmc-unreachable) |
+| The endpoint is `Mismatch` | [](rb:host-mismatch) |
 | The operation fails at `insertMedia` | If the BMC log shows a connection error: steps 9 and 10 of stage 2. Else [](rb:media-slot-busy), and [The BMC and the image factory](howto:network-checklist#the-bmc-and-the-image-factory) |
 | The Host stays `Provisioning`, and the console shows Talos | The operator cannot reach the node. Check the paths to TCP 50000 and TCP 6443 in [Time and prerequisites](#time-and-prerequisites). |
 | The Host stays `Provisioning`, and the console shows no boot | [](rb:node-not-ready), and the boot mode and Secure Boot in [](ref:hardware) |

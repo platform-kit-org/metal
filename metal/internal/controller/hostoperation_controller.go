@@ -749,6 +749,15 @@ type persistError struct{ err error }
 func (e *persistError) Error() string { return "record progress: " + e.err.Error() }
 func (e *persistError) Unwrap() error { return e.err }
 
+// persist writes the progress of the step in flight. A failed write is a
+// persistError.
+func (x *exec) persist() error {
+	if err := x.flush(); err != nil {
+		return &persistError{err}
+	}
+	return nil
+}
+
 // holdError is a connection hold — no reachable path, credentials not
 // readable — met by a step that needed the machine.
 type holdError struct{ reason, msg string }

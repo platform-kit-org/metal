@@ -115,10 +115,7 @@ func (x *exec) progress(i int) *metalv1alpha1.TalosStepProgress {
 // resumed pass continues from.
 func (x *exec) record(p *metalv1alpha1.TalosStepProgress) error {
 	x.op.Status.TalosStep = p
-	if err := x.flush(); err != nil {
-		return &persistError{err}
-	}
-	return nil
+	return x.persist()
 }
 
 // talosStep runs action i when it is one of the Talos or Kubernetes actions;
@@ -207,10 +204,7 @@ func (x *exec) noteCordon(node string, changed bool) error {
 		return nil
 	}
 	x.op.Status.CordonedNode = node
-	if err := x.flush(); err != nil {
-		return &persistError{err}
-	}
-	return nil
+	return x.persist()
 }
 
 func (x *exec) uncordon(ctx context.Context, ref metalv1alpha1.Reference) (stepState, error) {

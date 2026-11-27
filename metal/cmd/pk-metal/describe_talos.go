@@ -15,39 +15,6 @@ import (
 // The executor's step semantics are in docs/src/content/docs/reference/actions.mdx; keep the
 // two in step.
 
-// talosNodeRef is the TalosNode a Talos or Kubernetes action names, or "".
-func talosNodeRef(a metalv1alpha1.HostOperationAction) string {
-	switch {
-	case a.Cordon != nil:
-		return a.Cordon.NodeRef.Name
-	case a.Drain != nil:
-		return a.Drain.NodeRef.Name
-	case a.Uncordon != nil:
-		return a.Uncordon.NodeRef.Name
-	case a.TalosReboot != nil:
-		return a.TalosReboot.NodeRef.Name
-	case a.TalosShutdown != nil:
-		return a.TalosShutdown.NodeRef.Name
-	case a.TalosUpgrade != nil:
-		return a.TalosUpgrade.NodeRef.Name
-	case a.TalosApplyConfig != nil:
-		return a.TalosApplyConfig.NodeRef.Name
-	case a.EtcdLeave != nil:
-		return a.EtcdLeave.NodeRef.Name
-	case a.EtcdRemoveMember != nil:
-		return a.EtcdRemoveMember.NodeRef.Name
-	case a.TalosReset != nil:
-		return a.TalosReset.NodeRef.Name
-	case a.WaitNodeReady != nil:
-		return a.WaitNodeReady.NodeRef.Name
-	case a.WaitEtcdHealthy != nil:
-		return a.WaitEtcdHealthy.NodeRef.Name
-	case a.AwaitCheckIn != nil:
-		return a.AwaitCheckIn.NodeRef.Name
-	}
-	return ""
-}
-
 // nodeLabel names a node with its role and cluster when they are known.
 func nodeLabel(name string, pc planContext) string {
 	n := pc.Nodes[name]
@@ -71,7 +38,7 @@ func secondsOr(s int32, def time.Duration) string {
 // describeTalosAction is the plan line of a Talos or Kubernetes action; ok
 // is false for the other actions.
 func describeTalosAction(a metalv1alpha1.HostOperationAction, pc planContext) (string, bool) {
-	node := nodeLabel(talosNodeRef(a), pc)
+	node := nodeLabel(a.NodeName(), pc)
 	switch {
 	case a.Cordon != nil:
 		return fmt.Sprintf("cordon %s: Kubernetes schedules no new pods there; running pods stay", node), true

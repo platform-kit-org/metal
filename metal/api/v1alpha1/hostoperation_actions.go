@@ -30,5 +30,21 @@ func (a HostOperationAction) Key() string {
 	return "unknown"
 }
 
+// NodeName is the TalosNode that the set action names in its nodeRef, or ""
+// for an action without one (the BMC actions). Like Key, it reads the union
+// through reflection, so a new action with a nodeRef needs no second list.
+func (a HostOperationAction) NodeName() string {
+	v := reflect.ValueOf(a)
+	for i := range v.NumField() {
+		if f := v.Field(i); !f.IsNil() {
+			if ref := f.Elem().FieldByName("NodeRef"); ref.IsValid() {
+				return ref.Interface().(Reference).Name
+			}
+			return ""
+		}
+	}
+	return ""
+}
+
 // ActionKeys lists every action key the API defines, in field order.
 func ActionKeys() []string { return append([]string(nil), actionKeys...) }

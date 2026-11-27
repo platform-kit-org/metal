@@ -143,7 +143,7 @@ func TestEveryActionIsDescribed(t *testing.T) {
 		reflect.ValueOf(&one).Elem().Field(i).Set(v.Field(i))
 		got := describeAction(one, pc)
 		assert.NotContains(t, got, "not described", one.Key())
-		if talosNodeRef(one) != "" && one.AwaitCheckIn == nil {
+		if _, talos := describeTalosAction(one, pc); talos {
 			assert.Contains(t, got, "node cp-2 (control plane of cluster lab)", one.Key())
 		}
 	}

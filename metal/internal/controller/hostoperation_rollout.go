@@ -60,7 +60,7 @@ func rolloutCovers(ro *osv1alpha1.TalosRollout, op *metalv1alpha1.HostOperation)
 	}
 	node := ""
 	for _, a := range op.Spec.Actions {
-		if n := actionNode(a); n != "" {
+		if n := a.NodeName(); n != "" {
 			node = n
 			break
 		}

@@ -405,6 +405,27 @@ func TestFinalizerWaitsForTheEtcdMember(t *testing.T) {
 	assert.Error(t, lab.r.Get(t.Context(), client.ObjectKey{Name: "cp-2"}, node), "gone")
 }
 
+// An etcd recovery that has not finished acts on its target node: the
+// node's deletion waits for it, and an event of the operation wakes the node.
+func TestFinalizerWaitsForAnEtcdRecovery(t *testing.T) {
+	op := &metalv1alpha1.HostOperation{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "pk-metal", Name: "lab-etcd-recover-cp-1"},
+		Spec: metalv1alpha1.HostOperationSpec{HostRef: metalv1alpha1.Reference{Name: "host-a"}, Actions: []metalv1alpha1.HostOperationAction{{
+			EtcdRecover: &metalv1alpha1.EtcdRecoverAction{NodeRef: metalv1alpha1.Reference{Name: "cp-1"}},
+		}}},
+	}
+	lab := newLifecycleLab(t, []string{"cp-1", "cp-2"}, nil, op)
+	node := &osv1alpha1.TalosNode{}
+	require.NoError(t, lab.r.Get(t.Context(), client.ObjectKey{Name: "cp-1"}, node))
+	fin := &TalosNodeMemberReconciler{Client: lab.r.Client, Dial: lab.fleet.Dialer(), CredentialsNamespace: "pk-metal", OperationsNamespace: "pk-metal"}
+
+	reason, msg, err := fin.blocked(t.Context(), node)
+	require.NoError(t, err)
+	assert.Equal(t, osv1alpha1.ReasonMachineAssigned, reason, msg)
+	assert.Contains(t, msg, "operation pk-metal/lab-etcd-recover-cp-1 acts on this node")
+	assert.Equal(t, []ctrl.Request{requestFor("cp-1")}, nodesOfOperation(t.Context(), op))
+}
+
 // ---- joining ---------------------------------------------------------------
 
 func TestControlPlanesJoinOneAtATime(t *testing.T) {

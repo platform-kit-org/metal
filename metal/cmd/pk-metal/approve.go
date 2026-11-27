@@ -485,7 +485,7 @@ func loadPlanContext(ctx context.Context, cl client.Client, op *metalv1alpha1.Ho
 				pc.BootAssets[name] = ba
 			}
 		}
-		if name := talosNodeRef(a); name != "" && pc.Nodes[name] == nil {
+		if name := a.NodeName(); name != "" && pc.Nodes[name] == nil {
 			n := &osv1alpha1.TalosNode{}
 			if ok, err := optional(name, n, "TalosNode"); err != nil {
 				return pc, err

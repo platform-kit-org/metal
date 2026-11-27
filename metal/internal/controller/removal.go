@@ -147,45 +147,6 @@ func wipesDisk(op *metalv1alpha1.HostOperation) bool {
 	})
 }
 
-// actionNode is the TalosNode an action names, "" for the BMC actions. The
-// release plan (removal.go) and the rollout gate (hostoperation_rollout.go)
-// both read it.
-func actionNode(a metalv1alpha1.HostOperationAction) string {
-	switch {
-	case a.AwaitCheckIn != nil:
-		return a.AwaitCheckIn.NodeRef.Name
-	case a.Cordon != nil:
-		return a.Cordon.NodeRef.Name
-	case a.Drain != nil:
-		return a.Drain.NodeRef.Name
-	case a.Uncordon != nil:
-		return a.Uncordon.NodeRef.Name
-	case a.TalosReboot != nil:
-		return a.TalosReboot.NodeRef.Name
-	case a.TalosShutdown != nil:
-		return a.TalosShutdown.NodeRef.Name
-	case a.TalosUpgrade != nil:
-		return a.TalosUpgrade.NodeRef.Name
-	case a.TalosApplyConfig != nil:
-		return a.TalosApplyConfig.NodeRef.Name
-	case a.EtcdLeave != nil:
-		return a.EtcdLeave.NodeRef.Name
-	case a.EtcdRemoveMember != nil:
-		return a.EtcdRemoveMember.NodeRef.Name
-	case a.TalosReset != nil:
-		return a.TalosReset.NodeRef.Name
-	case a.WaitNodeReady != nil:
-		return a.WaitNodeReady.NodeRef.Name
-	case a.WaitEtcdHealthy != nil:
-		return a.WaitEtcdHealthy.NodeRef.Name
-	case a.EtcdForfeitLeadership != nil:
-		return a.EtcdForfeitLeadership.NodeRef.Name
-	case a.DeleteKubernetesNode != nil:
-		return a.DeleteKubernetesNode.NodeRef.Name
-	}
-	return ""
-}
-
 // changesEtcd: the operation removes an etcd member, by leaving, by ID, or
 // by wiping a control plane's EPHEMERAL partition.
 func changesEtcd(op *metalv1alpha1.HostOperation) bool {
@@ -198,7 +159,7 @@ func changesEtcd(op *metalv1alpha1.HostOperation) bool {
 func opNodes(op *metalv1alpha1.HostOperation) []string {
 	var out []string
 	for _, a := range op.Spec.Actions {
-		if n := actionNode(a); n != "" && !slices.Contains(out, n) {
+		if n := a.NodeName(); n != "" && !slices.Contains(out, n) {
 			out = append(out, n)
 		}
 	}

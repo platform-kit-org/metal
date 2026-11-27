@@ -21,7 +21,7 @@ Take one node out of its cluster and wipe its machine.
 ## Before you start
 
 - The workloads can move to the other nodes.
-- For a control plane: what remains of etcd is safe. See [](howto:scale-control-planes).
+- For a control plane: what remains of etcd is safe. See [Join and leave rules](howto:scale-a-cluster#join-and-leave-rules).
 - A person can approve the release.
 
 ## What the release does
@@ -85,5 +85,5 @@ kubectl -n default annotate hostclaim cp-3 metal.platform-kit.org/ack-etcd-risk=
 
 ## Related
 
-- [](howto:release-a-host), [](howto:scale-control-planes)
+- [](howto:release-a-host), [](howto:scale-a-cluster)
 - [](flow:release-and-reuse)

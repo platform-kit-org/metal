@@ -31,6 +31,9 @@ const fetchTimeout = 30 * time.Minute
 type mediaFetcher struct {
 	mu   sync.Mutex
 	jobs map[string]*fetchJob
+	// running holds each download until it ends, so that a caller can wait
+	// for the downloads before the store goes.
+	running sync.WaitGroup
 }
 
 type fetchJob struct {
@@ -68,7 +71,7 @@ func (f *mediaFetcher) start(store *asset.Store, hc *http.Client, url, name, key
 	}
 	j := &fetchJob{}
 	f.jobs[id] = j
-	go func() {
+	f.running.Go(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
 		defer cancel()
 		log := logf.Log.WithName("media-fetch").WithValues("asset", name, "url", redact.String(url))
@@ -83,6 +86,9 @@ func (f *mediaFetcher) start(store *asset.Store, hc *http.Client, url, name, key
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		j.done, j.sum, j.size, j.err = true, sum, size, err
-	}()
+	})
 	return fetchState{running: true}
 }
+
+// wait returns when each download that start began has ended.
+func (f *mediaFetcher) wait() { f.running.Wait() }

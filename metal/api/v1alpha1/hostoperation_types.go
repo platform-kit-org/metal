@@ -909,6 +909,7 @@ type HostOperationStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:categories=metal
+// +kubebuilder:selectablefield:JSONPath=`.spec.hostRef.name`
 // +kubebuilder:printcolumn:name="Host",type=string,JSONPath=`.spec.hostRef.name`
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.spec.reason`

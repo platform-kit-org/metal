@@ -233,6 +233,7 @@ func main() {
 		PollInterval:           c.poll,
 		CheckInTimeout:         c.checkIn,
 		ReleaseShutdownTimeout: c.shutdown,
+		OperationWorkers:       c.opWorkers,
 		RegistryClient:         registryClient,
 		Media:                  media,
 		MediaStore:             store,
@@ -397,6 +398,7 @@ type config struct {
 	imagerHelper  string
 	checkIn       time.Duration
 	shutdown      time.Duration
+	opWorkers     int
 	nodeName      string
 	showVersion   bool
 }
@@ -454,6 +456,8 @@ func parseFlags(args []string, output io.Writer) (*config, error) {
 		"how long an install waits for the machine to come up and answer before it fails")
 	fs.DurationVar(&c.shutdown, "release-shutdown-timeout", 5*time.Minute,
 		"when a HostClaim is deleted, how long its machine's OS gets to shut down before the machine is forced off")
+	fs.IntVar(&c.opWorkers, "operation-workers", controller.DefaultOperationWorkers,
+		"how many HostOperations the manager works on at the same time, each on another host (1 to 64); a firmware flash holds one for up to 15 minutes, and its image in memory")
 	fs.StringVar(&c.nodeName, "node-name", os.Getenv("NODE_NAME"),
 		"the Kubernetes node this manager runs on (default: $NODE_NAME, which the Deployment sets from the pod's node); "+
 			"the operator will not reboot the machine it runs on, nor a control plane of its own cluster, without the host's metal.platform-kit.org/allow-self-disruption annotation")
@@ -482,6 +486,9 @@ func parseFlags(args []string, output io.Writer) (*config, error) {
 	}
 	if c.checkIn <= 0 {
 		return nil, fmt.Errorf("--checkin-timeout must be positive, got %s", c.checkIn)
+	}
+	if c.opWorkers < 1 || c.opWorkers > 64 {
+		return nil, fmt.Errorf("--operation-workers must be between 1 and 64, got %d", c.opWorkers)
 	}
 	// A store without a claim is an emptyDir (pk-metal pivot
 	// --media-store=ephemeral): it serves, and the BootAssets that need a

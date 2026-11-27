@@ -60,6 +60,14 @@ func TestClusterHolderPrefersTheRolloutThatStarted(t *testing.T) {
 	assert.Nil(t, clusterHolder([]osv1alpha1.TalosRollout{unapproved, finished}, "c"))
 }
 
+// byCluster gives a fake client the selectable field of the TalosRollout CRD,
+// which the API server serves.
+func byCluster(b *fake.ClientBuilder) *fake.ClientBuilder {
+	return b.WithIndex(&osv1alpha1.TalosRollout{}, rolloutClusterField, func(o client.Object) []string {
+		return []string{o.(*osv1alpha1.TalosRollout).Spec.ClusterRef.Name}
+	})
+}
+
 // The check before a step starts reads the rollouts from the API server. A
 // cache that has not yet seen the other rollout's approval would let both
 // start.
@@ -72,8 +80,8 @@ func TestOtherHolderReadsTheAPIServer(t *testing.T) {
 	stale.Status.Steps[0].State = osv1alpha1.RolloutNodePending
 
 	r := &TalosRolloutReconciler{
-		Client:    fake.NewClientBuilder().WithScheme(s).WithObjects(mine.DeepCopy(), stale).Build(),
-		APIReader: fake.NewClientBuilder().WithScheme(s).WithObjects(mine.DeepCopy(), theirs.DeepCopy()).Build(),
+		Client:    byCluster(fake.NewClientBuilder().WithScheme(s).WithObjects(mine.DeepCopy(), stale)).Build(),
+		APIReader: byCluster(fake.NewClientBuilder().WithScheme(s).WithObjects(mine.DeepCopy(), theirs.DeepCopy())).Build(),
 	}
 	other, err := r.otherHolder(t.Context(), &mine)
 	require.NoError(t, err)
@@ -105,8 +113,8 @@ func TestProposerReadsRolloutsFromTheAPIServer(t *testing.T) {
 	proposed := &osv1alpha1.TalosRollout{ObjectMeta: metav1.ObjectMeta{Name: "c-config-earlier"},
 		Spec: osv1alpha1.TalosRolloutSpec{ClusterRef: osv1alpha1.Reference{Name: "c"}, Kind: osv1alpha1.RolloutConfig}}
 
-	cache := fake.NewClientBuilder().WithScheme(s).WithObjects(cluster, node, host).WithStatusSubresource(cluster, node).Build()
-	api := fake.NewClientBuilder().WithScheme(s).WithObjects(proposed).Build()
+	cache := byCluster(fake.NewClientBuilder().WithScheme(s).WithObjects(cluster, node, host).WithStatusSubresource(cluster, node)).Build()
+	api := byCluster(fake.NewClientBuilder().WithScheme(s).WithObjects(proposed)).Build()
 	r := &RolloutProposer{Client: cache, APIReader: api, Proposer: "system:serviceaccount:pk-metal:pk-metal"}
 	_, err := r.Reconcile(t.Context(), requestFor("c"))
 	require.NoError(t, err)

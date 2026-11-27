@@ -31,6 +31,7 @@ func TestParseFlagsDefaults(t *testing.T) {
 	assert.Equal(t, 5*time.Minute, c.shutdown)
 	assert.Equal(t, 30*time.Minute, c.checkIn)
 	assert.Equal(t, 5*time.Minute, c.poll)
+	assert.Equal(t, controller.DefaultOperationWorkers, c.opWorkers)
 	assert.Equal(t, render.PublicFactory, c.imageFactory)
 	assert.Equal(t, render.ArchAMD64, c.machineArch)
 	assert.Equal(t, ":8443", c.mediaListen)
@@ -72,6 +73,8 @@ func TestParseFlagsRefuses(t *testing.T) {
 		{"shutdown too long", []string{"--ledger=l", "--release-shutdown-timeout=2h"}, "between 1s and 1h"},
 		{"no poll interval", []string{"--ledger=l", "--poll-interval=0s"}, "--poll-interval must be positive"},
 		{"no check-in timeout", []string{"--ledger=l", "--checkin-timeout=0s"}, "--checkin-timeout must be positive"},
+		{"no operation worker", []string{"--ledger=l", "--operation-workers=0"}, "--operation-workers must be between 1 and 64"},
+		{"too many operation workers", []string{"--ledger=l", "--operation-workers=65"}, "--operation-workers must be between 1 and 64"},
 		{"stray argument", []string{"--ledger=l", "ledger.yaml"}, "every setting is a flag"},
 		{"unknown flag", []string{"--ledger=l", "--bmc-insecur"}, "flag provided but not defined"},
 		{"not a duration", []string{"--ledger=l", "--poll-interval=5"}, "invalid value"},

@@ -173,14 +173,14 @@ type disruptionInput struct {
 // run and are ready right now must be a majority of the cluster.
 func disruptionVerdict(in disruptionInput) string {
 	self := in.self.node
-	if self == nil || in.host.Spec.OS == nil {
+	if in.host.Spec.OS == nil {
+		return ""
+	}
+	node := findNode(in.nodes, in.host.Spec.OS.NodeRef.Name)
+	if !concerned(self, node) {
 		return ""
 	}
 	own := self.Spec.ClusterRef.Name
-	node := findNode(in.nodes, in.host.Spec.OS.NodeRef.Name)
-	if node == nil {
-		return ""
-	}
 	runsManager := node.Name == self.Name
 	ownControlPlane := node.Spec.ClusterRef.Name == own && node.Spec.Role == osv1alpha1.RoleControlPlane &&
 		(in.handedOff || nodeCheckedIn(node) || meta.IsStatusConditionTrue(in.host.Status.Conditions, metalv1alpha1.ConditionOSReady))
@@ -266,6 +266,14 @@ func disruptionVerdict(in disruptionInput) string {
 	return ""
 }
 
+// concerned reports whether node is the node the operator runs on, or a
+// control plane of the operator's own cluster. The verdict allows a host of
+// any other node without more reads.
+func concerned(self, node *osv1alpha1.TalosNode) bool {
+	return self != nil && node != nil && (node.Name == self.Name ||
+		node.Spec.ClusterRef.Name == self.Spec.ClusterRef.Name && node.Spec.Role == osv1alpha1.RoleControlPlane)
+}
+
 func findNode(nodes []osv1alpha1.TalosNode, name string) *osv1alpha1.TalosNode {
 	for i := range nodes {
 		if nodes[i].Name == name {
@@ -333,7 +341,10 @@ func (g *SelfGuard) Check(ctx context.Context, host *metalv1alpha1.Host) (string
 		return "", err
 	}
 	in := disruptionInput{host: host, self: locateSelf(g.NodeName, k8sNode, nodes.Items), nodes: nodes.Items}
-	if in.self.node == nil {
+	// Most hosts are neither: the verdict allows them, and the reads below
+	// (the claim, the cluster, its secrets bundle, every Host, every
+	// operation) would only cost the API server on each step of each one.
+	if !concerned(in.self.node, findNode(nodes.Items, host.Spec.OS.NodeRef.Name)) {
 		return "", nil
 	}
 	var err error

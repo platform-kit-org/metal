@@ -91,12 +91,23 @@ It reads the objects that you write and changes the machines through their BMCs.
 
 | Limit | Value | Can you change it |
 | --- | --- | --- |
-| Operations that the manager works on at the same moment | 4. A long step, for example a firmware flash, holds one of the four. | No flag |
+| Operations that the manager works on at the same moment | 4. A long step, for example a firmware flash, holds one of the four. | `--operation-workers`, from 1 to 64 |
 | Rollouts on one cluster | One at a time | No |
 | Control planes in a rollout | One at a time, and only while etcd is healthy | No |
 | Workers in a rollout | `spec.maxUnavailableWorkers`, default 1 | Yes, on the [](kind:TalosRollout) |
 | Read of each BMC | Each 5 minutes | `--poll-interval` |
 | Approvals | One for each install, one for each rollout plan | See [](concept:approval) |
+
+### Reads from the API server
+
+Some checks read from the API server and not from the cache of the manager, because the cache can be late. The API server filters these reads where it can.
+
+| Check | What it reads | When |
+| --- | --- | --- |
+| The start of an operation | The operations of its host | One time, before the first step |
+| A rollout step, a rollout proposal | The rollouts of the cluster | Each pass |
+| The guard of the operator's own cluster | The Host, the TalosNodes and the Kubernetes node of the manager. For the node of the manager and the control planes of its cluster, also all Hosts and all operations. | Before each reboot and each power-off |
+| The release of a claim | All Hosts | Each pass of a claim that you deleted |
 
 ### What is tested
 

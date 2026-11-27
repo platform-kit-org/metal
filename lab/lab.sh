@@ -1847,7 +1847,7 @@ registry_up() {
     echo "  runs, reusing it" >&2
     return 0
   fi
-  docker rm --force "$REGISTRY_CONTAINER" >/dev/null 2>&1 || true
+  docker rm --force --volumes "$REGISTRY_CONTAINER" >/dev/null 2>&1 || true
   docker run --detach --name "$REGISTRY_CONTAINER" \
     --publish "127.0.0.1:$port:5000" --publish "$registry:5000" "$REGISTRY_IMAGE" >&2 \
     || die "docker could not start the registry ($REGISTRY_IMAGE). Its message above says why.
@@ -1856,7 +1856,7 @@ registry_up() {
 
 registry_down() {
   if have docker; then
-    docker rm --force "$REGISTRY_CONTAINER" >/dev/null 2>&1 || true
+    docker rm --force --volumes "$REGISTRY_CONTAINER" >/dev/null 2>&1 || true
   fi
 }
 

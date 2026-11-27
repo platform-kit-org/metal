@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -219,9 +220,13 @@ func TestResumePauseAbort(t *testing.T) {
 	require.NoError(t, pauseRollout(ctx, cl, ro.Name, &bytes.Buffer{}))
 	assert.True(t, get().Spec.Paused)
 
-	require.ErrorContains(t, abortRollout(ctx, cl, ro.Name, false, nil, false, &bytes.Buffer{}), "--yes")
+	require.ErrorContains(t, abortRollout(ctx, cl, ro.Name, prompt{Out: &bytes.Buffer{}}), "--yes")
+	never, wr := io.Pipe()
+	defer wr.Close()
+	slow := prompt{Interactive: true, In: never, Out: &bytes.Buffer{}, Window: 20 * time.Millisecond}
+	require.ErrorContains(t, abortRollout(ctx, cl, ro.Name, slow), "no answer within 0s; nothing changed")
 	assert.False(t, get().Spec.Abort)
-	require.NoError(t, abortRollout(ctx, cl, ro.Name, true, nil, false, &bytes.Buffer{}))
+	require.NoError(t, abortRollout(ctx, cl, ro.Name, prompt{Yes: true, Out: &bytes.Buffer{}}))
 	assert.True(t, get().Spec.Abort)
 
 	unapproved := planned()

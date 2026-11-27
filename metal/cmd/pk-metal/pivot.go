@@ -1,12 +1,10 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"io"
 	"os"
-	"os/signal"
 	"strings"
 	"time"
 
@@ -39,7 +37,7 @@ The steps:
 
 The operator here stays stopped, and its objects stay. Nothing on the
 machines changes. pivot prints what the new cluster must be able to reach
-(BMCs, Talos API, media service); check it before you approve.
+(BMCs, Talos API, media service); check it before you answer.
 
 The media store (a PersistentVolumeClaim the operator keeps the installers
 for one-slot BMCs in) needs storage on the other cluster: the claim there
@@ -82,7 +80,7 @@ func pivotCmd(args []string) {
 		badUsage(fs, fmt.Sprintf("--media-store is copy or ephemeral, not %q", *mediaStore))
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, stop := signalContext()
 	defer stop()
 	scheme := newScheme()
 	srcCfg, srcName, err := namedRestConfig(global.kubeconfig, global.context)
@@ -120,7 +118,8 @@ func pivotCmd(args []string) {
 	if err != nil {
 		die(err)
 	}
-	if err := confirmPivot(os.Stdout, os.Stdin, plan, srcName, dstName, *yes, isTerminal(os.Stdin)); err != nil {
+	if err := confirmPivot(ctx, prompt{Yes: *yes, Interactive: isTerminal(os.Stdin), In: os.Stdin, Out: os.Stdout},
+		plan, srcName, dstName); err != nil {
 		die(err)
 	}
 	rep, err := m.Run(ctx)
@@ -132,7 +131,8 @@ func pivotCmd(args []string) {
 
 // confirmPivot prints the plan and asks; a resumed move only verifies and
 // does not ask.
-func confirmPivot(out io.Writer, in io.Reader, plan *pivot.Plan, src, dst string, yes, interactive bool) error {
+func confirmPivot(ctx context.Context, p prompt, plan *pivot.Plan, src, dst string) error {
+	out := p.Out
 	if plan.Resume {
 		fmt.Fprintf(out, "the operator already runs on %s after a move from %s; checking it again\n", dst, src)
 		return nil
@@ -152,19 +152,7 @@ func confirmPivot(out io.Writer, in io.Reader, plan *pivot.Plan, src, dst string
 		fmt.Fprintf(out, "\n%s holds an older copy of the operator's objects; objects that %s no longer has are removed from it.\n", dst, src)
 	}
 	fmt.Fprintf(out, "\nThe operator on %s stops now. No machine is touched.\n", src)
-	if yes {
-		return nil
-	}
-	if !interactive {
-		return fmt.Errorf("stdin is not a terminal, so pk-metal cannot ask; read the checks above and rerun with --yes")
-	}
-	fmt.Fprint(out, "Move? [y/N] ")
-	line, _ := bufio.NewReader(in).ReadString('\n')
-	switch strings.ToLower(strings.TrimSpace(line)) {
-	case "y", "yes":
-		return nil
-	}
-	return errDeclined
+	return p.confirm(ctx, "Move?", "moved")
 }
 
 // pivotDone is the closing text: what happened and what a person does next.

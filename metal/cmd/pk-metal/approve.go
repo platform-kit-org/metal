@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -209,19 +210,62 @@ type approval struct {
 	// operation of the same name.
 	Expect    string
 	ExpectUID types.UID
-	// Window bounds the wait for the person's answer; zero is approvalWindow.
-	Window time.Duration
+	Window    time.Duration // see prompt
 }
 
-// errDeclined: the person answered no. Nothing changed.
-var errDeclined = errors.New("not approved; nothing changed")
+// prompt is how a verb asks its one y/N question: on In and Out, only on a
+// terminal (Interactive), and within Window (zero: approvalWindow). Yes
+// skips the question.
+type prompt struct {
+	Yes, Interactive bool
+	In               io.Reader
+	Out              io.Writer
+	Window           time.Duration
+}
 
-// errNoAnswer: the person did not answer within the window.
-var errNoAnswer = errors.New("no answer")
+// The outcomes of a question other than yes. Each one changes nothing.
+var (
+	errCannotAsk   = errors.New("stdin is not a terminal, so pk-metal cannot ask; rerun with --yes")
+	errNoAnswer    = errors.New("no answer")
+	errInterrupted = errors.New("interrupted; nothing changed")
+)
 
-// errCannotAsk: there is no terminal to ask on, and --yes was not given.
-var errCannotAsk = errors.New("stdin is not a terminal, so pk-metal cannot ask; " +
-	"read the plan above and rerun with --yes to approve it")
+// declined is the answer no to the question whether to do what it names
+// ("approved", "aborted", "moved").
+type declined string
+
+func (d declined) Error() string { return "not " + string(d) + "; nothing changed" }
+
+// errDeclined: the person did not approve.
+const errDeclined = declined("approved")
+
+// confirm asks the question and returns nil for y or yes, and at once for
+// Yes. Every other outcome changes nothing: errCannotAsk without a terminal,
+// errInterrupted on Ctrl-C, errNoAnswer when the window ends first, and
+// declined(done) for any other answer.
+func (p prompt) confirm(ctx context.Context, question, done string) error {
+	if p.Yes {
+		return nil
+	}
+	if !p.Interactive {
+		return errCannotAsk
+	}
+	window := cmp.Or(p.Window, approvalWindow)
+	fmt.Fprintf(p.Out, "%s [y/N] ", question)
+	line, err := ask(ctx, p.In, window)
+	switch {
+	case ctx.Err() != nil:
+		fmt.Fprintln(p.Out)
+		return errInterrupted
+	case err != nil:
+		fmt.Fprintln(p.Out)
+		return fmt.Errorf("%w within %s; nothing changed", errNoAnswer, shortDuration(window))
+	}
+	if s := strings.ToLower(strings.TrimSpace(line)); s != "y" && s != "yes" {
+		return declined(done)
+	}
+	return nil
+}
 
 // patchAttempts bounds how often an approval is sent again after the
 // operation changed under it in a way that does not touch the plan (the
@@ -248,36 +292,14 @@ func approve(ctx context.Context, cl client.Client, a approval) error {
 	}
 
 	shown := op.UID
-	reread := false
-	if !a.Yes {
-		if !a.Interactive {
-			return errCannotAsk
-		}
-		window := a.Window
-		if window <= 0 {
-			window = approvalWindow
-		}
-		fmt.Fprintf(a.Out, "\nApprove as %s? [y/N] ", a.User)
-		line, err := ask(ctx, a.In, window)
-		switch {
-		case ctx.Err() != nil:
-			fmt.Fprintln(a.Out)
-			return fmt.Errorf("interrupted; nothing changed")
-		case errors.Is(err, errNoAnswer):
-			fmt.Fprintln(a.Out)
-			return fmt.Errorf("%w within %s; nothing changed. Run approve again to see the plan as it is now",
-				errNoAnswer, shortDuration(window))
-		}
-		switch strings.ToLower(strings.TrimSpace(line)) {
-		case "y", "yes":
-		default:
-			return errDeclined
-		}
-		// The person took a while to answer. Whatever they agreed to was
-		// read before that, so it is read again and must still be the same
-		// operation with the same plan.
-		reread = true
+	p := prompt{Yes: a.Yes, Interactive: a.Interactive, In: a.In, Out: a.Out, Window: a.Window}
+	if err := p.confirm(ctx, "\nApprove as "+a.User+"?", "approved"); err != nil {
+		return err
 	}
+	// The person took a while to answer. Whatever they agreed to was read
+	// before that, so it is read again and must still be the same operation
+	// with the same plan.
+	reread := !a.Yes
 
 	for attempt := 0; ; attempt++ {
 		if reread {

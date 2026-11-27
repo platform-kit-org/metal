@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -113,7 +112,7 @@ func rolloutCmd(args []string) {
 	case "abort":
 		need(1)
 		run = func(cl client.Client) error {
-			return abortRollout(ctx, cl, fs.Arg(0), *yes, os.Stdin, isTerminal(os.Stdin), os.Stdout)
+			return abortRollout(ctx, cl, fs.Arg(0), prompt{Yes: *yes, Interactive: isTerminal(os.Stdin), In: os.Stdin, Out: os.Stdout})
 		}
 	default:
 		badUsage(fs, "unknown subcommand "+sub+": give list, show, approve, resume, pause or abort")
@@ -287,7 +286,6 @@ type rolloutApproval struct {
 	In          io.Reader
 	Interactive bool
 	Out         io.Writer
-	Window      time.Duration
 }
 
 // approvableRollout refuses a rollout that nobody can approve now. Whether
@@ -334,25 +332,9 @@ func approveRollout(ctx context.Context, cl client.Client, a rolloutApproval) er
 	if role != "" {
 		fmt.Fprint(a.Out, "\n"+self.note("rollout", role))
 	}
-	if !a.Yes {
-		if !a.Interactive {
-			return fmt.Errorf("stdin is not a terminal, so pk-metal cannot ask; " +
-				"read the plan above and rerun with --yes to approve it")
-		}
-		window := a.Window
-		if window <= 0 {
-			window = approvalWindow
-		}
-		fmt.Fprintf(a.Out, "\nApprove plan %s as %s? [y/N] ", shortDigest(ro.Status.PlanHash), a.User)
-		line, err := ask(ctx, a.In, window)
-		if errors.Is(err, errNoAnswer) {
-			fmt.Fprintln(a.Out)
-			return fmt.Errorf("no answer within %s; nothing changed. Run approve again to see the plan as it is now",
-				shortDuration(window))
-		}
-		if s := strings.ToLower(strings.TrimSpace(line)); s != "y" && s != "yes" {
-			return errDeclined
-		}
+	p := prompt{Yes: a.Yes, Interactive: a.Interactive, In: a.In, Out: a.Out}
+	if err := p.confirm(ctx, "\nApprove plan "+shortDigest(ro.Status.PlanHash)+" as "+a.User+"?", "approved"); err != nil {
+		return err
 	}
 	// The approval lands on exactly the rollout whose plan was shown, with
 	// or without the question: the uid and resourceVersion make the API
@@ -456,7 +438,8 @@ func pauseRollout(ctx context.Context, cl client.Client, name string, w io.Write
 	return nil
 }
 
-func abortRollout(ctx context.Context, cl client.Client, name string, yes bool, in io.Reader, interactive bool, w io.Writer) error {
+func abortRollout(ctx context.Context, cl client.Client, name string, p prompt) error {
+	w := p.Out
 	ro, err := getRollout(ctx, cl, name)
 	if err != nil {
 		return err
@@ -465,18 +448,9 @@ func abortRollout(ctx context.Context, cl client.Client, name string, yes bool, 
 		fmt.Fprintf(w, "rollout %s is already aborted\n", name)
 		return nil
 	}
-	if !yes {
-		if !interactive {
-			return fmt.Errorf("stdin is not a terminal, so pk-metal cannot ask; rerun with --yes to abort")
-		}
-		fmt.Fprintf(w, "Abort rollout %s for good? A node that runs now finishes; no further node starts. [y/N] ", name)
-		line, err := ask(ctx, in, approvalWindow)
-		if err != nil {
-			return err
-		}
-		if s := strings.ToLower(strings.TrimSpace(line)); s != "y" && s != "yes" {
-			return errors.New("not aborted; nothing changed")
-		}
+	if err := p.confirm(ctx, "Abort rollout "+name+" for good? A node that runs now finishes; no further node starts.",
+		"aborted"); err != nil {
+		return err
 	}
 	user, err := requester(ctx, cl)
 	if err != nil {

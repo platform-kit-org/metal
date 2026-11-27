@@ -39,7 +39,7 @@ The command takes no arguments. The [](cli:global-flags) select the source clust
 
 The steps have the names of the steps in [](howto:pivot).
 
-1. **Preflight.** No operation runs or waits for approval, and the target cluster runs no operator. The command prints what the target cluster must reach, and asks `Move? [y/N]`.
+1. **Preflight.** No operation runs or waits for approval, and the target cluster runs no operator. The command prints what the target cluster must reach, and asks `Move? [y/N]`. The question waits five minutes.
 2. **Pause.** It sets the operator in the source cluster to zero replicas and waits until it stops.
 3. **Install.** It installs the operator in the target cluster: CRDs, admission policies, RBAC, the namespace and the claim for the media store.
 4. **Copy.** It copies the objects of the operator with their status, and the Secrets in the namespace `pk-metal`.

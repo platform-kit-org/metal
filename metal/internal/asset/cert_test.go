@@ -86,9 +86,9 @@ func TestServiceServesTheCurrentCertificate(t *testing.T) {
 	var current atomic.Pointer[tls.Certificate]
 	current.Store(&a)
 
-	svc, err := NewService("127.0.0.1:0", "https://media.example.invalid", tls.Certificate{})
+	svc, err := NewService("127.0.0.1:0", "https://media.example.invalid",
+		certFunc(func(*tls.ClientHelloInfo) (*tls.Certificate, error) { return current.Load(), nil }))
 	require.NoError(t, err)
-	svc.Certs = certFunc(func(*tls.ClientHelloInfo) (*tls.Certificate, error) { return current.Load(), nil })
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	go func() { _ = svc.Start(ctx) }()

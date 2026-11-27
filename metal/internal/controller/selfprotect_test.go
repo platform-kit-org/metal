@@ -384,7 +384,7 @@ func TestSelfGuardAsksTheControlPlanes(t *testing.T) {
 	cp3 := machine("10.0.0.3")
 	cp3.SetUnreachable(true) // in POST
 
-	g := &SelfGuard{Reader: cl, NodeName: "talos-1", Dial: fleet.Dialer(), Namespace: "pk-metal"}
+	g := &SelfGuard{Reader: cl, NodeName: "talos-1", Dial: fleet.Dialer(), CredentialsNamespace: "pk-metal"}
 	host := runsNodeHost("host-a", "cp-2")
 	host.Annotations = map[string]string{metalv1alpha1.AnnotationAllowSelfDisruption: "true"}
 

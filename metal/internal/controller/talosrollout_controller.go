@@ -58,11 +58,9 @@ type ImageResolver func(ctx context.Context, ref string) (string, error)
 type TalosRolloutReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
-	// Namespace is the operator's: config Secrets and credentials live
-	// there.
-	Namespace string
-	// OperationsNamespace receives the rollout's HostOperations.
-	OperationsNamespace string
+	// CredentialsNamespace is the operator's: config Secrets, credentials
+	// and the rollout's HostOperations live there.
+	CredentialsNamespace string
 	// Proposer is the operator's own username, stamped as proposedBy.
 	Proposer string
 	// Factory names installer images; ResolveImage pins them by digest.
@@ -159,7 +157,7 @@ func (r *TalosRolloutReconciler) expire(ctx context.Context, ro *osv1alpha1.Talo
 	if c.Status != metav1.ConditionTrue {
 		return ctrl.Result{}, nil
 	}
-	keep, err := siteRetention(ctx, r.Client, r.Namespace)
+	keep, err := siteRetention(ctx, r.Client, r.CredentialsNamespace)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -173,7 +171,7 @@ func (r *TalosRolloutReconciler) expire(ctx context.Context, ro *osv1alpha1.Talo
 		return ctrl.Result{RequeueAfter: min(wait, settingsRecheck)}, nil
 	}
 	ops := &metalv1alpha1.HostOperationList{}
-	if err := r.List(ctx, ops, client.InNamespace(r.OperationsNamespace),
+	if err := r.List(ctx, ops, client.InNamespace(r.CredentialsNamespace),
 		client.MatchingLabels{osv1alpha1.LabelRollout: ro.Name}); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -272,7 +270,7 @@ func (r *TalosRolloutReconciler) requestersMoved(ctx context.Context, ro *osv1al
 	if err != nil {
 		return false, err
 	}
-	now, err := clusterRequesters(ctx, r.Client, r.Namespace, cluster, members)
+	now, err := clusterRequesters(ctx, r.Client, r.CredentialsNamespace, cluster, members)
 	if err != nil {
 		return false, err
 	}
@@ -508,7 +506,7 @@ func (r *TalosRolloutReconciler) startStep(ctx context.Context, ro *osv1alpha1.T
 	}
 	op := &metalv1alpha1.HostOperation{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: rolloutOpName(ro, step), Namespace: r.OperationsNamespace,
+			Name: rolloutOpName(ro, step), Namespace: r.CredentialsNamespace,
 			Labels: map[string]string{osv1alpha1.LabelRollout: ro.Name},
 		},
 		Spec: metalv1alpha1.HostOperationSpec{
@@ -547,7 +545,7 @@ func (r *TalosRolloutReconciler) observeStep(ctx context.Context, ro *osv1alpha1
 	}
 	ns, name, _ := strings.Cut(st.Operation, "/")
 	if name == "" {
-		ns, name = r.OperationsNamespace, rolloutOpName(ro, step)
+		ns, name = r.CredentialsNamespace, rolloutOpName(ro, step)
 		st.Operation = ns + "/" + name
 	}
 	op := &metalv1alpha1.HostOperation{}
@@ -747,7 +745,7 @@ func (r *TalosRolloutReconciler) etcdGate(ctx context.Context, cluster *osv1alph
 	if r.Dial == nil {
 		return "", nil
 	}
-	bundle, err := loadBundle(ctx, r.Client, r.Namespace, cluster)
+	bundle, err := loadBundle(ctx, r.Client, r.CredentialsNamespace, cluster)
 	if err != nil {
 		if unavailable := (*bundleUnavailable)(nil); errors.As(err, &unavailable) {
 			return unavailable.msg, nil
@@ -868,7 +866,7 @@ func (r *TalosRolloutReconciler) plan(ctx context.Context, ro *osv1alpha1.TalosR
 
 	var bundle *secrets.Bundle // only for the leader lookup
 	if r.Dial != nil {
-		bundle, _ = loadBundle(ctx, r.Client, r.Namespace, cluster)
+		bundle, _ = loadBundle(ctx, r.Client, r.CredentialsNamespace, cluster)
 	}
 	leader := r.etcdLeader(ctx, cluster, members, hosts, bundle)
 

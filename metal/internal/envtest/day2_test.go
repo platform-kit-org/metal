@@ -103,8 +103,8 @@ func TestDay2Operations(t *testing.T) {
 
 	mgr := st.newManager(t)
 	require.NoError(t, controller.SetupAll(mgr, controller.Options{
-		CredentialsNamespace: "pk-metal", OperationsNamespace: "pk-metal",
-		TalosDial: fleet.Dialer(), WaitInterval: pollInterval, GuardInterval: pollInterval,
+		CredentialsNamespace: "pk-metal",
+		TalosDial:            fleet.Dialer(), WaitInterval: pollInterval, GuardInterval: pollInterval,
 	}, controller.LaneHostOperation))
 	runManager(t, ctx, mgr)
 

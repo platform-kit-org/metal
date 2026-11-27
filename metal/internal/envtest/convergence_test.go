@@ -100,7 +100,6 @@ func TestConvergence(t *testing.T) {
 	mgr := st.newManager(t)
 	require.NoError(t, controller.SetupAll(mgr, controller.Options{
 		CredentialsNamespace: "default",
-		OperationsNamespace:  "default",
 		Proposer:             operator,
 		Audit:                audit.New(trail, operator),
 		Ledger:               led,

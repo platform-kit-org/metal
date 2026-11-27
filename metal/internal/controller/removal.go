@@ -366,7 +366,7 @@ func (r *HostClaimReconciler) leavingControlPlanes(ctx context.Context, cluster 
 //pk:uncached
 func (r *HostClaimReconciler) etcdChangeInFlight(ctx context.Context, cluster, skip string) (string, error) {
 	ops := &metalv1alpha1.HostOperationList{}
-	if err := r.reader().List(ctx, ops, client.InNamespace(r.OperationsNamespace)); err != nil {
+	if err := r.reader().List(ctx, ops, client.InNamespace(r.CredentialsNamespace)); err != nil {
 		return "", err
 	}
 	nodes, err := clusterMembers(ctx, r.Client, cluster)

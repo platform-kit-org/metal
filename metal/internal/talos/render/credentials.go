@@ -171,34 +171,40 @@ func parseCert(s string) (*stdx509.Certificate, error) {
 	return stdx509.ParseCertificate(block.Bytes)
 }
 
-// TalosconfigNotAfter is when a talosconfig's client certificate expires.
-func TalosconfigNotAfter(data []byte) (time.Time, error) {
+// TalosconfigCert is the client certificate of a talosconfig's current
+// context.
+func TalosconfigCert(data []byte) (*stdx509.Certificate, error) {
 	cfg, err := clientconfig.FromBytes(data)
 	if err != nil {
-		return time.Time{}, err
+		return nil, err
 	}
 	ctx := cfg.Contexts[cfg.Context]
 	if ctx == nil {
-		return time.Time{}, errors.New("talosconfig has no current context")
+		return nil, errors.New("talosconfig has no current context")
 	}
-	crt, err := parseCert(ctx.Crt)
-	if err != nil {
-		return time.Time{}, err
-	}
-	return crt.NotAfter, nil
+	return parseCert(ctx.Crt)
 }
 
-// KubeconfigNotAfter is when a kubeconfig's client certificate expires.
-func KubeconfigNotAfter(data []byte) (time.Time, error) {
+// KubeconfigCert is the client certificate of a kubeconfig's current user.
+func KubeconfigCert(data []byte) (*stdx509.Certificate, error) {
 	cfg, err := clientcmd.Load(data)
 	if err != nil {
-		return time.Time{}, err
+		return nil, err
 	}
 	ctx := cfg.Contexts[cfg.CurrentContext]
 	if ctx == nil || cfg.AuthInfos[ctx.AuthInfo] == nil {
-		return time.Time{}, errors.New("kubeconfig has no current user")
+		return nil, errors.New("kubeconfig has no current user")
 	}
-	crt, err := parseCert(string(cfg.AuthInfos[ctx.AuthInfo].ClientCertificateData))
+	return parseCert(string(cfg.AuthInfos[ctx.AuthInfo].ClientCertificateData))
+}
+
+// TalosconfigNotAfter is when a talosconfig's client certificate expires.
+func TalosconfigNotAfter(data []byte) (time.Time, error) { return notAfter(TalosconfigCert(data)) }
+
+// KubeconfigNotAfter is when a kubeconfig's client certificate expires.
+func KubeconfigNotAfter(data []byte) (time.Time, error) { return notAfter(KubeconfigCert(data)) }
+
+func notAfter(crt *stdx509.Certificate, err error) (time.Time, error) {
 	if err != nil {
 		return time.Time{}, err
 	}
@@ -208,15 +214,7 @@ func KubeconfigNotAfter(data []byte) (time.Time, error) {
 // TalosconfigRoles are the roles a talosconfig's client certificate carries
 // (Talos puts them in the certificate's organizations).
 func TalosconfigRoles(data []byte) ([]string, error) {
-	cfg, err := clientconfig.FromBytes(data)
-	if err != nil {
-		return nil, err
-	}
-	ctx := cfg.Contexts[cfg.Context]
-	if ctx == nil {
-		return nil, errors.New("talosconfig has no current context")
-	}
-	crt, err := parseCert(ctx.Crt)
+	crt, err := TalosconfigCert(data)
 	if err != nil {
 		return nil, err
 	}

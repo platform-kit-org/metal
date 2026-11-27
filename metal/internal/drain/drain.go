@@ -97,8 +97,6 @@ type Progress struct {
 	// Blocked are the pods whose eviction was refused this pass, with why
 	// (a disruption budget, mostly), sorted.
 	Blocked []string
-	// Evicted counts the evictions this pass asked for.
-	Evicted int
 }
 
 // Waiting says, in one line, what the drain still waits for.
@@ -165,10 +163,9 @@ func Pass(ctx context.Context, c client.Client, node string, opts Options) (p Pr
 		}
 		err := c.SubResource("eviction").Create(ctx, pod, ev)
 		switch {
-		case err == nil:
-			p.Evicted++
-		case apierrors.IsNotFound(err):
-			// Gone between the list and the eviction: what was wanted.
+		case err == nil, apierrors.IsNotFound(err):
+			// Evicted, or gone between the list and the eviction: what was
+			// wanted.
 		case refused(err):
 			p.Blocked = append(p.Blocked, key(pod)+" ("+reason(err)+")")
 		default:

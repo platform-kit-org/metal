@@ -133,10 +133,10 @@ func TestProvisioning(t *testing.T) {
 	bobCl := st.userClient(t, "bob")
 	carolCl := st.userClient(t, "carol", "pk-metal:admins")
 
-	cert, err := asset.EphemeralCert()
+	certs, err := asset.NewSelfSigned()
 	require.NoError(t, err)
 	mediaAddr := freeAddr(t)
-	media, err := asset.NewService(mediaAddr, "https://"+mediaAddr, cert)
+	media, err := asset.NewService(mediaAddr, "https://"+mediaAddr, certs)
 	require.NoError(t, err)
 
 	imageFactory := render.NewFactory(strings.TrimPrefix(factory.URL, "https://"))
@@ -168,7 +168,6 @@ func TestProvisioning(t *testing.T) {
 	require.NoError(t, controller.SetupAll(mgr, controller.Options{
 		CredentialsNamespace: "default",
 		TalosDial:            fleet.Dialer(),
-		OperationsNamespace:  "default",
 		Proposer:             operator,
 		Ledger:               led,
 		TLS:                  &metalv1alpha1.EndpointTLS{InsecureSkipVerify: true},

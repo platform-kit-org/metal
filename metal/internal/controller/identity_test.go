@@ -22,26 +22,12 @@ import (
 
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
 	"github.com/dennisklein/platform-kit/metal/internal/bmc"
+	"github.com/dennisklein/platform-kit/metal/internal/testpki"
 )
 
-func selfSignedPEM(t *testing.T, cn string) []byte {
-	t.Helper()
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	require.NoError(t, err)
-	tmpl := &x509.Certificate{
-		SerialNumber: big.NewInt(1),
-		Subject:      pkix.Name{CommonName: cn},
-		NotBefore:    time.Now().Add(-time.Hour),
-		NotAfter:     time.Now().Add(time.Hour),
-	}
-	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
-	require.NoError(t, err)
-	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
-}
-
 func TestFirstCertificate(t *testing.T) {
-	leafPEM := selfSignedPEM(t, "bmc-01.example.test")
-	caPEM := selfSignedPEM(t, "Example Test CA")
+	leafPEM, _ := testpki.SelfSigned(t, "bmc-01.example.test", nil, nil)
+	caPEM, _ := testpki.SelfSigned(t, "Example Test CA", nil, nil)
 
 	t.Run("leaf of a chain", func(t *testing.T) {
 		leaf, got, err := firstCertificate(append(append([]byte{}, leafPEM...), caPEM...))
@@ -146,7 +132,7 @@ func certificateRequest(name string, status map[string]any) *unstructured.Unstru
 }
 
 func TestCertificateRequestChain(t *testing.T) {
-	chainPEM := selfSignedPEM(t, "bmc-ep-07.bmc.example.test")
+	chainPEM, _ := testpki.SelfSigned(t, "bmc-ep-07.bmc.example.test", nil, nil)
 	cl := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(
 		certificateRequest("issued", map[string]any{"certificate": base64.StdEncoding.EncodeToString(chainPEM)}),
 		certificateRequest("garbled", map[string]any{"certificate": "%%% not base64 %%%"}),
@@ -189,7 +175,8 @@ func TestPushIdentityRefusesABrokenChainBeforeTheSession(t *testing.T) {
 	s := newSimEndpoint(t, "supermicro-x12")
 	r := &EndpointConvergenceReconciler{Client: s.cl, CredentialsNamespace: "pk-metal", Dial: s.dial}
 	broken := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: []byte("not DER")})
-	chain := append(selfSignedPEM(t, "bmc-a.metal.internal"), broken...)
+	cert, _ := testpki.SelfSigned(t, "bmc-a.metal.internal", nil, nil)
+	chain := append(cert, broken...)
 
 	for _, dialect := range []bmc.IdentityDialect{bmc.DialectCSRNative, bmc.DialectKeyUpload} {
 		t.Run(string(dialect), func(t *testing.T) {

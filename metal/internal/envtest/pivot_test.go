@@ -177,7 +177,6 @@ func TestPivot(t *testing.T) {
 	managerOptions := func(media *asset.Service, nodeName string) controller.Options {
 		return controller.Options{
 			CredentialsNamespace: ns,
-			OperationsNamespace:  ns,
 			Proposer:             operator,
 			Ledger:               led,
 			TLS:                  &metalv1alpha1.EndpointTLS{InsecureSkipVerify: true},
@@ -192,10 +191,10 @@ func TestPivot(t *testing.T) {
 		}
 	}
 	newMedia := func() *asset.Service {
-		cert, err := asset.EphemeralCert()
+		certs, err := asset.NewSelfSigned()
 		require.NoError(t, err)
 		addr := freeAddr(t)
-		media, err := asset.NewService(addr, "https://"+addr, cert)
+		media, err := asset.NewService(addr, "https://"+addr, certs)
 		require.NoError(t, err)
 		return media
 	}

@@ -637,13 +637,13 @@ func TestPassStopsBeforeItsBudgetRunsOut(t *testing.T) {
 // startMedia runs a media service on a loopback port for the test's lifetime.
 func startMedia(t *testing.T) *asset.Service {
 	t.Helper()
-	cert, err := asset.EphemeralCert()
+	certs, err := asset.NewSelfSigned()
 	require.NoError(t, err)
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	addr := ln.Addr().String()
 	require.NoError(t, ln.Close())
-	media, err := asset.NewService(addr, "https://"+addr, cert)
+	media, err := asset.NewService(addr, "https://"+addr, certs)
 	require.NoError(t, err)
 	go func() { _ = media.Start(t.Context()) }()
 	_, err = media.Addr(t.Context())
@@ -687,7 +687,7 @@ func TestRetriedBootKeepsItsRecord(t *testing.T) {
 	// The claim is deleted before the new boot starts.
 	require.NoError(t, r.Delete(ctx, claim))
 	require.NoError(t, r.Get(ctx, client.ObjectKeyFromObject(claim), claim))
-	cr := &HostClaimReconciler{Client: r.Client, OperationsNamespace: "pk-metal", Proposer: "operator"}
+	cr := &HostClaimReconciler{Client: r.Client, CredentialsNamespace: "pk-metal", Proposer: "operator"}
 	_, err := cr.finishRelease(ctx, claim)
 	require.NoError(t, err)
 

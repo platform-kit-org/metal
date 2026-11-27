@@ -90,10 +90,8 @@ func (s *Store) PrepareBuild(job string) error {
 // and reports its digest and size. The build directory goes with it. An
 // artifact already imported for that key is kept, and its digest reported.
 func (s *Store) Import(job, asset, key string) (string, int64, error) {
-	for _, e := range []string{job, asset, key} {
-		if err := checkElem(e); err != nil {
-			return "", 0, err
-		}
+	if err := checkElem(job, asset, key); err != nil {
+		return "", 0, err
 	}
 	dst := s.path(asset, key)
 	if _, err := os.Stat(dst); err == nil {
@@ -135,10 +133,8 @@ const MaxFetch = 4 << 30
 // it is complete and checked, so an artifact is never half written. The
 // caller's client decides whose certificates the download trusts.
 func (s *Store) Fetch(ctx context.Context, hc *http.Client, url, asset, key, want string) (string, int64, error) {
-	for _, e := range []string{asset, key} {
-		if err := checkElem(e); err != nil {
-			return "", 0, err
-		}
+	if err := checkElem(asset, key); err != nil {
+		return "", 0, err
 	}
 	dir := filepath.Join(s.Dir, storeAssets, asset)
 	if err := os.MkdirAll(dir, storeMode); err != nil {
@@ -191,7 +187,7 @@ func (s *Store) Fetch(ctx context.Context, hc *http.Client, url, asset, key, wan
 
 // Has reports whether an artifact for the asset's key is in the store.
 func (s *Store) Has(asset, key string) bool {
-	if checkElem(asset) != nil || checkElem(key) != nil {
+	if checkElem(asset, key) != nil {
 		return false
 	}
 	st, err := os.Stat(s.path(asset, key))
@@ -202,10 +198,8 @@ func (s *Store) Has(asset, key string) bool {
 // a file that is not what was built leaves the store before it is built
 // again.
 func (s *Store) Remove(asset, key string) error {
-	for _, e := range []string{asset, key} {
-		if err := checkElem(e); err != nil {
-			return err
-		}
+	if err := checkElem(asset, key); err != nil {
+		return err
 	}
 	if err := os.Remove(s.path(asset, key)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
@@ -307,10 +301,8 @@ func (s *Store) path(asset, key string) string {
 }
 
 func (s *Store) open(asset, key string) (*os.File, error) {
-	for _, e := range []string{asset, key} {
-		if err := checkElem(e); err != nil {
-			return nil, err
-		}
+	if err := checkElem(asset, key); err != nil {
+		return nil, err
 	}
 	return os.Open(s.path(asset, key))
 }
@@ -324,12 +316,14 @@ func digestOf(r io.Reader) (string, int64, error) {
 	return "sha256:" + hex.EncodeToString(h.Sum(nil)), n, nil
 }
 
-// checkElem refuses a name that is not one plain path element. Names come
-// from Kubernetes object names, which are safe already; the check keeps a
-// wrong caller from reaching outside the store.
-func checkElem(name string) error {
-	if name == "" || name == "." || name == ".." || strings.ContainsAny(name, `/\`) || strings.HasPrefix(name, ".") {
-		return fmt.Errorf("media store: %q is not a plain name", name)
+// checkElem refuses the first name that is not one plain path element. Names
+// come from Kubernetes object names, which are safe already; the check keeps
+// a wrong caller from reaching outside the store.
+func checkElem(names ...string) error {
+	for _, name := range names {
+		if name == "" || name == "." || name == ".." || strings.ContainsAny(name, `/\`) || strings.HasPrefix(name, ".") {
+			return fmt.Errorf("media store: %q is not a plain name", name)
+		}
 	}
 	return nil
 }

@@ -20,6 +20,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
+	"github.com/dennisklein/platform-kit/metal/internal/poll"
 )
 
 // Pause stops the source manager: its Deployment goes to zero replicas, and
@@ -228,10 +229,8 @@ func (m *Mover) Settle(ctx context.Context, rep *Report) error {
 		if time.Now().After(deadline) {
 			break
 		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(m.Options.Poll):
+		if err := poll.Sleep(ctx, m.Options.Poll); err != nil {
+			return err
 		}
 	}
 	if len(pending) > 0 {

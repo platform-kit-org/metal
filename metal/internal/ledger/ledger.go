@@ -18,6 +18,7 @@ package ledger
 
 import (
 	"fmt"
+	"maps"
 	"net/url"
 	"os"
 	"slices"
@@ -69,14 +70,9 @@ func Parse(raw []byte) (*Ledger, error) {
 		return nil, fmt.Errorf("not a YAML map of MAC to URL: %w", err)
 	}
 	l := &Ledger{byMAC: map[string]string{}, invalid: map[string]string{}}
-	// Sorted, so that problems are reported in a stable order.
-	keys := make([]string, 0, len(entries))
-	for k := range entries {
-		keys = append(keys, k)
-	}
-	slices.Sort(keys)
 	seen := map[string]string{} // normalised MAC → key as written
-	for _, key := range keys {
+	// Sorted, so that problems are reported in a stable order.
+	for _, key := range slices.Sorted(maps.Keys(entries)) {
 		addr := entries[key]
 		mac, ok := identity.MAC(key)
 		if !ok {

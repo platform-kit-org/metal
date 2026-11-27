@@ -44,9 +44,6 @@ type HostClaimReconciler struct {
 	client.Client
 	// Audit writes the audit trail; nil writes none.
 	Audit *audit.Logger
-	// OperationsNamespace is where boot and release operations are created
-	// (the operator's own).
-	OperationsNamespace string
 	// Proposer is the operator's own username, stamped as proposedBy.
 	Proposer string
 	// CheckInTimeoutSeconds bounds a boot operation's wait for the node's
@@ -71,8 +68,8 @@ type HostClaimReconciler struct {
 	// and guards nothing: an operator without a Talos client cannot run the
 	// Talos steps either, and the manager always wires one.
 	Dial talos.Dialer
-	// CredentialsNamespace is where the clusters' secrets bundles are read
-	// (the operator's own namespace).
+	// CredentialsNamespace is the operator's namespace: its Secrets and the
+	// HostOperations it proposes.
 	CredentialsNamespace string
 	// SupportsAction says whether the executor runs an action key; nil
 	// asks the executor's own list. Plans use only actions it runs.

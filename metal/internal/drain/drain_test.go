@@ -104,14 +104,13 @@ func TestPassEvictsAllButDaemonSetAndMirrorPods(t *testing.T) {
 		pod("web-2", "node-3", ownedBy("ReplicaSet")),
 	)
 
-	p, cordoned, err := Pass(t.Context(), cl, "node-2", Options{})
+	_, cordoned, err := Pass(t.Context(), cl, "node-2", Options{})
 	require.NoError(t, err)
 	assert.True(t, cordoned, "a drain cordons first")
 	assert.ElementsMatch(t, []string{"web-1", "bare"}, *evictions, "daemonset and mirror pods stay; other nodes are not touched")
-	assert.Equal(t, 2, p.Evicted)
 
 	// The fake deletes on eviction: the next pass finds the node drained.
-	p, cordoned, err = Pass(t.Context(), cl, "node-2", Options{})
+	p, cordoned, err := Pass(t.Context(), cl, "node-2", Options{})
 	require.NoError(t, err)
 	assert.False(t, cordoned)
 	assert.True(t, p.Done, "%+v", p)
@@ -149,9 +148,9 @@ func TestPassRefusesToLoseEmptyDirDataUnlessAllowed(t *testing.T) {
 	assert.Equal(t, []string{"apps/cache"}, ed.Pods, "a finished pod's scratch space holds nothing a workload needs")
 	assert.Empty(t, *evictions, "nothing is evicted when the pass refuses")
 
-	p, _, err := Pass(t.Context(), cl, "node-2", Options{DeleteEmptyDirData: true, GracePeriodSeconds: ptr.To[int64](0)})
+	_, _, err = Pass(t.Context(), cl, "node-2", Options{DeleteEmptyDirData: true, GracePeriodSeconds: ptr.To[int64](0)})
 	require.NoError(t, err)
-	assert.Equal(t, 2, p.Evicted)
+	assert.Len(t, *evictions, 2)
 }
 
 func TestPassWaitsForTerminatingPods(t *testing.T) {

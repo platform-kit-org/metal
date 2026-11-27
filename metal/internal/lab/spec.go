@@ -12,6 +12,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"maps"
 	"net/netip"
 	"os"
 	"regexp"
@@ -245,17 +246,21 @@ func (s *Spec) Validate() error {
 		bad("cluster.kubernetesVersion %q is not a version like v1.36.2", s.Cluster.KubernetesVersion)
 	}
 
-	switch {
-	case s.ControlPlanes < 1:
-		bad("controlPlanes is %d: a cluster needs at least one", s.ControlPlanes)
-	case s.ControlPlanes%2 == 0:
-		// etcd needs a majority of its members. Two members fail when either
-		// one does, which is worse than one; four tolerate no more than three.
-		bad("controlPlanes is %d: use an odd number (1, 3 or 5), etcd needs a majority", s.ControlPlanes)
+	checkSize := func(where string, controlPlanes, workers int) {
+		switch {
+		case controlPlanes < 1:
+			bad("%scontrolPlanes is %d: a cluster needs at least one", where, controlPlanes)
+		case controlPlanes%2 == 0:
+			// etcd needs a majority of its members. Two members fail when
+			// either one does, which is worse than one; four tolerate no more
+			// than three.
+			bad("%scontrolPlanes is %d: use an odd number (1, 3 or 5), etcd needs a majority", where, controlPlanes)
+		}
+		if workers < 0 {
+			bad("%sworkers is %d: it cannot be negative", where, workers)
+		}
 	}
-	if s.Workers < 0 {
-		bad("workers is %d: it cannot be negative", s.Workers)
-	}
+	checkSize("", s.ControlPlanes, s.Workers)
 	if n := s.Machines(); n > MaxNodes {
 		bad("%d machines is more than the lab supports (%d)", n, MaxNodes)
 	}
@@ -280,15 +285,7 @@ func (s *Spec) Validate() error {
 		} else if w.Name == s.Cluster.Name {
 			bad("workload.name %q is the name of the first cluster; give the second its own", w.Name)
 		}
-		switch {
-		case w.ControlPlanes < 1:
-			bad("workload.controlPlanes is %d: a cluster needs at least one", w.ControlPlanes)
-		case w.ControlPlanes%2 == 0:
-			bad("workload.controlPlanes is %d: use an odd number (1, 3 or 5), etcd needs a majority", w.ControlPlanes)
-		}
-		if w.Workers < 0 {
-			bad("workload.workers is %d: it cannot be negative", w.Workers)
-		}
+		checkSize("workload.", w.ControlPlanes, w.Workers)
 		checkVIP("workload.vip", w.VIP)
 		if w.VIP == s.Cluster.VIP {
 			bad("workload.vip %s is the first cluster's VIP; each cluster needs its own", w.VIP)
@@ -310,7 +307,7 @@ func (s *Spec) Validate() error {
 	}
 	checkMachine("controlPlane", s.ControlPlane, false)
 	checkMachine("worker", s.Worker, false)
-	for _, name := range sortedKeys(s.Nodes) {
+	for _, name := range slices.Sorted(maps.Keys(s.Nodes)) {
 		if !nodeName.MatchString(name) {
 			bad("nodes: %q is not a machine name; machines are named node-1, node-2, ...", name)
 			continue
@@ -329,13 +326,4 @@ func (s *Spec) Validate() error {
 		bad("accel %q is not one of %s, %s", s.Accel, qemu.AccelKVM, qemu.AccelTCG)
 	}
 	return errors.Join(errs...)
-}
-
-func sortedKeys[V any](m map[string]V) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	slices.Sort(keys)
-	return keys
 }

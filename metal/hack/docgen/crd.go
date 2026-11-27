@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -151,7 +152,7 @@ func convertCRD(crd *apiextv1.CustomResourceDefinition) (crdDoc, error) {
 		})
 	}
 	var rows []fieldRow
-	for _, name := range sortedKeys(root.Properties) {
+	for _, name := range slices.Sorted(maps.Keys(root.Properties)) {
 		// apiVersion and kind carry the same Kubernetes boilerplate on every
 		// kind; metadata matters only when the kind constrains it.
 		if name == "apiVersion" || name == "kind" {
@@ -252,7 +253,7 @@ func walkField(rows []fieldRow, path, parent, name string, depth int, required b
 // walkChildren appends the rows for the properties of s; prefix is the path
 // the children hang off ("spec.actions[]" for the elements of an array).
 func walkChildren(rows []fieldRow, prefix, parent string, depth int, s *apiextv1.JSONSchemaProps) ([]fieldRow, error) {
-	for _, name := range sortedKeys(s.Properties) {
+	for _, name := range slices.Sorted(maps.Keys(s.Properties)) {
 		prop := s.Properties[name]
 		var err error
 		rows, err = walkField(rows, prefix+"."+name, parent, name, depth+1, slices.Contains(s.Required, name), &prop)
@@ -327,15 +328,6 @@ func decodeJSON(raw []byte) (any, error) {
 	var v any
 	err := json.Unmarshal(raw, &v)
 	return v, err
-}
-
-func sortedKeys[V any](m map[string]V) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	slices.Sort(keys)
-	return keys
 }
 
 // nonNil turns a nil slice into an empty one, so the JSON has [] and the site

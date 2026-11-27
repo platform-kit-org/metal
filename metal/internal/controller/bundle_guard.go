@@ -62,7 +62,7 @@ func chooseBundle(ctx context.Context, c client.Reader, namespace string, cluste
 func (r *TalosClusterReconciler) guardBundle(ctx context.Context, cluster *osv1alpha1.TalosCluster) error {
 	ref := cluster.Spec.SecretsRef
 	spec := &corev1.Secret{}
-	if ref.Namespace != r.Namespace {
+	if ref.Namespace != r.CredentialsNamespace {
 		return nil
 	}
 	if err := r.Get(ctx, types.NamespacedName{Namespace: ref.Namespace, Name: ref.Name}, spec); err != nil {
@@ -75,14 +75,14 @@ func (r *TalosClusterReconciler) guardBundle(ctx context.Context, cluster *osv1a
 	set := func(s metav1.ConditionStatus, reason, msg string) {
 		setCondition(&cluster.Status.Conditions, cluster.Generation, osv1alpha1.ConditionSecretsBundleHeld, s, reason, msg)
 	}
-	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: r.Namespace, Name: appliedBundleName(cluster.Name)}}
+	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: r.CredentialsNamespace, Name: appliedBundleName(cluster.Name)}}
 	err := r.Get(ctx, client.ObjectKeyFromObject(secret), secret)
 	if client.IgnoreNotFound(err) != nil {
 		return err
 	}
 	old := secret.Data[render.BundleKey]
 	if err == nil && len(old) > 0 && !bytes.Equal(old, specData) && cluster.Status.BootstrappedAt != nil {
-		set(metav1.ConditionTrue, osv1alpha1.ReasonBundleChanged, bundleHeldMessage(cluster, old, specData, r.Namespace))
+		set(metav1.ConditionTrue, osv1alpha1.ReasonBundleChanged, bundleHeldMessage(cluster, old, specData, r.CredentialsNamespace))
 		return nil
 	}
 	op, err := controllerutil.CreateOrUpdate(ctx, r.Client, secret, func() error {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -41,12 +42,7 @@ func writeAll(out string, files map[string]any) error {
 			}
 		}
 	}
-	names := make([]string, 0, len(files))
-	for rel := range files {
-		names = append(names, rel)
-	}
-	slices.Sort(names)
-	for _, rel := range names {
+	for _, rel := range slices.Sorted(maps.Keys(files)) {
 		data, err := marshal(files[rel])
 		if err != nil {
 			return fmt.Errorf("%s: %w", rel, err)

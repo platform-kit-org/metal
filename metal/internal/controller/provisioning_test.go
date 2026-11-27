@@ -25,7 +25,7 @@ func claimReconcilerFor(t *testing.T, objs ...client.Object) *HostClaimReconcile
 	cl := fake.NewClientBuilder().WithScheme(testScheme(t)).
 		WithStatusSubresource(&metalv1alpha1.HostOperation{}, &metalv1alpha1.HostClaim{}).
 		WithObjects(append(objs, slotlessEndpoint())...).Build()
-	return &HostClaimReconciler{Client: cl, OperationsNamespace: "pk-metal", Proposer: "operator"}
+	return &HostClaimReconciler{Client: cl, CredentialsNamespace: "pk-metal", Proposer: "operator"}
 }
 
 // slotlessEndpoint is a reachable, inventoried endpoint whose machine has no
@@ -493,7 +493,7 @@ func TestConfigMediumTakesAnyOtherSlot(t *testing.T) {
 }
 
 func TestBootOverrideAsksForUEFIOnlyWhereNeeded(t *testing.T) {
-	r := &HostClaimReconciler{OperationsNamespace: "pk-metal"}
+	r := &HostClaimReconciler{CredentialsNamespace: "pk-metal"}
 	node := &osv1alpha1.TalosNode{ObjectMeta: metav1.ObjectMeta{Name: "node"}}
 	config := &osv1alpha1.BootAsset{ObjectMeta: metav1.ObjectMeta{Name: "node-config"}}
 	installer := &osv1alpha1.BootAsset{ObjectMeta: metav1.ObjectMeta{Name: "installer"}}
@@ -658,7 +658,7 @@ func TestBootSchematic(t *testing.T) {
 // operator downloaded as well as the config medium, so the approver sees
 // both digests and the media service serves nothing else.
 func TestTwoMediaPlanPinsBothMedia(t *testing.T) {
-	r := &HostClaimReconciler{OperationsNamespace: "pk-metal"}
+	r := &HostClaimReconciler{CredentialsNamespace: "pk-metal"}
 	node := &osv1alpha1.TalosNode{ObjectMeta: metav1.ObjectMeta{Name: "node"}}
 	config := &osv1alpha1.BootAsset{ObjectMeta: metav1.ObjectMeta{Name: "node-config"}}
 	installer := &osv1alpha1.BootAsset{ObjectMeta: metav1.ObjectMeta{Name: "installer"}}

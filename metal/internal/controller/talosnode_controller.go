@@ -34,9 +34,10 @@ import (
 type TalosNodeReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
-	// Namespace receives the rendered config Secrets: the operator's
-	// namespace, since TalosNodes are cluster-scoped and Secrets are not.
-	Namespace string
+	// CredentialsNamespace receives the rendered config Secrets: the
+	// operator's namespace, since TalosNodes are cluster-scoped and Secrets
+	// are not.
+	CredentialsNamespace string
 	// Factory serves the installer image a rendered config names, and is told
 	// about the node's schematic before that name is written down.
 	Factory *render.Factory
@@ -126,7 +127,7 @@ func (r *TalosNodeReconciler) render(ctx context.Context, node *osv1alpha1.Talos
 		return nil, nil, nil, nil
 	}
 
-	bundle, err = loadBundle(ctx, r.Client, r.Namespace, cluster)
+	bundle, err = loadBundle(ctx, r.Client, r.CredentialsNamespace, cluster)
 	if unavailable := (*bundleUnavailable)(nil); errors.As(err, &unavailable) {
 		hold(osv1alpha1.ReasonSecretsUnavailable, unavailable.msg)
 		return cluster, nil, nil, nil
@@ -134,7 +135,7 @@ func (r *TalosNodeReconciler) render(ctx context.Context, node *osv1alpha1.Talos
 		return nil, nil, nil, err
 	}
 
-	read := configMapReader(ctx, r.Client, r.Namespace)
+	read := configMapReader(ctx, r.Client, r.CredentialsNamespace)
 	clusterPatches, err := render.ResolvePatches(cluster.Spec.Patches, read)
 	if err == nil {
 		var nodePatches [][]byte

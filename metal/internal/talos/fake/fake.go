@@ -379,7 +379,6 @@ func (e *EtcdCluster) add(hostname string, learner bool) uint64 {
 	e.members = append(e.members, talos.EtcdMember{
 		ID:         id,
 		Hostname:   hostname,
-		PeerURLs:   []string{"https://" + hostname + ":2380"},
 		ClientURLs: []string{"https://" + hostname + ":2379"},
 		IsLearner:  learner,
 	})
@@ -585,12 +584,9 @@ func (c *conn) EtcdStatus(context.Context) (talos.EtcdStatus, error) {
 		return talos.EtcdStatus{}, err
 	}
 	st := talos.EtcdStatus{
-		MemberID:        c.m.ownIDLocked(),
-		LeaderID:        c.m.ownIDLocked(),
-		ProtocolVersion: "3.6.0",
-		StorageVersion:  "3.6.0",
-		DBSize:          int64(len(c.m.snapshotLocked())),
-		Errors:          slices.Clone(c.m.etcdErrors),
+		MemberID: c.m.ownIDLocked(),
+		LeaderID: c.m.ownIDLocked(),
+		Errors:   slices.Clone(c.m.etcdErrors),
 	}
 	if c.m.etcd != nil {
 		st.LeaderID = c.m.etcd.Leader()
@@ -600,7 +596,6 @@ func (c *conn) EtcdStatus(context.Context) (talos.EtcdStatus, error) {
 			}
 		}
 	}
-	st.DBSizeInUse = st.DBSize
 	return st, nil
 }
 

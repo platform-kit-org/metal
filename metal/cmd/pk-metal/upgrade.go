@@ -15,6 +15,7 @@ import (
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
+	"github.com/dennisklein/platform-kit/metal/internal/poll"
 	"github.com/dennisklein/platform-kit/metal/internal/talos/render"
 )
 
@@ -100,7 +101,7 @@ func upgradeCheck(c *osv1alpha1.TalosCluster, what, version string) error {
 	return render.SupportedPair(talos, k8s)
 }
 
-func upgrade(ctx context.Context, cl client.Client, what, name, version string, wait, poll time.Duration, w io.Writer) error {
+func upgrade(ctx context.Context, cl client.Client, what, name, version string, wait, every time.Duration, w io.Writer) error {
 	c := &osv1alpha1.TalosCluster{}
 	if err := cl.Get(ctx, client.ObjectKey{Name: name}, c); err != nil {
 		return fmt.Errorf("read cluster %s: %w", name, err)
@@ -161,10 +162,8 @@ func upgrade(ctx context.Context, cl client.Client, what, name, version string, 
 				"and the cluster's conditions",
 				what, version, name, shortDuration(wait))
 		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(poll):
+		if err := poll.Sleep(ctx, every); err != nil {
+			return err
 		}
 	}
 }

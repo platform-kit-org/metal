@@ -49,11 +49,11 @@ type ClusterGuard struct {
 	// verdict depends on. The manager wires its uncached API reader, for the
 	// same reason as SelfGuard's.
 	Reader client.Reader
-	// Dial reaches the control planes' Talos API to ask etcd; Namespace is
-	// where the clusters' secrets bundles live. A nil Dial cannot ask etcd,
-	// and then only rule 1 holds.
-	Dial      talos.Dialer
-	Namespace string
+	// Dial reaches the control planes' Talos API to ask etcd;
+	// CredentialsNamespace is where the clusters' secrets bundles live. A nil
+	// Dial cannot ask etcd, and then only rule 1 holds.
+	Dial                 talos.Dialer
+	CredentialsNamespace string
 }
 
 // Check returns "" when op may take host's node down now, or why it may not.
@@ -98,7 +98,7 @@ func (g *ClusterGuard) Check(ctx context.Context, host *metalv1alpha1.Host, op *
 		op.Namespace, op.Name, metalv1alpha1.AnnotationOverrideClusterGuard)
 
 	// Etcd health is a read: os:reader serves it.
-	acc, err := newTalosAccessAs(ctx, g.Reader, g.Namespace, g.Dial, cluster, role.Reader)
+	acc, err := newTalosAccessAs(ctx, g.Reader, g.CredentialsNamespace, g.Dial, cluster, role.Reader)
 	if err != nil {
 		return fmt.Sprintf("%s, and etcd cannot be asked whether it keeps its majority without it: %v.%s", what, err, override), nil
 	}

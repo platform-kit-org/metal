@@ -397,15 +397,21 @@ func cmpOr(s, def string) string {
 	return s
 }
 
+// talosRebootMode is the machine API's reboot mode for the mode of a
+// TalosReboot or TalosUpgrade action.
+func talosRebootMode(mode string) talos.RebootMode {
+	if mode == talosRebootPowerCycle {
+		return talos.RebootPowerCycle
+	}
+	return talos.RebootDefault
+}
+
 func (x *exec) talosReboot(ctx context.Context, i int, a *metalv1alpha1.TalosRebootAction) (stepState, error) {
 	node, acc, err := x.talosNode(ctx, a.NodeRef)
 	if err != nil {
 		return stepState{}, err
 	}
-	opts := talos.RebootOptions{Mode: talos.RebootDefault}
-	if a.Mode == "PowerCycle" {
-		opts.Mode = talos.RebootPowerCycle
-	}
+	opts := talos.RebootOptions{Mode: talosRebootMode(a.Mode)}
 	return x.restart(ctx, i, node, acc, "reboot", func(ctx context.Context, c talos.Client) (bool, string, error) {
 		return true, "", c.Reboot(ctx, opts)
 	}, nil)
@@ -428,10 +434,8 @@ func (x *exec) talosUpgrade(ctx context.Context, i int, a *metalv1alpha1.TalosUp
 			return stepDone, nil // goal already met
 		}
 	}
-	opts := talos.UpgradeOptions{Image: a.Image, Stage: a.Stage, Force: a.Force, Preserve: a.Preserve == nil || *a.Preserve}
-	if a.RebootMode == "PowerCycle" {
-		opts.RebootMode = talos.UpgradeRebootPowerCycle
-	}
+	opts := talos.UpgradeOptions{Image: a.Image, Stage: a.Stage, Force: a.Force, Preserve: a.Preserve == nil || *a.Preserve,
+		RebootMode: talosRebootMode(a.RebootMode)}
 	return x.restart(ctx, i, node, acc, "upgrade to "+a.Version, func(ctx context.Context, c talos.Client) (bool, string, error) {
 		_, err := c.Upgrade(ctx, opts)
 		return true, "", err

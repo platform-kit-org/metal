@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"maps"
 	"net/netip"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"text/template"
 
@@ -281,7 +283,7 @@ func indent(n int, s string) string {
 // Write puts the files into dir. Each file is written to a temporary name and
 // renamed, so that a reader never sees half a manifest.
 func Write(dir string, files Files) error {
-	for _, path := range sortedKeys(files) {
+	for _, path := range slices.Sorted(maps.Keys(files)) {
 		target := filepath.Join(dir, path)
 		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 			return err

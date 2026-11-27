@@ -260,7 +260,7 @@ func TestClaimDeletedMidBootProposesTheReleaseBeforeStoppingTheBoot(t *testing.T
 						return c.Update(ctx, obj, opts...)
 					},
 				}).Build()
-			r := &HostClaimReconciler{Client: cl, OperationsNamespace: "pk-metal", Proposer: "operator"}
+			r := &HostClaimReconciler{Client: cl, CredentialsNamespace: "pk-metal", Proposer: "operator"}
 
 			require.False(t, releasePass(t, r, claim))
 			rel := releaseOps(t, r, claim)
@@ -331,7 +331,7 @@ func TestStaleCacheDoesNotHideABootThatRan(t *testing.T) {
 			return nil
 		},
 	})
-	r := &HostClaimReconciler{Client: cached, APIReader: live, OperationsNamespace: "pk-metal", Proposer: "operator"}
+	r := &HostClaimReconciler{Client: cached, APIReader: live, CredentialsNamespace: "pk-metal", Proposer: "operator"}
 
 	require.False(t, releasePass(t, r, claim), "the boot ran: the machine is powered off first")
 	assert.True(t, hostBound(t, r), "not unbound mid-boot")
@@ -363,7 +363,7 @@ func TestReleaseFencesABootThatStartsWhileItDecides(t *testing.T) {
 			return nil
 		},
 	})
-	r := &HostClaimReconciler{Client: live, APIReader: reader, OperationsNamespace: "pk-metal", Proposer: "operator"}
+	r := &HostClaimReconciler{Client: live, APIReader: reader, CredentialsNamespace: "pk-metal", Proposer: "operator"}
 
 	host := &metalv1alpha1.Host{}
 	require.NoError(t, r.Get(t.Context(), client.ObjectKey{Name: "host-a"}, host))
@@ -393,7 +393,7 @@ func TestReleaseDeletesAnUnstartedBootBeforeItUnbinds(t *testing.T) {
 				return c.Update(ctx, obj, opts...)
 			},
 		}).Build()
-	r := &HostClaimReconciler{Client: live, OperationsNamespace: "pk-metal", Proposer: "operator"}
+	r := &HostClaimReconciler{Client: live, CredentialsNamespace: "pk-metal", Proposer: "operator"}
 
 	require.True(t, releasePass(t, r, claim))
 	require.NotEmpty(t, writes)

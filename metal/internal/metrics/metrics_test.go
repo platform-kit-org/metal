@@ -20,6 +20,7 @@ import (
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
 	"github.com/dennisklein/platform-kit/metal/internal/scheme"
+	"github.com/dennisklein/platform-kit/metal/internal/talos/render"
 	"github.com/dennisklein/platform-kit/metal/internal/testpki"
 )
 
@@ -168,15 +169,15 @@ pk_metal_taloscluster_nodes{cluster="c",ready="true",role="worker"} 1
 	expiry, issued := series["pk_metal_credentials_expiry_timestamp_seconds"], series["pk_metal_credentials_issued_timestamp_seconds"]
 	require.Len(t, expiry, 2, "both published credentials must report an expiry")
 	require.Len(t, issued, 2, "both published credentials must report an issue time")
-	v, ok := kubeconfigValidity([]byte(kubeconfig))
-	require.True(t, ok)
+	v, err := render.KubeconfigCert([]byte(kubeconfig))
+	require.NoError(t, err)
 	for _, kind := range []string{"kubeconfig", "talosconfig"} {
 		assert.InDelta(t, float64(v.NotAfter.Unix()), expiry[kind], 0, kind)
 		assert.InDelta(t, float64(v.NotBefore.Unix()), issued[kind], 0, kind)
 	}
 	assert.WithinDuration(t, time.Now().Add(24*time.Hour), v.NotAfter, time.Hour)
 	assert.True(t, v.NotBefore.Before(v.NotAfter) && !v.NotBefore.After(time.Now()),
-		"the issue time is the certificate's own, before its expiry: %v", v)
+		"the issue time is the certificate's own, before its expiry: %v to %v", v.NotBefore, v.NotAfter)
 }
 
 func TestHooksFeedTheirSeries(t *testing.T) {

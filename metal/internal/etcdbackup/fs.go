@@ -100,35 +100,4 @@ func (s FileSink) Delete(_ context.Context, key string) error {
 	return nil
 }
 
-// List walks the directory a prefix names; partial files are not objects.
-func (s FileSink) List(_ context.Context, prefix string) ([]Object, error) {
-	var out []Object
-	err := filepath.WalkDir(s.Root, func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			if errors.Is(err, fs.ErrNotExist) {
-				return nil
-			}
-			return err
-		}
-		if d.IsDir() || strings.HasPrefix(d.Name(), ".") {
-			return nil
-		}
-		rel, err := filepath.Rel(s.Root, p)
-		if err != nil {
-			return err
-		}
-		key := filepath.ToSlash(rel)
-		if !strings.HasPrefix(key, prefix) {
-			return nil
-		}
-		info, err := d.Info()
-		if err != nil {
-			return err
-		}
-		out = append(out, Object{Key: key, Size: info.Size(), ModTime: info.ModTime()})
-		return nil
-	})
-	return out, err
-}
-
 func (s FileSink) URL(key string) string { return "pvc://" + s.Name + "/" + key }

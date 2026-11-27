@@ -18,6 +18,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
+	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
 )
 
 // params is the approval policies' ConfigMap; a nil value leaves the key out.
@@ -160,7 +161,7 @@ func TestApproveAdmissionRefusal(t *testing.T) {
 		op.Spec.ProposedBy = "alice"
 		cl := refusingPatches(denied("hostoperations", op.Name, msg), objs...)
 		err := approve(ctx, cl, approval{Namespace: op.Namespace, Name: op.Name, User: "alice", Yes: true, Out: &bytes.Buffer{}})
-		require.EqualError(t, err, "the cluster refused the approval of operation pk-metal/provision-node1-1a2b3c4d; "+
+		require.EqualError(t, err, "the cluster refused to approve operation pk-metal/provision-node1-1a2b3c4d; "+
 			"nothing changed: "+msg)
 	})
 
@@ -170,7 +171,7 @@ func TestApproveAdmissionRefusal(t *testing.T) {
 		cl := refusingPatches(denied("talosrollouts", ro.Name, msg), ro)
 		var out bytes.Buffer
 		err := approveRollout(ctx, cl, rolloutApproval{Name: ro.Name, User: "alice", Yes: true, Out: &out})
-		require.EqualError(t, err, "the cluster refused the approval of rollout lab-talosupgrade-1a2b3c4d; "+
+		require.EqualError(t, err, "the cluster refused to approve rollout lab-talosupgrade-1a2b3c4d; "+
 			"nothing changed: "+msg)
 		assert.Contains(t, out.String(), "You proposed this rollout yourself.")
 	})
@@ -179,7 +180,15 @@ func TestApproveAdmissionRefusal(t *testing.T) {
 		op, objs := bootPlan()
 		cl := refusingPatches(errors.New("connection refused"), objs...)
 		err := approve(ctx, cl, approval{Namespace: op.Namespace, Name: op.Name, User: "alice", Yes: true, Out: &bytes.Buffer{}})
-		require.EqualError(t, err, "approve operation pk-metal/provision-node1-1a2b3c4d: connection refused")
+		require.EqualError(t, err, "approve operation pk-metal/provision-node1-1a2b3c4d; nothing changed: connection refused")
+	})
+
+	t.Run("a write other than an approval", func(t *testing.T) {
+		const rule = "only an admin may change what a claim selects"
+		claim := &metalv1alpha1.HostClaim{ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "w-1"}}
+		cl := refusingPatches(denied("hostclaims", claim.Name, rule), claim)
+		err := hold(ctx, cl, "default", "w-1", "disk swap", true, &bytes.Buffer{})
+		require.EqualError(t, err, "the cluster refused to update claim default/w-1: "+rule)
 	})
 }
 

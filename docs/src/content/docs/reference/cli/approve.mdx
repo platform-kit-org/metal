@@ -167,7 +167,7 @@ pk-metal approve --yes provision-simhw2288v5000397-1a2b3c4d
 | Message | Cause | What to do |
 | --- | --- | --- |
 | `was proposed by you`, `this site forbids approving your own proposal` | You proposed the operation, for example with [](cli:reboot), and your site sets `selfApproval: Forbidden`. | Ask a different person to approve it. |
-| `the cluster refused the approval` | An admission policy refused the approval. The rest of the message is the rule. | Do what the message says. See [](ref:admission-policies). |
+| `the cluster refused to approve` | An admission policy refused the approval. The rest of the message is the rule. | Do what the message says. See [](ref:admission-policies). |
 | `the operator approves nothing` | You run the command as the operator service account. | Approve as a person with `pk-metal-approver`. |
 | `is already approved by` | A person approved it before. | Follow it with [](cli:status). |
 | `changed since its plan was shown` | The object or its plan changed while you read. | Run the command again and read the new plan. |

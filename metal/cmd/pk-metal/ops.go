@@ -101,7 +101,7 @@ func retry(ctx context.Context, cl client.Client, namespace, name string, w io.W
 		// retry; the operator deletes this operation and proposes anew.
 		set := map[string]any{metalv1alpha1.AnnotationRetry: time.Now().UTC().Format(time.RFC3339)}
 		if err := mergePatch(ctx, cl, op, mergeSpec{Annotations: set}); err != nil {
-			return fmt.Errorf("mark %s for retry: %w", ref, err)
+			return refused("mark "+ref+" for retry", err)
 		}
 		fmt.Fprintf(w, "marked %s for retry.\n", ref)
 		fmt.Fprintf(w, "The operator replaces it with a new proposal of the same plan for host %s in a few seconds; "+
@@ -113,7 +113,7 @@ func retry(ctx context.Context, cl client.Client, namespace, name string, w io.W
 		claim = op.Labels[labelClaimNamespace] + "/" + n
 	}
 	if err := cl.Delete(ctx, op); client.IgnoreNotFound(err) != nil {
-		return fmt.Errorf("delete %s: %w", ref, err)
+		return refused("delete "+ref, err)
 	}
 	fmt.Fprintf(w, "deleted %s.\n", ref)
 	if claim == "" {
@@ -236,7 +236,7 @@ func hold(ctx context.Context, cl client.Client, namespace, name, reason string,
 		return nil
 	}
 	if err := mergePatch(ctx, cl, c, mergeSpec{Annotations: map[string]any{metalv1alpha1.AnnotationHold: value}}); err != nil {
-		return fmt.Errorf("update claim %s: %w", ref, err)
+		return refused("update claim "+ref, err)
 	}
 	if on {
 		fmt.Fprintf(w, "claim %s is on hold: the operator proposes no new operation for it.\n"+

@@ -152,7 +152,7 @@ func proposeReboot(ctx context.Context, cl client.Client, o rebootOptions, w io.
 		},
 	}
 	if err := cl.Create(ctx, op); err != nil {
-		return nil, fmt.Errorf("propose the reboot of %s: %w", o.Node, err)
+		return nil, refused("propose the reboot of "+o.Node, err)
 	}
 	ref := op.Namespace + "/" + op.Name
 	fmt.Fprintf(w, "proposed %s: a clean reboot of TalosNode %s on host %s (%d steps).\n", ref, o.Node, host.Name, len(op.Spec.Actions))

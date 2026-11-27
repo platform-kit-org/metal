@@ -296,7 +296,7 @@ func approveAsShown(ctx context.Context, cl client.Client, obj client.Object, re
 		case err == nil:
 			return nil
 		case !apierrors.IsConflict(err):
-			return approvalRefused(what, err)
+			return refused("approve "+what+"; nothing changed", err)
 		case attempt+1 >= patchAttempts:
 			return changed
 		}

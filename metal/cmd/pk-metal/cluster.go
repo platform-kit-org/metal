@@ -163,3 +163,18 @@ func mergePatch(ctx context.Context, cl client.Client, obj client.Object, m merg
 	}
 	return cl.Patch(ctx, obj, client.RawPatch(types.MergePatchType, raw))
 }
+
+// refused is the error a person reads when the API server refuses to do
+// action. An admission policy's denial carries the policy's own message,
+// which says what to do; the prefix that names the policy and its binding is
+// left out. Any other error is passed on, after the action.
+func refused(action string, err error) error {
+	if !apierrors.IsForbidden(err) && !apierrors.IsInvalid(err) {
+		return fmt.Errorf("%s: %w", action, err)
+	}
+	msg := err.Error()
+	if _, after, ok := strings.Cut(msg, "denied request: "); ok {
+		msg = after
+	}
+	return fmt.Errorf("the cluster refused to %s: %s", action, msg)
+}

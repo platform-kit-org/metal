@@ -123,7 +123,7 @@ func wipe(ctx context.Context, cl client.Client, name, version string, w io.Writ
 	set := requestedBy(user, "")
 	set[metalv1alpha1.AnnotationWipe] = version
 	if err := mergePatch(ctx, cl, host, mergeSpec{Annotations: set}); err != nil {
-		return fmt.Errorf("update host %s: %w", name, err)
+		return refused("update host "+name, err)
 	}
 	fmt.Fprintf(w, "host %s: wipe asked for (it may still hold node %s).\n", name, mark)
 	fmt.Fprintf(w, "The operator proposes an operation that boots a Talos %s image which erases the system disk; approve it with: pk-metal approve\n", version)
@@ -191,7 +191,7 @@ func reinstall(ctx context.Context, cl client.Client, namespace, ref, ack string
 	set := requestedBy(user, ack)
 	set[metalv1alpha1.AnnotationReinstall] = h.At.UTC().Format(time.RFC3339)
 	if err := mergePatch(ctx, cl, c, mergeSpec{Annotations: set}); err != nil {
-		return fmt.Errorf("update claim %s: %w", cref, err)
+		return refused("update claim "+cref, err)
 	}
 	fmt.Fprintf(w, "claim %s: reinstall of node %s on host %s asked for (the install of %s).\n",
 		cref, h.Node, h.Host, h.At.UTC().Format(time.RFC3339))
@@ -273,7 +273,7 @@ func replace(ctx context.Context, cl client.Client, namespace, ref, hostName, ac
 	}
 	old := hostOf(c)
 	if err := mergePatch(ctx, cl, c, mergeSpec{Annotations: requestedBy(user, ack), Spec: spec}); err != nil {
-		return fmt.Errorf("update claim %s: %w", cref, err)
+		return refused("update claim "+cref, err)
 	}
 	fmt.Fprintf(w, "claim %s now selects host %s (asset %s); it ran on host %s.\n", cref, hostName, asset, old)
 	fmt.Fprintln(w, "The operator first releases the old machine (its node leaves the cluster; a machine that does not answer is powered off and marked for a wipe),")
@@ -517,7 +517,7 @@ func (p *scalePlan) apply(ctx context.Context, cl client.Client, ack string, w i
 	for _, a := range p.add {
 		metav1.SetMetaDataAnnotation(&a.claim.ObjectMeta, metalv1alpha1.AnnotationRequestedBy, user)
 		if err := cl.Create(ctx, a.claim); err != nil {
-			return fmt.Errorf("create claim %s/%s: %w", a.claim.Namespace, a.claim.Name, err)
+			return refused("create claim "+a.claim.Namespace+"/"+a.claim.Name, err)
 		}
 		fmt.Fprintf(w, "created claim %s/%s\n", a.claim.Namespace, a.claim.Name)
 	}
@@ -525,10 +525,10 @@ func (p *scalePlan) apply(ctx context.Context, cl client.Client, ack string, w i
 		// The release is the caller's request: the name goes on the claim
 		// before the delete (the requested-by policy).
 		if err := mergePatch(ctx, cl, c, mergeSpec{Annotations: requestedBy(user, ack)}); err != nil {
-			return fmt.Errorf("name the request on claim %s/%s: %w", c.Namespace, c.Name, err)
+			return refused("name the request on claim "+c.Namespace+"/"+c.Name, err)
 		}
 		if err := cl.Delete(ctx, c); client.IgnoreNotFound(err) != nil {
-			return fmt.Errorf("delete claim %s/%s: %w", c.Namespace, c.Name, err)
+			return refused("delete claim "+c.Namespace+"/"+c.Name, err)
 		}
 		fmt.Fprintf(w, "deleted claim %s/%s\n", c.Namespace, c.Name)
 	}

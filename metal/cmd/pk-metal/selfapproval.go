@@ -4,10 +4,8 @@ import (
 	"context"
 	"fmt"
 	"slices"
-	"strings"
 
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -87,19 +85,4 @@ func (s selfApproval) note(what, role string) string {
 	}
 	return fmt.Sprintf("You %s this %s yourself. If this site forbids that (selfApproval), "+
 		"the cluster refuses the approval and another person must approve it.\n", role, what)
-}
-
-// approvalRefused is the error a person reads when the API server refuses an
-// approval. An admission policy's denial carries the policy's own message,
-// which says what to do; the prefix that names the policy and its binding is
-// left out. Any other error is passed on as it is.
-func approvalRefused(what string, err error) error {
-	if !apierrors.IsForbidden(err) && !apierrors.IsInvalid(err) {
-		return fmt.Errorf("approve %s: %w", what, err)
-	}
-	msg := err.Error()
-	if _, after, ok := strings.Cut(msg, "denied request: "); ok {
-		msg = after
-	}
-	return fmt.Errorf("the cluster refused the approval of %s; nothing changed: %s", what, msg)
 }

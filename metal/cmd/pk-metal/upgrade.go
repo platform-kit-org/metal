@@ -121,7 +121,7 @@ func upgrade(ctx context.Context, cl client.Client, what, name, version string, 
 		if err := mergePatch(ctx, cl, c, mergeSpec{UID: c.UID, ResourceVersion: c.ResourceVersion,
 			Annotations: requestedBy(user, ""),
 			Spec:        map[string]any{field: version}}); err != nil {
-			return fmt.Errorf("set %s of cluster %s: %w", field, name, err)
+			return refused("set "+field+" of cluster "+name, err)
 		}
 		fmt.Fprintf(w, "cluster %s now asks for %s %s (was %s); nothing on a machine changed yet\n", name, what, version, current)
 	}

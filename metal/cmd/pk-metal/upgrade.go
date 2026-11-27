@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -10,7 +9,6 @@ import (
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/meta"
-	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
@@ -121,12 +119,9 @@ func upgrade(ctx context.Context, cl client.Client, what, name, version string, 
 		}
 		// resourceVersion: refuse when someone changed the cluster since it
 		// was read and checked.
-		patch, _ := json.Marshal(map[string]any{
-			"metadata": map[string]any{"uid": c.UID, "resourceVersion": c.ResourceVersion,
-				"annotations": map[string]any{metalv1alpha1.AnnotationRequestedBy: user}},
-			"spec": map[string]any{field: version},
-		})
-		if err := cl.Patch(ctx, c, client.RawPatch(types.MergePatchType, patch)); err != nil {
+		if err := mergePatch(ctx, cl, c, mergeSpec{UID: c.UID, ResourceVersion: c.ResourceVersion,
+			Annotations: map[string]any{metalv1alpha1.AnnotationRequestedBy: user},
+			Spec:        map[string]any{field: version}}); err != nil {
 			return fmt.Errorf("set %s of cluster %s: %w", field, name, err)
 		}
 		fmt.Fprintf(w, "cluster %s now asks for %s %s (was %s); nothing on a machine changed yet\n", name, what, version, current)

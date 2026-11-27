@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -121,8 +120,8 @@ func wipe(ctx context.Context, cl client.Client, name, version string, w io.Writ
 	if err != nil {
 		return err
 	}
-	if err := patchAnnotations(ctx, cl, host, map[string]any{
-		metalv1alpha1.AnnotationWipe: version, metalv1alpha1.AnnotationRequestedBy: user}); err != nil {
+	if err := mergePatch(ctx, cl, host, mergeSpec{Annotations: map[string]any{
+		metalv1alpha1.AnnotationWipe: version, metalv1alpha1.AnnotationRequestedBy: user}}); err != nil {
 		return fmt.Errorf("update host %s: %w", name, err)
 	}
 	fmt.Fprintf(w, "host %s: wipe asked for (it may still hold node %s).\n", name, mark)
@@ -194,7 +193,7 @@ func reinstall(ctx context.Context, cl client.Client, namespace, ref, ack string
 	if set[metalv1alpha1.AnnotationRequestedBy], err = requester(ctx, cl); err != nil {
 		return err
 	}
-	if err := patchAnnotations(ctx, cl, c, set); err != nil {
+	if err := mergePatch(ctx, cl, c, mergeSpec{Annotations: set}); err != nil {
 		return fmt.Errorf("update claim %s: %w", cref, err)
 	}
 	fmt.Fprintf(w, "claim %s: reinstall of node %s on host %s asked for (the install of %s).\n",
@@ -271,7 +270,6 @@ func replace(ctx context.Context, cl client.Client, namespace, ref, hostName, ac
 	if system != "" {
 		spec["systemRef"] = map[string]any{"name": system}
 	}
-	patch := map[string]any{"spec": spec}
 	if ack, err = namedLift(ctx, cl, ack); err != nil {
 		return err
 	}
@@ -283,12 +281,7 @@ func replace(ctx context.Context, cl client.Client, namespace, ref, hostName, ac
 	if ack != "" {
 		annotations[metalv1alpha1.AnnotationAckEtcdRisk] = ack
 	}
-	patch["metadata"] = map[string]any{"annotations": annotations}
-	raw, err := json.Marshal(patch)
-	if err != nil {
-		return err
-	}
-	if err := cl.Patch(ctx, c, client.RawPatch(types.MergePatchType, raw)); err != nil {
+	if err := mergePatch(ctx, cl, c, mergeSpec{Annotations: annotations, Spec: spec}); err != nil {
 		return fmt.Errorf("update claim %s: %w", cref, err)
 	}
 	old := "(none)"
@@ -299,15 +292,6 @@ func replace(ctx context.Context, cl client.Client, namespace, ref, hostName, ac
 	fmt.Fprintln(w, "The operator first releases the old machine (its node leaves the cluster; a machine that does not answer is powered off and marked for a wipe),")
 	fmt.Fprintln(w, "then installs the node on the new one. Each step waits for: pk-metal approve")
 	return nil
-}
-
-// patchAnnotations sets (or, with a nil value, removes) annotations.
-func patchAnnotations(ctx context.Context, cl client.Client, obj client.Object, set map[string]any) error {
-	raw, err := json.Marshal(map[string]any{"metadata": map[string]any{"annotations": set}})
-	if err != nil {
-		return err
-	}
-	return cl.Patch(ctx, obj, client.RawPatch(types.MergePatchType, raw))
 }
 
 func scaleCmd(args []string) {
@@ -561,7 +545,7 @@ func (p *scalePlan) apply(ctx context.Context, cl client.Client, ack string, w i
 		if ack != "" {
 			set[metalv1alpha1.AnnotationAckEtcdRisk] = ack
 		}
-		if err := patchAnnotations(ctx, cl, c, set); err != nil {
+		if err := mergePatch(ctx, cl, c, mergeSpec{Annotations: set}); err != nil {
 			return fmt.Errorf("name the request on claim %s/%s: %w", c.Namespace, c.Name, err)
 		}
 		if err := cl.Delete(ctx, c); client.IgnoreNotFound(err) != nil {

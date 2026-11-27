@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -120,4 +122,44 @@ func notFoundHint(ctx context.Context, cl client.Client, kind string, list clien
 	}
 	return fmt.Errorf("%s; it is in namespaces %s: name one as <namespace>/%s",
 		msg, strings.Join(found, ", "), name)
+}
+
+// mergeSpec is what a JSON merge patch sets. UID and ResourceVersion, when
+// given, make the API server refuse the patch (409 Conflict) when the object
+// was made again under the same name, or changed in any way since it was
+// read. An annotation with a nil value is removed. Fields that are empty
+// are not sent: a nil Annotations map must not delete every annotation.
+type mergeSpec struct {
+	UID             types.UID
+	ResourceVersion string
+	Annotations     map[string]any
+	Spec            map[string]any
+}
+
+// mergePatch sends m as a merge patch of obj. The patch is marshalled, not
+// formatted: Go's %q escapes are not JSON's, and a user name comes from
+// whatever the identity provider allows.
+func mergePatch(ctx context.Context, cl client.Client, obj client.Object, m mergeSpec) error {
+	meta := map[string]any{}
+	if m.UID != "" {
+		meta["uid"] = m.UID
+	}
+	if m.ResourceVersion != "" {
+		meta["resourceVersion"] = m.ResourceVersion
+	}
+	if m.Annotations != nil {
+		meta["annotations"] = m.Annotations
+	}
+	body := map[string]any{}
+	if len(meta) > 0 {
+		body["metadata"] = meta
+	}
+	if m.Spec != nil {
+		body["spec"] = m.Spec
+	}
+	raw, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+	return cl.Patch(ctx, obj, client.RawPatch(types.MergePatchType, raw))
 }

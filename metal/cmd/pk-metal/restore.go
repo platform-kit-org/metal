@@ -681,15 +681,11 @@ func uploadSnapshot(ctx context.Context, cl client.Client, dial talos.Dialer, in
 	}
 	fmt.Fprintf(w, "uploaded to %s (%s)\n", node.Name, endpoint)
 
-	patch := client.MergeFrom(op.DeepCopy())
-	if op.Annotations == nil {
-		op.Annotations = map[string]string{}
-	}
 	// The statement names who uploaded: admission accepts it only in the
 	// form "<username>: <reason>", with the caller's own username.
 	stated := metalv1alpha1.GuardLiftValue(in.User, a.SHA256)
-	op.Annotations[metalv1alpha1.AnnotationEtcdSnapshotUploaded] = stated
-	if err := cl.Patch(ctx, op, patch); err != nil {
+	set := map[string]any{metalv1alpha1.AnnotationEtcdSnapshotUploaded: stated}
+	if err := mergePatch(ctx, cl, op, mergeSpec{Annotations: set}); err != nil {
 		return fmt.Errorf("record the upload on %s/%s (the snapshot is on the node; set annotation %s=%q by hand): %w",
 			op.Namespace, op.Name, metalv1alpha1.AnnotationEtcdSnapshotUploaded, stated, err)
 	}

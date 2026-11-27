@@ -84,13 +84,8 @@ func abort(ctx context.Context, cl client.Client, namespace, name, user, reason 
 	if reason = strings.TrimSpace(reason); reason == "" {
 		return fmt.Errorf("say why: pk-metal abort --reason \"<reason>\" %s", ref)
 	}
-	value := metalv1alpha1.GuardLiftValue(user, reason)
-	patch := client.MergeFrom(op.DeepCopy())
-	if op.Annotations == nil {
-		op.Annotations = map[string]string{}
-	}
-	op.Annotations[metalv1alpha1.AnnotationAbort] = value
-	if err := cl.Patch(ctx, op, patch); err != nil {
+	set := map[string]any{metalv1alpha1.AnnotationAbort: metalv1alpha1.GuardLiftValue(user, reason)}
+	if err := mergePatch(ctx, cl, op, mergeSpec{Annotations: set}); err != nil {
 		return fmt.Errorf("mark %s for abort: %w", ref, err)
 	}
 	if op.Status.Baseline == nil {

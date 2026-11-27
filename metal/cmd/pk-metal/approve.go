@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"cmp"
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -312,7 +311,8 @@ func approve(ctx context.Context, cl client.Client, a approval) error {
 			}
 			op = now
 		}
-		err := cl.Patch(ctx, op, client.RawPatch(types.MergePatchType, approvalPatch(op, a.User)))
+		err := mergePatch(ctx, cl, op, mergeSpec{UID: op.UID, ResourceVersion: op.ResourceVersion,
+			Spec: map[string]any{"approval": map[string]any{"approvedBy": a.User}}})
 		if err == nil {
 			break
 		}
@@ -328,20 +328,6 @@ func approve(ctx context.Context, cl client.Client, a approval) error {
 	}
 	fmt.Fprintf(a.Out, "approved %s as %s; the operator starts it now. Follow it with: pk-metal status\n", ref, a.User)
 	return nil
-}
-
-// approvalPatch stamps the approval on exactly the object that was read: the
-// uid and resourceVersion make the API server refuse it (409 Conflict) when
-// the operation was deleted and created again under the same name, or
-// changed in any way since. Marshalled, not formatted: Go's %q escapes are
-// not JSON's, and a user name comes from whatever the identity provider
-// allows.
-func approvalPatch(op *metalv1alpha1.HostOperation, user string) []byte {
-	patch, _ := json.Marshal(map[string]any{
-		"metadata": map[string]any{"uid": op.UID, "resourceVersion": op.ResourceVersion},
-		"spec":     map[string]any{"approval": map[string]any{"approvedBy": user}},
-	})
-	return patch
 }
 
 // ask reads one answer line, giving up after window. A reader that cannot be

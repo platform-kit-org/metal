@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -10,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
@@ -101,12 +99,8 @@ func retry(ctx context.Context, cl client.Client, namespace, name string, w io.W
 		// Deleting a convergence proposal reads as refusing it, so the
 		// operator would never propose it again. The mark asks for the
 		// retry; the operator deletes this operation and proposes anew.
-		patch := client.MergeFrom(op.DeepCopy())
-		if op.Annotations == nil {
-			op.Annotations = map[string]string{}
-		}
-		op.Annotations[metalv1alpha1.AnnotationRetry] = time.Now().UTC().Format(time.RFC3339)
-		if err := cl.Patch(ctx, op, patch); err != nil {
+		set := map[string]any{metalv1alpha1.AnnotationRetry: time.Now().UTC().Format(time.RFC3339)}
+		if err := mergePatch(ctx, cl, op, mergeSpec{Annotations: set}); err != nil {
 			return fmt.Errorf("mark %s for retry: %w", ref, err)
 		}
 		fmt.Fprintf(w, "marked %s for retry.\n", ref)
@@ -241,11 +235,7 @@ func hold(ctx context.Context, cl client.Client, namespace, name, reason string,
 		fmt.Fprintf(w, "claim %s is not on hold; nothing changed\n", ref)
 		return nil
 	}
-	patch, err := json.Marshal(map[string]any{"metadata": map[string]any{"annotations": map[string]any{metalv1alpha1.AnnotationHold: value}}})
-	if err != nil {
-		return err
-	}
-	if err := cl.Patch(ctx, c, client.RawPatch(types.MergePatchType, patch)); err != nil {
+	if err := mergePatch(ctx, cl, c, mergeSpec{Annotations: map[string]any{metalv1alpha1.AnnotationHold: value}}); err != nil {
 		return fmt.Errorf("update claim %s: %w", ref, err)
 	}
 	if on {

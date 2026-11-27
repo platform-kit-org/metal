@@ -8,8 +8,6 @@ sources:
   - /repo/metal/config/prometheus/rules.yaml
 ---
 
-import { Steps } from '@astrojs/starlight/components';
-
 ## Symptoms
 
 <dl>
@@ -27,21 +25,11 @@ With `KubernetesUnreachable`, nobody can change the workloads of the cluster. Wi
 
 ## Diagnose
 
-<Steps>
+Read the `AVAILABLE` and `ETCD` columns of the cluster in [](cli:status).
 
-1. Read the reason of `Available`.
-
-   ```sh
-   kubectl get taloscluster prod -o jsonpath='{.status.conditions[?(@.type=="Available")].reason}{"\n"}'
-   ```
-
-2. Read the etcd state of the cluster. The `ETCD` column of [](cli:status) shows it.
-
-   ```sh
-   pk-metal status
-   ```
-
-</Steps>
+```sh
+pk-metal status
+```
 
 ## Fix
 

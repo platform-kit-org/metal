@@ -4,11 +4,10 @@ description: An etcd member is down, or etcd lost its majority. Find the case an
 type: runbook
 xref: { cat: rb, id: etcd-unhealthy }
 sources:
-  - /repo/metal/cmd/pk-metal/restore.go
-  - /repo/metal/internal/controller/etcdview.go
+  - /repo/metal/cmd/pk-metal/status_clusters.go
+  - /repo/metal/internal/controller/clusterguard.go
 ---
 
-import { Steps } from '@astrojs/starlight/components';
 import Callout from '../../../../components/Callout.astro';
 
 ## Symptoms
@@ -31,21 +30,13 @@ import Callout from '../../../../components/Callout.astro';
 
 ## Diagnose
 
-<Steps>
+Read the `ETCD` column and the note line of the cluster in [](cli:status). The note names the control planes that do not answer.
 
-1. Ask the operator what it sees. This changes nothing.
+```sh
+pk-metal status
+```
 
-   ```sh
-   pk-metal restore plan prod
-   ```
-
-2. Read each control plane.
-
-   ```sh
-   talosctl -n 192.0.2.11 etcd members
-   ```
-
-</Steps>
+`ETCD` can show `EtcdRunning` while one member is down. Then an operation waits on `ClusterDisruption`, and its message says `etcd is not fully healthy`. [](howto:restore-etcd) finds the member.
 
 `EtcdUnavailable` can end by itself, for example after a network fault. Wait some minutes if the members only do not answer.
 
@@ -60,7 +51,7 @@ It starts an empty etcd next to your data.
 
 ## Verify
 
-`pk-metal restore plan prod` reports each member healthy.
+The repair operation is `Succeeded`: its [](act:WaitEtcdHealthy) step passed. No operation waits on `ClusterDisruption`.
 
 ## Related
 

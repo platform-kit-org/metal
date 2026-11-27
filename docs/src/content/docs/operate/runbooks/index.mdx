@@ -60,7 +60,7 @@ Each alert links to one runbook in its `runbook_url` annotation.
 | --- | --- | --- |
 | `Ready=False`, `Converging`, `DialFailed`, `MaintenanceMode` | TalosNode | [](rb:node-not-ready) |
 | `NodesNotReady`, `KubernetesUnreachable` | Cluster `Available=False` | [](rb:cluster-unavailable) |
-| `EtcdUnavailable`, a member unhealthy | Cluster `Bootstrapped`, `pk-metal restore plan` | [](rb:etcd-unhealthy) |
+| `EtcdUnavailable`, a member unhealthy | Cluster `Bootstrapped`, `ETCD` column | [](rb:etcd-unhealthy) |
 | `EtcdDataLost`, `EtcdDataPresent`, `RestorePending`, `BootstrapRefused` | Cluster `Bootstrapped=False` | [](rb:bootstrap-refused) |
 | `PausedAfterFirstNode`, `WaitingForHealth`, `PlanBlocked`, `PlanChanged`, `RolloutFailed` | TalosRollout, `ROLLOUT` table | [](rb:rollout-paused) |
 | `BackupTooOld`, `SinkRefused`, `SinkUnavailable`, `SnapshotFailed` | EtcdBackupPolicy, EtcdSnapshot | [](rb:backup-failing) |

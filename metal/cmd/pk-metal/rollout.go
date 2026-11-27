@@ -85,7 +85,7 @@ func rolloutCmd(args []string) {
 	switch sub {
 	case "list":
 		need(0)
-		run = func(cl client.Client) error { return listRollouts(ctx, cl, os.Stdout, time.Now()) }
+		run = func(cl client.Client) error { return listRollouts(ctx, cl, os.Stdout, os.Stderr, time.Now()) }
 	case "show":
 		need(1)
 		run = func(cl client.Client) error {
@@ -141,14 +141,15 @@ func getRollout(ctx context.Context, cl client.Client, name string) (*osv1alpha1
 }
 
 // listRollouts prints each rollout, by name, as the ROLLOUT table of status
-// does, with its target and age.
-func listRollouts(ctx context.Context, cl client.Client, w io.Writer, now time.Time) error {
+// does, with its target and age. An empty list is a line on errOut, as
+// kubectl does it.
+func listRollouts(ctx context.Context, cl client.Client, w, errOut io.Writer, now time.Time) error {
 	list := &osv1alpha1.TalosRolloutList{}
 	if err := cl.List(ctx, list); err != nil {
 		return fmt.Errorf("list rollouts: %w", err)
 	}
 	if len(list.Items) == 0 {
-		fmt.Fprintln(w, "no rollouts")
+		fmt.Fprintln(errOut, "no rollouts")
 		return nil
 	}
 	slices.SortFunc(list.Items, func(a, b osv1alpha1.TalosRollout) int { return strings.Compare(a.Name, b.Name) })

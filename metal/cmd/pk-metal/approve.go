@@ -97,7 +97,7 @@ func approveCmd(args []string) {
 	in := oneByteAtATime{os.Stdin}
 	if err := approveAll(ctx, cl, refs, approval{
 		User: user, Yes: *yes, In: in, Interactive: isTerminal(os.Stdin), Out: os.Stdout,
-	}); err != nil {
+	}, os.Stderr); err != nil {
 		die(err)
 	}
 }
@@ -123,8 +123,9 @@ func approveRefs(args []string, ns string, nsGiven bool) ([]types.NamespacedName
 // one on its own: one plan, one answer. A no, or an operation that cannot be
 // approved, leaves that one as it is and goes on with the next. A question
 // that cannot be asked at all (no terminal, no answer in time, interrupted)
-// ends the run: the plans not yet shown are not approved.
-func approveAll(ctx context.Context, cl client.Client, refs []types.NamespacedName, tmpl approval) error {
+// ends the run: the plans not yet shown are not approved. The reason that
+// one was not approved goes to errOut, away from the plans.
+func approveAll(ctx context.Context, cl client.Client, refs []types.NamespacedName, tmpl approval, errOut io.Writer) error {
 	var notApproved []string
 	for i, ref := range refs {
 		if i > 0 {
@@ -140,7 +141,7 @@ func approveAll(ctx context.Context, cl client.Client, refs []types.NamespacedNa
 			return err
 		}
 		notApproved = append(notApproved, ref.String())
-		fmt.Fprintf(tmpl.Out, "%s: %v\n", ref, err)
+		fmt.Fprintf(errOut, "%s: %v\n", ref, err)
 		if errors.Is(err, errCannotAsk) || errors.Is(err, errNoAnswer) || ctx.Err() != nil {
 			for _, rest := range refs[i+1:] {
 				notApproved = append(notApproved, rest.String())

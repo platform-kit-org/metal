@@ -84,7 +84,7 @@ func backupCmd(args []string) {
 		if len(pos) > 1 {
 			badUsage(fs, "give at most one TalosCluster")
 		}
-		if err := listSnapshots(ctx, mustClient(), argAt(pos, 0), time.Now(), os.Stdout); err != nil {
+		if err := listSnapshots(ctx, mustClient(), argAt(pos, 0), time.Now(), os.Stdout, os.Stderr); err != nil {
 			die(err)
 		}
 	case "get":
@@ -217,8 +217,8 @@ func waitSnapshot(ctx context.Context, cl client.Client, name string, every time
 }
 
 // listSnapshots prints the snapshots of a cluster (every cluster when
-// empty), newest first.
-func listSnapshots(ctx context.Context, cl client.Client, cluster string, now time.Time, w io.Writer) error {
+// empty), newest first. An empty list is a line on errOut, as kubectl does it.
+func listSnapshots(ctx context.Context, cl client.Client, cluster string, now time.Time, w, errOut io.Writer) error {
 	l := &osv1alpha1.EtcdSnapshotList{}
 	var opts []client.ListOption
 	if cluster != "" {
@@ -234,7 +234,7 @@ func listSnapshots(ctx context.Context, cl client.Client, cluster string, now ti
 		return cmp.Or(at(&b).Compare(at(&a)), strings.Compare(b.Name, a.Name))
 	})
 	if len(items) == 0 {
-		fmt.Fprintln(w, "no etcd snapshots")
+		fmt.Fprintln(errOut, "no etcd snapshots")
 		return nil
 	}
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)

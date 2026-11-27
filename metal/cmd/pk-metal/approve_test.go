@@ -528,13 +528,15 @@ func TestApproveSeveral(t *testing.T) {
 
 	t.Run("each operation gets its own question", func(t *testing.T) {
 		cl, ops, refs := three()
-		var out bytes.Buffer
+		var out, errOut bytes.Buffer
 		err := approveAll(ctx, cl, refs, approval{User: "alice", Interactive: true, Out: &out,
-			In: oneByteAtATime{strings.NewReader("y\nn\nyes\n")}})
+			In: oneByteAtATime{strings.NewReader("y\nn\nyes\n")}}, &errOut)
 		assert.EqualError(t, err, "1 of 3 operations not approved: pk-metal/op-b")
 		assert.Equal(t, 3, strings.Count(out.String(), "Approve as alice? [y/N] "))
 		assert.Equal(t, 3, strings.Count(out.String(), "steps, in this order:"))
-		assert.Contains(t, out.String(), "pk-metal/op-b: not approved; nothing changed\n")
+		assert.Equal(t, "pk-metal/op-b: not approved; nothing changed\n", errOut.String(),
+			"the reason goes to stderr, away from the plans")
+		assert.NotContains(t, out.String(), "pk-metal/op-b:")
 		assert.Equal(t, "alice", approvedBy(t, cl, ops[0]))
 		assert.Empty(t, approvedBy(t, cl, ops[1]))
 		assert.Equal(t, "alice", approvedBy(t, cl, ops[2]))
@@ -545,7 +547,7 @@ func TestApproveSeveral(t *testing.T) {
 		missing := types.NamespacedName{Namespace: "pk-metal", Name: "gone"}
 		var out bytes.Buffer
 		err := approveAll(ctx, cl, append([]types.NamespacedName{missing}, refs...),
-			approval{User: "alice", Yes: true, Out: &out})
+			approval{User: "alice", Yes: true, Out: &out}, io.Discard)
 		assert.EqualError(t, err, "1 of 4 operations not approved: pk-metal/gone")
 		for _, op := range ops {
 			assert.Equal(t, "alice", approvedBy(t, cl, op))
@@ -555,7 +557,7 @@ func TestApproveSeveral(t *testing.T) {
 	t.Run("without a terminal nothing is approved and the rest is not shown", func(t *testing.T) {
 		cl, ops, refs := three()
 		var out bytes.Buffer
-		err := approveAll(ctx, cl, refs, approval{User: "alice", Out: &out})
+		err := approveAll(ctx, cl, refs, approval{User: "alice", Out: &out}, io.Discard)
 		assert.EqualError(t, err, "3 of 3 operations not approved: pk-metal/op-a, pk-metal/op-b, pk-metal/op-c")
 		assert.Equal(t, 1, strings.Count(out.String(), "steps, in this order:"))
 		for _, op := range ops {
@@ -569,10 +571,10 @@ func TestApproveSeveral(t *testing.T) {
 		cancel()
 		never, w := io.Pipe()
 		defer w.Close()
-		var out bytes.Buffer
-		err := approveAll(cancelled, cl, refs, approval{User: "alice", Interactive: true, In: never, Out: &out})
+		var out, errOut bytes.Buffer
+		err := approveAll(cancelled, cl, refs, approval{User: "alice", Interactive: true, In: never, Out: &out}, &errOut)
 		assert.ErrorContains(t, err, "3 of 3 operations not approved")
-		assert.Contains(t, out.String(), "pk-metal/op-a: interrupted; nothing changed\n")
+		assert.Equal(t, "pk-metal/op-a: interrupted; nothing changed\n", errOut.String())
 		for _, op := range ops {
 			assert.Empty(t, approvedBy(t, cl, op))
 		}
@@ -582,7 +584,7 @@ func TestApproveSeveral(t *testing.T) {
 		cl, _, refs := three()
 		var out bytes.Buffer
 		err := approveAll(ctx, cl, refs[:1], approval{User: "alice", Interactive: true, Out: &out,
-			In: strings.NewReader("n\n")})
+			In: strings.NewReader("n\n")}, io.Discard)
 		assert.ErrorIs(t, err, errDeclined)
 	})
 }

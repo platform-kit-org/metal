@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -68,9 +69,14 @@ func TestListRollouts(t *testing.T) {
 	aborting.Spec.Approval = osv1alpha1.RolloutApproval{ApprovedBy: "alice", PlanHash: planHash}
 	aborting.Status.Conditions = append(aborting.Status.Conditions[:1], metav1.Condition{Type: osv1alpha1.ConditionProgressing,
 		Status: metav1.ConditionTrue, Reason: osv1alpha1.ReasonRolloutAborted, Message: "waiting for 1 running step(s)"})
+	now := time.Date(2030, 1, 1, 13, 0, 0, 0, time.UTC)
+	var out, errOut bytes.Buffer
+	require.NoError(t, listRollouts(context.Background(), fakeClient(), &out, &errOut, now))
+	assert.Empty(t, out.String(), "a script that reads the rows gets none")
+	assert.Equal(t, "no rollouts\n", errOut.String())
+
 	cl := fakeClient(planned(), aborting)
-	var out bytes.Buffer
-	require.NoError(t, listRollouts(context.Background(), cl, &out, time.Date(2030, 1, 1, 13, 0, 0, 0, time.UTC)))
+	require.NoError(t, listRollouts(context.Background(), cl, &out, io.Discard, now))
 	assert.Regexp(t, `(?m)^ROLLOUT\s+CLUSTER\s+KIND\s+TARGET\s+NODES\s+STATE\s+APPROVED\s+AGE$`, out.String())
 	assert.Regexp(t, `(?m)^lab-talosupgrade-0f0f0f0f\s+lab\s+TalosUpgrade\s+Talos v1.14.7\s+0/3\s+Aborted\s+alice\s+1h\n`+
 		`lab-talosupgrade-1a2b3c4d\s+lab\s+TalosUpgrade\s+Talos v1.14.7\s+0/3\s+AwaitingApproval\s+-\s+1h$`, out.String(),

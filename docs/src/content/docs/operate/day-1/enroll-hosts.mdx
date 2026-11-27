@@ -39,7 +39,7 @@ Make the operator find each new machine and make a [](kind:Host) for it.
 2. Apply the overlay. The manager reads the ledger only when it starts. The overlay gives the ledger ConfigMap a new name, and thus the apply restarts the manager.
 
    ```sh
-   kubectl apply --server-side -k overlays/site
+   kubectl apply --server-side --force-conflicts -k overlays/site
    ```
 
 3. Make the credentials Secret in the namespace `pk-metal`.

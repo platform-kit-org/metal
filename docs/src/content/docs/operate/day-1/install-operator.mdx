@@ -137,8 +137,10 @@ The overlay is a kustomize directory. It adds the values of your site to the bas
 16. Apply the overlay. Server-side apply is necessary, because the CRDs are large.
 
     ```sh
-    kubectl apply --server-side -k overlays/site
+    kubectl apply --server-side --force-conflicts -k overlays/site
     ```
+
+    Use this command for each later apply. After a [pivot](howto:pivot), `--force-conflicts` makes the overlay the owner of its fields again.
 
 17. Wait for the manager.
 

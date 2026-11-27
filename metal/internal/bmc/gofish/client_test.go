@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/stmcginnis/gofish/schemas"
@@ -18,6 +20,36 @@ import (
 	"github.com/dennisklein/platform-kit/metal/internal/bmc/sim"
 )
 
+// serve starts an HTTP server with the sim of f. The test closes it.
+func serve(t *testing.T, f *sim.Fixture) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(sim.NewServer(sim.NewState(f)))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// connect opens a session to url, after edit changes the config. A fixture
+// that seeds accounts enforces them; its first account is the factory
+// administrator, and the session logs in with it. The test closes the
+// session, before the server.
+func connect(t *testing.T, url string, f *sim.Fixture, edit ...func(*gofishclient.Config)) bmc.Client {
+	t.Helper()
+	cfg := gofishclient.Config{Endpoint: url}
+	if len(f.Accounts) > 0 {
+		cfg.Username, cfg.Password = f.Accounts[0].Username, f.Accounts[0].Password
+	}
+	for _, e := range edit {
+		e(&cfg)
+	}
+	c, err := gofishclient.Connect(context.Background(), cfg)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = c.Close() })
+	return c
+}
+
+// readOnly is the edit for a read-only session.
+func readOnly(cfg *gofishclient.Config) { cfg.ReadOnly = true }
+
 // TestConformanceOverHTTP is the core seam proof: the PRODUCTION client (gofish + raw OEM
 // paths) passes the same bmctest suite as the in-process sim client, against the sim's
 // HTTP tree — both sides of the seam exercised, for every personality: the
@@ -27,19 +59,7 @@ func TestConformanceOverHTTP(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			f, err := sim.LoadFixture(name)
 			require.NoError(t, err)
-			srv := httptest.NewServer(sim.NewServer(sim.NewState(f)))
-			defer srv.Close()
-
-			// A fixture that seeds accounts enforces them; its first account
-			// is the factory administrator.
-			cfg := gofishclient.Config{Endpoint: srv.URL}
-			if len(f.Accounts) > 0 {
-				cfg.Username, cfg.Password = f.Accounts[0].Username, f.Accounts[0].Password
-			}
-			c, err := gofishclient.Connect(context.Background(), cfg)
-			require.NoError(t, err)
-			defer c.Close()
-			bmctest.Run(t, c, f, false)
+			bmctest.Run(t, connect(t, serve(t, f).URL, f), f, false)
 		})
 	}
 }
@@ -62,14 +82,7 @@ func TestBiosDialectsOverHTTP(t *testing.T) {
 			f, err := sim.LoadFixture("generic")
 			require.NoError(t, err)
 			dialect(f)
-			srv := httptest.NewServer(sim.NewServer(sim.NewState(f)))
-			defer srv.Close()
-			c, err := gofishclient.Connect(context.Background(), gofishclient.Config{
-				Endpoint: srv.URL, Username: f.Accounts[0].Username, Password: f.Accounts[0].Password,
-			})
-			require.NoError(t, err)
-			defer c.Close()
-			bmctest.Run(t, c, f, false)
+			bmctest.Run(t, connect(t, serve(t, f).URL, f), f, false)
 		})
 	}
 }
@@ -85,14 +98,7 @@ func TestConformanceOverHTTPWithAccounts(t *testing.T) {
 			f.Accounts = []sim.FixtureAccount{
 				{ID: "2", Username: "admin", Password: "factory", Role: "Administrator", Enabled: true},
 			}
-			srv := httptest.NewServer(sim.NewServer(sim.NewState(f)))
-			defer srv.Close()
-
-			c, err := gofishclient.Connect(context.Background(),
-				gofishclient.Config{Endpoint: srv.URL, Username: "admin", Password: "factory"})
-			require.NoError(t, err)
-			defer c.Close()
-			bmctest.Run(t, c, f, false)
+			bmctest.Run(t, connect(t, serve(t, f).URL, f), f, false)
 		})
 	}
 }
@@ -106,20 +112,19 @@ func TestAccountRotationOverHTTP(t *testing.T) {
 	f.Accounts = []sim.FixtureAccount{
 		{ID: "2", Username: "admin", Password: "factory", Role: "Administrator", Enabled: true},
 	}
-	srv := httptest.NewServer(sim.NewServer(sim.NewState(f)))
-	defer srv.Close()
+	srv := serve(t, f)
 	ctx := context.Background()
 
-	connect := func(user, pass string) (bmc.Client, error) {
+	login := func(user, pass string) (bmc.Client, error) {
 		return gofishclient.Connect(ctx, gofishclient.Config{Endpoint: srv.URL, Username: user, Password: pass})
 	}
 
-	factory, err := connect("admin", "factory")
+	factory, err := login("admin", "factory")
 	require.NoError(t, err)
 	defer factory.Close()
 	require.NoError(t, factory.EnsureAccount(ctx, "pk-metal", "InitialPass0"))
 
-	managed, err := connect("pk-metal", "InitialPass0")
+	managed, err := login("pk-metal", "InitialPass0")
 	require.NoError(t, err)
 	_, err = managed.Manager(ctx)
 	require.NoError(t, err, "the managed account works")
@@ -129,14 +134,14 @@ func TestAccountRotationOverHTTP(t *testing.T) {
 	require.Error(t, err, "the old credential dies with the rotation")
 	managed.Close()
 
-	managed, err = connect("pk-metal", "RotatedPass1")
+	managed, err = login("pk-metal", "RotatedPass1")
 	require.NoError(t, err)
 	defer managed.Close()
 	_, err = managed.Manager(ctx)
 	require.NoError(t, err, "the new credential works")
 
 	// The session login is the oracle: the old password opens no session.
-	_, err = connect("pk-metal", "InitialPass0")
+	_, err = login("pk-metal", "InitialPass0")
 	require.Error(t, err, "the old password logs in no more")
 	assert.True(t, gofishclient.LoginRefused(err), "%v", err)
 }
@@ -149,45 +154,84 @@ func TestConformanceBehindDeflate(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, f.Protocol.ETags && f.Protocol.RequireIfMatch)
 	f.Protocol.ETagGzipSuffix = true
-	srv := httptest.NewServer(sim.NewServer(sim.NewState(f)))
-	defer srv.Close()
-
 	ctx := context.Background()
-	cfg := gofishclient.Config{Endpoint: srv.URL}
-	if len(f.Accounts) > 0 {
-		cfg.Username, cfg.Password = f.Accounts[0].Username, f.Accounts[0].Password
-	}
-	c, err := gofishclient.Connect(ctx, cfg)
-	require.NoError(t, err)
-	defer c.Close()
+	c := connect(t, serve(t, f).URL, f)
 	require.NoError(t, c.SetBootOverride(ctx, f.Systems[0].ID, bmc.BootOverride{Target: "Cd"}),
 		"a PATCH behind mod_deflate must not fail its precondition")
 	bmctest.Run(t, c, f, false)
 }
 
-// TestReadOnlyRefusesMutation is the read-only rail: a read-only client refuses every write at
-// this layer, regardless of what the caller asks.
+// TestReadOnlyRefusesMutation is the read-only rail: a read-only client
+// refuses every write, whatever the caller asks, and no write reaches the
+// BMC. The login and the logout of the session still do. Each method runs
+// on a fixture where it gets as far as its write.
 func TestReadOnlyRefusesMutation(t *testing.T) {
-	f, err := sim.LoadFixture("supermicro-x12")
-	require.NoError(t, err)
-	srv := httptest.NewServer(sim.NewServer(sim.NewState(f)))
-	defer srv.Close()
-
-	c, err := gofishclient.Connect(context.Background(),
-		gofishclient.Config{Endpoint: srv.URL, ReadOnly: true})
-	require.NoError(t, err)
-	defer c.Close()
-	ctx := context.Background()
-
-	_, err = c.Systems(ctx)
-	require.NoError(t, err, "read path must work")
-
-	assert.Error(t, c.SetPower(ctx, "1", bmc.ActionForceOff), "SetPower on read-only")
-	assert.Error(t, c.InsertMedia(ctx, "VirtualMedia1", "https://x/i.iso", nil), "InsertMedia on read-only")
-	assert.Error(t, c.SetBootOverride(ctx, "1", bmc.BootOverride{Target: "UsbCd"}), "SetBootOverride on read-only")
-	assert.Error(t, c.UpdateFirmware(ctx, []byte("SIMFW 1")), "UpdateFirmware on read-only")
-	assert.Error(t, c.ResetManager(ctx, bmc.ActionGracefulRestart), "ResetManager on read-only")
-	assert.Error(t, c.SetBiosAttributes(ctx, "1", map[string]any{"QuietBoot": false}), "SetBiosAttributes on read-only")
+	const pem = "-----BEGIN CERTIFICATE-----\nAA==\n-----END CERTIFICATE-----\n"
+	for name, tc := range map[string]struct {
+		fixture string
+		call    func(context.Context, bmc.Client) error
+	}{
+		"SetPower": {"generic", func(ctx context.Context, c bmc.Client) error {
+			return c.SetPower(ctx, "1", bmc.ActionForceOff)
+		}},
+		"SetBootOverride": {"generic", func(ctx context.Context, c bmc.Client) error {
+			return c.SetBootOverride(ctx, "1", bmc.BootOverride{Target: "Cd"})
+		}},
+		"InsertMedia": {"generic", func(ctx context.Context, c bmc.Client) error {
+			return c.InsertMedia(ctx, "2", "https://x/i.iso", nil)
+		}},
+		"VmmControl": {"huawei-2288h-v5", func(ctx context.Context, c bmc.Client) error {
+			return c.InsertMedia(ctx, "CD", "https://x/i.iso", nil)
+		}},
+		"EjectMedia": {"generic", func(ctx context.Context, c bmc.Client) error {
+			return c.EjectMedia(ctx, "2")
+		}},
+		"UpdateFirmware": {"generic", func(ctx context.Context, c bmc.Client) error {
+			return c.UpdateFirmware(ctx, []byte("SIMFW 1"))
+		}},
+		"StageFirmware": {"generic", func(ctx context.Context, c bmc.Client) error {
+			return c.StageFirmware(ctx, []byte("SIMFW 1"), "BIOS")
+		}},
+		"ResetManager": {"generic", func(ctx context.Context, c bmc.Client) error {
+			return c.ResetManager(ctx, bmc.ActionGracefulRestart)
+		}},
+		"SetBiosAttributes": {"generic", func(ctx context.Context, c bmc.Client) error {
+			return c.SetBiosAttributes(ctx, "1", map[string]any{"QuietBoot": false})
+		}},
+		"EnsureAccount": {"generic", func(ctx context.Context, c bmc.Client) error {
+			return c.EnsureAccount(ctx, "pk-metal", "managed-pass-1")
+		}},
+		"DisableAccount": {"generic", func(ctx context.Context, c bmc.Client) error {
+			return c.DisableAccount(ctx, "admin")
+		}},
+		"SetNTP": {"generic", func(ctx context.Context, c bmc.Client) error {
+			return c.SetNTP(ctx, bmc.NTPConfig{Enabled: true, Servers: []string{"ntp.example.org"}})
+		}},
+		"GenerateCSR": {"generic", func(ctx context.Context, c bmc.Client) error {
+			_, err := c.GenerateCSR(ctx, bmc.CSRSubject{CommonName: "bmc.example.internal", Country: "XX"})
+			return err
+		}},
+		"ImportServerCertificate": {"generic", func(ctx context.Context, c bmc.Client) error {
+			return c.ImportServerCertificate(ctx, []byte(pem))
+		}},
+		"UploadServerIdentity": {"supermicro-x12", func(ctx context.Context, c bmc.Client) error {
+			return c.UploadServerIdentity(ctx, []byte(pem), []byte("key"))
+		}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f, err := sim.LoadFixture(tc.fixture)
+			require.NoError(t, err)
+			srv, counts := countingSim(t, f)
+			c := connect(t, srv.URL, f, readOnly)
+			before := counts()
+			require.ErrorIs(t, tc.call(t.Context(), c), gofishclient.ErrReadOnly)
+			for req, n := range counts() {
+				if n > before[req] {
+					assert.True(t, strings.HasPrefix(req, "GET "), "%s reached the BMC", req)
+				}
+			}
+		})
+	}
 }
 
 // A manager that says it cannot serve the request now is busy; one that
@@ -204,4 +248,33 @@ func TestBusy(t *testing.T) {
 	}
 	assert.False(t, gofishclient.Busy(errors.New("no status")))
 	assert.False(t, gofishclient.Busy(nil))
+}
+
+// An error names the request that failed once. gofish's error for an HTTP
+// status names no request, and http.Client names the request of every
+// other error.
+func TestErrorsNameTheRequestOnce(t *testing.T) {
+	f, err := sim.LoadFixture("generic")
+	require.NoError(t, err)
+	next := sim.NewServer(sim.NewState(f))
+	const system, protocol = "/redfish/v1/Systems/1", "/redfish/v1/Managers/1/NetworkProtocol"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPatch && r.URL.Path == system:
+			http.Error(w, "the resource changed", http.StatusPreconditionFailed)
+		case r.URL.Path == protocol:
+			_, _ = io.WriteString(w, "null")
+		default:
+			next.ServeHTTP(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	c := connect(t, srv.URL, f)
+
+	err = c.SetBootOverride(t.Context(), "1", bmc.BootOverride{Target: "Cd"})
+	require.Error(t, err)
+	assert.Equal(t, 1, strings.Count(err.Error(), "PATCH "+system), err.Error())
+	_, err = c.NTP(t.Context())
+	require.Error(t, err)
+	assert.Equal(t, 1, strings.Count(err.Error(), protocol), err.Error())
 }

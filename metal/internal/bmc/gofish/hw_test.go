@@ -3,7 +3,6 @@ package gofish_test
 import (
 	"context"
 	"crypto/x509"
-	"net/http/httptest"
 	"os"
 	"testing"
 
@@ -59,16 +58,7 @@ func TestReadOnlyChecksOnTheSim(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			f, err := sim.LoadFixture(name)
 			require.NoError(t, err)
-			srv := httptest.NewServer(sim.NewServer(sim.NewState(f)))
-			defer srv.Close()
-			cfg := gofishclient.Config{Endpoint: srv.URL, ReadOnly: true}
-			if len(f.Accounts) > 0 {
-				cfg.Username, cfg.Password = f.Accounts[0].Username, f.Accounts[0].Password
-			}
-			c, err := gofishclient.Connect(context.Background(), cfg)
-			require.NoError(t, err)
-			defer c.Close()
-			bmctest.RunReadOnly(t, c)
+			bmctest.RunReadOnly(t, connect(t, serve(t, f).URL, f, readOnly))
 		})
 	}
 }

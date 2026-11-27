@@ -93,8 +93,11 @@ func Run(t *testing.T, c bmc.Client, f *sim.Fixture, readOnly bool) {
 	t.Run("capability-discovery", func(t *testing.T) {
 		caps, err := c.Capabilities(ctx)
 		require.NoError(t, err)
+		media, err := c.Media(ctx)
+		require.NoError(t, err)
+		require.Len(t, media, len(f.VirtualMedia))
 		for i, vm := range f.VirtualMedia {
-			assert.Equal(t, fixtureDialect(f, i), caps.MediaDialect[vm.ID], "media %q dialect", vm.ID)
+			assert.Equal(t, fixtureDialect(f, i), media[i].Dialect, "media %q dialect", vm.ID)
 		}
 		assert.Equal(t, fixtureUpdateDialect(f), caps.UpdateDialect, "update dialect")
 	})
@@ -196,9 +199,7 @@ func Run(t *testing.T, c bmc.Client, f *sim.Fixture, readOnly bool) {
 		for i, vm := range f.VirtualMedia {
 			assert.Equal(t, vm.ID, media[i].ID, "slots come in the endpoint's order")
 		}
-		caps, err := c.Capabilities(ctx)
-		require.NoError(t, err)
-		slots := bmc.InsertableSlots(media, caps)
+		slots := bmc.InsertableSlots(media)
 		want := insertableSlot(f)
 		if want == "" {
 			assert.Empty(t, slots, "no insertable slot advertised")
@@ -595,7 +596,7 @@ func RunReadOnly(t *testing.T, c bmc.Client) {
 		require.NoError(t, err)
 		for _, m := range media {
 			assert.Contains(t, []bmc.MediaDialect{bmc.DialectStandard, bmc.DialectVmmControl, bmc.DialectNone},
-				caps.MediaDialect[m.ID], "media %s dialect", m.ID)
+				m.Dialect, "media %s dialect", m.ID)
 		}
 		assert.Contains(t, []bmc.UpdateDialect{bmc.DialectMultipartPush, bmc.DialectSimpleUpdate, bmc.DialectNoUpdate},
 			caps.UpdateDialect)

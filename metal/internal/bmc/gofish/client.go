@@ -28,6 +28,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"path"
 	"slices"
 	"strconv"
@@ -37,9 +38,11 @@ import (
 
 	gf "github.com/stmcginnis/gofish"
 	"github.com/stmcginnis/gofish/schemas"
+	"k8s.io/utils/ptr"
 
 	"github.com/dennisklein/platform-kit/metal/internal/bmc"
 	"github.com/dennisklein/platform-kit/metal/internal/poll"
+	"github.com/dennisklein/platform-kit/metal/internal/redact"
 )
 
 type Config struct {
@@ -55,8 +58,10 @@ type Config struct {
 	// another key fails the handshake, before any credential is sent. Wins
 	// over Insecure when set.
 	PinnedKeys []string
-	// ReadOnly refuses every mutating call at this layer — the read-only rail: pointing the
-	// client at real hardware is safe by construction until explicitly unlocked.
+	// ReadOnly refuses every request that could change the BMC, with
+	// ErrReadOnly — the read-only rail: pointing the client at real hardware
+	// is safe by construction until explicitly unlocked. Only GET and HEAD
+	// go out, and the login and logout of the session.
 	ReadOnly bool
 	// RequestTimeout bounds one request, from the send to the last byte of
 	// the answer. Zero is DefaultRequestTimeout. A request that uploads a
@@ -77,9 +82,8 @@ const UploadTimeout = 15 * time.Minute
 const bulkBody = 1 << 20
 
 type client struct {
-	api      *gf.APIClient
-	svc      *gf.Service
-	readOnly bool
+	api *gf.APIClient
+	svc *gf.Service
 	// auth is how the requests authenticate: AuthSession or AuthBasic.
 	auth string
 	// renew logs in again when the manager forgets the session.
@@ -91,12 +95,30 @@ type client struct {
 	memo struct {
 		sync.Mutex
 		root       *rootLinks
-		managerURI string
-		managerDoc []byte // the manager as first read: links only are taken from it
-		chassisURI string
+		manager    *managerFound
+		chassisURI *string
 		update     *updateService
 		mediaColl  *string
 	}
+}
+
+// once returns the value in slot, or finds it and keeps it there for the
+// session. A failure is not kept: the next call looks again.
+func once[T any](mu *sync.Mutex, slot **T, find func() (T, error)) (T, error) {
+	mu.Lock()
+	kept := *slot
+	mu.Unlock()
+	if kept != nil {
+		return *kept, nil
+	}
+	v, err := find()
+	if err != nil {
+		return v, err
+	}
+	mu.Lock()
+	*slot = &v
+	mu.Unlock()
+	return v, nil
 }
 
 // rootLinks are the service root's links this package follows.
@@ -109,23 +131,17 @@ type rootLinks struct {
 
 // root reads the service root's links, once per session.
 func (c *client) root() (rootLinks, error) {
-	c.memo.Lock()
-	r := c.memo.root
-	c.memo.Unlock()
-	if r != nil {
-		return *r, nil
-	}
-	r = &rootLinks{}
-	if _, err := c.getJSON(c.svc.ODataID, r); err != nil {
-		return rootLinks{}, fmt.Errorf("bmc: service root: %w", err)
-	}
-	c.memo.Lock()
-	c.memo.root = r
-	c.memo.Unlock()
-	return *r, nil
+	return once(&c.memo.Mutex, &c.memo.root, func() (r rootLinks, err error) {
+		if _, err := c.getJSON(c.svc.ODataID, &r); err != nil {
+			return r, fmt.Errorf("bmc: service root: %w", err)
+		}
+		return r, nil
+	})
 }
 
-var errReadOnly = fmt.Errorf("bmc: mutating call refused (read-only client)")
+// ErrReadOnly is the answer of a read-only client to a request that could
+// change the BMC.
+var ErrReadOnly = errors.New("bmc: mutating call refused (read-only client)")
 
 // Connect dials the endpoint and returns a bmc.Client.
 //
@@ -159,12 +175,13 @@ func Connect(ctx context.Context, cfg Config) (bmc.Client, error) {
 	// The header timeout starts after the request body is sent, so it also
 	// holds for an upload.
 	t.ResponseHeaderTimeout = timeout
-	g := guard{next: t, timeout: timeout, renew: &renewal{}}
+	g := &guard{next: t, timeout: timeout, renew: &renewal{}, readOnly: cfg.ReadOnly}
 	g.renew.send = g.send
 	hc := &http.Client{Transport: g}
 	fail := func(err error) (bmc.Client, error) {
 		t.CloseIdleConnections()
-		return nil, fmt.Errorf("bmc: connect %s: %w", cfg.Endpoint, err)
+		// A refused login can echo the password.
+		return nil, redact.Error(fmt.Errorf("bmc: connect %s: %w", cfg.Endpoint, err), cfg.Password)
 	}
 
 	// The service root is public: it is read before any credential is sent,
@@ -173,6 +190,7 @@ func Connect(ctx context.Context, cfg Config) (bmc.Client, error) {
 	if err != nil {
 		return fail(err)
 	}
+	g.sessions = root.Links.Sessions.ODataID
 	gcfg := gf.ClientConfig{
 		Endpoint:         cfg.Endpoint,
 		Username:         cfg.Username,
@@ -210,7 +228,7 @@ func Connect(ctx context.Context, cfg Config) (bmc.Client, error) {
 			return fail(err)
 		}
 	}
-	c := &client{api: api, svc: api.GetService(), readOnly: cfg.ReadOnly, auth: auth, renew: g.renew}
+	c := &client{api: api, svc: api.GetService(), auth: auth, renew: g.renew}
 	c.memo.root = &root.rootLinks
 	return c, nil
 }
@@ -343,7 +361,7 @@ type ref struct {
 func (c *client) getRaw(uri string) (body []byte, etag string, err error) {
 	resp, err := c.api.Get(uri)
 	if err != nil {
-		return nil, "", err
+		return nil, "", at(http.MethodGet, uri, err)
 	}
 	defer resp.Body.Close()
 	if body, err = readBody(resp.Body); err != nil {
@@ -384,15 +402,25 @@ func readBody(r io.Reader) ([]byte, error) {
 // can catch, so such an answer must never reach it.
 //
 // The guard also bounds each request, the body read included: gofish sets no
-// deadline of its own. And it renews a session that the manager forgot (see
-// renewal).
+// deadline of its own. It renews a session that the manager forgot (see
+// renewal). And it is the read-only rail: every request of the client passes
+// it, so a method that forgets to ask cannot write.
 type guard struct {
-	next    http.RoundTripper
-	timeout time.Duration
-	renew   *renewal
+	next     http.RoundTripper
+	timeout  time.Duration
+	renew    *renewal
+	readOnly bool
+	sessions string // the path of the Sessions collection; "" when none
 }
 
-func (g guard) RoundTrip(req *http.Request) (*http.Response, error) {
+func (g *guard) RoundTrip(req *http.Request) (*http.Response, error) {
+	if g.readOnly && req.Method != http.MethodGet && req.Method != http.MethodHead &&
+		(g.sessions == "" || !strings.HasPrefix(req.URL.Path, g.sessions)) {
+		if req.Body != nil {
+			_ = req.Body.Close()
+		}
+		return nil, ErrReadOnly
+	}
 	if !g.renew.covers(req) {
 		return g.send(req)
 	}
@@ -414,7 +442,7 @@ func (g guard) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 // send is one bounded request and its checked answer.
-func (g guard) send(req *http.Request) (*http.Response, error) {
+func (g *guard) send(req *http.Request) (*http.Response, error) {
 	timeout := g.timeout
 	if req.ContentLength > bulkBody {
 		timeout = max(timeout, UploadTimeout)
@@ -431,11 +459,11 @@ func (g guard) send(req *http.Request) (*http.Response, error) {
 	body, err := readBody(resp.Body)
 	_ = resp.Body.Close()
 	if err != nil {
-		return nil, fmt.Errorf("%s %s: %w", req.Method, req.URL.Path, g.explain(ctx, req, timeout, err))
+		return nil, g.explain(ctx, req, timeout, err)
 	}
 	if req.Method == http.MethodGet && resp.StatusCode/100 == 2 &&
 		resp.StatusCode != http.StatusAccepted && !jsonObjectOrEmpty(body) {
-		return nil, fmt.Errorf("GET %s: answer is not a JSON object", req.URL.Path)
+		return nil, errors.New("answer is not a JSON object")
 	}
 	resp.Body = io.NopCloser(bytes.NewReader(body))
 	resp.ContentLength = int64(len(body))
@@ -444,7 +472,7 @@ func (g guard) send(req *http.Request) (*http.Response, error) {
 
 // explain names the request timeout when it, and not the caller, ended the
 // request.
-func (guard) explain(ctx context.Context, req *http.Request, timeout time.Duration, err error) error {
+func (*guard) explain(ctx context.Context, req *http.Request, timeout time.Duration, err error) error {
 	var ne net.Error
 	timedOut := errors.Is(ctx.Err(), context.DeadlineExceeded) || (errors.As(err, &ne) && ne.Timeout())
 	if timedOut && req.Context().Err() == nil {
@@ -455,7 +483,7 @@ func (guard) explain(ctx context.Context, req *http.Request, timeout time.Durati
 
 // CloseIdleConnections closes the kept-open connections of the transport
 // underneath, so that http.Client.CloseIdleConnections reaches them.
-func (g guard) CloseIdleConnections() {
+func (g *guard) CloseIdleConnections() {
 	if c, ok := g.next.(interface{ CloseIdleConnections() }); ok {
 		c.CloseIdleConnections()
 	}
@@ -512,9 +540,18 @@ func (c *client) patch(uri string, body any) error {
 			return nil
 		}
 		if attempt > 0 || statusOf(err) != http.StatusPreconditionFailed {
-			return err
+			return at(http.MethodPatch, uri, err)
 		}
 	}
+}
+
+// at names the request of an error for an HTTP status, which gofish makes
+// without it. Any other error is a *url.Error, which names it already.
+func at(method, uri string, err error) error {
+	if statusOf(err) == 0 {
+		return err
+	}
+	return fmt.Errorf("%s %s: %w", method, uri, err)
 }
 
 // statusOf is the HTTP status behind a gofish error; 0 when the request never
@@ -669,53 +706,26 @@ func decodeTask(body []byte) (taskAnswer, error) {
 var taskBackoff = poll.Backoff{Initial: 50 * time.Millisecond, Max: 2 * time.Second, Factor: 2}
 
 // pollAccepted follows the task behind a raw response, if the response was a
-// 202. The monitor is the Location header, as the specification asks; a
-// service that leaves the header out names the Task in the body instead.
-// Some firmwares answer the same action synchronously.
+// 202. Some firmwares answer the same action synchronously.
 func (c *client) pollAccepted(ctx context.Context, resp *http.Response) error {
 	if resp.StatusCode != http.StatusAccepted {
 		return nil
 	}
-	if uri := resp.Header.Get("Location"); uri != "" {
-		return c.pollTask(ctx, uri)
-	}
-	body, err := readBody(resp.Body)
-	if err != nil {
-		return fmt.Errorf("bmc: accepted answer: %w", err)
-	}
-	if uri := taskInBody(body); uri != "" {
-		return c.pollTask(ctx, uri)
-	}
-	return nil
-}
-
-// taskInBody is the URI of the Task a 202 carries in its body: its
-// TaskMonitor, else its own @odata.id. Empty when the body is no Task.
-func taskInBody(body []byte) string {
-	var doc struct {
-		ODataID     string `json:"@odata.id"`
-		ODataType   string `json:"@odata.type"`
-		TaskMonitor string `json:"TaskMonitor"`
-		TaskState   string `json:"TaskState"`
-	}
-	if json.Unmarshal(body, &doc) != nil {
-		return ""
-	}
-	if !strings.HasPrefix(doc.ODataType, "#Task.") && doc.TaskState == "" {
-		return ""
-	}
-	return cmp.Or(doc.TaskMonitor, doc.ODataID)
+	return c.followTask(ctx, schemas.ParseTaskMonitorInfo(c.api, resp))
 }
 
 // followTask polls the monitor of an asynchronous answer, if the answer was
-// one: the Location header, else the Task the body carried.
+// one. The monitor is the Location header, as the specification asks; a
+// service that leaves the header out names the Task in the body instead: its
+// TaskMonitor, else its own @odata.id. A body that is no Task names no
+// monitor.
 func (c *client) followTask(ctx context.Context, info *schemas.TaskMonitorInfo) error {
 	if info == nil {
 		return nil
 	}
 	uri := info.TaskMonitor
-	if uri == "" && info.Task != nil {
-		uri = cmp.Or(info.Task.TaskMonitor, info.Task.ODataID)
+	if t := info.Task; uri == "" && t != nil && (strings.HasPrefix(t.ODataType, "#Task.") || t.TaskState != "") {
+		uri = cmp.Or(t.TaskMonitor, t.ODataID)
 	}
 	if uri == "" {
 		return nil
@@ -725,28 +735,32 @@ func (c *client) followTask(ctx context.Context, info *schemas.TaskMonitorInfo) 
 
 // firstReadable walks the candidates and then the members of a collection,
 // in the order the service lists them, and returns the first one that read
-// accepts. A member that fails to read is skipped, so one broken member does
-// not hide a good one; the first failure is the error when none reads.
+// accepts. The collection is listed only when no candidate reads. A member
+// that fails to read is skipped, so one broken member does not hide a good
+// one; the first failure is the error when none reads.
 func (c *client) firstReadable(what, coll string, prefer []string, read func(uri string) error) (string, error) {
-	uris := slices.Clone(prefer)
+	var first error
+	walk := func(uris []string) string {
+		for _, uri := range uris {
+			if uri == "" {
+				continue
+			}
+			err := read(uri)
+			if err == nil {
+				return uri
+			}
+			first = cmp.Or(first, err)
+		}
+		return ""
+	}
+	if uri := walk(prefer); uri != "" {
+		return uri, nil
+	}
 	if coll != "" {
 		members, err := c.members(coll)
-		if err != nil && len(uris) == 0 {
-			return "", fmt.Errorf("bmc: %s: %w", what, err)
-		}
-		uris = append(uris, members...)
-	}
-	var first error
-	for _, uri := range uris {
-		if uri == "" {
-			continue
-		}
-		err := read(uri)
-		if err == nil {
+		first = cmp.Or(first, err)
+		if uri := walk(members); uri != "" {
 			return uri, nil
-		}
-		if first == nil {
-			first = err
 		}
 	}
 	if first != nil {
@@ -755,40 +769,36 @@ func (c *client) firstReadable(what, coll string, prefer []string, read func(uri
 	return "", fmt.Errorf("bmc: endpoint exposes no %s", what)
 }
 
-// managerURI finds the manager once per session: the first member of the
+// managerFound is where the manager lives, and the manager resource as
+// first read: only its links are taken from it.
+type managerFound struct {
+	uri string
+	doc []byte
+}
+
+// findManager finds the manager once per session: the first member of the
 // Managers collection that reads.
-func (c *client) managerURI() (string, error) {
-	c.memo.Lock()
-	uri := c.memo.managerURI
-	c.memo.Unlock()
-	if uri != "" {
-		return uri, nil
-	}
-	root, err := c.root()
-	if err != nil {
-		return "", err
-	}
-	var body []byte
-	uri, err = c.firstReadable("managers", root.Managers.ODataID, nil, func(uri string) (err error) {
-		body, _, err = c.getRaw(uri)
-		return err
+func (c *client) findManager() (managerFound, error) {
+	return once(&c.memo.Mutex, &c.memo.manager, func() (m managerFound, err error) {
+		root, err := c.root()
+		if err != nil {
+			return m, err
+		}
+		m.uri, err = c.firstReadable("managers", root.Managers.ODataID, nil, func(uri string) (err error) {
+			m.doc, _, err = c.getRaw(uri)
+			return err
+		})
+		return m, err
 	})
-	if err != nil {
-		return "", err
-	}
-	c.memo.Lock()
-	c.memo.managerURI, c.memo.managerDoc = uri, body
-	c.memo.Unlock()
-	return uri, nil
 }
 
 // manager reads the manager, fresh.
 func (c *client) manager() (*schemas.Manager, error) {
-	uri, err := c.managerURI()
+	found, err := c.findManager()
 	if err != nil {
 		return nil, err
 	}
-	m, err := schemas.GetManager(c.api, uri)
+	m, err := schemas.GetManager(c.api, found.uri)
 	if err != nil {
 		return nil, fmt.Errorf("bmc: manager: %w", err)
 	}
@@ -800,13 +810,11 @@ func (c *client) manager() (*schemas.Manager, error) {
 // network protocol, the OEM services), which do not change while a session
 // lasts; a property that does is read with manager.
 func (c *client) managerDoc(v any) error {
-	if _, err := c.managerURI(); err != nil {
+	found, err := c.findManager()
+	if err != nil {
 		return err
 	}
-	c.memo.Lock()
-	body := c.memo.managerDoc
-	c.memo.Unlock()
-	if err := json.Unmarshal(body, v); err != nil {
+	if err := json.Unmarshal(found.doc, v); err != nil {
 		return fmt.Errorf("bmc: manager: %w", err)
 	}
 	return nil
@@ -854,7 +862,7 @@ func (c *client) vendor(m *schemas.Manager) string {
 // schema puts it).
 func (c *client) managerHostname(m *schemas.Manager) string {
 	var doc struct{ HostName string }
-	if _, err := c.getJSON(m.ODataID, &doc); err == nil && doc.HostName != "" {
+	if json.Unmarshal(m.RawData, &doc) == nil && doc.HostName != "" {
 		return doc.HostName
 	}
 	if np, err := m.NetworkProtocol(); err == nil && np != nil {
@@ -869,27 +877,16 @@ func (c *client) managerHostname(m *schemas.Manager) string {
 // comes first. The members of the Chassis collection, in the order the
 // service lists them, follow.
 func (c *client) chassisURI() (string, error) {
-	c.memo.Lock()
-	uri := c.memo.chassisURI
-	c.memo.Unlock()
-	if uri != "" {
-		return uri, nil
-	}
-	root, err := c.root()
-	if err != nil {
-		return "", err
-	}
-	uri, err = c.firstReadable("chassis", root.Chassis.ODataID, c.systemChassisLinks(root), func(uri string) error {
-		_, err := c.getJSON(uri, nil)
-		return err
+	return once(&c.memo.Mutex, &c.memo.chassisURI, func() (string, error) {
+		root, err := c.root()
+		if err != nil {
+			return "", err
+		}
+		return c.firstReadable("chassis", root.Chassis.ODataID, c.systemChassisLinks(root), func(uri string) error {
+			_, err := c.getJSON(uri, nil)
+			return err
+		})
 	})
-	if err != nil {
-		return "", err
-	}
-	c.memo.Lock()
-	c.memo.chassisURI = uri
-	c.memo.Unlock()
-	return uri, nil
 }
 
 // systemChassisLinks lists the chassis the first system names in
@@ -968,7 +965,7 @@ func adapterPortMACs(a *schemas.NetworkAdapter) []string {
 	if fns, err := a.NetworkDeviceFunctions(); err == nil {
 		slices.SortFunc(fns, func(x, y *schemas.NetworkDeviceFunction) int { return compareIDs(x.ID, y.ID) })
 		for _, fn := range fns {
-			if mac := cmpOr(fn.Ethernet.MACAddress, fn.Ethernet.PermanentMACAddress); mac != "" {
+			if mac := cmp.Or(fn.Ethernet.MACAddress, fn.Ethernet.PermanentMACAddress); mac != "" {
 				macs = append(macs, strings.ToLower(mac))
 			}
 		}
@@ -1003,9 +1000,9 @@ func (c *client) Systems(ctx context.Context) ([]bmc.System, error) {
 			Model:         s.Model,
 			PowerState:    bmc.PowerState(s.PowerState),
 			LastResetTime: parseResetTime(s.LastResetTime),
-			MemoryGiB:     int(derefF(s.MemorySummary.TotalSystemMemoryGiB)),
+			MemoryGiB:     int(ptr.Deref(s.MemorySummary.TotalSystemMemoryGiB, 0)),
 			CPUModel:      s.ProcessorSummary.Model,
-			CPUCount:      int(derefU(s.ProcessorSummary.Count)),
+			CPUCount:      int(ptr.Deref(s.ProcessorSummary.Count, 0)),
 			BootProgress:  string(s.BootProgress.LastState),
 			BootOverride: bmc.BootOverride{
 				Target:  string(s.Boot.BootSourceOverrideTarget),
@@ -1048,7 +1045,7 @@ func (c *client) sweepDrives(s *schemas.ComputerSystem) []bmc.Drive {
 		out = append(out, bmc.Drive{
 			Model:       d.Model,
 			Serial:      d.SerialNumber,
-			CapacityGiB: derefI(d.CapacityBytes) >> 30,
+			CapacityGiB: ptr.Deref(d.CapacityBytes, 0) >> 30,
 			MediaType:   string(d.MediaType),
 			Protocol:    string(d.Protocol),
 		})
@@ -1081,65 +1078,32 @@ func (c *client) sweepDrives(s *schemas.ComputerSystem) []bmc.Drive {
 }
 
 func (c *client) Capabilities(ctx context.Context) (bmc.Capabilities, error) {
-	media, err := c.Media(ctx)
-	if err != nil {
-		return bmc.Capabilities{}, err
-	}
-	caps := bmc.Capabilities{
-		MediaDialect:    map[string]bmc.MediaDialect{},
-		UpdateDialect:   c.updateDialect(),
-		IdentityDialect: c.identityDialect(),
-	}
-	for _, m := range media {
-		switch {
-		case m.InsertStandard:
-			caps.MediaDialect[m.ID] = bmc.DialectStandard
-		case slices.Contains(m.OemActions, vmmControlAction):
-			caps.MediaDialect[m.ID] = bmc.DialectVmmControl
-		default:
-			caps.MediaDialect[m.ID] = bmc.DialectNone
-		}
-	}
-	return caps, nil
+	return bmc.Capabilities{UpdateDialect: c.updateDialect(), IdentityDialect: c.identityDialect()}, nil
 }
 
-// systemByID reads one system. The member whose URI ends in the id is asked
-// first, as that is where services put it; the others follow in the order
-// the service lists them. A member that fails to read is skipped.
+// systemByID reads one system. The URI that ends in the id is asked first,
+// as that is where services put it; the members of the Systems collection
+// follow only when it does not read as that system.
 func (c *client) systemByID(id string) (*schemas.ComputerSystem, error) {
+	if id == "" {
+		return nil, errors.New("bmc: no system id")
+	}
 	root, err := c.root()
 	if err != nil {
 		return nil, err
 	}
-	members, err := c.members(root.Systems.ODataID)
+	var s *schemas.ComputerSystem
+	_, err = c.firstReadable(fmt.Sprintf("system %q", id), root.Systems.ODataID,
+		[]string{path.Join(root.Systems.ODataID, url.PathEscape(id))}, func(uri string) (err error) {
+			if s, err = schemas.GetComputerSystem(c.api, uri); err == nil && s.ID != id {
+				err = fmt.Errorf("%s is system %q", uri, s.ID)
+			}
+			return err
+		})
 	if err != nil {
-		return nil, fmt.Errorf("bmc: systems: %w", err)
+		return nil, err
 	}
-	slices.SortStableFunc(members, func(a, b string) int {
-		return boolRank(path.Base(b) == id) - boolRank(path.Base(a) == id)
-	})
-	var first error
-	for _, uri := range members {
-		s, err := schemas.GetComputerSystem(c.api, uri)
-		if err != nil {
-			first = cmp.Or(first, err)
-			continue
-		}
-		if s.ID == id {
-			return s, nil
-		}
-	}
-	if first != nil {
-		return nil, fmt.Errorf("bmc: no system %q: %w", id, first)
-	}
-	return nil, fmt.Errorf("bmc: no system %q", id)
-}
-
-func boolRank(b bool) int {
-	if b {
-		return 1
-	}
-	return 0
+	return s, nil
 }
 
 func (c *client) Power(ctx context.Context, systemID string) (bmc.PowerState, error) {
@@ -1151,9 +1115,6 @@ func (c *client) Power(ctx context.Context, systemID string) (bmc.PowerState, er
 }
 
 func (c *client) SetPower(ctx context.Context, systemID string, action bmc.PowerAction) error {
-	if c.readOnly {
-		return errReadOnly
-	}
 	s, err := c.systemByID(systemID)
 	if err != nil {
 		return err
@@ -1170,16 +1131,13 @@ func (c *client) SetPower(ctx context.Context, systemID string, action bmc.Power
 // the mode: firmware that serves no mode property rejects a PATCH naming it.
 // A raw PATCH of exactly these properties, with the system's ETag as If-Match.
 func (c *client) SetBootOverride(ctx context.Context, systemID string, o bmc.BootOverride) error {
-	if c.readOnly {
-		return errReadOnly
-	}
 	s, err := c.systemByID(systemID)
 	if err != nil {
 		return err
 	}
 	boot := map[string]any{
 		"BootSourceOverrideTarget":  o.Target,
-		"BootSourceOverrideEnabled": cmpOr(o.Enabled, bmc.OverrideOnce),
+		"BootSourceOverrideEnabled": cmp.Or(o.Enabled, bmc.OverrideOnce),
 	}
 	if o.Mode != "" {
 		boot["BootSourceOverrideMode"] = o.Mode
@@ -1191,9 +1149,6 @@ func (c *client) SetBootOverride(ctx context.Context, systemID string, o bmc.Boo
 }
 
 func (c *client) ResetManager(ctx context.Context, action bmc.PowerAction) error {
-	if c.readOnly {
-		return errReadOnly
-	}
 	m, err := c.manager()
 	if err != nil {
 		return err
@@ -1238,32 +1193,4 @@ func compareIDs(a, b string) int {
 		return an - bn
 	}
 	return strings.Compare(a, b)
-}
-
-func cmpOr(a, b string) string {
-	if a != "" {
-		return a
-	}
-	return b
-}
-
-func derefF(p *float64) float64 {
-	if p == nil {
-		return 0
-	}
-	return *p
-}
-
-func derefU(p *uint) uint {
-	if p == nil {
-		return 0
-	}
-	return *p
-}
-
-func derefI(p *int) int {
-	if p == nil {
-		return 0
-	}
-	return *p
 }

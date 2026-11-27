@@ -40,29 +40,21 @@ type updateService struct {
 
 // updateService reads the UpdateService once per session: its push URI,
 // apply times and actions do not change while the session lasts.
-func (c *client) updateService() (*updateService, error) {
-	c.memo.Lock()
-	cached := c.memo.update
-	c.memo.Unlock()
-	if cached != nil {
-		return cached, nil
-	}
-	us, err := c.svc.UpdateService()
-	if err != nil {
-		return nil, fmt.Errorf("bmc: update service: %w", err)
-	}
-	if us == nil || us.ODataID == "" {
-		return nil, fmt.Errorf("bmc: endpoint exposes no update service")
-	}
-	doc := updateService{typed: us}
-	if err := json.Unmarshal(us.RawData, &doc); err != nil {
-		return nil, fmt.Errorf("bmc: update service: %w", err)
-	}
-	doc.oem = oemActions(us.RawData)
-	c.memo.Lock()
-	c.memo.update = &doc
-	c.memo.Unlock()
-	return &doc, nil
+func (c *client) updateService() (updateService, error) {
+	return once(&c.memo.Mutex, &c.memo.update, func() (updateService, error) {
+		us, err := c.svc.UpdateService()
+		if err != nil {
+			return updateService{}, fmt.Errorf("bmc: update service: %w", err)
+		}
+		if us == nil || us.ODataID == "" {
+			return updateService{}, fmt.Errorf("bmc: endpoint exposes no update service")
+		}
+		doc := updateService{typed: us, oem: oemActions(us.RawData)}
+		if err := json.Unmarshal(us.RawData, &doc); err != nil {
+			return updateService{}, fmt.Errorf("bmc: update service: %w", err)
+		}
+		return doc, nil
+	})
 }
 
 // updateDialect probes the UpdateService: the push URI wins, SimpleUpdate is
@@ -116,9 +108,6 @@ func (c *client) FirmwareInventory(ctx context.Context) ([]bmc.Firmware, error) 
 // manager, and its tasks with it. Acceptance, even a completed task, is still
 // not proof: callers judge by the version and LastResetTime reading back.
 func (c *client) UpdateFirmware(ctx context.Context, image []byte) error {
-	if c.readOnly {
-		return errReadOnly
-	}
 	us, err := c.updateService()
 	if err != nil {
 		return err
@@ -151,9 +140,6 @@ func (c *client) UpdateFirmware(ctx context.Context, image []byte) error {
 // answer is not followed to its end: a task for a staged update stays
 // pending until the system resets, which is a later step's business.
 func (c *client) StageFirmware(_ context.Context, image []byte, entryID string) error {
-	if c.readOnly {
-		return errReadOnly
-	}
 	us, err := c.updateService()
 	if err != nil {
 		return err
@@ -165,11 +151,7 @@ func (c *client) StageFirmware(_ context.Context, image []byte, entryID string) 
 		return fmt.Errorf("bmc: the push URI does not support apply time OnReset (it lists %v); system firmware is only staged for the next reset",
 			us.ApplyTime.SupportedValues)
 	}
-	inv, err := c.svc.UpdateService()
-	if err != nil {
-		return fmt.Errorf("bmc: update service: %w", err)
-	}
-	entries, err := inv.FirmwareInventory()
+	entries, err := us.typed.FirmwareInventory()
 	if err != nil {
 		return fmt.Errorf("bmc: firmware inventory: %w", err)
 	}
@@ -203,14 +185,14 @@ func (c *client) StageFirmware(_ context.Context, image []byte, entryID string) 
 }
 
 // updateParameters builds the UpdateParameters part for this endpoint.
-func (c *client) updateParameters(us *updateService) ([]byte, error) {
-	mgr, err := c.managerURI()
+func (c *client) updateParameters(us updateService) ([]byte, error) {
+	mgr, err := c.findManager()
 	if err != nil {
 		return nil, err
 	}
 	if us.oem[smcInstallAction] != "" {
 		return json.Marshal(map[string]any{
-			"Targets":                     []string{mgr},
+			"Targets":                     []string{mgr.uri},
 			"@Redfish.OperationApplyTime": "Immediate",
 			"Oem": map[string]any{"Supermicro": map[string]any{"BMC": map[string]any{
 				"PreserveCfg": true, "PreserveSdr": true, "PreserveSsl": true, "BackupBMC": true,

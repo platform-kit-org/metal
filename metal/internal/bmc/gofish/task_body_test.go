@@ -1,11 +1,11 @@
 package gofish_test
 
 import (
-	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -14,7 +14,6 @@ import (
 
 	"github.com/dennisklein/platform-kit/metal/internal/bmc"
 	"github.com/dennisklein/platform-kit/metal/internal/bmc/bmctest"
-	gofishclient "github.com/dennisklein/platform-kit/metal/internal/bmc/gofish"
 	"github.com/dennisklein/platform-kit/metal/internal/bmc/sim"
 )
 
@@ -29,16 +28,7 @@ func TestConformanceWithTaskInBody(t *testing.T) {
 			require.NoError(t, err)
 			f.Protocol.TaskDuration = 300 * time.Millisecond
 			f.Protocol.TaskInBody = true
-			srv := httptest.NewServer(sim.NewServer(sim.NewState(f)))
-			defer srv.Close()
-			cfg := gofishclient.Config{Endpoint: srv.URL}
-			if len(f.Accounts) > 0 {
-				cfg.Username, cfg.Password = f.Accounts[0].Username, f.Accounts[0].Password
-			}
-			c, err := gofishclient.Connect(context.Background(), cfg)
-			require.NoError(t, err)
-			defer c.Close()
-			bmctest.Run(t, c, f, false)
+			bmctest.Run(t, connect(t, serve(t, f).URL, f), f, false)
 		})
 	}
 }
@@ -65,12 +55,8 @@ func TestTaskCompletedCriticalIsAFailure(t *testing.T) {
 			next.ServeHTTP(w, r)
 		}
 	}))
-	defer srv.Close()
-	c, err := gofishclient.Connect(t.Context(), gofishclient.Config{
-		Endpoint: srv.URL, Username: f.Accounts[0].Username, Password: f.Accounts[0].Password,
-	})
-	require.NoError(t, err)
-	defer c.Close()
+	t.Cleanup(srv.Close)
+	c := connect(t, srv.URL, f)
 
 	err = c.SetPower(t.Context(), f.Systems[0].ID, bmc.ActionForceOff)
 	require.Error(t, err)
@@ -83,16 +69,33 @@ func TestTaskCompletedCriticalIsAFailure(t *testing.T) {
 			require.NoError(t, err)
 			f.Protocol.TaskDuration = 100 * time.Millisecond
 			f.Protocol.TaskFailureCompleted = true
-			srv := httptest.NewServer(sim.NewServer(sim.NewState(f)))
-			defer srv.Close()
-			cfg := gofishclient.Config{Endpoint: srv.URL}
-			if len(f.Accounts) > 0 {
-				cfg.Username, cfg.Password = f.Accounts[0].Username, f.Accounts[0].Password
-			}
-			c, err := gofishclient.Connect(context.Background(), cfg)
-			require.NoError(t, err)
-			defer c.Close()
-			bmctest.Run(t, c, f, false)
+			bmctest.Run(t, connect(t, serve(t, f).URL, f), f, false)
 		})
 	}
+}
+
+// A 202 with no Location header whose body is no Task names no task
+// monitor: the client does not poll what the body names.
+func TestAcceptedBodyThatIsNoTaskIsNotPolled(t *testing.T) {
+	f, err := sim.LoadFixture("generic")
+	require.NoError(t, err)
+	next := sim.NewServer(sim.NewState(f))
+	const other = "/redfish/v1/NotATask"
+	var polled atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/Actions/ComputerSystem.Reset"):
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = io.WriteString(w, `{"@odata.id":"`+other+`","@odata.type":"#Message.v1_1_1.Message"}`)
+		case r.URL.Path == other:
+			polled.Add(1)
+			http.NotFound(w, r)
+		default:
+			next.ServeHTTP(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	require.NoError(t, connect(t, srv.URL, f).SetPower(t.Context(), f.Systems[0].ID, bmc.ActionForceOff))
+	assert.Zero(t, polled.Load(), "the body names no task monitor")
 }

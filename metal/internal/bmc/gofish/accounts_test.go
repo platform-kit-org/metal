@@ -1,8 +1,13 @@
 package gofish_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"io"
+	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -32,14 +37,8 @@ func TestEnsureAccountSkipsAReservedSlot(t *testing.T) {
 	require.NoError(t, err)
 	f.Accounts[0].ID = "2"
 	f.ReservedAccountSlots = []string{"1"}
-	srv := httptest.NewServer(sim.NewServer(sim.NewState(f)))
-	defer srv.Close()
-
-	c, err := gofishclient.Connect(context.Background(), gofishclient.Config{
-		Endpoint: srv.URL, Username: f.Accounts[0].Username, Password: f.Accounts[0].Password,
-	})
-	require.NoError(t, err)
-	defer c.Close()
+	srv := serve(t, f)
+	c := connect(t, srv.URL, f)
 	require.NoError(t, c.EnsureAccount(context.Background(), "pk-metal", "managed-pass-1"))
 	require.NoError(t, connectAs(t, srv.URL, "pk-metal", "managed-pass-1"))
 }
@@ -52,14 +51,8 @@ func TestEnsureAccountUnlocks(t *testing.T) {
 	f.LockoutThreshold = 3
 	st := sim.NewState(f)
 	srv := httptest.NewServer(sim.NewServer(st))
-	defer srv.Close()
-	admin := f.Accounts[0]
-
-	c, err := gofishclient.Connect(context.Background(), gofishclient.Config{
-		Endpoint: srv.URL, Username: admin.Username, Password: admin.Password,
-	})
-	require.NoError(t, err)
-	defer c.Close()
+	t.Cleanup(srv.Close)
+	c := connect(t, srv.URL, f)
 	require.NoError(t, c.EnsureAccount(context.Background(), "pk-metal", "old-pass-1"))
 	for range 3 {
 		require.Error(t, connectAs(t, srv.URL, "pk-metal", "wrong-pass"))
@@ -83,14 +76,9 @@ func TestDisableAccountOverHTTP(t *testing.T) {
 			f.AccountSlots = slots
 			st := sim.NewState(f)
 			srv := httptest.NewServer(sim.NewServer(st))
-			defer srv.Close()
+			t.Cleanup(srv.Close)
 			admin := f.Accounts[0]
-
-			c, err := gofishclient.Connect(context.Background(), gofishclient.Config{
-				Endpoint: srv.URL, Username: admin.Username, Password: admin.Password,
-			})
-			require.NoError(t, err)
-			defer c.Close()
+			c := connect(t, srv.URL, f)
 			require.NoError(t, c.EnsureAccount(context.Background(), "pk-old", "old-pass-1"))
 			require.NoError(t, connectAs(t, srv.URL, "pk-old", "old-pass-1"))
 
@@ -100,4 +88,47 @@ func TestDisableAccountOverHTTP(t *testing.T) {
 			require.NoError(t, connectAs(t, srv.URL, admin.Username, admin.Password))
 		})
 	}
+}
+
+// echoingSim serves the generic sim, except that a request that carries
+// secret is refused, and the refusal echoes secret in MessageArgs: a login
+// with 401, any other request with 400.
+func echoingSim(t *testing.T, f *sim.Fixture, secret string) *httptest.Server {
+	t.Helper()
+	next := sim.NewServer(sim.NewState(f))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		if !bytes.Contains(body, []byte(secret)) {
+			r.Body = io.NopCloser(bytes.NewReader(body))
+			next.ServeHTTP(w, r)
+			return
+		}
+		status := http.StatusBadRequest
+		if strings.HasSuffix(r.URL.Path, "/Sessions") {
+			status = http.StatusUnauthorized
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{
+			"@Message.ExtendedInfo": []any{map[string]any{"MessageArgs": []string{secret, "Password"}}},
+		}})
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// A BMC that refuses a password and echoes it in the refusal: the error
+// names no password, because the caller writes it into a condition.
+func TestAccountErrorsDoNotEchoThePassword(t *testing.T) {
+	f, err := sim.LoadFixture("generic")
+	require.NoError(t, err)
+	const pw = "managed-pass-0123456789"
+	srv := echoingSim(t, f, pw)
+	err = connect(t, srv.URL, f).EnsureAccount(t.Context(), "pk-metal", pw)
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), pw, "EnsureAccount")
+
+	_, err = gofishclient.Connect(t.Context(), gofishclient.Config{Endpoint: srv.URL, Username: "pk-metal", Password: pw})
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), pw, "Connect")
 }

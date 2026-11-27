@@ -754,19 +754,17 @@ func (r *HostClaimReconciler) endpointShape(ctx context.Context, host *metalv1al
 			return endpointView{}, err
 		}
 		v := endpointView{known: meta.IsStatusConditionTrue(ep.Status.Conditions, metalv1alpha1.ConditionInventoried)}
-		caps := bmc.Capabilities{MediaDialect: map[string]bmc.MediaDialect{}}
+		var dialects map[string]string
 		if c := ep.Status.Capabilities; c != nil {
-			for id, d := range c.MediaDialects {
-				caps.MediaDialect[id] = bmc.MediaDialect(d)
-			}
+			dialects = c.MediaDialects
 		}
 		media := make([]bmc.VirtualMedia, 0, len(ep.Status.VirtualMedia))
 		types := map[string][]string{}
 		for _, m := range ep.Status.VirtualMedia {
-			media = append(media, bmc.VirtualMedia{ID: m.ID, MediaTypes: m.MediaTypes})
+			media = append(media, bmc.VirtualMedia{ID: m.ID, MediaTypes: m.MediaTypes, Dialect: bmc.MediaDialect(dialects[m.ID])})
 			types[m.ID] = m.MediaTypes
 		}
-		v.insertable = bmc.InsertableSlots(media, caps)
+		v.insertable = bmc.InsertableSlots(media)
 		for _, id := range v.insertable {
 			if t := types[id]; len(t) == 0 || slices.Contains(t, "CD") || slices.Contains(t, "DVD") {
 				v.bootSlots = append(v.bootSlots, id)

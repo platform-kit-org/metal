@@ -9,6 +9,8 @@ import (
 	"slices"
 
 	"github.com/stmcginnis/gofish/schemas"
+
+	"github.com/dennisklein/platform-kit/metal/internal/redact"
 )
 
 // accountRole is the role every account this client creates gets: the
@@ -30,10 +32,14 @@ const accountRole = "Administrator"
 //
 // Raw writes, not gofish's typed helpers — the payload must be exactly the
 // properties named here, nothing a schema round-trip might add.
+//
+// The error text is masked as InsertMedia does: a service that refuses the
+// write can echo the new password in MessageArgs.
 func (c *client) EnsureAccount(ctx context.Context, username, password string) error {
-	if c.readOnly {
-		return errReadOnly
-	}
+	return redact.Error(c.ensureAccount(username, password), password)
+}
+
+func (c *client) ensureAccount(username, password string) error {
 	c.renew.changed(username)
 	as, err := c.svc.AccountService()
 	if err != nil {
@@ -101,9 +107,6 @@ func (c *client) EnsureAccount(ctx context.Context, username, password string) e
 // where a DELETE is refused; a disabled account also stays visible to a
 // person who looks at the BMC, which a vacated slot would not.
 func (c *client) DisableAccount(ctx context.Context, username string) error {
-	if c.readOnly {
-		return errReadOnly
-	}
 	if username == "" {
 		return fmt.Errorf("bmc: disable account: no username")
 	}

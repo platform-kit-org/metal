@@ -27,20 +27,7 @@ const vmmControlAction = "#VirtualMedia.VmmControl"
 //
 // The answer is kept for the session.
 func (c *client) mediaCollection() (string, error) {
-	c.memo.Lock()
-	coll := c.memo.mediaColl
-	c.memo.Unlock()
-	if coll != nil {
-		return *coll, nil
-	}
-	uri, err := c.findMediaCollection()
-	if err != nil {
-		return "", err
-	}
-	c.memo.Lock()
-	c.memo.mediaColl = &uri
-	c.memo.Unlock()
-	return uri, nil
+	return once(&c.memo.Mutex, &c.memo.mediaColl, c.findMediaCollection)
 }
 
 func (c *client) findMediaCollection() (string, error) {
@@ -60,7 +47,7 @@ func (c *client) findMediaCollection() (string, error) {
 	slices.SortFunc(systems, func(a, b *schemas.ComputerSystem) int { return compareIDs(a.ID, b.ID) })
 	for _, s := range systems {
 		doc.VirtualMedia = ref{}
-		if _, err := c.getJSON(s.ODataID, &doc); err != nil {
+		if err := json.Unmarshal(s.RawData, &doc); err != nil {
 			return "", fmt.Errorf("bmc: system: %w", err)
 		}
 		if doc.VirtualMedia.ODataID != "" {
@@ -175,6 +162,14 @@ func (c *client) Media(ctx context.Context) ([]bmc.VirtualMedia, error) {
 			entry.OemActions = append(entry.OemActions, name)
 		}
 		slices.Sort(entry.OemActions)
+		switch {
+		case vm.SupportsMediaInsert:
+			entry.Dialect = bmc.DialectStandard
+		case vm.oemTargets[vmmControlAction] != "":
+			entry.Dialect = bmc.DialectVmmControl
+		default:
+			entry.Dialect = bmc.DialectNone
+		}
 		out = append(out, entry)
 	}
 	return out, nil
@@ -206,9 +201,6 @@ func (c *client) InsertMedia(ctx context.Context, mediaID, imageURL string, cred
 }
 
 func (c *client) insertMedia(ctx context.Context, mediaID, imageURL string, creds *bmc.MediaCredentials) error {
-	if c.readOnly {
-		return errReadOnly
-	}
 	vm, err := c.slotByID(mediaID)
 	if err != nil {
 		return err
@@ -291,9 +283,6 @@ func (c *client) EjectMedia(ctx context.Context, mediaID string) error {
 }
 
 func (c *client) ejectMedia(ctx context.Context, mediaID string) error {
-	if c.readOnly {
-		return errReadOnly
-	}
 	vm, err := c.slotByID(mediaID)
 	if err != nil {
 		return err

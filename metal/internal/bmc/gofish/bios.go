@@ -53,9 +53,6 @@ func pendingChanges(settings, current map[string]any) map[string]any {
 }
 
 func (c *client) SetBiosAttributes(ctx context.Context, systemID string, attrs map[string]any) error {
-	if c.readOnly {
-		return errReadOnly
-	}
 	b, err := c.biosOf(systemID)
 	if err != nil {
 		return err

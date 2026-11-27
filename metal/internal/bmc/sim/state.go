@@ -246,15 +246,7 @@ func (s *State) Capabilities(context.Context) (bmc.Capabilities, error) {
 	if err := s.reachable(); err != nil {
 		return bmc.Capabilities{}, err
 	}
-	caps := bmc.Capabilities{
-		MediaDialect:    map[string]bmc.MediaDialect{},
-		UpdateDialect:   s.f.updateDialect(),
-		IdentityDialect: s.f.identityDialect(),
-	}
-	for i, vm := range s.f.VirtualMedia {
-		caps.MediaDialect[vm.ID] = s.f.dialect(i)
-	}
-	return caps, nil
+	return bmc.Capabilities{UpdateDialect: s.f.updateDialect(), IdentityDialect: s.f.identityDialect()}, nil
 }
 
 // reportedPower honours the stale-power fault: the world moved, the oracle lies.

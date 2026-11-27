@@ -81,9 +81,6 @@ func (c *client) NTP(ctx context.Context) (bmc.NTPConfig, error) {
 }
 
 func (c *client) SetNTP(ctx context.Context, cfg bmc.NTPConfig) error {
-	if c.readOnly {
-		return errReadOnly
-	}
 	surf, err := c.discoverNTP()
 	if err != nil {
 		return err

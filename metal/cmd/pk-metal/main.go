@@ -12,13 +12,11 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"maps"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"regexp"
-	"slices"
 	"strings"
 	"time"
 
@@ -147,12 +145,12 @@ func checkCmd(args []string) {
 		dief("check failed: %v", err)
 	}
 	fmt.Printf("manager:  %s fw %s\n", orDash(m.Vendor), orDash(m.FirmwareVersion))
-	caps, err := c.Capabilities(ctx)
+	media, err := c.Media(ctx)
 	if err != nil {
 		dief("check failed: %v", err)
 	}
-	for _, id := range slices.Sorted(maps.Keys(caps.MediaDialect)) {
-		fmt.Printf("media:    %-14s dialect=%s\n", id, caps.MediaDialect[id])
+	for _, vm := range media {
+		fmt.Printf("media:    %-14s dialect=%s\n", vm.ID, vm.Dialect)
 	}
 	systems, err := c.Systems(ctx)
 	if err != nil {

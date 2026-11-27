@@ -7,17 +7,37 @@
 # The admin group. The admission policies ask for it by name (ConfigMap
 # hostoperation-approval, key adminGroup, default pk-metal:admins): only its
 # members can make a claim that installs an OS, set automatic approval, or
-# move a claim to a different machine. Membership passes the policies; this
-# binding gives the members the RBAC rights for the objects. cluster-admin is
-# the simplest choice; a narrower role of your own is better.
+# move a claim to a different machine. Membership passes the policies; these
+# bindings give the members the RBAC rights for the objects. The roles
+# pk-metal-admin come with the base: every pk-metal kind and the Secrets of
+# pk-metal, but no impersonation. Do not bind cluster-admin instead: a member
+# who can impersonate can approve in the name of another person.
+#
+# An install from an older sample has the ClusterRoleBinding pk-metal-admins
+# to cluster-admin. A binding cannot change its role, so these have new names:
+# delete the old one (kubectl delete clusterrolebinding pk-metal-admins).
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: pk-metal-admins
+  name: pk-metal-admin
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: cluster-admin
+  name: pk-metal-admin
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: pk-metal:admins
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: pk-metal-admin
+  namespace: pk-metal
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: pk-metal-admin
 subjects:
   - apiGroup: rbac.authorization.k8s.io
     kind: Group

@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"strings"
 	"testing"
@@ -11,11 +12,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
@@ -167,6 +170,36 @@ func TestRenderPlanMissingObjects(t *testing.T) {
 	assert.Contains(t, out, "host pk0001 (not found in the cluster)")
 	assert.Contains(t, out, "boot asset installer-v1.14.6 (not found in the cluster)")
 	assert.Contains(t, out, "boots TalosNode node-1 (not found in the cluster: the disk it installs onto is unknown)")
+}
+
+// An approver who may not read a part of the plan sees that it is missing,
+// not that it does not exist: an endpoint they cannot read hides that
+// nobody checks the BMC's certificate.
+func TestRenderPlanSaysWhatTheApproverCannotRead(t *testing.T) {
+	op, objs := bootPlan()
+	for i := range objs {
+		if ep, ok := objs[i].(*metalv1alpha1.ManagementEndpoint); ok {
+			ep.Spec.TLS = &metalv1alpha1.EndpointTLS{InsecureSkipVerify: true}
+		}
+	}
+	cl := fake.NewClientBuilder().WithScheme(newScheme()).WithObjects(objs...).WithInterceptorFuncs(interceptor.Funcs{
+		Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+			switch obj.(type) {
+			case *metalv1alpha1.ManagementEndpoint:
+				return apierrors.NewForbidden(metalv1alpha1.GroupVersion.WithResource("managementendpoints").GroupResource(), key.Name, errors.New("no"))
+			case *osv1alpha1.BootAsset:
+				return apierrors.NewForbidden(osv1alpha1.GroupVersion.WithResource("bootassets").GroupResource(), key.Name, errors.New("no"))
+			}
+			return c.Get(ctx, key, obj, opts...)
+		},
+	}).Build()
+	pc, err := loadPlanContext(context.Background(), cl, op)
+	require.NoError(t, err)
+	out := renderPlan(op, pc)
+	assert.Contains(t, out, "INCOMPLETE: you may not read ManagementEndpoint, BootAsset, so this plan leaves out what they say")
+	assert.Contains(t, out, "  BMC: not readable with your rights\n")
+	assert.NotContains(t, out, "BMC: none known")
+	assert.Contains(t, out, "boot asset installer-v1.14.6 (not readable with your rights)")
 }
 
 func TestDescribeOtherActions(t *testing.T) {

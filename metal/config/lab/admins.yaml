@@ -1,15 +1,32 @@
 # The lab's stand-in for the platform admins: the group the admission policies
 # name in their parameters (pk-metal:admins). Lab scripts act in it by
 # impersonation, the way a person in that group would; a real site binds its
-# own people instead.
+# own people instead. The roles are the ones a site binds
+# (config/rbac/admin_role.yaml), so the lab runs with the same rights. A lab
+# from before has pk-metal-lab-admins to cluster-admin; a binding cannot
+# change its role, so these have new names (mise run lab:down removes it).
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: pk-metal-lab-admins
+  name: pk-metal-lab-admin
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: cluster-admin
+  name: pk-metal-admin
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: pk-metal:admins
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: pk-metal-lab-admin
+  namespace: pk-metal
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: pk-metal-admin
 subjects:
   - apiGroup: rbac.authorization.k8s.io
     kind: Group

@@ -104,19 +104,26 @@ func TestMergeIntoKeepsTheTargetsApproval(t *testing.T) {
 		"metadata": map[string]any{"name": "op", "namespace": "lab"},
 		"spec":     map[string]any{"reason": "Release", "approval": map[string]any{}},
 	}}
-	assert.False(t, mergeInto(cur, want, true), "the same operation, its approval replayed")
+	op := approvalFields["HostOperation"]
+	assert.False(t, mergeInto(cur, want, op), "the same operation, its approval replayed")
 
 	want.SetLabels(map[string]string{"a": "b"})
-	assert.True(t, mergeInto(cur, want, true))
+	assert.True(t, mergeInto(cur, want, op))
 	assert.Equal(t, "b", cur.GetLabels()["a"])
 	by, _, _ := unstructured.NestedString(cur.Object, "spec", "approval", "approvedBy")
 	assert.Equal(t, "ada", by)
 	assert.Equal(t, "dst", string(cur.GetUID()), "the target's metadata stays the target's")
 
 	host := cur.DeepCopy()
-	assert.True(t, mergeInto(host, want, false), "for any other kind the source's spec wins")
+	assert.True(t, mergeInto(host, want, nil), "for any other kind the source's spec wins")
 	_, found, _ := unstructured.NestedString(host.Object, "spec", "approval", "approvedBy")
 	assert.False(t, found)
+
+	rollout := cur.DeepCopy()
+	require.NoError(t, unstructured.SetNestedField(rollout.Object, "sha256:ab", "spec", "approval", "planHash"))
+	want = rollout.DeepCopy()
+	unstructured.RemoveNestedField(want.Object, "spec", "approval")
+	assert.False(t, mergeInto(rollout, want, approvalFields["TalosRollout"]), "a rollout keeps the plan its approver saw")
 }
 
 func TestBlockingOperations(t *testing.T) {

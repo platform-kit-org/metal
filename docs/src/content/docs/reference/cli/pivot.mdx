@@ -114,8 +114,12 @@ If the target cluster holds an older copy of the objects, the command removes th
 
 ### Who writes on the target
 
-- An approval is set again by its approver, and a guard lift by the person that it names. The command impersonates them.
+- The command writes an operation or a rollout as the user that its `spec.proposedBy` names.
+- An approval is set again by its approver, and a guard lift by the person that it names.
 - The command writes an object as the person that its `metal.platform-kit.org/requested-by` names. Such an object without the annotation gets `pk-metal-pivot`, and the command writes it as that user. See [](ref:admission-policies#requested-by).
+- The command writes all other objects as `pk-metal-pivot`.
+
+The command impersonates each of these users, in the admin group of the site. The guards of the profiles, the backup policies and the site settings let only that group write.
 
 ### Audit lines
 

@@ -361,6 +361,27 @@ func TestPivot(t *testing.T) {
 	installPolicy(t, ctx, cl, "requested-by.yaml")
 	installPolicy(t, ctx, cl, "requested-by-patches.yaml")
 	setSelfApproval(t, ctx, cl, ptr.To("Forbidden"))
+	// Objects that the other policies guard: a rollout that waits for its
+	// approval, a finished one, a profile and a backup policy. Then the
+	// other policies, so that the source has all of config/policy.
+	planHash := "sha256:" + strings.Repeat("0", 64)
+	rollout := func(name string, approval osv1alpha1.RolloutApproval) *osv1alpha1.TalosRollout {
+		return &osv1alpha1.TalosRollout{ObjectMeta: metav1.ObjectMeta{Name: name}, Spec: osv1alpha1.TalosRolloutSpec{
+			ClusterRef: osv1alpha1.Reference{Name: "mgmt"}, Kind: osv1alpha1.RolloutReboot, ProposedBy: operator, Approval: approval}}
+	}
+	require.NoError(t, cl.Create(ctx, rollout("mgmt-reboot", osv1alpha1.RolloutApproval{})))
+	finished := rollout("mgmt-rebooted", osv1alpha1.RolloutApproval{ApprovedBy: "alice", PlanHash: planHash})
+	require.NoError(t, cl.Create(ctx, finished))
+	finished.Status.Conditions = []metav1.Condition{{Type: osv1alpha1.ConditionComplete, Status: metav1.ConditionTrue,
+		Reason: "RolloutSucceeded", LastTransitionTime: metav1.Now()}}
+	require.NoError(t, cl.Status().Update(ctx, finished))
+	require.NoError(t, cl.Create(ctx, &metalv1alpha1.EndpointProfile{ObjectMeta: metav1.ObjectMeta{Name: "no-bmc"},
+		Spec: metalv1alpha1.EndpointProfileSpec{Match: metav1.LabelSelector{MatchLabels: map[string]string{"pivot-test": "none"}}}}))
+	require.NoError(t, cl.Create(ctx, pvcPolicy("mgmt-daily", "mgmt", recipientA, 3)))
+	for _, file := range []string{"talosrollout-approval.yaml", "endpointprofile-guard.yaml", "etcdbackuppolicy-guard.yaml",
+		"settings-guard.yaml", "taloscluster-credentials-guard.yaml"} {
+		installPolicy(t, ctx, cl, file)
+	}
 
 	source, err := pivot.NewCluster("bootstrap", src.cfg, src.scheme)
 	require.NoError(t, err)
@@ -433,6 +454,12 @@ func TestPivot(t *testing.T) {
 	assert.Equal(t, []string{claimNS + "/worker-1"}, rep.HandedOff)
 	assert.Equal(t, 1, rep.Copied["MaintenanceWindow"], "day-2 kinds move too")
 	require.NoError(t, dst.cl.Get(ctx, client.ObjectKey{Name: "weekend"}, &metalv1alpha1.MaintenanceWindow{}))
+	assert.Equal(t, 2, rep.Copied["TalosRollout"])
+	dstRollout := &osv1alpha1.TalosRollout{}
+	require.NoError(t, dst.cl.Get(ctx, client.ObjectKey{Name: "mgmt-rebooted"}, dstRollout))
+	assert.Equal(t, finished.Spec.Approval, dstRollout.Spec.Approval, "the approval is replayed by its approver")
+	assert.Equal(t, 1, rep.Copied["EndpointProfile"])
+	assert.Equal(t, 1, rep.Copied["EtcdBackupPolicy"])
 
 	srcClaim := &metalv1alpha1.HostClaim{}
 	require.NoError(t, cl.Get(ctx, client.ObjectKey{Namespace: claimNS, Name: "worker-1"}, srcClaim))
@@ -489,7 +516,7 @@ func TestPivot(t *testing.T) {
 			out := map[string]string{}
 			for _, list := range []client.ObjectList{&metalv1alpha1.HostList{}, &metalv1alpha1.HostClaimList{},
 				&metalv1alpha1.HostOperationList{}, &metalv1alpha1.AssetList{}, &metalv1alpha1.ManagementEndpointList{},
-				&osv1alpha1.TalosNodeList{}, &osv1alpha1.TalosClusterList{}} {
+				&osv1alpha1.TalosNodeList{}, &osv1alpha1.TalosClusterList{}, &osv1alpha1.TalosRolloutList{}} {
 				require.NoError(t, dst.cl.List(ctx, list))
 				require.NoError(t, meta.EachListItem(list, func(o runtime.Object) error {
 					co := o.(client.Object)

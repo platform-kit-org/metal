@@ -175,7 +175,53 @@ func Build(in Input) (tconfig.Provider, error) {
 			return nil, err
 		}
 	}
-	return applyPatches(patched, in.NodePatches)
+	if patched, err = applyPatches(patched, in.NodePatches); err != nil {
+		return nil, err
+	}
+	if err := installKept(patched, extra[0]); err != nil {
+		return nil, err
+	}
+	return patched, nil
+}
+
+// installKept refuses a config whose patches changed what the operator
+// decides about the install: the disk Talos erases (spec.installDiskSelector
+// of the TalosNode), the installer image (its schematic and the cluster's
+// version) and that the install never wipes on its own. A patch that moved
+// one would erase another disk, or run an image that nobody chose as the
+// node's installer. Other fields of the document, such as reboot, stay open
+// to patches.
+func installKept(cfg tconfig.Provider, want config.Document) error {
+	w, ok := want.(*runtime.UnattendedInstallConfigV1Alpha1)
+	if !ok {
+		return fmt.Errorf("render: the first node document is %T, not the install", want)
+	}
+	var changed []string
+	var got *runtime.UnattendedInstallConfigV1Alpha1
+	for _, d := range cfg.Documents() {
+		if u, ok := d.(*runtime.UnattendedInstallConfigV1Alpha1); ok {
+			got = u
+		}
+	}
+	if got == nil {
+		changed = append(changed, "the UnattendedInstallConfig document is deleted")
+	} else {
+		if got.Installer.Image != w.Installer.Image {
+			changed = append(changed, "installer.image")
+		}
+		if got.ProvisioningSpec.DiskSelector.Match.String() != w.ProvisioningSpec.DiskSelector.Match.String() {
+			changed = append(changed, "provisioning.diskSelector")
+		}
+		if got.ProvisioningSpec.Wipe == nil || *got.ProvisioningSpec.Wipe != *w.ProvisioningSpec.Wipe {
+			changed = append(changed, "provisioning.wipe")
+		}
+	}
+	if len(changed) == 0 {
+		return nil
+	}
+	return fmt.Errorf("a patch changes the install (%s): set the install disk in spec.installDiskSelector "+
+		"and the installer in spec.schematic of the TalosNode; the operator never wipes a disk through the config",
+		strings.Join(changed, ", "))
 }
 
 // dropControlPlaneOnly removes from a worker's configuration the documents
@@ -266,7 +312,8 @@ func adjust(docs []config.Document, c *osv1alpha1.TalosCluster, n *osv1alpha1.Ta
 }
 
 // nodeDocuments renders what only the node object knows: the install target
-// and its links, plus the VIP a control-plane member announces.
+// (the first document; installKept checks it after the patches) and its
+// links, plus the VIP a control-plane member announces.
 func nodeDocuments(c *osv1alpha1.TalosCluster, n *osv1alpha1.TalosNode, installer string) ([]config.Document, error) {
 	match, err := DiskMatch(n.Spec.InstallDiskSelector)
 	if err != nil {

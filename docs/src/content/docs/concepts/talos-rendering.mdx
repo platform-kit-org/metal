@@ -48,13 +48,10 @@ The operator renders the config of each node into a Secret.
 5. A patch cannot change the install: the disk, the installer image, or the wipe. The TalosNode sets the disk in `spec.installDiskSelector` and the image in `spec.schematic`. The install never wipes the disk. Such a patch stops the render.
 6. The patches of the TalosCluster apply to each node. A document that Talos allows on control planes only, for example `KubeAuditPolicyConfig`, goes to the control planes only. In the patches of a worker TalosNode, such a document stops the render.
 
-## In the reference
+## Related
 
 - [](ctrl:talosnode), [](ctrl:taloscluster)
 - [`status.renderedFor`](kind:TalosNode#status.renderedFor)
 - [](cli:render): the same render without the operator
-
-## Do it
-
 - [](howto:define-a-cluster)
 - [](howto:change-machine-config)

@@ -52,10 +52,7 @@ The directory `metal/config/prometheus` holds a PrometheusRule, a ServiceMonitor
 The alerts follow the same rules as pk-metal status. An install does not page. A rollout that waits for health between nodes does not page.
 One alert, `PkMetalMetricsAbsent`, fires when the metrics are gone. Without it, a stopped manager would look healthy: each other alert resolves.
 
-## In the reference
+## Related
 
 - [](cli:status), [](cli:top), [](ctrl:manager)
-
-## Do it
-
 - [](howto:collect-diagnostics)

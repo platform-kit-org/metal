@@ -130,7 +130,7 @@ talosctl --nodes 10.77.0.11 etcd members
    mise run lab:approve
    ```
 
-4. Do step 3 again until `mise run lab:status` shows no operation that waits. The control planes leave one at a time.
+4. Do step 3 again until etcd has one member, as the checkpoint below shows. The operator proposes the second removal only when the first one is complete.
 
 <Callout type="warning">
 Do not remove a control plane from a cluster that has data you must keep, before you have a backup.

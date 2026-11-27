@@ -7,7 +7,6 @@ import (
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/x509"
-	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/pem"
@@ -17,6 +16,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/opencontainers/go-digest"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -159,7 +159,7 @@ func (r *EndpointConvergenceReconciler) identityWith(ctx context.Context, ep *me
 		return metav1.ConditionFalse, metalv1alpha1.ReasonIdentityPushFailed, err.Error(), nil
 	}
 
-	crName := ep.Name + "-identity-" + hash8("sha256:"+csrHex(csrPEM))
+	crName := ep.Name + "-identity-" + hash8(digest.FromBytes(csrPEM).String())
 	if err := r.ensureCertificateRequest(ctx, ep, crName, csrPEM, pol); err != nil {
 		return "", "", "", err
 	}
@@ -251,25 +251,9 @@ func (r *EndpointConvergenceReconciler) ensureIdentityInFlight(ctx context.Conte
 		if err != nil {
 			return nil, nil, err
 		}
-		var ips []net.IP
-		for _, raw := range desired.IPAddresses {
-			ips = append(ips, net.ParseIP(raw))
-		}
-		name := pkix.Name{CommonName: desired.CommonName}
-		if s := desired.Subject; s != nil {
-			name.Country = nonEmpty(s.Country)
-			name.Province = nonEmpty(s.State)
-			name.Locality = nonEmpty(s.Locality)
-			name.Organization = nonEmpty(s.Organization)
-			name.OrganizationalUnit = nonEmpty(s.OrganizationalUnit)
-		}
-		der, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{
-			Subject: name, DNSNames: desired.DNSNames, IPAddresses: ips,
-		}, key)
-		if err != nil {
+		if csrPEM, err = desired.subject().Request(key); err != nil {
 			return nil, nil, err
 		}
-		csrPEM = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: der})
 		data["key.pem"] = pem.EncodeToMemory(&pem.Block{
 			Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key),
 		})
@@ -311,21 +295,22 @@ func (r *EndpointConvergenceReconciler) managerCSR(ctx context.Context, ep *meta
 	if err != nil {
 		return nil, err
 	}
-	subject := bmc.CSRSubject{
-		CommonName:  desired.CommonName,
-		DNSNames:    desired.DNSNames,
-		IPAddresses: desired.IPAddresses,
-	}
-	if s := desired.Subject; s != nil {
-		subject.Country, subject.State, subject.Locality = s.Country, s.State, s.Locality
-		subject.Organization, subject.OrganizationalUnit = s.Organization, s.OrganizationalUnit
-	}
 	var csr []byte
 	err = withSessionFor(ctx, csrTimeout, r.Dial, cfg, func(ctx context.Context, cl bmc.Client) error {
-		csr, err = cl.GenerateCSR(ctx, subject)
+		csr, err = cl.GenerateCSR(ctx, desired.subject())
 		return err
 	})
 	return csr, err
+}
+
+// subject is the subject of the certificate request for the desired identity.
+func (d identityDesired) subject() bmc.CSRSubject {
+	subject := bmc.CSRSubject{CommonName: d.CommonName, DNSNames: d.DNSNames, IPAddresses: d.IPAddresses}
+	if s := d.Subject; s != nil {
+		subject.Country, subject.State, subject.Locality = s.Country, s.State, s.Locality
+		subject.Organization, subject.OrganizationalUnit = s.Organization, s.OrganizationalUnit
+	}
+	return subject
 }
 
 // +kubebuilder:rbac:groups=metal.platform-kit.org,resources=hosts;hostoperations,verbs=get;list;watch
@@ -588,11 +573,6 @@ func certFingerprint(c *x509.Certificate) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func csrHex(csrPEM []byte) string {
-	sum := sha256.Sum256(csrPEM)
-	return hex.EncodeToString(sum[:])
-}
-
 // firstCertificate extracts the chain's leaf, parsed and re-encoded. Every
 // certificate in the chain must parse: the whole chain goes to the manager,
 // so a broken intermediate is refused here rather than pushed.
@@ -606,11 +586,4 @@ func firstCertificate(chainPEM []byte) (*x509.Certificate, []byte, error) {
 		return nil, nil, err
 	}
 	return certs[0], leafPEM, nil
-}
-
-func nonEmpty(s string) []string {
-	if s == "" {
-		return nil
-	}
-	return []string{s}
 }

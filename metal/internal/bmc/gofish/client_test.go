@@ -39,7 +39,7 @@ func TestConformanceOverHTTP(t *testing.T) {
 			c, err := gofishclient.Connect(context.Background(), cfg)
 			require.NoError(t, err)
 			defer c.Close()
-			bmctest.Run(t, c, f, false)
+			bmctest.Run(t, c, f)
 		})
 	}
 }
@@ -69,7 +69,7 @@ func TestBiosDialectsOverHTTP(t *testing.T) {
 			})
 			require.NoError(t, err)
 			defer c.Close()
-			bmctest.Run(t, c, f, false)
+			bmctest.Run(t, c, f)
 		})
 	}
 }
@@ -92,7 +92,7 @@ func TestConformanceOverHTTPWithAccounts(t *testing.T) {
 				gofishclient.Config{Endpoint: srv.URL, Username: "admin", Password: "factory"})
 			require.NoError(t, err)
 			defer c.Close()
-			bmctest.Run(t, c, f, false)
+			bmctest.Run(t, c, f)
 		})
 	}
 }
@@ -162,7 +162,7 @@ func TestConformanceBehindDeflate(t *testing.T) {
 	defer c.Close()
 	require.NoError(t, c.SetBootOverride(ctx, f.Systems[0].ID, bmc.BootOverride{Target: "Cd"}),
 		"a PATCH behind mod_deflate must not fail its precondition")
-	bmctest.Run(t, c, f, false)
+	bmctest.Run(t, c, f)
 }
 
 // TestReadOnlyRefusesMutation is the read-only rail: a read-only client refuses every write at

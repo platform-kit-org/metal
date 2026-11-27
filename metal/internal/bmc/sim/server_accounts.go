@@ -41,11 +41,7 @@ func (s *Server) accounts(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	ids := make([]string, 0, len(view))
-	for _, a := range view {
-		ids = append(ids, a.id)
-	}
-	s.reply(w, r, collection("ManagerAccount", accountServiceURI+"/Accounts", ids))
+	s.reply(w, r, collection("ManagerAccount", accountServiceURI+"/Accounts", memberIDs(view, func(a account) string { return a.id })))
 }
 
 func accountDoc(a account) map[string]any {
@@ -84,11 +80,7 @@ func (s *Server) patchAccount(w http.ResponseWriter, r *http.Request) {
 	if !s.decode(w, r, &body) {
 		return
 	}
-	if err := s.st.patchAccount(r.PathValue("id"), body); err != nil {
-		s.fail(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	s.noContent(w, s.st.patchAccount(r.PathValue("id"), body))
 }
 
 func (s *Server) createAccount(w http.ResponseWriter, r *http.Request) {

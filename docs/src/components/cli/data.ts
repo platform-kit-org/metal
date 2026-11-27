@@ -110,7 +110,7 @@ export const handFlags: Record<string, Flag[]> = {
   'sim fleet': [
     { name: 'config', type: 'string', default: '', usage: 'fleet file (YAML): the machines, their BMC addresses, identities and backends (required)', global: false },
     { name: 'state-listen', type: 'string', default: '127.0.0.1:8440', usage: 'address of the read-only state endpoint (plain HTTP); an empty value serves none', global: false },
-    { name: 'hang-timeout', type: 'duration', default: '', usage: 'power cycle a virtual machine one time when its console shows only firmware output for this long after a power-on (0: never)', global: false },
+    { name: 'hang-timeout', type: 'duration', default: '', usage: 'power cycle a virtual machine (up to three times for each power-on) when its console shows only firmware output for this long after a power-on (0: never)', global: false },
     { name: 'verbose', type: 'bool', default: '', usage: 'log each request (default: only the requests that change state)', global: false },
   ],
 };

@@ -126,16 +126,6 @@ func (s *State) BootOverride(systemID string) (target string, once bool) {
 	return "", false
 }
 
-// BootMode reports a system's BootSourceOverrideMode (test observability).
-func (s *State) BootMode(systemID string) string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if bo := s.boot[systemID]; bo != nil {
-		return bo.mode
-	}
-	return ""
-}
-
 // Resets reports how many boots a system has seen (test observability).
 func (s *State) Resets(systemID string) int {
 	s.mu.Lock()
@@ -148,6 +138,14 @@ func (s *State) reachable() error {
 		return errUnreachable
 	}
 	return nil
+}
+
+// checkReachable is reachable for a caller that does not hold the lock: the
+// HTTP tier asks it before each request.
+func (s *State) checkReachable() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.reachable()
 }
 
 // system finds a fixture system by id.

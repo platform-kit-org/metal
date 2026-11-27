@@ -91,11 +91,7 @@ func (s *Server) managerReset(w http.ResponseWriter, r *http.Request) {
 	if !s.decode(w, r, &body) {
 		return
 	}
-	if err := s.st.ResetManager(r.Context(), bmc.PowerAction(body.ResetType)); err != nil {
-		s.fail(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	s.noContent(w, s.st.ResetManager(r.Context(), bmc.PowerAction(body.ResetType)))
 }
 
 func (s *Server) managerNICs(w http.ResponseWriter, r *http.Request) {
@@ -177,11 +173,7 @@ func (s *Server) patchNetworkProtocol(w http.ResponseWriter, r *http.Request) {
 	if body.NTP.NTPServers != nil {
 		cur.Servers = *body.NTP.NTPServers
 	}
-	if err := s.st.SetNTP(r.Context(), cur); err != nil {
-		s.fail(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	s.noContent(w, s.st.SetNTP(r.Context(), cur))
 }
 
 // ntpService serves the iBMC's HwNtpService shape: three discrete server
@@ -232,12 +224,8 @@ func (s *Server) patchNtpService(w http.ResponseWriter, r *http.Request) {
 	if !s.decode(w, r, &body) {
 		return
 	}
-	if err := s.st.SetNTP(r.Context(), bmc.NTPConfig{
+	s.noContent(w, s.st.SetNTP(r.Context(), bmc.NTPConfig{
 		Enabled: *body.ServiceEnabled,
 		Servers: []string{*body.PreferredNtpServer, *body.AlternateNtpServer, *body.ExtraNtpServer},
-	}); err != nil {
-		s.fail(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	}))
 }

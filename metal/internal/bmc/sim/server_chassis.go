@@ -1,9 +1,7 @@
 package sim
 
 import (
-	"fmt"
 	"net/http"
-	"strconv"
 
 	"github.com/dennisklein/platform-kit/metal/internal/bmc"
 )
@@ -57,11 +55,7 @@ func (s *Server) chassis(w http.ResponseWriter, r *http.Request) {
 		"ManagedBy":       links(managerURI),
 	}
 	if s.f.Layout.Drives != layoutStorage {
-		drives := make([]string, 0, len(systems[0].Drives))
-		for i := range systems[0].Drives {
-			drives = append(drives, fmt.Sprintf("%s/Drives/%d", chassisURI, i+1))
-		}
-		clinks["Drives"] = links(drives...)
+		clinks["Drives"] = memberLinks(chassisURI+"/Drives", ordinals(len(systems[0].Drives)))
 	}
 	doc["Links"] = clinks
 	// The X12 leaves SerialNumber empty and carries the board serial in its
@@ -90,32 +84,23 @@ func (s *Server) adapters(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	ids := make([]string, 0, len(c.Adapters))
-	for i := range c.Adapters {
-		ids = append(ids, strconv.Itoa(i+1))
-	}
-	s.reply(w, r, collection("NetworkAdapter", chassisURI+"/NetworkAdapters", ids))
+	s.reply(w, r, collection("NetworkAdapter", chassisURI+"/NetworkAdapters", ordinals(len(c.Adapters))))
 }
 
-// byAdapter resolves the {n} path value to an adapter; it answers the request
-// itself when there is none.
-func (s *Server) byAdapter(w http.ResponseWriter, r *http.Request) (*bmc.Adapter, string) {
+// adapterOf is the adapter that the {n} path value names, and its URI.
+func (s *Server) adapterOf(r *http.Request) (bmc.Adapter, string, error) {
 	c, err := s.st.Chassis(r.Context())
 	if err != nil {
-		s.fail(w, err)
-		return nil, ""
+		return bmc.Adapter{}, "", err
 	}
-	n, _ := strconv.Atoi(r.PathValue("n"))
-	if n < 1 || n > len(c.Adapters) {
-		s.fail(w, notFound("NetworkAdapter", r.PathValue("n")))
-		return nil, ""
-	}
-	return &c.Adapters[n-1], fmt.Sprintf("%s/NetworkAdapters/%d", chassisURI, n)
+	a, err := nth(c.Adapters, "NetworkAdapter", r.PathValue("n"))
+	return a, chassisURI + "/NetworkAdapters/" + r.PathValue("n"), err
 }
 
 func (s *Server) adapter(w http.ResponseWriter, r *http.Request) {
-	a, self := s.byAdapter(w, r)
-	if a == nil {
+	a, self, err := s.adapterOf(r)
+	if err != nil {
+		s.fail(w, err)
 		return
 	}
 	doc := resource("#NetworkAdapter.v1_11_0.NetworkAdapter", self, r.PathValue("n"), "Network Adapter")
@@ -129,45 +114,29 @@ func (s *Server) adapter(w http.ResponseWriter, r *http.Request) {
 	s.reply(w, r, doc)
 }
 
-// portIDs names an adapter's ports 1..N.
-func portIDs(a *bmc.Adapter) []string {
-	ids := make([]string, 0, len(a.PortMACs))
-	for i := range a.PortMACs {
-		ids = append(ids, strconv.Itoa(i+1))
-	}
-	return ids
-}
-
-// byPort resolves the {p} path value to a port MAC of the adapter.
-func (s *Server) byPort(w http.ResponseWriter, r *http.Request, a *bmc.Adapter, kind string) (string, bool) {
-	p, _ := strconv.Atoi(r.PathValue("p"))
-	if p < 1 || p > len(a.PortMACs) {
-		s.fail(w, notFound(kind, r.PathValue("p")))
-		return "", false
-	}
-	return a.PortMACs[p-1], true
-}
-
 func (s *Server) deviceFunctions(w http.ResponseWriter, r *http.Request) {
-	a, self := s.byAdapter(w, r)
-	if a == nil {
+	a, self, err := s.adapterOf(r)
+	if err != nil {
+		s.fail(w, err)
 		return
 	}
-	s.reply(w, r, collection("NetworkDeviceFunction", self+"/NetworkDeviceFunctions", portIDs(a)))
+	s.reply(w, r, collection("NetworkDeviceFunction", self+"/NetworkDeviceFunctions", ordinals(len(a.PortMACs))))
 }
 
 // deviceFunction is where the specification puts a port's MAC today: the
 // Ethernet block of the function the host sees.
 func (s *Server) deviceFunction(w http.ResponseWriter, r *http.Request) {
-	a, self := s.byAdapter(w, r)
-	if a == nil {
-		return
-	}
-	mac, ok := s.byPort(w, r, a, "NetworkDeviceFunction")
-	if !ok {
+	a, self, err := s.adapterOf(r)
+	if err != nil {
+		s.fail(w, err)
 		return
 	}
 	p := r.PathValue("p")
+	mac, err := nth(a.PortMACs, "NetworkDeviceFunction", p)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
 	doc := resource("#NetworkDeviceFunction.v1_9_2.NetworkDeviceFunction", self+"/NetworkDeviceFunctions/"+p, p, "Network Device Function")
 	doc["NetDevFuncType"] = "Ethernet"
 	doc["DeviceEnabled"] = true
@@ -176,25 +145,28 @@ func (s *Server) deviceFunction(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) networkPorts(w http.ResponseWriter, r *http.Request) {
-	a, self := s.byAdapter(w, r)
-	if a == nil {
+	a, self, err := s.adapterOf(r)
+	if err != nil {
+		s.fail(w, err)
 		return
 	}
-	s.reply(w, r, collection("NetworkPort", self+"/NetworkPorts", portIDs(a)))
+	s.reply(w, r, collection("NetworkPort", self+"/NetworkPorts", ordinals(len(a.PortMACs))))
 }
 
 // networkPort is the deprecated NetworkPort resource the iBMC still serves;
 // the MAC sits in AssociatedNetworkAddresses.
 func (s *Server) networkPort(w http.ResponseWriter, r *http.Request) {
-	a, self := s.byAdapter(w, r)
-	if a == nil {
-		return
-	}
-	mac, ok := s.byPort(w, r, a, "NetworkPort")
-	if !ok {
+	a, self, err := s.adapterOf(r)
+	if err != nil {
+		s.fail(w, err)
 		return
 	}
 	p := r.PathValue("p")
+	mac, err := nth(a.PortMACs, "NetworkPort", p)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
 	doc := resource("#NetworkPort.v1_4_3.NetworkPort", self+"/NetworkPorts/"+p, p, p)
 	doc["PhysicalPortNumber"] = p
 	doc["AssociatedNetworkAddresses"] = []string{mac}

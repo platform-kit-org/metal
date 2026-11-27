@@ -1,10 +1,8 @@
 package sim
 
 import (
-	"fmt"
 	"maps"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/dennisklein/platform-kit/metal/internal/bmc"
@@ -31,22 +29,19 @@ func (s *Server) systemRoutes() {
 	}
 }
 
-// bySystem resolves the {id} path value to the live view of that system; it
-// answers the request itself when there is none.
-func (s *Server) bySystem(w http.ResponseWriter, r *http.Request) *bmc.System {
+// systemOf is the live view of the system that the {id} path value names.
+func (s *Server) systemOf(r *http.Request) (*bmc.System, error) {
 	systems, err := s.st.Systems(r.Context())
 	if err != nil {
-		s.fail(w, err)
-		return nil
+		return nil, err
 	}
 	id := r.PathValue("id")
 	for i := range systems {
 		if systems[i].ID == id {
-			return &systems[i]
+			return &systems[i], nil
 		}
 	}
-	s.fail(w, notFound("ComputerSystem", id))
-	return nil
+	return nil, notFound("ComputerSystem", id)
 }
 
 func (s *Server) systems(w http.ResponseWriter, r *http.Request) {
@@ -55,16 +50,13 @@ func (s *Server) systems(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	ids := make([]string, 0, len(systems))
-	for _, sys := range systems {
-		ids = append(ids, sys.ID)
-	}
-	s.reply(w, r, collection("ComputerSystem", systemsURI, ids))
+	s.reply(w, r, collection("ComputerSystem", systemsURI, memberIDs(systems, func(sys bmc.System) string { return sys.ID })))
 }
 
 func (s *Server) system(w http.ResponseWriter, r *http.Request) {
-	sys := s.bySystem(w, r)
-	if sys == nil {
+	sys, err := s.systemOf(r)
+	if err != nil {
+		s.fail(w, err)
 		return
 	}
 	fs := s.f.system(sys.ID)
@@ -143,11 +135,7 @@ func (s *Server) patchSystem(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, refuse("the request changes no property this resource can update (Boot)"))
 		return
 	}
-	if err := s.st.patchBoot(r.PathValue("id"), body.Boot.Enabled, body.Boot.Target, body.Boot.Mode); err != nil {
-		s.fail(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	s.noContent(w, s.st.patchBoot(r.PathValue("id"), body.Boot.Enabled, body.Boot.Target, body.Boot.Mode))
 }
 
 func (s *Server) reset(w http.ResponseWriter, r *http.Request) {
@@ -161,37 +149,31 @@ func (s *Server) reset(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, missing("ComputerSystem.Reset", "ResetType"))
 		return
 	}
-	if err := s.st.SetPower(r.Context(), r.PathValue("id"), bmc.PowerAction(body.ResetType)); err != nil {
-		s.fail(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	s.noContent(w, s.st.SetPower(r.Context(), r.PathValue("id"), bmc.PowerAction(body.ResetType)))
 }
 
 func (s *Server) systemNICs(w http.ResponseWriter, r *http.Request) {
-	sys := s.bySystem(w, r)
-	if sys == nil {
+	sys, err := s.systemOf(r)
+	if err != nil {
+		s.fail(w, err)
 		return
 	}
-	ids := make([]string, 0, len(sys.NICs))
-	for i := range sys.NICs {
-		ids = append(ids, strconv.Itoa(i+1))
-	}
-	s.reply(w, r, collection("EthernetInterface", systemsURI+"/"+sys.ID+"/EthernetInterfaces", ids))
+	s.reply(w, r, collection("EthernetInterface", systemsURI+"/"+sys.ID+"/EthernetInterfaces", ordinals(len(sys.NICs))))
 }
 
 func (s *Server) systemNIC(w http.ResponseWriter, r *http.Request) {
-	sys := s.bySystem(w, r)
-	if sys == nil {
+	sys, err := s.systemOf(r)
+	if err != nil {
+		s.fail(w, err)
 		return
 	}
-	n, _ := strconv.Atoi(r.PathValue("n"))
-	if n < 1 || n > len(sys.NICs) {
-		s.fail(w, notFound("EthernetInterface", r.PathValue("n")))
+	n := r.PathValue("n")
+	nic, err := nth(sys.NICs, "EthernetInterface", n)
+	if err != nil {
+		s.fail(w, err)
 		return
 	}
-	nic := sys.NICs[n-1]
-	uri := fmt.Sprintf("%s/%s/EthernetInterfaces/%d", systemsURI, sys.ID, n)
+	uri := systemsURI + "/" + sys.ID + "/EthernetInterfaces/" + n
 	doc := resource("#EthernetInterface.v1_12_3.EthernetInterface", uri, nic.ID, "Ethernet Interface")
 	doc["MACAddress"] = nic.MAC
 	doc["PermanentMACAddress"] = nic.MAC
@@ -200,33 +182,32 @@ func (s *Server) systemNIC(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) storageCollection(w http.ResponseWriter, r *http.Request) {
-	sys := s.bySystem(w, r)
-	if sys == nil {
+	sys, err := s.systemOf(r)
+	if err != nil {
+		s.fail(w, err)
 		return
 	}
 	s.reply(w, r, collection("Storage", systemsURI+"/"+sys.ID+"/Storage", []string{"1"}))
 }
 
 func (s *Server) storage(w http.ResponseWriter, r *http.Request) {
-	sys := s.bySystem(w, r)
-	if sys == nil {
+	sys, err := s.systemOf(r)
+	if err != nil {
+		s.fail(w, err)
 		return
 	}
 	self := systemsURI + "/" + sys.ID + "/Storage/1"
-	drives := make([]string, 0, len(sys.Drives))
-	for i := range sys.Drives {
-		drives = append(drives, fmt.Sprintf("%s/Drives/%d", self, i+1))
-	}
 	doc := resource("#Storage.v1_17_1.Storage", self, "1", "Storage")
-	doc["Drives"] = links(drives...)
-	doc["Drives@odata.count"] = len(drives)
+	doc["Drives"] = memberLinks(self+"/Drives", ordinals(len(sys.Drives)))
+	doc["Drives@odata.count"] = len(sys.Drives)
 	doc["Status"] = map[string]string{"State": "Enabled", "Health": "OK"}
 	s.reply(w, r, doc)
 }
 
 func (s *Server) storageDrive(w http.ResponseWriter, r *http.Request) {
-	sys := s.bySystem(w, r)
-	if sys == nil {
+	sys, err := s.systemOf(r)
+	if err != nil {
+		s.fail(w, err)
 		return
 	}
 	s.serveDrive(w, r, sys, systemsURI+"/"+sys.ID+"/Storage/1/Drives")
@@ -235,13 +216,13 @@ func (s *Server) storageDrive(w http.ResponseWriter, r *http.Request) {
 // serveDrive renders one Drive under base — the same resource whether the
 // fixture hangs drives off the chassis or off a storage subsystem.
 func (s *Server) serveDrive(w http.ResponseWriter, r *http.Request, sys *bmc.System, base string) {
-	n, _ := strconv.Atoi(r.PathValue("n"))
-	if n < 1 || n > len(sys.Drives) {
-		s.fail(w, notFound("Drive", r.PathValue("n")))
+	n := r.PathValue("n")
+	d, err := nth(sys.Drives, "Drive", n)
+	if err != nil {
+		s.fail(w, err)
 		return
 	}
-	d := sys.Drives[n-1]
-	doc := resource("#Drive.v1_20_1.Drive", fmt.Sprintf("%s/%d", base, n), strconv.Itoa(n), "Drive")
+	doc := resource("#Drive.v1_20_1.Drive", base+"/"+n, n, "Drive")
 	doc["Model"] = d.Model
 	doc["SerialNumber"] = d.Serial
 	doc["CapacityBytes"] = int64(d.CapacityGiB) << 30
@@ -329,9 +310,5 @@ func (s *Server) patchBiosSettings(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, refuse("the request changes no property this resource can update (Attributes)"))
 		return
 	}
-	if err := s.st.stageBios(r.Context(), r.PathValue("id"), body.Attributes, body.ApplyTime.ApplyTime); err != nil {
-		s.fail(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	s.noContent(w, s.st.stageBios(r.Context(), r.PathValue("id"), body.Attributes, body.ApplyTime.ApplyTime))
 }

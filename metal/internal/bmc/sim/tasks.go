@@ -31,7 +31,7 @@ func (s *State) startTask(name string, work func() error) *task {
 	s.tasks = append(s.tasks, t)
 	d := s.f.Protocol.TaskDuration
 	if d <= 0 {
-		s.finishTask(t, work)
+		t.end(work())
 		return t
 	}
 	go func() {
@@ -43,16 +43,17 @@ func (s *State) startTask(name string, work func() error) *task {
 		s.mu.Unlock()
 		time.Sleep(d - d/2)
 		s.mu.Lock()
-		s.finishTask(t, work)
+		t.end(work())
 		s.mu.Unlock()
 	}()
 	return t
 }
 
-// finishTask runs the work and records the outcome. Caller holds the lock.
-func (s *State) finishTask(t *task, work func() error) {
+// end records the outcome of the task's work: an error is an Exception.
+// Caller holds the state lock.
+func (t *task) end(err error) {
 	t.state = "Completed"
-	if err := work(); err != nil {
+	if err != nil {
 		t.state, t.message = "Exception", err.Error()
 	}
 	t.ended = time.Now()
@@ -72,11 +73,7 @@ func (s *State) runTask(name string, work func() error) task {
 		err := work()
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		t.state = "Completed"
-		if err != nil {
-			t.state, t.message = "Exception", err.Error()
-		}
-		t.ended = time.Now()
+		t.end(err)
 	}()
 	return view
 }

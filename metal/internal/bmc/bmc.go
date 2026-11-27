@@ -12,6 +12,12 @@ package bmc
 
 import (
 	"context"
+	"crypto"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
+	"net"
 	"slices"
 	"time"
 )
@@ -134,6 +140,40 @@ type CSRSubject struct {
 	Locality           string
 	Organization       string
 	OrganizationalUnit string
+}
+
+// Request builds the PEM certificate request for the subject, signed with
+// key. An IP address that does not parse is left out.
+func (s CSRSubject) Request(key crypto.Signer) ([]byte, error) {
+	var ips []net.IP
+	for _, raw := range s.IPAddresses {
+		if ip := net.ParseIP(raw); ip != nil {
+			ips = append(ips, ip)
+		}
+	}
+	der, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{
+		Subject: pkix.Name{
+			CommonName:         s.CommonName,
+			Country:            nonEmpty(s.Country),
+			Province:           nonEmpty(s.State),
+			Locality:           nonEmpty(s.Locality),
+			Organization:       nonEmpty(s.Organization),
+			OrganizationalUnit: nonEmpty(s.OrganizationalUnit),
+		},
+		DNSNames:    s.DNSNames,
+		IPAddresses: ips,
+	}, key)
+	if err != nil {
+		return nil, err
+	}
+	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: der}), nil
+}
+
+func nonEmpty(s string) []string {
+	if s == "" {
+		return nil
+	}
+	return []string{s}
 }
 
 // NTPConfig is the manager's time-synchronization view. Servers in

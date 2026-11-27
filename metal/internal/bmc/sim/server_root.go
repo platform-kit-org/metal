@@ -120,11 +120,7 @@ func (s *Server) taskService(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) tasks(w http.ResponseWriter, r *http.Request) {
-	var ids []string
-	for _, t := range s.st.tasksView() {
-		ids = append(ids, t.id)
-	}
-	s.reply(w, r, collection("Task", taskServiceURI+"/Tasks", ids))
+	s.reply(w, r, collection("Task", taskServiceURI+"/Tasks", memberIDs(s.st.tasksView(), func(t task) string { return t.id })))
 }
 
 func (s *Server) task(w http.ResponseWriter, r *http.Request) {
@@ -246,11 +242,7 @@ func (s *Server) sessionService(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) sessions(w http.ResponseWriter, r *http.Request) {
-	var ids []string
-	for _, sess := range s.st.sessionsView() {
-		ids = append(ids, sess.id)
-	}
-	s.reply(w, r, collection("Session", sessionServiceURI+"/Sessions", ids))
+	s.reply(w, r, collection("Session", sessionServiceURI+"/Sessions", memberIDs(s.st.sessionsView(), func(sess session) string { return sess.id })))
 }
 
 func sessionDoc(sess session) map[string]any {
@@ -293,9 +285,5 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteSession(w http.ResponseWriter, r *http.Request) {
-	if err := s.st.deleteSession(r.PathValue("id")); err != nil {
-		s.fail(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	s.noContent(w, s.st.deleteSession(r.PathValue("id")))
 }

@@ -13,7 +13,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"slices"
 	"testing"
 	"time"
@@ -28,9 +27,9 @@ import (
 
 // Run executes the v0 conformance assertions against c, with expectations derived from
 // the fixture the endpoint is supposed to embody: inventory, capability discovery, the
-// serial-anchor asymmetry, power round-trip, and media insert dialect dispatch.
-// ReadOnly skips every mutating assertion — the mode used against real hardware.
-func Run(t *testing.T, c bmc.Client, f *sim.Fixture, readOnly bool) {
+// serial-anchor asymmetry, power actions, and media insert dialect dispatch.
+// Real hardware runs RunReadOnly.
+func Run(t *testing.T, c bmc.Client, f *sim.Fixture) {
 	t.Helper()
 	ctx := context.Background()
 
@@ -51,21 +50,11 @@ func Run(t *testing.T, c bmc.Client, f *sim.Fixture, readOnly bool) {
 		// way they are the same facts.
 		ch, err := c.Chassis(ctx)
 		require.NoError(t, err)
+		assert.Equal(t, f.Chassis.BoardSerial, ch.BoardSerial, "chassis serial")
 		require.Len(t, ch.Adapters, len(f.Chassis.Adapters))
 		for i, want := range f.Chassis.Adapters {
 			assert.Equal(t, want.Model, ch.Adapters[i].Model, "adapter %d model", i)
 			assertList(t, want.PortMACs, ch.Adapters[i].PortMACs, "adapter %d port MACs", i)
-		}
-	})
-
-	t.Run("serial-anchors", func(t *testing.T) {
-		ch, err := c.Chassis(ctx)
-		require.NoError(t, err)
-		assert.Equal(t, f.Chassis.BoardSerial, ch.BoardSerial, "chassis serial")
-		for i, sys := range mustSystems(t, ctx, c) {
-			// Covers BOTH vendor shapes: Huawei's ComputerSystem carries the chassis
-			// serial; Supermicro's carries none (fixture serial == "").
-			assert.Equal(t, f.Systems[i].Serial, sys.SerialNumber, "system %s serial", sys.ID)
 		}
 	})
 
@@ -74,6 +63,9 @@ func Run(t *testing.T, c bmc.Client, f *sim.Fixture, readOnly bool) {
 		require.Len(t, systems, len(f.Systems))
 		for i, sys := range systems {
 			fx := f.Systems[i]
+			// Covers BOTH vendor shapes: Huawei's ComputerSystem carries the chassis
+			// serial; Supermicro's carries none (fixture serial == "").
+			assert.Equal(t, fx.Serial, sys.SerialNumber, "system %s serial", sys.ID)
 			assert.Equal(t, fx.UUID, sys.UUID, "system %s uuid", sys.ID)
 			assert.Len(t, sys.NICs, len(fx.NICs), "system %s nics", sys.ID)
 			assert.Len(t, sys.Drives, len(fx.Drives), "system %s drives", sys.ID)
@@ -150,22 +142,33 @@ func Run(t *testing.T, c bmc.Client, f *sim.Fixture, readOnly bool) {
 		}
 	})
 
-	if readOnly {
-		return
-	}
-
-	t.Run("power-round-trip", func(t *testing.T) {
+	t.Run("power-actions", func(t *testing.T) {
+		// Every reset type the system advertises is accepted and lands in the
+		// power state it stands for; one it does not advertise is refused.
 		id := f.Systems[0].ID
-		_, err := c.Power(ctx, id)
-		require.NoError(t, err)
-
+		// ForceOff is accepted in each power state. The generic system starts
+		// off, so this also sends ForceOff to a system that is off.
 		require.NoError(t, c.SetPower(ctx, id, bmc.ActionForceOff))
 		settles(t, ctx, c, id, bmc.PowerOff, "after ForceOff")
-
+		ends := map[bmc.PowerAction]bmc.PowerState{
+			bmc.ActionOn: bmc.PowerOn, bmc.ActionForceOff: bmc.PowerOff,
+			bmc.ActionGracefulShutdown: bmc.PowerOff, bmc.ActionForceRestart: bmc.PowerOn,
+			bmc.ActionGracefulRestart: bmc.PowerOn, bmc.ActionPowerCycle: bmc.PowerOn,
+		}
+		for _, action := range fixtureResetTypes(f) {
+			want, known := ends[bmc.PowerAction(action)]
+			if !known {
+				continue
+			}
+			// Restart-shaped actions need a running system to act on.
+			require.NoError(t, c.SetPower(ctx, id, bmc.ActionOn))
+			settles(t, ctx, c, id, bmc.PowerOn, "before %s", action)
+			require.NoError(t, c.SetPower(ctx, id, bmc.PowerAction(action)), "reset type %s", action)
+			settles(t, ctx, c, id, want, "after %s", action)
+		}
+		assert.Error(t, c.SetPower(ctx, id, bmc.PowerAction("Nmi-NotOffered")),
+			"a reset type outside AllowableValues must be rejected")
 		require.NoError(t, c.SetPower(ctx, id, bmc.ActionOn))
-		settles(t, ctx, c, id, bmc.PowerOn, "after On")
-
-		require.NoError(t, c.SetPower(ctx, id, bmc.ActionForceRestart))
 	})
 
 	t.Run("reset-advances-reset-time", func(t *testing.T) {
@@ -239,7 +242,7 @@ func Run(t *testing.T, c bmc.Client, f *sim.Fixture, readOnly bool) {
 				assert.True(t, m.Inserted, "slot %s inserted", slot)
 				// The vmm dialect stores the URL userinfo-bearing, the standard
 				// dialect clean — compare with userinfo stripped.
-				assert.Equal(t, img, stripUserinfo(t, m.ImageURL), "slot %s image", slot)
+				assert.Equal(t, img, sim.WithoutUserinfo(m.ImageURL), "slot %s image", slot)
 			}
 		}
 		require.True(t, seen, "slot %s missing from Media()", slot)
@@ -288,31 +291,6 @@ func Run(t *testing.T, c bmc.Client, f *sim.Fixture, readOnly bool) {
 		want.Enabled = bmc.OverrideDisabled
 		require.NoError(t, c.SetBootOverride(ctx, id, want))
 		assert.Equal(t, want, mustSystems(t, ctx, c)[0].BootOverride, "and is withdrawn by disabling it")
-	})
-
-	t.Run("power-actions", func(t *testing.T) {
-		// Every reset type the system advertises is accepted and lands in the
-		// power state it stands for; one it does not advertise is refused.
-		id := f.Systems[0].ID
-		ends := map[bmc.PowerAction]bmc.PowerState{
-			bmc.ActionOn: bmc.PowerOn, bmc.ActionForceOff: bmc.PowerOff,
-			bmc.ActionGracefulShutdown: bmc.PowerOff, bmc.ActionForceRestart: bmc.PowerOn,
-			bmc.ActionGracefulRestart: bmc.PowerOn, bmc.ActionPowerCycle: bmc.PowerOn,
-		}
-		for _, action := range fixtureResetTypes(f) {
-			want, known := ends[bmc.PowerAction(action)]
-			if !known {
-				continue
-			}
-			// Restart-shaped actions need a running system to act on.
-			require.NoError(t, c.SetPower(ctx, id, bmc.ActionOn))
-			settles(t, ctx, c, id, bmc.PowerOn, "before %s", action)
-			require.NoError(t, c.SetPower(ctx, id, bmc.PowerAction(action)), "reset type %s", action)
-			settles(t, ctx, c, id, want, "after %s", action)
-		}
-		assert.Error(t, c.SetPower(ctx, id, bmc.PowerAction("Nmi-NotOffered")),
-			"a reset type outside AllowableValues must be rejected")
-		require.NoError(t, c.SetPower(ctx, id, bmc.ActionOn))
 	})
 
 	t.Run("flash-convergence", func(t *testing.T) {
@@ -746,14 +724,6 @@ func fixtureDialect(f *sim.Fixture, slot int) bmc.MediaDialect {
 		}
 		return bmc.DialectNone
 	}
-}
-
-func stripUserinfo(t *testing.T, imageURL string) string {
-	t.Helper()
-	u, err := url.Parse(imageURL)
-	require.NoError(t, err)
-	u.User = nil
-	return u.String()
 }
 
 // insertableSlot is the slot a boot image belongs in: the first insertable one

@@ -92,8 +92,11 @@ func (r *HostOperationReconciler) gateRollout(ctx context.Context, op *metalv1al
 		return ctrl.Result{}, true, err
 	}
 	if why == "" {
-		setCond(metalv1alpha1.ConditionApproved, metav1.ConditionTrue, metalv1alpha1.ReasonApproved,
-			"covered by the approval of rollout "+op.Spec.RolloutRef.Name)
+		// A person's own approval of the operation stays as it is.
+		if !op.ApprovalRequired() {
+			setCond(metalv1alpha1.ConditionApproved, metav1.ConditionTrue, metalv1alpha1.ReasonApprovalNotRequired,
+				"covered by the approval of rollout "+op.Spec.RolloutRef.Name)
+		}
 		return ctrl.Result{}, false, nil
 	}
 	msg := why + "; nothing was done to the machine"

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -530,4 +531,43 @@ func TestMediaFetchesReachTheTrail(t *testing.T) {
 	assert.Equal(t, int64(len("config")), *lines[2].Bytes)
 	assert.Equal(t, "revoked", lines[2].Reason)
 	assert.NotContains(t, b.String(), g.Token)
+}
+
+// A rollout step's operation needs no approval of its own: the rollout's
+// approval covers it, and the rollout's own approved line names the person.
+// Before, each step wrote an approved line that named nobody. A person's
+// approval of an operation that names a rollout stays as it is.
+func TestRolloutStepOperationWritesNoApprovedLine(t *testing.T) {
+	st := step("w-1", osv1alpha1.RoleWorker)
+	st.Host = "host-a"
+	ro := approvedRollout(osv1alpha1.RolloutReboot, st)
+	for name, tc := range map[string]struct {
+		approval       metalv1alpha1.OperationApproval
+		reason, msg    string
+		approvedByLine bool
+	}{
+		"covered by the rollout": {approval: metalv1alpha1.OperationApproval{Required: ptr.To(false)},
+			reason: metalv1alpha1.ReasonApprovalNotRequired, msg: "covered by the approval of rollout " + ro.Name},
+		"approved by a person": {approval: metalv1alpha1.OperationApproval{Required: ptr.To(true), ApprovedBy: "carol"},
+			reason: metalv1alpha1.ReasonApproved, msg: "approved by carol", approvedByLine: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			op := preClearedOp(rolloutActions(ro, ro.Status.Plan[0])...)
+			op.Spec.Approval = tc.approval
+			op.Spec.RolloutRef = &metalv1alpha1.RolloutReference{Name: ro.Name, PlanHash: ro.Status.PlanHash}
+			r, _, _ := executorFor(t, "huawei-2288h-v5", op, ro.DeepCopy())
+			var b bytes.Buffer
+			r.Audit = audit.New(&b, testOperator)
+			key := client.ObjectKeyFromObject(op)
+			_, _ = r.Reconcile(t.Context(), ctrl.Request{NamespacedName: key})
+
+			assert.Equal(t, tc.approvedByLine, slices.Contains(eventNames(trail(t, &b)), "approved"))
+			got := &metalv1alpha1.HostOperation{}
+			require.NoError(t, r.Get(t.Context(), key, got))
+			c := meta.FindStatusCondition(got.Status.Conditions, metalv1alpha1.ConditionApproved)
+			require.NotNil(t, c)
+			assert.Equal(t, tc.reason, c.Reason)
+			assert.Equal(t, tc.msg, c.Message)
+		})
+	}
 }

@@ -65,7 +65,9 @@ const (
 	// ReasonApproved on Approved=True: a human stamped approvedBy, and admission
 	// confirmed they stamped it as themselves.
 	ReasonApproved = "Approved"
-	// ReasonApprovalNotRequired on Approved=True: the disruption policy waived the gate.
+	// ReasonApprovalNotRequired on Approved=True: the disruption policy waived
+	// the gate, or the approval of the rollout that the operation names
+	// covers it.
 	ReasonApprovalNotRequired = "ApprovalNotRequired"
 	// ReasonOperationQueued on Executed=Unknown: another operation holds the host —
 	// at most one runs per Host.

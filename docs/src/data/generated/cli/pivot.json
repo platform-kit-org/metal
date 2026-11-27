@@ -1,6 +1,6 @@
 {
   "name": "pivot",
-  "summary": "move the operator and its objects from this cluster to another one, for example from kind onto the Talos cluster it built",
+  "summary": "move the operator and its objects to another cluster",
   "synopsis": "--to <kubeconfig> [--to-context name] [--yes] [flags]",
   "usage": [
     "pk-metal pivot --to <kubeconfig> [--to-context name] [--yes] [flags]"

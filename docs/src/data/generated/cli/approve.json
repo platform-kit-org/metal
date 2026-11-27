@@ -1,6 +1,6 @@
 {
   "name": "approve",
-  "summary": "show what a proposed operation will do to a machine, then let it run; several names: one plan and one answer each; without a name, list the operations that wait for approval",
+  "summary": "list waiting operations, or show the plan of one and approve it",
   "synopsis": "[-n namespace] [--yes] [<operation> | <namespace>/<operation> ...]",
   "usage": [
     "pk-metal approve [-n namespace] [--yes] [<operation> | <namespace>/<operation> ...]"

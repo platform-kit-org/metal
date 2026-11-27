@@ -1,6 +1,6 @@
 {
   "name": "restore",
-  "summary": "say what is wrong with a cluster's etcd and propose the operations that restore it; upload an approved snapshot",
+  "summary": "plan the restore of a cluster's etcd; upload a snapshot for it",
   "synopsis": "plan <cluster> [--snapshot name] [--propose] | upload <operation> --identity <file>",
   "usage": [
     "pk-metal restore plan <cluster> [--snapshot name] [--propose] | upload <operation> --identity <file>"

@@ -1,6 +1,6 @@
 {
   "name": "unhold",
-  "summary": "remove a hold, so that the operator proposes operations for the claim again",
+  "summary": "remove a hold, so that the operator proposes operations again",
   "synopsis": "[-n namespace] <claim> | <namespace>/<claim>",
   "usage": [
     "pk-metal unhold [-n namespace] <claim> | <namespace>/<claim>"

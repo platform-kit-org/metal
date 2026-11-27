@@ -1,6 +1,6 @@
 {
   "name": "replace",
-  "summary": "move a node to another machine, for failed hardware: the old machine is released first (the operator proposes it)",
+  "summary": "move a node to another machine, for failed hardware",
   "synopsis": "[-n namespace] --host <host> [--ack-etcd-risk reason] <claim> | <node>",
   "usage": [
     "pk-metal replace [-n namespace] --host <host> [--ack-etcd-risk reason] <claim> | <node>"

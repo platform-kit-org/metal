@@ -1,6 +1,6 @@
 {
   "name": "sim",
-  "summary": "run simulated BMCs for tests: serve one, or a fleet with a virtual machine behind each",
+  "summary": "run simulated BMCs: serve one, or a fleet with a VM behind each",
   "synopsis": "serve [flags] | fleet --config <file>",
   "usage": [
     "pk-metal sim serve [flags] | fleet --config <file>"

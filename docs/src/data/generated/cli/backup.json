@@ -1,6 +1,6 @@
 {
   "name": "backup",
-  "summary": "take an etcd snapshot now, list the snapshots, download one, or decrypt one on this machine",
+  "summary": "take, list, download or decrypt etcd snapshots",
   "synopsis": "now <cluster> | list [<cluster>] | get <snapshot> -o <file> | decrypt ...",
   "usage": [
     "pk-metal backup now <cluster> | list [<cluster>] | get <snapshot> -o <file> | decrypt ..."

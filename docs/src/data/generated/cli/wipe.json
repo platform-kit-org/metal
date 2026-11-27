@@ -1,6 +1,6 @@
 {
   "name": "wipe",
-  "summary": "ask for a wipe of a released machine that may still hold a node's install (the operator proposes it)",
+  "summary": "ask for a wipe of a released machine (the operator proposes it)",
   "synopsis": "[--talos-version v] <host>",
   "usage": [
     "pk-metal wipe [--talos-version v] <host>"

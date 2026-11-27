@@ -39,6 +39,7 @@ func TestUsageHasNoInternalJargon(t *testing.T) {
 	}
 	for _, c := range commands {
 		assert.Contains(t, out.String(), "  "+c.name+" ", "every command is listed")
+		assert.LessOrEqual(t, len(c.summary), 67, "%s: the line of the command fits in 80 columns", c.name)
 	}
 	assert.Contains(t, out.String(), "REBOOT", "the boot line says it reboots the machine")
 	assert.Contains(t, out.String(), "--kubeconfig file           "+kubeconfigUsage, "the text of the flag itself")

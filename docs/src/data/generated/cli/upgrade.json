@@ -1,6 +1,6 @@
 {
   "name": "upgrade",
-  "summary": "set the Talos or Kubernetes version a cluster asks for and show the rollout the operator proposes; nothing runs before it is approved",
+  "summary": "set the Talos or Kubernetes version of a cluster; show the rollout",
   "synopsis": "[--wait 2m] talos|kubernetes <cluster> <version>",
   "usage": [
     "pk-metal upgrade [--wait 2m] talos|kubernetes <cluster> <version>"

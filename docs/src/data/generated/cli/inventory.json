@@ -1,6 +1,6 @@
 {
   "name": "inventory",
-  "summary": "read the hardware inventory from a BMC and print it as YAML (reads only)",
+  "summary": "read the hardware inventory of a BMC and print it as YAML",
   "synopsis": "[flags] <bmc-url>",
   "usage": [
     "pk-metal inventory [flags] <bmc-url>"

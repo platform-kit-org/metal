@@ -77,6 +77,12 @@ func (f bmcFlags) config(endpoint, password string, readOnly bool, warn io.Write
 			return cfg, fmt.Errorf("--bmc-ca: %s holds no PEM certificate", *f.caFile)
 		}
 	}
+	// The BMC would count a login with an empty password as a failure.
+	if *f.user != "" && password == "" {
+		return cfg, fmt.Errorf("PK_METAL_BMC_PASSWORD is empty: set it to the password of BMC user %s "+
+			"(read -rs PK_METAL_BMC_PASSWORD && export PK_METAL_BMC_PASSWORD), "+
+			`or give --user "" for a BMC without accounts`, *f.user)
+	}
 	if *f.insecure {
 		fmt.Fprintln(warn, insecureWarning)
 	}

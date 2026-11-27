@@ -29,8 +29,8 @@ import (
 // Run executes the v0 conformance assertions against c, with expectations derived from
 // the fixture the endpoint is supposed to embody: inventory, capability discovery, the
 // serial-anchor asymmetry, power round-trip, and media insert dialect dispatch.
-// ReadOnly skips every mutating assertion — the mode used against real hardware.
-func Run(t *testing.T, c bmc.Client, f *sim.Fixture, readOnly bool) {
+// Real hardware runs RunReadOnly.
+func Run(t *testing.T, c bmc.Client, f *sim.Fixture) {
 	t.Helper()
 	ctx := context.Background()
 
@@ -149,10 +149,6 @@ func Run(t *testing.T, c bmc.Client, f *sim.Fixture, readOnly bool) {
 			assert.Equal(t, want.AllowedValues, schema[i].AllowedValues, "attribute %q values", want.Name)
 		}
 	})
-
-	if readOnly {
-		return
-	}
 
 	t.Run("power-round-trip", func(t *testing.T) {
 		id := f.Systems[0].ID

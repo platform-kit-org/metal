@@ -33,7 +33,7 @@ func TestConformanceOnASlowBMC(t *testing.T) {
 	})
 	require.NoError(t, err)
 	defer c.Close()
-	bmctest.Run(t, c, f, false)
+	bmctest.Run(t, c, f)
 }
 
 // A request over the sim's connection limit is answered 503 with

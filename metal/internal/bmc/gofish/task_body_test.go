@@ -38,7 +38,7 @@ func TestConformanceWithTaskInBody(t *testing.T) {
 			c, err := gofishclient.Connect(context.Background(), cfg)
 			require.NoError(t, err)
 			defer c.Close()
-			bmctest.Run(t, c, f, false)
+			bmctest.Run(t, c, f)
 		})
 	}
 }
@@ -92,7 +92,7 @@ func TestTaskCompletedCriticalIsAFailure(t *testing.T) {
 			c, err := gofishclient.Connect(context.Background(), cfg)
 			require.NoError(t, err)
 			defer c.Close()
-			bmctest.Run(t, c, f, false)
+			bmctest.Run(t, c, f)
 		})
 	}
 }

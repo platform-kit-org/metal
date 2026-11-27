@@ -25,7 +25,7 @@ func TestConformance(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			f, err := sim.LoadFixture(name)
 			require.NoError(t, err)
-			bmctest.Run(t, sim.NewState(f), f, false)
+			bmctest.Run(t, sim.NewState(f), f)
 		})
 	}
 }
@@ -55,7 +55,7 @@ func TestConformanceWithAccounts(t *testing.T) {
 			f.Accounts = []sim.FixtureAccount{
 				{ID: "2", Username: "admin", Password: "factory", Role: "Administrator", Enabled: true},
 			}
-			bmctest.Run(t, sim.NewState(f), f, false)
+			bmctest.Run(t, sim.NewState(f), f)
 		})
 	}
 }

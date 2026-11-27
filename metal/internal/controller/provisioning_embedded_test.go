@@ -144,8 +144,11 @@ func huaweiEndpoint() *metalv1alpha1.ManagementEndpoint {
 	return ep
 }
 
-func TestBlankMachineBehindOneSlotBootsAnEmbeddedInstaller(t *testing.T) {
-	ctx := context.Background()
+// blankMachineLab is a claim of rendered node-2 of cluster lab on verified
+// host-a, a blank machine behind ep.
+func blankMachineLab(t *testing.T, ep *metalv1alpha1.ManagementEndpoint) (
+	*HostClaimReconciler, *metalv1alpha1.HostClaim, *osv1alpha1.TalosNode, *osv1alpha1.TalosCluster) {
+	t.Helper()
 	cluster := &osv1alpha1.TalosCluster{
 		ObjectMeta: metav1.ObjectMeta{Name: "lab", UID: "lab-uid"},
 		Spec: osv1alpha1.TalosClusterSpec{TalosVersion: "v1.14.6", Schematic: &osv1alpha1.Schematic{
@@ -164,7 +167,36 @@ func TestBlankMachineBehindOneSlotBootsAnEmbeddedInstaller(t *testing.T) {
 	host.Status.Conditions = []metav1.Condition{{Type: metalv1alpha1.ConditionVerified, Status: metav1.ConditionTrue,
 		Reason: "Verified", LastTransitionTime: metav1.Now()}}
 	claim := testClaim("node-2")
-	r := claimReconcilerFor(t, cluster, node, host, huaweiEndpoint(), claim)
+	return claimReconcilerFor(t, cluster, node, host, ep, claim), claim, node, cluster
+}
+
+// A BMC that mounts media but boots none of them gets no medium made: no
+// boot would mount the config that it carries.
+func TestNoBootTargetMakesNoMedium(t *testing.T) {
+	for name, dialects := range map[string]map[string]string{
+		"embedded":  {"CD": "vmm-control", "USBStick": "none"},
+		"two media": {"CD": "vmm-control", "USBStick": "vmm-control"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			ep := huaweiEndpoint()
+			ep.Status.Capabilities.MediaDialects = dialects
+			ep.Status.Systems[0].BootTargets = []string{"Pxe", "Hdd"}
+			r, claim, _, _ := blankMachineLab(t, ep)
+
+			require.NoError(t, r.provision(t.Context(), claim, "host-a"))
+			c := meta.FindStatusCondition(claim.Status.Conditions, metalv1alpha1.ConditionProvisioned)
+			require.NotNil(t, c)
+			assert.Equal(t, metalv1alpha1.ReasonNoBootableMedia, c.Reason, c.Message)
+			assets := &osv1alpha1.BootAssetList{}
+			require.NoError(t, r.List(t.Context(), assets))
+			assert.Empty(t, assets.Items)
+		})
+	}
+}
+
+func TestBlankMachineBehindOneSlotBootsAnEmbeddedInstaller(t *testing.T) {
+	ctx := context.Background()
+	r, claim, node, cluster := blankMachineLab(t, huaweiEndpoint())
 
 	provisioned := func() *metav1.Condition {
 		return meta.FindStatusCondition(claim.Status.Conditions, metalv1alpha1.ConditionProvisioned)

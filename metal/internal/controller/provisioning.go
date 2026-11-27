@@ -416,6 +416,15 @@ func (r *HostClaimReconciler) installPlan(ctx context.Context, claim *metalv1alp
 	}
 
 	plan = provisionPlan{ConfigDigest: node.Status.ConfigDigest}
+	// A boot from the installer needs a boot target. Without one, no medium
+	// is made: the config in it would wait for a boot that never comes.
+	if kind != shapeConfigOnly {
+		target, err := boot.PickTarget(shape.targets)
+		if err != nil {
+			return plan, nil, nil, metalv1alpha1.ReasonNoBootableMedia, err.Error(), nil
+		}
+		plan.Target, plan.Mode = target, overrideMode(shape.mode)
+	}
 	switch kind {
 	case shapeEmbedded:
 		if installer, err = r.ensureEmbeddedAsset(ctx, node, cluster); err != nil {
@@ -424,12 +433,8 @@ func (r *HostClaimReconciler) installPlan(ctx context.Context, claim *metalv1alp
 		if msg := embeddedAssetPending(installer, node, cluster); msg != "" {
 			return plan, nil, nil, metalv1alpha1.ReasonAwaitingBootAsset, msg, nil
 		}
-		target, err := boot.PickTarget(shape.targets)
-		if err != nil {
-			return plan, nil, nil, metalv1alpha1.ReasonNoBootableMedia, err.Error(), nil
-		}
 		plan.ArtifactDigest, plan.Embedded = installer.Status.Digest, true
-		plan.Slots, plan.Target, plan.Mode = []string{shape.bootSlots[0]}, target, overrideMode(shape.mode)
+		plan.Slots = []string{shape.bootSlots[0]}
 	default:
 		if config, err = r.ensureConfigAsset(ctx, node); err != nil {
 			return plan, nil, nil, "", "", err
@@ -448,13 +453,8 @@ func (r *HostClaimReconciler) installPlan(ctx context.Context, claim *metalv1alp
 		if msg := installerPending(installer); msg != "" {
 			return plan, nil, nil, metalv1alpha1.ReasonAwaitingBootAsset, msg, nil
 		}
-		target, err := boot.PickTarget(shape.targets)
-		if err != nil {
-			return plan, nil, nil, metalv1alpha1.ReasonNoBootableMedia, err.Error(), nil
-		}
 		plan.Installer, plan.InstallerDigest = installer.Status.URL, installer.Status.Digest
-		plan.Slots, plan.Target = []string{bootSlot, configSlot}, target
-		plan.Mode = overrideMode(shape.mode)
+		plan.Slots = []string{bootSlot, configSlot}
 	}
 
 	if prior != "" {
@@ -616,21 +616,19 @@ func (r *HostClaimReconciler) provisionOp(claim *metalv1alpha1.HostClaim, hostNa
 	for _, s := range plan.Slots {
 		actions = append(actions, metalv1alpha1.HostOperationAction{EjectMedia: &metalv1alpha1.EjectMediaAction{MediaID: s}})
 	}
+	insert := func(slot string, asset *osv1alpha1.BootAsset, digest string) {
+		actions = append(actions, metalv1alpha1.HostOperationAction{InsertMedia: &metalv1alpha1.InsertMediaAction{
+			MediaID: slot, BootAssetRef: &metalv1alpha1.Reference{Name: asset.Name}, Digest: digest,
+		}})
+	}
 	switch {
 	case plan.Embedded:
-		actions = append(actions, metalv1alpha1.HostOperationAction{InsertMedia: &metalv1alpha1.InsertMediaAction{
-			MediaID: plan.Slots[0], BootAssetRef: &metalv1alpha1.Reference{Name: installer.Name}, Digest: plan.ArtifactDigest,
-		}})
+		insert(plan.Slots[0], installer, plan.ArtifactDigest)
 	default:
 		if installer != nil {
-			actions = append(actions, metalv1alpha1.HostOperationAction{InsertMedia: &metalv1alpha1.InsertMediaAction{
-				MediaID: plan.Slots[0], BootAssetRef: &metalv1alpha1.Reference{Name: installer.Name},
-				Digest: plan.InstallerDigest,
-			}})
+			insert(plan.Slots[0], installer, plan.InstallerDigest)
 		}
-		actions = append(actions, metalv1alpha1.HostOperationAction{InsertMedia: &metalv1alpha1.InsertMediaAction{
-			MediaID: plan.Slots[len(plan.Slots)-1], BootAssetRef: &metalv1alpha1.Reference{Name: config.Name}, Digest: plan.ArtifactDigest,
-		}})
+		insert(plan.Slots[len(plan.Slots)-1], config, plan.ArtifactDigest)
 	}
 	if plan.Target != "" {
 		actions = append(actions, metalv1alpha1.HostOperationAction{SetBootOverride: &metalv1alpha1.SetBootOverrideAction{

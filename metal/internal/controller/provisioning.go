@@ -76,10 +76,6 @@ const (
 	// gone. It is the least time the record stays; the site's retention
 	// (retention.go) keeps it longer.
 	releaseTTL = int32(24 * 60 * 60)
-
-	// configDigestOf is the BootAsset artifact annotation naming the render
-	// the artifact was packed from.
-	configDigestOf = configDigestAnnotation
 )
 
 // provisionPlan is everything one boot operation commits to. Its hash names the
@@ -1024,7 +1020,7 @@ func configAssetPending(ctx context.Context, c client.Client, a *osv1alpha1.Boot
 	if err := c.Get(ctx, types.NamespacedName{Namespace: ref.Namespace, Name: ref.Name}, sec); err != nil {
 		return fmt.Sprintf("config medium %s: artifact %s/%s unreadable: %v", a.Name, ref.Namespace, ref.Name, err)
 	}
-	if got := sec.Annotations[configDigestOf]; got != node.Status.ConfigDigest {
+	if got := sec.Annotations[configDigestAnnotation]; got != node.Status.ConfigDigest {
 		return fmt.Sprintf("config medium %s holds render %s, node is at %s", a.Name, short(got), short(node.Status.ConfigDigest))
 	}
 	return ""
@@ -1184,7 +1180,7 @@ func (r *HostClaimReconciler) release(ctx context.Context, claim *metalv1alpha1.
 			// could not wipe is gone too.
 			delete(host.Annotations, metalv1alpha1.AnnotationDiskNotWiped)
 		}
-		if err := r.releaseAll(ctx, []metalv1alpha1.Host{*host}, ""); err != nil {
+		if err := r.releaseAll(ctx, []metalv1alpha1.Host{*host}); err != nil {
 			return false, err
 		}
 	}
@@ -1219,7 +1215,7 @@ func (r *HostClaimReconciler) release(ctx context.Context, claim *metalv1alpha1.
 // mutating call.
 func bootRan(ops []metalv1alpha1.HostOperation, hostName string) bool {
 	return slices.ContainsFunc(ops, func(op metalv1alpha1.HostOperation) bool {
-		return op.Spec.HostRef.Name == hostName && op.Status.Baseline != nil
+		return op.Spec.HostRef.Name == hostName && opStarted(&op)
 	})
 }
 

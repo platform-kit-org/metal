@@ -172,7 +172,7 @@ DeleteClaim(c) ==
 
 \* The cached claim exists and is not being deleted: AddFinalizer, bind,
 \* writeStatus. Each write is an Update; the first conflict ends the pass.
-\* go: controller.HostClaimReconciler.Reconcile 51a5a5343ca6
+\* go: controller.HostClaimReconciler.Reconcile bd25bd29591d
 \* go: controller.HostClaimReconciler.bind df7b6b5fb51d
 \* go: controller.HostClaimReconciler.writeStatus eaf9514465d0
 ClaimBind(c) ==
@@ -202,9 +202,9 @@ ClaimBind(c) ==
 \* (liveBoundHosts); the release operations from the cache.
 \* go: controller.HostClaimReconciler.finishRelease 0988f8ac9564
 \* go: controller.HostClaimReconciler.liveBoundHosts d4c505783ee8
-\* go: controller.HostClaimReconciler.release a12710d39d4e
+\* go: controller.HostClaimReconciler.release b91aadc46bf9
 \* go: controller.HostClaimReconciler.recordPowerOff c0f1bdd325c8
-\* go: controller.HostClaimReconciler.releaseAll 38f0c45990cc
+\* go: controller.HostClaimReconciler.releaseAll 8a801d51daa2
 \* go: controller.runsNode 0029e5e5ef0d
 \* go: controller.powerOffDecided 025b2a319b02
 ClaimRelease(c) ==
@@ -244,7 +244,7 @@ ClaimRelease(c) ==
 
 \* The cache holds no claim of that name: unbind what the cached index
 \* still lists under the name, with an Update of the cached Host.
-\* go: controller.HostClaimReconciler.releaseAll 38f0c45990cc
+\* go: controller.HostClaimReconciler.releaseAll 8a801d51daa2
 ClaimGone(c) ==
     LET h == cache.hosts
     IN  /\ ~cache.claims[c].exists

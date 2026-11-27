@@ -15,7 +15,7 @@ sources:
 
 import Callout from '../../../../components/Callout.astro';
 
-Each change to a machine goes through an approved [](kind:HostOperation) or [](kind:TalosRollout). Three records tell who asked for the change, who approved it, who lifted a guard, and what ran.
+Each change to a machine goes through a [](kind:HostOperation) or a [](kind:TalosRollout). The BMC changes of an [](kind:EndpointProfile) do not: see the `bmc.*` events. Three records tell who asked for the change, who approved it, who lifted a guard, and what ran.
 
 | Record | What it holds | Where it lives | How long it stays |
 | --- | --- | --- | --- |

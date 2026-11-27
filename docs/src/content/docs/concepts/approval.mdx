@@ -15,7 +15,7 @@ import Figure from '../../../components/diagram/Figure.astro';
 import Box from '../../../components/diagram/Box.astro';
 import Edge from '../../../components/diagram/Edge.astro';
 
-Nothing that disrupts a machine happens before a person approves it.
+Nothing that disrupts a machine happens before a person approves it, unless the admin group waived the approval. It can do that with `provisioning.approval: Automatic` on a claim, or with an operation that has `approval.required: false`.
 The operator only proposes. A person reads the plan and approves it. Then the operator runs it.
 The operator never approves.
 
@@ -70,8 +70,7 @@ Only a member of the admin group can create or change an EndpointProfile. See []
 
 ## Safeguards
 
-- [](cli:approve) approves only the plan that it printed. If the operation changed in the meantime, nothing is approved.
-- The approval names the uid and the resourceVersion that you read, so the API server refuses it if the object changed.
+- [](cli:approve) approves only the plan that it printed. Its patch names the uid and the resourceVersion that it read, so the API server refuses the patch if the operation changed.
 - A gate after the approval can still hold the start, see [](concept:maintenance-windows) and [](concept:cluster-guard).
 
 ## In the reference

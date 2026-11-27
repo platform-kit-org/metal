@@ -2,7 +2,6 @@ package controller
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -26,6 +25,7 @@ import (
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
 	"github.com/dennisklein/platform-kit/metal/internal/audit"
 	"github.com/dennisklein/platform-kit/metal/internal/bmc"
+	"github.com/dennisklein/platform-kit/metal/internal/redact"
 )
 
 // proposalTTL marks a convergence proposal as one the operator may delete
@@ -287,7 +287,9 @@ func (r *ConvergenceReconciler) bios(ctx context.Context, host *metalv1alpha1.Ho
 		settings.Status.Provenance = provenance
 		state, schema, obsErr := r.observeBios(ctx, host)
 		if obsErr != nil {
-			status, reason, msg = metav1.ConditionUnknown, metalv1alpha1.ReasonNoReachablePath, obsErr.Error()
+			status = metav1.ConditionUnknown
+			reason, msg = holdOf(obsErr, metalv1alpha1.ReasonBiosReadFailed)
+			msg = redact.String(msg)
 			break
 		}
 		if err := r.materializeSchema(ctx, host, state.Registry, schema); err != nil {
@@ -566,9 +568,9 @@ func selectsByClaim(selectors []metav1.LabelSelector, claim *metalv1alpha1.HostC
 func (r *ConvergenceReconciler) observeBios(ctx context.Context, host *metalv1alpha1.Host) (bmc.BiosState, []bmc.BiosAttribute, error) {
 	cctx, cancel := context.WithTimeout(ctx, connectTimeout)
 	defer cancel()
-	cl, systemID, _, holdMsg := hostPathClient(cctx, r.Client, r.CredentialsNamespace, host, true)
-	if holdMsg != "" {
-		return bmc.BiosState{}, nil, errors.New(holdMsg)
+	cl, systemID, err := hostPathClient(cctx, r.Client, r.CredentialsNamespace, host, true)
+	if err != nil {
+		return bmc.BiosState{}, nil, err
 	}
 	defer cl.Close() //nolint:errcheck // read-only session
 	state, err := cl.Bios(cctx, systemID)

@@ -108,7 +108,8 @@ type HostOperationReconciler struct {
 
 	// Connect opens a write-capable session to the host's machine; nil dials
 	// the first reachable management path. A test seam.
-	Connect func(ctx context.Context, host *metalv1alpha1.Host) (cl bmc.Client, systemID, reason, msg string, err error)
+	// A connection hold is a *holdError.
+	Connect func(ctx context.Context, host *metalv1alpha1.Host) (cl bmc.Client, systemID string, err error)
 	// PowerSettle is how long one pass waits for a power transition to show
 	// before requeueing; PowerTimeout fails the step. Zero values default.
 	PowerSettle  time.Duration
@@ -396,12 +397,12 @@ func (r *HostOperationReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		// down, and its steps record their own proof (the node's boot time).
 		var obs bmc.System
 		if usesBMC(op) {
-			var hold string
-			if obs, hold = x.observe(bctx); hold != "" {
+			var err error
+			if obs, err = x.observe(bctx); err != nil {
 				// Nothing else wakes the operation: the Host does not
 				// change when only this pass failed to reach its BMC.
-				setCond(metalv1alpha1.ConditionExecuted, metav1.ConditionUnknown, metalv1alpha1.ReasonNoReachablePath,
-					redact.String(hold)+"; retrying")
+				reason, msg := holdOf(err, metalv1alpha1.ReasonNoReachablePath)
+				setCond(metalv1alpha1.ConditionExecuted, metav1.ConditionUnknown, reason, redact.String(msg)+"; retrying")
 				return ctrl.Result{RequeueAfter: r.waitInterval()}, client.IgnoreNotFound(flush())
 			}
 		}
@@ -548,7 +549,7 @@ func (r *HostOperationReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	// The closing observation: proof of the reset (baseline-and-advance), and what
 	// marks the Host's next reset-time advance as explained rather than Drifted.
 	if x.cl != nil {
-		if after, hold := x.observe(bctx); hold == "" && !after.LastResetTime.IsZero() {
+		if after, err := x.observe(bctx); err == nil && !after.LastResetTime.IsZero() {
 			op.Status.ObservedResetTime = &metav1.MicroTime{Time: after.LastResetTime}
 		}
 	}
@@ -773,6 +774,17 @@ func (e *persistError) Unwrap() error { return e.err }
 type holdError struct{ reason, msg string }
 
 func (e *holdError) Error() string { return e.reason + ": " + e.msg }
+
+// holdOf is the condition reason and message of an error that kept a pass
+// from the machine: the reason of a connection hold, otherwise for any other
+// error.
+func holdOf(err error, otherwise string) (reason, msg string) {
+	var hold *holdError
+	if errors.As(err, &hold) {
+		return hold.reason, hold.msg
+	}
+	return otherwise, err.Error()
+}
 
 // transient: the error says this pass could not talk to the machine or the
 // cluster, not that either refused — a hold, the pass deadline, a network
@@ -1111,12 +1123,9 @@ func (x *exec) client(ctx context.Context) (bmc.Client, string, error) {
 	if connect == nil {
 		connect = x.r.dialHost
 	}
-	cl, sysID, reason, msg, err := connect(ctx, x.host)
+	cl, sysID, err := connect(ctx, x.host)
 	if err != nil {
 		return nil, "", err
-	}
-	if reason != "" {
-		return nil, "", &holdError{reason: reason, msg: msg}
 	}
 	x.cl, x.systemID = cl, sysID
 	return cl, sysID, nil
@@ -1132,24 +1141,18 @@ func (x *exec) close() {
 // WRITE-capable client — one of the two places the read-only rail is
 // deliberately opened (the other is the endpoint convergence reconciler,
 // which writes the BMC's own settings).
-func (r *HostOperationReconciler) dialHost(ctx context.Context, host *metalv1alpha1.Host) (bmc.Client, string, string, string, error) {
-	cl, systemID, reason, msg := hostPathClient(ctx, r.Client, r.CredentialsNamespace, host, false)
-	return cl, systemID, reason, msg, nil
+func (r *HostOperationReconciler) dialHost(ctx context.Context, host *metalv1alpha1.Host) (bmc.Client, string, error) {
+	return hostPathClient(ctx, r.Client, r.CredentialsNamespace, host, false)
 }
 
 // observe reads the system's current view, of which an operation's baseline
-// keeps the reset observables (power state, last reset time); a connection
-// failure comes back as the hold message, so the caller can surface it.
-func (x *exec) observe(ctx context.Context) (bmc.System, string) {
+// keeps the reset observables (power state, last reset time).
+func (x *exec) observe(ctx context.Context) (bmc.System, error) {
 	cl, sysID, err := x.client(ctx)
 	if err != nil {
-		return bmc.System{}, err.Error()
+		return bmc.System{}, err
 	}
-	sys, err := systemOf(ctx, cl, sysID)
-	if err != nil {
-		return bmc.System{}, err.Error()
-	}
-	return sys, ""
+	return systemOf(ctx, cl, sysID)
 }
 
 // systemOf reads one system's current view.
@@ -1170,27 +1173,35 @@ func systemOf(ctx context.Context, cl bmc.Client, systemID string) (bmc.System, 
 // shared by the executor (write-capable) and the convergence observer
 // (read-only). ctx is the caller's pass-bounded context: gofish pins it to
 // the client's whole lifetime, so no narrower dial timeout here.
-// A path that fails is skipped; reason and msg say why none is left.
-func hostPathClient(ctx context.Context, c client.Client, credentialsNamespace string, host *metalv1alpha1.Host, readOnly bool) (cl bmc.Client, systemID, reason, msg string) {
+// A path that fails is skipped. When none is left, the error is a holdError
+// that says why, with the error of each path that failed.
+func hostPathClient(ctx context.Context, c client.Client, credentialsNamespace string, host *metalv1alpha1.Host, readOnly bool) (cl bmc.Client, systemID string, err error) {
+	var failed []string
 	for _, path := range host.Status.ManagedBy {
 		if !path.Reachable {
 			continue
 		}
 		ep := &metalv1alpha1.ManagementEndpoint{}
 		if err := c.Get(ctx, client.ObjectKey{Name: path.EndpointRef.Name}, ep); err != nil {
+			failed = append(failed, path.EndpointRef.Name+": "+err.Error())
 			continue
 		}
 		cfg, reason, err := endpointClientConfig(ctx, c, credentialsNamespace, ep, readOnly)
 		if err != nil {
-			return nil, "", reason, err.Error()
+			return nil, "", &holdError{reason: reason, msg: err.Error()}
 		}
 		cl, err := gofishclient.Connect(ctx, cfg)
 		if err != nil {
+			failed = append(failed, ep.Name+": "+err.Error())
 			continue
 		}
-		return cl, path.SystemID, "", ""
+		return cl, path.SystemID, nil
 	}
-	return nil, "", metalv1alpha1.ReasonNoReachablePath, fmt.Sprintf("host %s has no reachable management path", host.Name)
+	msg := fmt.Sprintf("host %s has no reachable management path", host.Name)
+	if len(failed) > 0 {
+		msg += ": " + strings.Join(failed, "; ")
+	}
+	return nil, "", &holdError{reason: metalv1alpha1.ReasonNoReachablePath, msg: msg}
 }
 
 // implementedActions are the action keys step runs. The API defines more

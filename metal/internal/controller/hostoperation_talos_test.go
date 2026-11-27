@@ -123,9 +123,9 @@ func newTalosLab(t *testing.T, objs ...client.Object) *talosLab {
 	lab.r = &HostOperationReconciler{
 		Client: cl, CredentialsNamespace: "pk-metal",
 		Recorder: events.NewFakeRecorder(100),
-		Connect: func(context.Context, *metalv1alpha1.Host) (bmc.Client, string, string, string, error) {
+		Connect: func(context.Context, *metalv1alpha1.Host) (bmc.Client, string, error) {
 			lab.bmcDials++
-			return nil, "", metalv1alpha1.ReasonNoReachablePath, "the BMC does not answer", nil
+			return nil, "", &holdError{reason: metalv1alpha1.ReasonNoReachablePath, msg: "the BMC does not answer"}
 		},
 		TalosDial: fleet.Dialer(),
 		Workload: func(context.Context, []byte) (client.Client, error) {

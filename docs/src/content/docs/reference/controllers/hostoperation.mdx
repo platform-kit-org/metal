@@ -117,7 +117,7 @@ Step through the figure, or use the arrow keys.
 | --- | --- | --- |
 | `Approved` | True | `Approved`, `ApprovalNotRequired` |
 | `Approved` | False | `AwaitingApproval` |
-| `Executed` | Unknown | `Executing`, `OperationQueued`, `HostNotFound`, `HostInMaintenance`, `OutsideMaintenanceWindow`, `SelfDisruption`, `ClusterDisruption`, `NoReachablePath` |
+| `Executed` | Unknown | `Executing`, `OperationQueued`, `HostNotFound`, `HostInMaintenance`, `OutsideMaintenanceWindow`, `SelfDisruption`, `ClusterDisruption`, `NoReachablePath`, `CredentialsMissing`, `CAMissing`, `TLSKeyNotPinned` |
 | `Executed` | False | `StepFailed`, `RolloutRefused`, `HostNotClaimed`, `Aborted` |
 | `Executed` | True | `StepsSucceeded` |
 
@@ -131,7 +131,7 @@ An Unknown reason other than `Executing` is the `blockedOn` of the operation. Th
 | Waits with `OutsideMaintenanceWindow` | A window covers the Host and is closed. | Wait, or set `metal.platform-kit.org/ignore-window`. See [](ctrl:maintenancewindow). |
 | Waits with `ClusterDisruption` | Etcd would not stay healthy. | Use [](rb:etcd-unhealthy). |
 | Waits with `OperationQueued` | Another operation holds the Host. | Approve or delete that one first. See [](howto:approve-hold-retry). |
-| Waits with `NoReachablePath` before the first step | The executor could not read the BMC for the baseline. It tries again every 5 seconds. | Use [](rb:bmc-unreachable). |
+| Waits with `NoReachablePath`, `CredentialsMissing`, `CAMissing` or `TLSKeyNotPinned` before the first step | The executor could not read the BMC for the baseline. The message gives the cause. It tries again every 5 seconds. | Use [](rb:bmc-unreachable). |
 
 <Callout type="note">
 The guards are described on the [](ctrl:protection) page. The window rules are on the [](ctrl:maintenancewindow) page.

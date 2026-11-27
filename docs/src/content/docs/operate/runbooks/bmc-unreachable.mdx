@@ -18,7 +18,7 @@ import { Steps } from '@astrojs/starlight/components';
   <dt>Asset</dt>
   <dd>`Materialized=False` with `NoLedgerEntry`, `NoBMCMac` or `LedgerEntryInvalid`. No endpoint exists.</dd>
   <dt>Operation</dt>
-  <dd>`BLOCKED` shows `NoReachablePath`.</dd>
+  <dd>`BLOCKED` shows `NoReachablePath`, `CredentialsMissing`, `CAMissing` or `TLSKeyNotPinned`. The `Executed` message holds the error of each BMC path.</dd>
   <dt>Alert</dt>
   <dd>`PkMetalBMCUnreachable`.</dd>
 </dl>
@@ -70,6 +70,8 @@ The operator cannot read or change the machine. Steps that go through the Talos 
 | `TLSKeyChanged` | The BMC shows a key that is not pinned. Find out why, then approve the key. See [Trust the BMC certificate](kind:ManagementEndpoint#trust-the-bmc-certificate). Do not approve a key that you cannot explain. |
 | `TLSKeyNotPinned` | The endpoint has no pinned key yet. The next observation pins it. If it stays, the BMC does not answer on TLS. |
 | `401` in the message | The credentials are wrong. Check the Secret that `credentialsRef` names. |
+| `CredentialsMissing` | The credentials Secret is missing, or has no `username` and `password`. Correct the Secret. |
+| `CAMissing` | The CA Secret is missing, or has no `ca.crt`. Correct the Secret. |
 | The BMC hangs | Reset the BMC from its web console, or remove power from the BMC. |
 
 ## Verify

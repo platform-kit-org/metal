@@ -98,7 +98,8 @@ func laneRig(t *testing.T, ep *metalv1alpha1.ManagementEndpoint, host *metalv1al
 	ep.Name = "bmc-a"
 	host.Name = "host-a"
 	host.Status.ManagedBy = []metalv1alpha1.ManagementPath{{EndpointRef: metalv1alpha1.Reference{Name: ep.Name}, Reachable: true}}
-	cl := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(append(objs, ep, host)...).Build()
+	cl := fake.NewClientBuilder().WithScheme(testScheme(t)).WithStatusSubresource(&metalv1alpha1.BiosSettings{}).
+		WithObjects(append(objs, ep, host)...).Build()
 	return &ConvergenceReconciler{Client: cl, OperationsNamespace: "pk-metal", Proposer: "operator"}, cl
 }
 

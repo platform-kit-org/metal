@@ -138,6 +138,9 @@ const (
 	// the enum). The machine would refuse or ignore it, so the operator
 	// proposes nothing.
 	ReasonSchemaViolation = "SchemaViolation"
+	// ReasonBiosReadFailed on Converged=Unknown: a session to the BMC was up,
+	// but the read of the BIOS attributes or of their registry failed.
+	ReasonBiosReadFailed = "BiosReadFailed"
 	// ReasonAwaitingFirmware on Converged=False: BIOS holds until firmware
 	// converges — the BIOS schema depends on firmware.
 	ReasonAwaitingFirmware = "AwaitingFirmware"

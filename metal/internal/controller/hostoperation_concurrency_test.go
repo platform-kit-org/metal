@@ -90,11 +90,11 @@ func TestPassesOnTwoHostsRunSideBySide(t *testing.T) {
 	f, err := sim.LoadFixture("huawei-2288h-v5")
 	require.NoError(t, err)
 	recB := &recordingClient{Client: sim.NewState(f)}
-	r.Connect = func(_ context.Context, host *metalv1alpha1.Host) (bmc.Client, string, string, string, error) {
+	r.Connect = func(_ context.Context, host *metalv1alpha1.Host) (bmc.Client, string, error) {
 		if host.Name == "host-b" {
-			return recB, f.Systems[0].ID, "", "", nil
+			return recB, f.Systems[0].ID, nil
 		}
-		return recA, f.Systems[0].ID, "", "", nil
+		return recA, f.Systems[0].ID, nil
 	}
 
 	var wg sync.WaitGroup
@@ -149,8 +149,8 @@ func TestGuardedStartsAreOneAtATime(t *testing.T) {
 		for _, s := range sims {
 			s.SetFault(sim.FaultStalePower, true) // the cycle waits: the first stays in flight
 		}
-		r.Connect = func(_ context.Context, host *metalv1alpha1.Host) (bmc.Client, string, string, string, error) {
-			return &recordingClient{Client: sims[host.Name]}, f.Systems[0].ID, "", "", nil
+		r.Connect = func(_ context.Context, host *metalv1alpha1.Host) (bmc.Client, string, error) {
+			return &recordingClient{Client: sims[host.Name]}, f.Systems[0].ID, nil
 		}
 
 		var wg sync.WaitGroup

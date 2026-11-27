@@ -31,7 +31,7 @@ var mirrored = map[string]string{
 	"HostClaimReconciler.finishRelease": "0988f8ac95640f6b",
 	"HostClaimReconciler.provision":     "dafeb879b2f7f748",
 	"HostClaimReconciler.release":       "35999f23f29cd2ca",
-	"HostOperationReconciler.Reconcile": "2e6a1caf224249ef",
+	"HostOperationReconciler.Reconcile": "f96d21e33cef507c",
 }
 
 // TestModelMirrorsTheCode fails when a function that the protocol model

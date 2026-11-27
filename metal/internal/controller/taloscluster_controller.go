@@ -17,6 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/version"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -91,23 +92,6 @@ func (r *TalosClusterReconciler) outstandingRequest(cluster *osv1alpha1.TalosClu
 		at = v.(time.Time)
 	}
 	return at
-}
-
-// rememberedBootstrap is when the cluster was first seen bootstrapped. A cluster
-// that an operator without status.bootstrappedAt saw bootstrapped carries
-// only Bootstrapped=True; its transition time stands in, and is written into
-// the status here, so the upgrade to this operator does not forget what the
-// old one knew.
-func rememberedBootstrap(cluster *osv1alpha1.TalosCluster) time.Time {
-	if at := cluster.Status.BootstrappedAt; at != nil {
-		return at.Time
-	}
-	if c := meta.FindStatusCondition(cluster.Status.Conditions, osv1alpha1.ConditionBootstrapped); c != nil &&
-		c.Status == metav1.ConditionTrue {
-		cluster.Status.BootstrappedAt = &metav1.Time{Time: c.LastTransitionTime.Time}
-		return c.LastTransitionTime.Time
-	}
-	return time.Time{}
 }
 
 // +kubebuilder:rbac:groups=os.platform-kit.org,resources=talosclusters,verbs=get;list;watch
@@ -202,7 +186,7 @@ func (r *TalosClusterReconciler) reconcile(ctx context.Context, cluster *osv1alp
 	requestedAt := r.outstandingRequest(cluster)
 	b := bootstrap.Ensure(ctx, r.Dial, talosconfig, members, bootstrap.Observation{
 		KubernetesAnswers: kerr == nil, RequestedAt: requestedAt, Grace: r.BootstrapGrace,
-		BootstrappedAt: rememberedBootstrap(cluster),
+		BootstrappedAt: ptr.Deref(st.BootstrappedAt, metav1.Time{}).Time,
 		RestorePending: cluster.Annotations[osv1alpha1.AnnotationRestorePending] != "",
 	})
 	switch {
@@ -388,7 +372,7 @@ func ProbeKubernetes(ctx context.Context, kubeconfig []byte) (string, error) {
 func (r *TalosClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	// Only spec changes of the cluster itself trigger a pass: its status is
 	// this reconciler's own output, and reacting to that write would rerun
-	// the machine probes (and formerly a bootstrap) within milliseconds. The
+	// the machine probes within milliseconds. The
 	// pace between passes is RequeueAfter; members and Secrets have watches.
 	// Annotations wake it too: they are how a person asks for something
 	// (D25), and its own status write changes neither.

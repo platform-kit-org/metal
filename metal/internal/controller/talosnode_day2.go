@@ -150,16 +150,8 @@ func (r *TalosNodeReconciler) collectConfigSecrets(ctx context.Context, node *os
 	if err := r.List(ctx, secrets, client.InNamespace(r.Namespace), client.MatchingLabels{labelConfigNode: node.Name}); err != nil {
 		return err
 	}
-	candidates := secrets.Items
-	// The single, rewritten Secret of earlier operator versions.
-	legacy := &corev1.Secret{}
-	if err := r.Get(ctx, client.ObjectKey{Namespace: r.Namespace, Name: "machineconfig-" + node.Name}, legacy); err == nil {
-		candidates = append(candidates, *legacy)
-	} else if client.IgnoreNotFound(err) != nil {
-		return err
-	}
-	for i := range candidates {
-		s := &candidates[i]
+	for i := range secrets.Items {
+		s := &secrets.Items[i]
 		if keep[s.Name] || !metav1.IsControlledBy(s, node) {
 			continue
 		}

@@ -236,26 +236,9 @@ func StampEndpoint(ep *metalv1alpha1.ManagementEndpoint) {
 	ep.Status.Phase, ep.Status.BlockedOn = ForEndpoint(ep.Status.Conditions)
 }
 
-// StampEndpointOnto derives from src's conditions and writes the result onto
-// dst. It exists for server-side apply: an apply object carries only the
-// fields its field manager means to own, so it holds a partial condition set —
-// but the phase is a summary of ALL of them. Only the endpoint reconciler calls
-// it; the convergence lane's apply carries no phase.
-func StampEndpointOnto(dst, src *metalv1alpha1.ManagementEndpoint) {
-	dst.Status.Phase, dst.Status.BlockedOn = ForEndpoint(src.Status.Conditions)
-}
-
 // StampHost derives and writes phase + blockedOn — the single host write site.
 func StampHost(h *metalv1alpha1.Host, f HostFacts) {
 	h.Status.Phase, h.Status.BlockedOn = ForHost(h.Status.Conditions, f)
-}
-
-// StampHostOnto derives from src's conditions and writes onto dst, for the same
-// reason StampEndpointOnto exists: an apply object holds only its owner's share
-// of the conditions, and the phase summarizes all of them. Only the host
-// reconciler calls it; the convergence lane's apply carries no phase.
-func StampHostOnto(dst, src *metalv1alpha1.Host, f HostFacts) {
-	dst.Status.Phase, dst.Status.BlockedOn = ForHost(src.Status.Conditions, f)
 }
 
 // StampClaim derives and writes phase + blockedOn — the single claim write site.

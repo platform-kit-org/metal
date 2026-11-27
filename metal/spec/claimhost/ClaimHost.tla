@@ -261,8 +261,8 @@ ClaimGone(c) ==
 \* HostReconciler.Reconcile: projectOS from the cached node, factsFor with
 \* the cached claim, StampHost, and a status apply when the result differs
 \* from the cached status.
-\* go: controller.HostReconciler.Reconcile fc50c1c8de21
-\* go: controller.HostReconciler.applyStatus 1f380381ef89
+\* go: controller.HostReconciler.Reconcile 1175b5c84bca
+\* go: controller.HostReconciler.applyStatus fa6d4ae428f6
 HostReconcile ==
     LET h  == cache.hosts
         f  == Facts(h, cache.claims)

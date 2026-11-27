@@ -231,7 +231,7 @@ func listSnapshots(ctx context.Context, cl client.Client, cluster string, now ti
 	}
 	items := l.Items
 	// One being taken has no time yet: it is the newest.
-	at := func(s *osv1alpha1.EtcdSnapshot) time.Time { return cmp.Or(snapTime(s), now) }
+	at := func(s *osv1alpha1.EtcdSnapshot) time.Time { return cmp.Or(s.TakenOrCreated(), now) }
 	slices.SortFunc(items, func(a, b osv1alpha1.EtcdSnapshot) int {
 		return cmp.Or(at(&b).Compare(at(&a)), strings.Compare(b.Name, a.Name))
 	})
@@ -244,7 +244,7 @@ func listSnapshots(ctx context.Context, cl client.Client, cluster string, now ti
 	for i := range items {
 		s := &items[i]
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", s.Name, orDash(s.Status.ClusterName),
-			sinceTaken(now, snapTime(s)), orDash(s.Status.TakenFrom), humanBytes(s.Status.Size),
+			sinceTaken(now, s.TakenOrCreated()), orDash(s.Status.TakenFrom), humanBytes(s.Status.Size),
 			snapState(s), orDash(recipientTails(s.Status.Recipients)), orDash(s.Status.Location))
 	}
 	return tw.Flush()
@@ -274,13 +274,6 @@ func sinceTaken(now, t time.Time) string {
 		return "-"
 	}
 	return shortDuration(now.Sub(t)) + " ago"
-}
-
-func snapTime(s *osv1alpha1.EtcdSnapshot) time.Time {
-	if s.Status.TakenAt != nil {
-		return s.Status.TakenAt.Time
-	}
-	return s.CreationTimestamp.Time
 }
 
 // snapState is one word for the list: Verified, Unverified, Failed, Taking.
@@ -325,27 +318,16 @@ func openSnapshot(ctx context.Context, cl client.Client, s *osv1alpha1.EtcdSnaps
 			"here. Copy it off the volume first, then pass the file with --in or --from-file; "+
 			"https://metal.platform-kit.org/operate/day-2/restore-etcd/#copy-a-snapshot-from-a-pvc-sink has the commands", s.Name, s.Status.Location)
 	}
-	s3 := p.Spec.Sink.S3
-	secret := func(name string) (map[string][]byte, error) {
+	cfg, err := etcdbackup.S3ConfigFor(p.Spec.Sink.S3, func(name string) (map[string][]byte, error) {
 		sec := &corev1.Secret{}
 		if err := cl.Get(ctx, client.ObjectKey{Namespace: operatorNamespace, Name: name}, sec); err != nil {
 			return nil, fmt.Errorf("read the sink's Secret %s/%s (you need get on it, or download the object "+
 				"yourself and pass it with --in): %w", operatorNamespace, name, err)
 		}
 		return sec.Data, nil
-	}
-	creds, err := secret(s3.CredentialsSecretRef.Name)
+	})
 	if err != nil {
 		return nil, err
-	}
-	cfg := etcdbackup.S3Config{Endpoint: strings.TrimSuffix(s3.Endpoint, "/"), Bucket: s3.Bucket, Region: s3.Region,
-		PathStyle: s3.PathStyle, AccessKeyID: string(creds["accessKeyID"]), SecretAccessKey: string(creds["secretAccessKey"])}
-	if s3.CASecretRef != nil {
-		ca, err := secret(s3.CASecretRef.Name)
-		if err != nil {
-			return nil, err
-		}
-		cfg.CA = ca["ca.crt"]
 	}
 	sink, err := etcdbackup.NewS3Sink(cfg)
 	if err != nil {

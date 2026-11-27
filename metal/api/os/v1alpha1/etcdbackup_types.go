@@ -1,6 +1,8 @@
 package v1alpha1
 
 import (
+	"time"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )
@@ -306,6 +308,15 @@ type EtcdSnapshot struct {
 	Spec EtcdSnapshotSpec `json:"spec"`
 	// +optional
 	Status EtcdSnapshotStatus `json:"status,omitempty"`
+}
+
+// TakenOrCreated is when the snapshot was taken, or when the record was
+// created if it never was.
+func (s *EtcdSnapshot) TakenOrCreated() time.Time {
+	if s.Status.TakenAt != nil {
+		return s.Status.TakenAt.Time
+	}
+	return s.CreationTimestamp.Time
 }
 
 // +kubebuilder:object:root=true

@@ -125,21 +125,9 @@ func (b *EtcdBackups) sink(ctx context.Context, p *osv1alpha1.EtcdBackupPolicy) 
 		}
 		return etcdbackup.FileSink{Root: b.Dir, Name: b.VolumeName}, cluster + "/", nil
 	case s.S3 != nil:
-		creds, err := b.secretData(ctx, s.S3.CredentialsSecretRef.Name)
+		cfg, err := etcdbackup.S3ConfigFor(s.S3, func(name string) (map[string][]byte, error) { return b.secretData(ctx, name) })
 		if err != nil {
 			return nil, "", err
-		}
-		cfg := etcdbackup.S3Config{
-			Endpoint: strings.TrimSuffix(s.S3.Endpoint, "/"), Bucket: s.S3.Bucket, Region: s.S3.Region,
-			PathStyle: s.S3.PathStyle, AccessKeyID: string(creds["accessKeyID"]),
-			SecretAccessKey: string(creds["secretAccessKey"]),
-		}
-		if s.S3.CASecretRef != nil {
-			ca, err := b.secretData(ctx, s.S3.CASecretRef.Name)
-			if err != nil {
-				return nil, "", err
-			}
-			cfg.CA = ca["ca.crt"]
 		}
 		sink, err := etcdbackup.NewS3Sink(cfg)
 		if err != nil {
@@ -204,14 +192,6 @@ func snapshotState(s *osv1alpha1.EtcdSnapshot) etcdbackup.State {
 		return etcdbackup.Verified
 	}
 	return etcdbackup.Failed
-}
-
-// snapshotTime is when a snapshot was taken, or created when it never was.
-func snapshotTime(s *osv1alpha1.EtcdSnapshot) time.Time {
-	if s.Status.TakenAt != nil {
-		return s.Status.TakenAt.Time
-	}
-	return s.CreationTimestamp.Time
 }
 
 // +kubebuilder:rbac:groups=os.platform-kit.org,resources=etcdbackuppolicies,verbs=get;list;watch
@@ -279,7 +259,7 @@ func (r *EtcdBackupPolicyReconciler) reconcile(ctx context.Context, p *osv1alpha
 	for i := range snaps.Items {
 		s := &snaps.Items[i]
 		byName[s.Name] = s
-		recs = append(recs, etcdbackup.Record{Name: s.Name, Time: snapshotTime(s), State: snapshotState(s)})
+		recs = append(recs, etcdbackup.Record{Name: s.Name, Time: s.TakenOrCreated(), State: snapshotState(s)})
 	}
 	ret := etcdbackup.Retention{Count: int(cmp.Or(p.Spec.Retention.Count, 14)), KeepFailed: keepFailedSnapshots}
 	if p.Spec.Retention.MaxAge != nil {
@@ -307,7 +287,7 @@ func (r *EtcdBackupPolicyReconciler) reconcile(ctx context.Context, p *osv1alpha
 	// The summary, newest first.
 	kept := slices.DeleteFunc(slices.Clone(snaps.Items), func(s osv1alpha1.EtcdSnapshot) bool { return pruned[s.Name] })
 	slices.SortFunc(kept, func(a, b osv1alpha1.EtcdSnapshot) int {
-		return cmp.Or(snapshotTime(&b).Compare(snapshotTime(&a)), strings.Compare(b.Name, a.Name))
+		return cmp.Or(b.TakenOrCreated().Compare(a.TakenOrCreated()), strings.Compare(b.Name, a.Name))
 	})
 	st := &p.Status
 	st.LastSuccessfulSnapshot, st.ConsecutiveFailures = nil, 0
@@ -320,7 +300,7 @@ func (r *EtcdBackupPolicyReconciler) reconcile(ctx context.Context, p *osv1alpha
 			inProgress = true
 		case etcdbackup.Verified:
 			if st.LastSuccessfulSnapshot == nil {
-				st.LastSuccessfulSnapshot = &osv1alpha1.SnapshotReference{Name: s.Name, TakenAt: metav1.NewTime(snapshotTime(s))}
+				st.LastSuccessfulSnapshot = &osv1alpha1.SnapshotReference{Name: s.Name, TakenAt: metav1.NewTime(s.TakenOrCreated())}
 			}
 		case etcdbackup.Failed:
 			if st.LastSuccessfulSnapshot == nil {

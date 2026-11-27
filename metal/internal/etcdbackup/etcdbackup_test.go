@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
 	"github.com/dennisklein/platform-kit/metal/internal/etcdbackup/etcdbackuptest"
 )
 
@@ -250,6 +251,30 @@ func TestS3Sink(t *testing.T) {
 		_, err := NewS3Sink(bad)
 		require.Error(t, err, name)
 	}
+}
+
+// The operator and pk-metal read a policy's S3 sink the same way.
+func TestS3ConfigFor(t *testing.T) {
+	secrets := map[string]map[string][]byte{
+		"creds": {"accessKeyID": []byte("id"), "secretAccessKey": []byte("key")},
+		"ca":    {"ca.crt": []byte("PEM")},
+	}
+	secret := func(name string) (map[string][]byte, error) {
+		if d, ok := secrets[name]; ok {
+			return d, nil
+		}
+		return nil, errors.New("no Secret " + name)
+	}
+	s3 := &osv1alpha1.S3Sink{Endpoint: "https://minio:9000/", Bucket: "b", Region: "r", PathStyle: true,
+		CredentialsSecretRef: osv1alpha1.Reference{Name: "creds"}, CASecretRef: &osv1alpha1.Reference{Name: "ca"}}
+	c, err := S3ConfigFor(s3, secret)
+	require.NoError(t, err)
+	assert.Equal(t, S3Config{Endpoint: "https://minio:9000", Bucket: "b", Region: "r", PathStyle: true,
+		AccessKeyID: "id", SecretAccessKey: "key", CA: []byte("PEM")}, c)
+
+	s3.CASecretRef.Name = "gone"
+	_, err = S3ConfigFor(s3, secret)
+	require.ErrorContains(t, err, "no Secret gone")
 }
 
 func snapshotOf(b []byte) SnapshotFunc {

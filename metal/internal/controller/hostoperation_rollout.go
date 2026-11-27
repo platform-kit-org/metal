@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -82,31 +81,20 @@ func rolloutCovers(ro *osv1alpha1.TalosRollout, op *metalv1alpha1.HostOperation)
 // gateRollout is the executor's hook: called from Reconcile once the
 // approval gate is passed, it fails an operation the rollout it names does not
 // cover, before the operation starts. stop says Reconcile returns res, err.
-func (r *HostOperationReconciler) gateRollout(ctx context.Context, op *metalv1alpha1.HostOperation,
-	setCond func(string, metav1.ConditionStatus, string, string), flush func() error) (res ctrl.Result, stop bool, err error) {
+func (p *opPass) gateRollout() (res ctrl.Result, stop bool, err error) {
+	op := p.op
 	if op.Spec.RolloutRef == nil || op.Status.Baseline != nil {
 		return ctrl.Result{}, false, nil
 	}
-	why, err := r.rolloutRefusal(ctx, op)
+	why, err := p.r.rolloutRefusal(p.ctx, op)
 	if err != nil {
 		return ctrl.Result{}, true, err
 	}
 	if why == "" {
-		setCond(metalv1alpha1.ConditionApproved, metav1.ConditionTrue, metalv1alpha1.ReasonApproved,
+		p.setCond(metalv1alpha1.ConditionApproved, metav1.ConditionTrue, metalv1alpha1.ReasonApproved,
 			"covered by the approval of rollout "+op.Spec.RolloutRef.Name)
 		return ctrl.Result{}, false, nil
 	}
-	msg := why + "; nothing was done to the machine"
-	key := "rollout"
-	if len(op.Spec.Actions) > 0 {
-		key = op.Spec.Actions[0].Key()
-	}
-	op.Status.Steps = append(op.Status.Steps, metalv1alpha1.OperationStep{
-		Action: key, Phase: "Failed", Message: msg, FinishedAt: ptrTime(metav1.Now()),
-	})
-	setCond(metalv1alpha1.ConditionExecuted, metav1.ConditionFalse, metalv1alpha1.ReasonRolloutRefused, msg)
-	if r.Recorder != nil {
-		r.Recorder.Eventf(op, nil, corev1.EventTypeWarning, metalv1alpha1.ReasonRolloutRefused, "Execute", "%s", msg)
-	}
-	return ctrl.Result{}, true, client.IgnoreNotFound(flush())
+	res, err = p.refuse(metalv1alpha1.ReasonRolloutRefused, why+"; nothing was done to the machine")
+	return res, true, err
 }

@@ -187,7 +187,7 @@ func bootObj(o mOp) *metalv1alpha1.HostOperation {
 	op.Spec.HostRef.Name = "host-a"
 	op.Spec.Actions = actions
 	for i := range o.Steps {
-		op.Status.Steps = append(op.Status.Steps, metalv1alpha1.OperationStep{Action: actionName(actions[i]), Phase: "Succeeded"})
+		op.Status.Steps = append(op.Status.Steps, metalv1alpha1.OperationStep{Action: actions[i].Key(), Phase: "Succeeded"})
 	}
 	return op
 }

@@ -232,46 +232,30 @@ func (r *HostOperationReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return r.expire(ctx, op)
 	}
 
-	orig := op.DeepCopy()
-	setCond := func(t string, s metav1.ConditionStatus, reason, msg string) {
-		setCondition(&op.Status.Conditions, op.Generation, t, s, reason, msg)
-	}
-	// host is the operation's Host once this pass read it; the audit trail
-	// names its self-disruption allowance when the operation starts.
-	var host *metalv1alpha1.Host
-	flush := func() error {
-		phase.StampOperation(op)
-		if err := updateStatusIfChanged(ctx, r.Client, op, &orig.Status, &op.Status); err != nil {
-			return err
-		}
-		r.auditOperation(ctx, orig, op, host)
-		orig = op.DeepCopy()
-		return nil
-	}
+	p := &opPass{r: r, ctx: ctx, op: op, orig: op.DeepCopy()}
 
 	// An abort of an operation that has not started ends it at once:
 	// nothing was done to the machine, so there is nothing to undo.
 	if by, asked := op.Annotations[metalv1alpha1.AnnotationAbort]; asked && op.Status.Baseline == nil {
-		return r.finishAborted(op, req.NamespacedName, setCond, flush,
-			abortMessage(by, "before it started", nil, nil)+"; nothing was done to the machine")
+		return p.finishAborted(abortMessage(by, "before it started", nil, nil) + "; nothing was done to the machine")
 	}
 
 	if op.ApprovalRequired() && op.Spec.Approval.ApprovedBy == "" {
-		setCond(metalv1alpha1.ConditionApproved, metav1.ConditionFalse,
+		p.setCond(metalv1alpha1.ConditionApproved, metav1.ConditionFalse,
 			metalv1alpha1.ReasonAwaitingApproval, awaitingApprovalMessage(op))
-		return ctrl.Result{}, client.IgnoreNotFound(flush())
+		return ctrl.Result{}, client.IgnoreNotFound(p.flush())
 	}
-	if res, stop, err := r.gateWaiver(ctx, op, setCond, flush); stop { // hostoperation_waiver.go
+	if res, stop, err := p.gateWaiver(); stop { // hostoperation_waiver.go
 		return res, err
 	}
 	if op.ApprovalRequired() {
-		setCond(metalv1alpha1.ConditionApproved, metav1.ConditionTrue,
+		p.setCond(metalv1alpha1.ConditionApproved, metav1.ConditionTrue,
 			metalv1alpha1.ReasonApproved, "approved by "+op.Spec.Approval.ApprovedBy)
 	} else {
-		setCond(metalv1alpha1.ConditionApproved, metav1.ConditionTrue,
+		p.setCond(metalv1alpha1.ConditionApproved, metav1.ConditionTrue,
 			metalv1alpha1.ReasonApprovalNotRequired, "proposed by "+op.Spec.ProposedBy)
 	}
-	if res, stop, err := r.gateRollout(ctx, op, setCond, flush); stop { // hostoperation_rollout.go
+	if res, stop, err := p.gateRollout(); stop { // hostoperation_rollout.go
 		return res, err
 	}
 
@@ -281,15 +265,7 @@ func (r *HostOperationReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	// front of it and stopping at it would leave a machine half-changed.
 	if op.Status.Baseline == nil {
 		if i, key := unimplementedAction(op); key != "" {
-			msg := fmt.Sprintf("action %s is not implemented by this operator version yet; nothing was done to the machine", key)
-			op.Status.Steps = append(op.Status.Steps, metalv1alpha1.OperationStep{
-				Action: key, Phase: "Failed", Message: msg, FinishedAt: ptrTime(metav1.Now()),
-			})
-			setCond(metalv1alpha1.ConditionExecuted, metav1.ConditionFalse,
-				metalv1alpha1.ReasonStepFailed, fmt.Sprintf("step %d/%d %s: %s", i+1, len(op.Spec.Actions), key, msg))
-			r.Recorder.Eventf(op, nil, corev1.EventTypeWarning, metalv1alpha1.ReasonStepFailed,
-				"Execute", "step %s failed: %s", key, msg)
-			return ctrl.Result{}, client.IgnoreNotFound(flush())
+			return p.failStep(i, "action "+key+" is not implemented by this operator version yet; nothing was done to the machine")
 		}
 	}
 
@@ -298,21 +274,19 @@ func (r *HostOperationReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	if pred, err := r.activePredecessor(ctx, op); err != nil {
 		return ctrl.Result{}, err
 	} else if pred != "" {
-		setCond(metalv1alpha1.ConditionExecuted, metav1.ConditionUnknown,
-			metalv1alpha1.ReasonOperationQueued, "operation "+pred+" holds host "+op.Spec.HostRef.Name)
-		return ctrl.Result{}, client.IgnoreNotFound(flush())
+		return p.hold(metalv1alpha1.ReasonOperationQueued, "operation "+pred+" holds host "+op.Spec.HostRef.Name, 0)
 	}
 
-	read := &metalv1alpha1.Host{}
-	if err := r.Get(ctx, client.ObjectKey{Name: op.Spec.HostRef.Name}, read); err != nil {
+	host := &metalv1alpha1.Host{}
+	if err := r.Get(ctx, client.ObjectKey{Name: op.Spec.HostRef.Name}, host); err != nil {
 		if !apierrors.IsNotFound(err) {
 			return ctrl.Result{}, err
 		}
-		setCond(metalv1alpha1.ConditionExecuted, metav1.ConditionUnknown,
-			metalv1alpha1.ReasonHostNotFound, fmt.Sprintf("host %s not found", op.Spec.HostRef.Name))
-		return ctrl.Result{}, client.IgnoreNotFound(flush())
+		return p.hold(metalv1alpha1.ReasonHostNotFound, "host "+op.Spec.HostRef.Name+" not found", 0)
 	}
-	host = read
+	// The audit trail names the host's self-disruption allowance when the
+	// operation starts.
+	p.host = host
 
 	// Passes run side by side, but never two on one host or on one BMC: the
 	// queue check below and the baseline write are one step only while no
@@ -330,9 +304,8 @@ func (r *HostOperationReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	// stopping between a mount and its boot leaves the machine worse off.
 	if op.Status.Baseline == nil {
 		if _, ok := inMaintenance(host); ok {
-			setCond(metalv1alpha1.ConditionExecuted, metav1.ConditionUnknown, metalv1alpha1.ReasonHostInMaintenance,
-				maintenanceNote(host)+"; this operation starts when it is given back: "+endMaintenanceCommand(host))
-			return ctrl.Result{}, client.IgnoreNotFound(flush())
+			return p.hold(metalv1alpha1.ReasonHostInMaintenance,
+				maintenanceNote(host)+"; this operation starts when it is given back: "+endMaintenanceCommand(host), 0)
 		}
 		// The gates before the start, in this order: an abort ends the
 		// operation (above), a rollout that does not cover it refuses it
@@ -342,7 +315,7 @@ func (r *HostOperationReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		// Executed=Unknown, which a rollout reads as still running, never
 		// as failed. Work on a machine a window covers starts only while one
 		// of its windows is open (window.go).
-		if res, held, err := r.holdForWindow(ctx, op, host, setCond, flush); held {
+		if res, held, err := p.holdForWindow(); held {
 			return res, err
 		}
 		// A power action on a machine the operator itself runs on waits, like
@@ -353,9 +326,7 @@ func (r *HostOperationReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 				return ctrl.Result{}, err
 			}
 			if msg != "" {
-				setCond(metalv1alpha1.ConditionExecuted, metav1.ConditionUnknown, metalv1alpha1.ReasonSelfDisruption,
-					msg+". This operation starts once that is resolved")
-				return ctrl.Result{RequeueAfter: r.guardInterval()}, client.IgnoreNotFound(flush())
+				return p.guardHold(metalv1alpha1.ReasonSelfDisruption, msg)
 			}
 		}
 	}
@@ -369,7 +340,7 @@ func (r *HostOperationReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 	bctx, cancel := context.WithTimeout(ctx, budget)
 	defer cancel()
-	x := &exec{r: r, op: op, host: host, flush: flush}
+	x := &exec{r: r, op: op, host: host, flush: p.flush}
 	defer x.close()
 
 	// guarded is the step the guards just decided on at the start, which
@@ -384,9 +355,7 @@ func (r *HostOperationReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		if pred, err := r.activePredecessorUncached(ctx, op); err != nil {
 			return ctrl.Result{}, err
 		} else if pred != "" {
-			setCond(metalv1alpha1.ConditionExecuted, metav1.ConditionUnknown,
-				metalv1alpha1.ReasonOperationQueued, "operation "+pred+" holds host "+op.Spec.HostRef.Name)
-			return ctrl.Result{}, client.IgnoreNotFound(flush())
+			return p.hold(metalv1alpha1.ReasonOperationQueued, "operation "+pred+" holds host "+op.Spec.HostRef.Name, 0)
 		}
 		// The BMC baseline is taken only when a step uses the BMC: an
 		// operation made of Talos and Kubernetes steps runs while the BMC is
@@ -397,12 +366,10 @@ func (r *HostOperationReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			if obs, hold = x.observe(bctx); hold != "" {
 				// Nothing else wakes the operation: the Host does not
 				// change when only this pass failed to reach its BMC.
-				setCond(metalv1alpha1.ConditionExecuted, metav1.ConditionUnknown, metalv1alpha1.ReasonNoReachablePath,
-					redact.String(hold)+"; retrying")
-				return ctrl.Result{RequeueAfter: r.waitInterval()}, client.IgnoreNotFound(flush())
+				return p.hold(metalv1alpha1.ReasonNoReachablePath, redact.String(hold)+"; retrying", r.waitInterval())
 			}
 		}
-		if res, started, err := r.begin(ctx, op, host, obs, setCond, flush); !started {
+		if res, started, err := p.begin(obs); !started {
 			return res, err
 		}
 		guarded = recordedSteps(op)
@@ -412,29 +379,20 @@ func (r *HostOperationReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	// The error text is masked before it is recorded anywhere: a BMC's
 	// refusal can echo a grant URL and its credentials (internal/redact).
 	fail := func(i int, err error) (ctrl.Result, error) {
-		name := actionName(op.Spec.Actions[i])
 		msg := redact.String(err.Error())
 		// The media the run left mounted go now, before the grants end
 		// (forget, below), so the mount drops before its URL dies.
 		if cleanup := x.ejectAfterFailure(bctx, i); cleanup != "" {
 			msg += "; after the failure: " + cleanup
 		}
-		op.Status.Steps = append(op.Status.Steps, metalv1alpha1.OperationStep{
-			Action: name, Phase: "Failed", Message: msg, FinishedAt: ptrTime(metav1.Now()),
-		})
-		setCond(metalv1alpha1.ConditionExecuted, metav1.ConditionFalse,
-			metalv1alpha1.ReasonStepFailed, fmt.Sprintf("step %d/%d %s: %s", i+1, len(op.Spec.Actions), name, msg))
-		r.Recorder.Eventf(op, nil, corev1.EventTypeWarning, metalv1alpha1.ReasonStepFailed,
-			"Execute", "step %s failed: %s", name, msg)
 		r.forget(req.NamespacedName)
-		return ctrl.Result{}, client.IgnoreNotFound(flush())
+		return p.failStep(i, msg)
 	}
 	// wait leaves step i in flight and comes back after the given pause.
 	wait := func(i int, msg string, after time.Duration) (ctrl.Result, error) {
-		msg = redact.String(msg)
-		setCond(metalv1alpha1.ConditionExecuted, metav1.ConditionUnknown, metalv1alpha1.ReasonExecuting,
-			fmt.Sprintf("step %d/%d %s: %s", i+1, len(op.Spec.Actions), actionName(op.Spec.Actions[i]), msg))
-		if err := flush(); err != nil {
+		p.setCond(metalv1alpha1.ConditionExecuted, metav1.ConditionUnknown, metalv1alpha1.ReasonExecuting,
+			p.label(i)+": "+redact.String(msg))
+		if err := p.flush(); err != nil {
 			return ctrl.Result{}, client.IgnoreNotFound(err)
 		}
 		return ctrl.Result{RequeueAfter: after}, nil
@@ -461,8 +419,7 @@ func (r *HostOperationReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			return wait(i, "aborting, undoing what the operation left behind: "+err.Error()+
 				". Delete the operation to stop trying", r.waitInterval())
 		}
-		where := fmt.Sprintf("before step %d/%d %s", i+1, len(op.Spec.Actions), actionName(op.Spec.Actions[i]))
-		return r.finishAborted(op, req.NamespacedName, setCond, flush, abortMessage(by, where, undone, failed))
+		return p.finishAborted(abortMessage(by, "before "+p.label(i), undone, failed))
 	}
 
 	start := recordedSteps(op)
@@ -496,7 +453,6 @@ func (r *HostOperationReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		if i > start && !budgetLeft(bctx, r.powerSettle()+passMargin) {
 			return wait(i, "pass budget spent, continuing", passResume)
 		}
-		name := actionName(op.Spec.Actions[i])
 		// A step that takes a control plane down is decided again right
 		// before it acts: a drain in front of it can take long, and etcd can
 		// lose a member meanwhile. A step that already acted finishes.
@@ -531,13 +487,12 @@ func (r *HostOperationReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			return wait(i, st.waiting, r.waitInterval())
 		}
 		op.Status.Steps = append(op.Status.Steps, metalv1alpha1.OperationStep{
-			Action: name, Phase: "Succeeded", FinishedAt: ptrTime(metav1.Now()),
+			Action: op.Spec.Actions[i].Key(), Phase: "Succeeded", FinishedAt: ptrTime(metav1.Now()),
 		})
-		setCond(metalv1alpha1.ConditionExecuted, metav1.ConditionUnknown, metalv1alpha1.ReasonExecuting,
-			fmt.Sprintf("step %d/%d %s done", i+1, len(op.Spec.Actions), name))
+		p.setCond(metalv1alpha1.ConditionExecuted, metav1.ConditionUnknown, metalv1alpha1.ReasonExecuting, p.label(i)+" done")
 		// Progress is persisted before the next mutating call — the record a
 		// resumed pass continues from.
-		if err := flush(); err != nil {
+		if err := p.flush(); err != nil {
 			return ctrl.Result{}, client.IgnoreNotFound(err)
 		}
 	}
@@ -550,11 +505,80 @@ func (r *HostOperationReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 	r.forget(req.NamespacedName)
-	setCond(metalv1alpha1.ConditionExecuted, metav1.ConditionTrue,
+	p.setCond(metalv1alpha1.ConditionExecuted, metav1.ConditionTrue,
 		metalv1alpha1.ReasonStepsSucceeded, fmt.Sprintf("%d steps", len(op.Spec.Actions)))
 	r.Recorder.Eventf(op, nil, corev1.EventTypeNormal, metalv1alpha1.ReasonStepsSucceeded,
 		"Execute", "%d steps succeeded on host %s", len(op.Spec.Actions), op.Spec.HostRef.Name)
-	return ctrl.Result{}, client.IgnoreNotFound(flush())
+	return ctrl.Result{}, client.IgnoreNotFound(p.flush())
+}
+
+// opPass is one pass of Reconcile over one operation: what the gates and
+// the steps of the pass share.
+type opPass struct {
+	r    *HostOperationReconciler
+	ctx  context.Context
+	op   *metalv1alpha1.HostOperation
+	orig *metalv1alpha1.HostOperation
+	// host is the operation's Host once the pass read it.
+	host *metalv1alpha1.Host
+}
+
+func (p *opPass) setCond(t string, s metav1.ConditionStatus, reason, msg string) {
+	setCondition(&p.op.Status.Conditions, p.op.Generation, t, s, reason, msg)
+}
+
+// flush writes the status when it changed, and the audit trail of the
+// change.
+func (p *opPass) flush() error {
+	phase.StampOperation(p.op)
+	if err := updateStatusIfChanged(p.ctx, p.r.Client, p.op, &p.orig.Status, &p.op.Status); err != nil {
+		return err
+	}
+	p.r.auditOperation(p.ctx, p.orig, p.op, p.host)
+	p.orig = p.op.DeepCopy()
+	return nil
+}
+
+// label names step i in a message: "step 2/5 drain".
+func (p *opPass) label(i int) string {
+	return fmt.Sprintf("step %d/%d %s", i+1, len(p.op.Spec.Actions), p.op.Spec.Actions[i].Key())
+}
+
+// hold keeps the operation where it is, with Executed=Unknown for reason
+// and msg, and comes back after the pause (zero: on the next event). A hold
+// is never a failure: a rollout reads it as still running.
+func (p *opPass) hold(reason, msg string, after time.Duration) (ctrl.Result, error) {
+	p.setCond(metalv1alpha1.ConditionExecuted, metav1.ConditionUnknown, reason, msg)
+	return ctrl.Result{RequeueAfter: after}, client.IgnoreNotFound(p.flush())
+}
+
+// guardHold holds an operation that a guard does not let start yet.
+func (p *opPass) guardHold(reason, msg string) (ctrl.Result, error) {
+	return p.hold(reason, msg+". This operation starts once that is resolved", p.r.guardInterval())
+}
+
+// end ends the operation with step as its last record: Executed=False for
+// reason with condMsg, and a Warning event of action with eventMsg.
+func (p *opPass) end(step metalv1alpha1.OperationStep, reason, condMsg, action, eventMsg string) (ctrl.Result, error) {
+	step.FinishedAt = ptrTime(metav1.Now())
+	p.op.Status.Steps = append(p.op.Status.Steps, step)
+	p.setCond(metalv1alpha1.ConditionExecuted, metav1.ConditionFalse, reason, condMsg)
+	p.r.Recorder.Eventf(p.op, nil, corev1.EventTypeWarning, reason, action, "%s", eventMsg)
+	return ctrl.Result{}, client.IgnoreNotFound(p.flush())
+}
+
+// failStep ends the operation: step i failed with msg.
+func (p *opPass) failStep(i int, msg string) (ctrl.Result, error) {
+	key := p.op.Spec.Actions[i].Key()
+	return p.end(metalv1alpha1.OperationStep{Action: key, Phase: "Failed", Message: msg},
+		metalv1alpha1.ReasonStepFailed, p.label(i)+": "+msg, "Execute", "step "+key+" failed: "+msg)
+}
+
+// refuse ends an operation that a gate refuses before it starts, for
+// reason with msg.
+func (p *opPass) refuse(reason, msg string) (ctrl.Result, error) {
+	return p.end(metalv1alpha1.OperationStep{Action: p.op.Spec.Actions[0].Key(), Phase: "Failed", Message: msg},
+		reason, msg, "Execute", msg)
 }
 
 // begin starts an operation: it records, before the first mutating call, the
@@ -567,37 +591,35 @@ func (r *HostOperationReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 // The guard counts the other control planes that are down or being taken
 // down; two passes on two control planes deciding at the same time would
 // each count the other as up, and both would start.
-func (r *HostOperationReconciler) begin(ctx context.Context, op *metalv1alpha1.HostOperation, host *metalv1alpha1.Host,
-	obs bmc.System, setCond func(string, metav1.ConditionStatus, string, string), flush func() error) (res ctrl.Result, started bool, err error) {
+func (p *opPass) begin(obs bmc.System) (res ctrl.Result, started bool, err error) {
+	r, op, host := p.r, p.op, p.host
 	if (r.Self != nil || r.Guard != nil) && disrupts(op) {
 		r.startMu.Lock()
 		defer r.startMu.Unlock()
-		msg, err := r.Self.Check(ctx, host)
+		msg, err := r.Self.Check(p.ctx, host)
 		if err != nil {
 			return ctrl.Result{}, false, err
 		}
 		if msg != "" {
-			setCond(metalv1alpha1.ConditionExecuted, metav1.ConditionUnknown, metalv1alpha1.ReasonSelfDisruption,
-				msg+". This operation starts once that is resolved")
-			return ctrl.Result{RequeueAfter: r.guardInterval()}, false, client.IgnoreNotFound(flush())
+			res, err := p.guardHold(metalv1alpha1.ReasonSelfDisruption, msg)
+			return res, false, err
 		}
 		// Every Talos cluster, not only the operator's own: one control
 		// plane down at a time, and only while etcd stays fully healthy
 		// without it.
-		if msg, err = r.Guard.Check(ctx, host, op); err != nil {
+		if msg, err = r.Guard.Check(p.ctx, host, op); err != nil {
 			return ctrl.Result{}, false, err
 		}
 		if msg != "" {
-			setCond(metalv1alpha1.ConditionExecuted, metav1.ConditionUnknown, metalv1alpha1.ReasonClusterDisruption,
-				msg+". This operation starts once that is resolved")
-			return ctrl.Result{RequeueAfter: r.guardInterval()}, false, client.IgnoreNotFound(flush())
+			res, err := p.guardHold(metalv1alpha1.ReasonClusterDisruption, msg)
+			return res, false, err
 		}
 	}
-	if refused, err := r.recordBootStart(ctx, op, host); err != nil {
+	if refused, err := r.recordBootStart(p.ctx, op, host); err != nil {
 		return ctrl.Result{}, false, err
 	} else if refused != "" {
-		setCond(metalv1alpha1.ConditionExecuted, metav1.ConditionFalse, metalv1alpha1.ReasonHostNotClaimed, refused)
-		return ctrl.Result{}, false, client.IgnoreNotFound(flush())
+		p.setCond(metalv1alpha1.ConditionExecuted, metav1.ConditionFalse, metalv1alpha1.ReasonHostNotClaimed, refused)
+		return ctrl.Result{}, false, client.IgnoreNotFound(p.flush())
 	}
 	op.Status.Baseline = &metalv1alpha1.OperationBaseline{
 		PowerState: string(obs.PowerState),
@@ -606,8 +628,8 @@ func (r *HostOperationReconciler) begin(ctx context.Context, op *metalv1alpha1.H
 	if !obs.LastResetTime.IsZero() {
 		op.Status.Baseline.LastResetTime = &metav1.MicroTime{Time: obs.LastResetTime}
 	}
-	setCond(metalv1alpha1.ConditionExecuted, metav1.ConditionUnknown, metalv1alpha1.ReasonExecuting, "")
-	if err := flush(); err != nil {
+	p.setCond(metalv1alpha1.ConditionExecuted, metav1.ConditionUnknown, metalv1alpha1.ReasonExecuting, "")
+	if err := p.flush(); err != nil {
 		return ctrl.Result{}, false, client.IgnoreNotFound(err)
 	}
 	return ctrl.Result{}, true, nil
@@ -834,15 +856,10 @@ func (r *HostOperationReconciler) opNow(ctx context.Context, key types.Namespace
 
 // finishAborted ends the operation as Aborted, with the record of it as the
 // last step.
-func (r *HostOperationReconciler) finishAborted(op *metalv1alpha1.HostOperation, key types.NamespacedName,
-	setCond func(string, metav1.ConditionStatus, string, string), flush func() error, msg string) (ctrl.Result, error) {
-	op.Status.Steps = append(op.Status.Steps, metalv1alpha1.OperationStep{
-		Action: "abort", Phase: "Aborted", Message: msg, FinishedAt: ptrTime(metav1.Now()),
-	})
-	setCond(metalv1alpha1.ConditionExecuted, metav1.ConditionFalse, metalv1alpha1.ReasonAborted, msg)
-	r.Recorder.Eventf(op, nil, corev1.EventTypeWarning, metalv1alpha1.ReasonAborted, "Abort", "%s", msg)
-	r.forget(key)
-	return ctrl.Result{}, client.IgnoreNotFound(flush())
+func (p *opPass) finishAborted(msg string) (ctrl.Result, error) {
+	p.r.forget(client.ObjectKeyFromObject(p.op))
+	return p.end(metalv1alpha1.OperationStep{Action: "abort", Phase: "Aborted", Message: msg},
+		metalv1alpha1.ReasonAborted, msg, "Abort", msg)
 }
 
 // abortMessage says who stopped the operation, where, and what was undone.
@@ -1205,11 +1222,6 @@ func unimplementedAction(op *metalv1alpha1.HostOperation) (int, string) {
 	return 0, ""
 }
 
-// actionName is the union key of one action — the step name in status.
-func actionName(a metalv1alpha1.HostOperationAction) string {
-	return a.Key()
-}
-
 // approvalDomain names what the Host is blocked on while this operation awaits
 // its gate — the spec reason (BiosConvergence, Provisioning) or, for
 // human-requested ops, the first action key in Approval(<domain>) shape.
@@ -1218,7 +1230,7 @@ func approvalDomain(op *metalv1alpha1.HostOperation) string {
 		return op.Spec.Reason
 	}
 	if len(op.Spec.Actions) > 0 {
-		if n := actionName(op.Spec.Actions[0]); n != "unknown" {
+		if n := op.Spec.Actions[0].Key(); n != "unknown" {
 			return strings.ToUpper(n[:1]) + n[1:]
 		}
 	}

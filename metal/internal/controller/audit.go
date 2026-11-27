@@ -43,7 +43,7 @@ func rolloutObject(ro *osv1alpha1.TalosRollout) audit.Object {
 func opPlan(op *metalv1alpha1.HostOperation) string {
 	keys := make([]string, len(op.Spec.Actions))
 	for i, a := range op.Spec.Actions {
-		keys[i] = actionName(a)
+		keys[i] = a.Key()
 	}
 	plan := strings.Join(keys, ", ")
 	if op.Spec.Reason != "" {
@@ -97,13 +97,13 @@ func (r *HostOperationReconciler) auditOperation(ctx context.Context, before, af
 		if i >= len(actions) || after.Finished() {
 			return
 		}
-		l.StepStarted(o, i, actionName(actions[i]))
+		l.StepStarted(o, i, actions[i].Key())
 		// The cluster guard is asked again before every step that takes
 		// the node down: its override is a decision for each of them.
 		if i > 0 && disruptsAction(actions[i]) {
 			if _, ok := guardOverride(after, metalv1alpha1.AnnotationOverrideClusterGuard); ok {
 				l.GuardLiftedAtStep(o, metalv1alpha1.AnnotationOverrideClusterGuard,
-					after.Annotations[metalv1alpha1.AnnotationOverrideClusterGuard], i, actionName(actions[i]))
+					after.Annotations[metalv1alpha1.AnnotationOverrideClusterGuard], i, actions[i].Key())
 			}
 		}
 	}

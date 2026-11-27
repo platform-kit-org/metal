@@ -194,6 +194,7 @@ If you have no permission to read one of the last four kinds, the plan says that
 <CliExit cmd="approve" />
 
 An answer other than `y` or `yes` gives code 1 and the message `not approved; nothing changed`.
+The operation then still waits for approval. To refuse it, use [](cli:abort).
 With several names, the code is 1 if the command did not approve one or more of the operations.
 
 ## Related
@@ -203,4 +204,4 @@ With several names, the code is 1 if the command did not approve one or more of 
 - [](howto:approve-hold-retry) is the procedure.
 - [](cli:rollout) approves a [](kind:TalosRollout), which covers the operations of all its nodes.
 - [](cli:top) approves with the key `a`.
-- [](cli:abort) stops an approved operation.
+- [](cli:abort) stops an operation, or refuses an operation that waits for approval.

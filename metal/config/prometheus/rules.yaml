@@ -40,7 +40,7 @@ spec:
           annotations:
             runbook_url: https://metal.platform-kit.org/operate/runbooks/operation-held/
             summary: "HostOperation {{ $labels.namespace }}/{{ $labels.operation }} has waited for approval for more than a day"
-            description: "pk-metal approve {{ $labels.namespace }}/{{ $labels.operation }} to run it, or delete it to refuse it."
+            description: "pk-metal approve {{ $labels.namespace }}/{{ $labels.operation }} to run it, or pk-metal abort --reason <why> {{ $labels.namespace }}/{{ $labels.operation }} to refuse it."
         - alert: PkMetalOperationBlocked
           # Queued behind another operation or waiting for a maintenance
           # window is the plan working. Every other reason waits for a person:

@@ -307,6 +307,10 @@ func approve(ctx context.Context, cl client.Client, a approval) error {
 
 	p := prompt{Yes: a.Yes, Interactive: a.Interactive, In: a.In, Out: a.Out, Window: a.Window}
 	if err := p.confirm(ctx, "\nApprove as "+a.User+"?", "approved"); err != nil {
+		if errors.Is(err, errDeclined) {
+			// A no leaves the proposal waiting; abort is how to refuse it.
+			return fmt.Errorf("%w. It still waits; to refuse it: pk-metal abort --reason \"<why>\" %s", err, ref)
+		}
 		return err
 	}
 	read := func() (client.Object, error) {

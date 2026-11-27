@@ -13,7 +13,6 @@ export const layout = [
   { label: 'Start', dir: 'start', ordered: true },
   { label: 'Tutorials', dir: 'learn', ordered: true },
   { label: 'Concepts', dir: 'concepts', ordered: true },
-  { label: 'Workflows', dir: 'workflows', ordered: true },
   {
     label: 'Operate',
     groups: [

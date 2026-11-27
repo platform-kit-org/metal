@@ -25,15 +25,7 @@ Go from one odd number of control planes to another: 1, 3 or 5.
 
 ## The rules
 
-| After the removal | Without acknowledgement |
-| --- | --- |
-| No member left | Refused |
-| Fewer healthy members than a majority | Refused |
-| An even number of members (2, 4) | Refused |
-| The member is the leader while others leave | Waits. The leader leaves last. |
-| Another control plane joins or leaves | Waits |
-
-A cluster of 4 survives one failure, as a cluster of 3 does. Prefer odd sizes.
+The operator refuses or holds an unsafe removal. See [Leave rules](concept:node-lifecycle#leave-rules) and [Sizes](concept:node-lifecycle#sizes).
 
 <Callout type="note">
 `pk-metal scale --apply` makes and deletes HostClaims. If your claims are in git, change the files there, and use the command without `--apply` to read the plan. See [](concept:gitops).

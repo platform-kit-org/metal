@@ -24,7 +24,7 @@ It maps what you know to the objects of pk-metal.
 | --- | --- |
 | Inventory row, xCAT node table, CMDB entry | [](kind:Asset): serial, BMC MAC, asset tag, credentials |
 | dhcpd or dnsmasq reservations for the BMCs | The [ledger](concept:ledger): BMC MAC to `https://<address>` |
-| BMC passwords in a vault | A Secret named by the Asset `credentialsRef`. See [](flow:credential-rotation). |
+| BMC passwords in a vault | A Secret named by the Asset `credentialsRef`. See [](howto:rotate-bmc-credentials). |
 | Output of `ipmitool fru` or `lshw` | [](kind:ManagementEndpoint) and [](kind:Host), written by the operator |
 | Kickstart file of one host | [](kind:TalosNode): address, install disk, links, role |
 | `%include`, `group_vars` | [](kind:TalosCluster): versions, endpoint, patches |
@@ -36,7 +36,7 @@ It maps what you know to the objects of pk-metal.
 | `ssh root@node` | `talosctl -n <address>` |
 | `yum install` on the node | System extensions in the schematic of the TalosCluster |
 | Run the playbook again | Edit the TalosNode or TalosCluster. A rollout applies it. See [](concept:drift). |
-| Rolling reboot with a script | A TalosRollout of kind `Reboot`. See [](flow:day-2-change). |
+| Rolling reboot with a script | A TalosRollout of kind `Reboot`. See [](concept:rollouts). |
 | `etcdctl snapshot save` in cron | [](kind:EtcdBackupPolicy). See [](concept:etcd-backup). |
 | Maintenance calendar | [](kind:MaintenanceWindow). See [](concept:maintenance-windows). |
 
@@ -74,7 +74,7 @@ HostOperations are in the namespace `pk-metal`. Give `-n pk-metal` to `kubectl`.
 | Write a claim without `spec.os` | Nothing. The Host phase is Assigned. |
 | Write a claim with `spec.os` | The operator proposes a boot. After approval, **it overwrites the install disk**. |
 | Approve an operation | It runs. |
-| Delete a claim | The operator drains the node, removes it from etcd and wipes it. Then it stops the machine. See [](flow:release-and-reuse). |
+| Delete a claim | The operator drains the node, removes it from etcd and wipes it. Then it stops the machine. See [](concept:release-and-wipe). |
 | Edit a TalosNode or TalosCluster | The operator renders a new config. A rollout applies it after approval. |
 | Use `ipmitool` or the BMC web interface | Allowed. The Host gets `Drifted=True`, as information. |
 
@@ -85,5 +85,5 @@ A GitOps tool that prunes a deleted file does the same. The release wipes the no
 
 ## Next
 
-- Follow one machine from the rack to a node: [](flow:rack-to-node).
+- Follow one machine from the rack to a node: [](howto:install-hosts).
 - Try all of it on one workstation: [](tut:lab-first-cluster).

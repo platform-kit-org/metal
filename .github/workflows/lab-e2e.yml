@@ -20,7 +20,7 @@
 # one-machine Talos cluster from kind and backs its etcd up to the backup
 # volume; the run wipes etcd on the control plane and restores it through
 # pk-metal restore, an approval by a second identity, and the upload
-# (docs site: workflows/disaster-recovery).
+# (docs site: operate/day-2/restore-etcd).
 #
 # The scale round also runs on request only (workflow_dispatch with scale
 # set), in its own job on five machines: control planes leave and join one at

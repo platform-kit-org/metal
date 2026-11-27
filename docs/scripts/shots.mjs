@@ -36,7 +36,6 @@ const defaults = [
   'start/how-to-read/',
   'learn/lab-first-cluster/',
   'concepts/approval/',
-  'workflows/rack-to-node/',
   'operate/day-2/upgrade-talos/',
   'operate/runbooks/host-mismatch/',
   'reference/kinds/host/',

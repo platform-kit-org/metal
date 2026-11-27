@@ -2,9 +2,9 @@
 import Default from '@astrojs/starlight/components/Head.astro';
 import CategoryStyles from '../CategoryStyles.astro';
 
-// One-word titles (Host, Pivot) are hard to tell apart in search results and tabs:
-// a kind, a controller and a workflow page add their type to the <title>.
-const typeLabel: Record<string, string> = { kind: 'Kind', controller: 'Controller', workflow: 'Workflow' };
+// One-word titles (Host, Asset) are hard to tell apart in search results and tabs:
+// a kind page and a controller page add their type to the <title>.
+const typeLabel: Record<string, string> = { kind: 'Kind', controller: 'Controller' };
 const route = Astro.locals.starlightRoute;
 const label = typeLabel[(route.entry.data as { type?: string }).type ?? ''];
 const title = route.head.find((h) => h.tag === 'title');

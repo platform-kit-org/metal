@@ -280,7 +280,7 @@ terms:
     kind: noun
     domain: redfish
     forms: [managed account, managed accounts]
-    see: flow:credential-rotation
+    see: howto:rotate-bmc-credentials
     related: [credential-rotation, endpointprofile]
     def: >-
       The BMC account that the operator makes and rotates. Its password is in
@@ -1425,7 +1425,7 @@ terms:
     kind: noun
     domain: ops
     forms: [day 2, day-2]
-    see: flow:day-2-change
+    see: howto:day-2
     related: [day-1, rollout]
     def: >-
       All work after the install, while workloads run: reboots, upgrades,
@@ -1594,7 +1594,7 @@ terms:
     kind: noun
     domain: ops
     forms: [credential rotation, password rotation]
-    see: flow:credential-rotation
+    see: howto:rotate-bmc-credentials
     related: [endpointprofile, credentialsref]
     def: >-
       The change of the BMC password to a new value that the operator manages.

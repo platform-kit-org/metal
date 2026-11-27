@@ -7,7 +7,7 @@ const route = Astro.locals.starlightRoute;
 const data = route.entry.data as any;
 const typeLabel: Record<string, string> = {
   start: 'Start', kind: 'Kind', controller: 'Controller', cli: 'Command', lab: 'Lab',
-  concept: 'Concept', workflow: 'Workflow', howto: 'How-to', runbook: 'Runbook',
+  concept: 'Concept', howto: 'How-to', runbook: 'Runbook',
   tutorial: 'Tutorial', reference: 'Reference', project: 'Project',
 };
 const eyebrow = data.eyebrow ?? (data.day ? `Day ${data.day}` : typeLabel[data.type] ?? '');

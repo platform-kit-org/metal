@@ -3,6 +3,7 @@ title: Node lifecycle
 description: A node becomes a member when a claim gives it a machine. Control planes join and leave etcd one at a time, decided on the live member list.
 type: concept
 xref: { cat: concept, id: node-lifecycle }
+redirectFrom: [workflows/add-and-remove-nodes/]
 sidebar:
   order: 21
 sources:
@@ -11,25 +12,12 @@ sources:
   - /repo/metal/internal/controller/hostoperation_reinstall.go
 ---
 
-import Figure from '../../../components/diagram/Figure.astro';
-import Box from '../../../components/diagram/Box.astro';
-import Edge from '../../../components/diagram/Edge.astro';
+import AddRemoveNodes from '../../../components/explainers/AddRemoveNodes.astro';
 
 A [](kind:TalosNode) is a member of its cluster while a claim gives it a machine.
 For etcd, the operator does not trust these counts. Before a control plane joins or leaves, it reads the member list from etcd.
 
-<Figure title="A TalosNode is written, then a claim gives it a machine, it boots and joins etcd as a learner, is promoted to voter, and later leaves etcd and is reset when the claim or the TalosNode is deleted." caption="The life of a control plane. Joins and leaves are one at a time." width={720} height={170} wide>
-  <Box x={5} y={30} w={130} h={54} label="Written" sub="unassignedNodes" />
-  <Box x={150} y={30} w={130} h={54} label="Claimed" sub="member" />
-  <Box x={295} y={30} w={130} h={54} label="Learner" sub="EtcdJoinWaiting" variant="warn" />
-  <Box x={440} y={30} w={130} h={54} label="Voter" sub="Ready" variant="ok" />
-  <Box x={585} y={30} w={130} h={54} label="Left, reset" sub="RemovalBlocked" />
-  <Edge points={[[135, 57], [150, 57]]} />
-  <Edge points={[[280, 57], [295, 57]]} />
-  <Edge points={[[425, 57], [440, 57]]} />
-  <Edge points={[[570, 57], [585, 57]]} />
-  <Edge points={[[505, 84], [505, 130], [360, 130], [360, 84]]} variant="muted" label="reinstall" at={[432, 148]} />
-</Figure>
+<AddRemoveNodes />
 
 ## Terms
 
@@ -39,12 +27,25 @@ For etcd, the operator does not trust these counts. Before a control plane joins
   <dt>Join serialization</dt>
   <dd>A control plane boot waits with `EtcdJoinWaiting` while another control plane boots or leaves. It also waits while a member is not healthy, a member is a learner, or etcd has a member with the same name.</dd>
   <dt>Leave verdict</dt>
-  <dd>A control plane leaves only if what stays is safe: not empty, a healthy majority, an odd count. The leader leaves last.</dd>
+  <dd>The decision whether a control plane can leave etcd now. See [Leave rules](#leave-rules).</dd>
   <dt>ack-etcd-risk</dt>
   <dd>The annotation `metal.platform-kit.org/ack-etcd-risk` on the claim or the TalosNode. Its value is your username and your reason for an unsafe removal.</dd>
   <dt>RemovalBlocked</dt>
   <dd>The condition of a TalosNode that is deleted. It waits for the release of its machine or the removal of its etcd member.</dd>
 </dl>
+
+## Leave rules
+
+| After the removal | Without `metal.platform-kit.org/ack-etcd-risk` |
+| --- | --- |
+| No member stays | Refused |
+| Fewer healthy members than a majority | Refused |
+| An even number of members | Refused |
+| The leader leaves with other control planes | Waits, the leader leaves last |
+| Another control plane joins or leaves | Waits |
+| The member list cannot be read | Waits |
+
+[](cli:scale), [](cli:replace) and [](cli:reinstall) accept `--ack-etcd-risk "<reason>"`.
 
 ## Sizes
 
@@ -73,5 +74,5 @@ Use 1, 3 or 5. An even count costs one more machine for no more safety.
 
 ## Do it
 
-- [](flow:add-and-remove-nodes)
+- [](howto:add-a-node), [](howto:remove-a-node), [](howto:scale-control-planes)
 - [](howto:replace-a-node)

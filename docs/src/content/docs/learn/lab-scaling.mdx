@@ -198,7 +198,7 @@ etcd has three members and no learner. `kubectl --kubeconfig .lab/workload.kubec
    kubectl get host pklab0005
    ```
 
-See [](howto:release-a-host) and [](flow:release-and-reuse).
+See [](howto:release-a-host) and [](concept:release-and-wipe).
 
 <Checkpoint>
 The cluster has four nodes. The Host `pklab0005` is `Available`, and it has no annotation `metal.platform-kit.org/disk-not-wiped`.
@@ -307,7 +307,7 @@ The installs and the etcd changes are slower. The end-to-end test does not run t
 
 - You give the size. The operator finds the machines and the order: [](cli:scale).
 - Control planes join and leave one at a time, so that etcd keeps a majority.
-- A removed machine comes back to the pool with a wiped disk: [](flow:release-and-reuse).
+- A removed machine comes back to the pool with a wiped disk: [](concept:release-and-wipe).
 - A replace releases the old machine first. Then it installs the node on the new machine.
 
 ## Next

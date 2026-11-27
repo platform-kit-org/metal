@@ -4,6 +4,7 @@ description: One planned change to one machine, as a list of actions. A person a
 type: kind
 eyebrow: Kind · metal.platform-kit.org/v1alpha1
 xref: { cat: kind, id: HostOperation }
+redirectFrom: [workflows/approval-flow/]
 sources:
   - /repo/metal/api/v1alpha1/hostoperation_types.go
   - /repo/metal/internal/controller/hostoperation_controller.go
@@ -54,7 +55,7 @@ These controllers propose operations:
 
 You approve with [](cli:approve), stop with [](cli:abort) and run again with [](cli:retry).
 The actions are in the [action catalog](act:index), for example [](act:PowerCycle) and [](act:TalosUpgrade).
-[](concept:approval) explains why a person approves each change. [](flow:approval-flow) shows the full path.
+[](concept:approval) explains why a person approves each change.
 
 ## Lifecycle
 

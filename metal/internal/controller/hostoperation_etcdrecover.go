@@ -46,21 +46,11 @@ import (
 
 // +kubebuilder:rbac:groups=os.platform-kit.org,resources=talosclusters;talosnodes;etcdsnapshots,verbs=get;list;watch
 
-// defaultEtcdRecoverTimeout mirrors the schema default of etcdRecover.
-const defaultEtcdRecoverTimeout = 2 * time.Hour
-
 // recoverRequestGrace is how long after Talos accepted a recovery the step
 // waits for etcd before it asks again. A repeated request while the first
 // is restoring the snapshot is answered with AlreadyExists, or with a
 // sequence error that the step waits out too.
 const recoverRequestGrace = 2 * time.Minute
-
-func etcdRecoverTimeout(a *metalv1alpha1.EtcdRecoverAction) time.Duration {
-	if a.TimeoutSeconds > 0 {
-		return time.Duration(a.TimeoutSeconds) * time.Second
-	}
-	return defaultEtcdRecoverTimeout
-}
 
 // etcdState is what one control plane said about its etcd.
 type etcdState int

@@ -37,26 +37,13 @@ import (
 // that finds the boot time moved on does not ask a second time.
 //
 // A node that does not answer is a wait, not a failure: a reboot is exactly
-// that, and the step's budget (talosStepBudget) ends a wait that lasts too
-// long. A node that answers and refuses fails the step.
+// that, and the step's budget (HostOperationAction.Budget) ends a wait that
+// lasts too long. A node that answers and refuses fails the step.
 
-// Default budgets of the Talos steps; the waits name theirs in the action.
-const (
-	// talosRestartTimeout bounds a reboot, a reset, a shutdown, or a config
-	// apply that reboots, from the first look to the node running again.
-	talosRestartTimeout = 20 * time.Minute
-	// talosUpgradeTimeout adds the image pull and the install to a restart.
-	talosUpgradeTimeout = 45 * time.Minute
-	// talosUpgradePass is the pass budget of an operation that upgrades: the
-	// node acknowledges the request only once it pulled the image, which
-	// machineapi bounds at 30 minutes.
-	talosUpgradePass = 35 * time.Minute
-	// defaultDrainTimeout, defaultNodeReadyTimeout and
-	// defaultEtcdHealthyTimeout mirror the schema defaults.
-	defaultDrainTimeout       = 900 * time.Second
-	defaultNodeReadyTimeout   = 1800 * time.Second
-	defaultEtcdHealthyTimeout = 900 * time.Second
-)
+// talosUpgradePass is the pass budget of an operation that upgrades: the
+// node acknowledges the request only once it pulled the image, which
+// machineapi bounds at 30 minutes.
+const talosUpgradePass = 35 * time.Minute
 
 // talosNode resolves an action's nodeRef: the TalosNode, its cluster, and
 // the access to both. The node must be the one the Host runs: the name is
@@ -157,30 +144,6 @@ func (x *exec) talosStep(ctx context.Context, i int) (st stepState, ok bool, err
 		return stepState{}, false, nil
 	}
 	return st, true, err
-}
-
-// talosStepBudget is how long a Talos or Kubernetes step may keep waiting;
-// ok is false for the other actions.
-func talosStepBudget(a metalv1alpha1.HostOperationAction) (time.Duration, bool) {
-	secs := func(s int32, def time.Duration) time.Duration {
-		if s > 0 {
-			return time.Duration(s) * time.Second
-		}
-		return def
-	}
-	switch {
-	case a.Drain != nil:
-		return secs(a.Drain.TimeoutSeconds, defaultDrainTimeout), true
-	case a.WaitNodeReady != nil:
-		return secs(a.WaitNodeReady.TimeoutSeconds, defaultNodeReadyTimeout), true
-	case a.WaitEtcdHealthy != nil:
-		return secs(a.WaitEtcdHealthy.TimeoutSeconds, defaultEtcdHealthyTimeout), true
-	case a.TalosUpgrade != nil:
-		return talosUpgradeTimeout, true
-	case a.TalosReboot != nil, a.TalosShutdown != nil, a.TalosReset != nil, a.TalosApplyConfig != nil:
-		return talosRestartTimeout, true
-	}
-	return 0, false
 }
 
 // cordon makes the node unschedulable, and records it when this operation

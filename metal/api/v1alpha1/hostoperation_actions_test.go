@@ -1,11 +1,17 @@
 package v1alpha1
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	"sigs.k8s.io/yaml"
 )
 
 // Every union member is an optional pointer with its own JSON key, which is
@@ -53,4 +59,39 @@ func TestActionNodeName(t *testing.T) {
 		"applyBios", "flashFirmware", "stageFirmware"}, none)
 	assert.Empty(t, HostOperationAction{}.NodeName())
 	assert.Equal(t, "cp-2", HostOperationAction{EtcdRecover: &EtcdRecoverAction{NodeRef: Reference{Name: "cp-2"}}}.NodeName())
+}
+
+// An action that the API server did not store (a plan that pk-metal shows
+// before it proposes) gets the budget that the schema default gives a stored
+// one.
+func TestBudgetDefaultsAreTheSchemaDefaults(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "config", "crd", "metal.platform-kit.org_hostoperations.yaml"))
+	require.NoError(t, err)
+	crd := &apiextensionsv1.CustomResourceDefinition{}
+	require.NoError(t, yaml.Unmarshal(raw, crd))
+	schema := crd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties["spec"].Properties["actions"].Items.Schema.Properties
+	typ := reflect.TypeFor[HostOperationAction]()
+	var checked []string
+	for i := range typ.NumField() {
+		key := ActionKeys()[i]
+		timeout, ok := schema[key].Properties["timeoutSeconds"]
+		if !ok || timeout.Default == nil {
+			continue
+		}
+		var def int64
+		require.NoError(t, json.Unmarshal(timeout.Default.Raw, &def))
+		var a HostOperationAction
+		reflect.ValueOf(&a).Elem().Field(i).Set(reflect.New(typ.Field(i).Type.Elem()))
+		got, ok := a.Budget()
+		assert.True(t, ok, key)
+		assert.Equal(t, time.Duration(def)*time.Second, got, key)
+		checked = append(checked, key)
+	}
+	assert.ElementsMatch(t, []string{"awaitCheckIn", "drain", "waitNodeReady", "waitEtcdHealthy", "etcdRecover"}, checked)
+
+	got, ok := HostOperationAction{Drain: &DrainAction{TimeoutSeconds: 60}}.Budget()
+	assert.True(t, ok)
+	assert.Equal(t, time.Minute, got, "a timeout the action names wins")
+	_, ok = HostOperationAction{PowerCycle: &PowerCycleAction{}}.Budget()
+	assert.False(t, ok, "the manager's flags budget the BMC actions")
 }

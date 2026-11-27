@@ -29,9 +29,6 @@ import (
 	"github.com/dennisklein/platform-kit/metal/internal/redact"
 )
 
-// defaultCheckInTimeout mirrors the schema default for awaitCheckIn.
-const defaultCheckInTimeout = 30 * time.Minute
-
 // step converges action i to its goal, or reports what it waits for.
 func (x *exec) step(ctx context.Context, i int) (stepState, error) {
 	a := x.op.Spec.Actions[i]
@@ -161,37 +158,27 @@ func (x *exec) stepStart(i int) time.Time {
 	return time.Now()
 }
 
-// stepBudget is how long step i may keep waiting before it fails. A graceful
-// powerOff gets its graceful window on top of the forced one's.
+// stepBudget is how long step i may keep waiting before it fails: the
+// action's own budget (HostOperationAction.Budget), else the manager's power
+// timeout. A graceful powerOff gets its graceful window on top of the forced
+// one's.
 func (x *exec) stepBudget(i int) time.Duration {
-	if a := x.op.Spec.Actions[i].AwaitCheckIn; a != nil {
-		return checkInTimeout(a)
+	a := x.op.Spec.Actions[i]
+	if d, ok := a.Budget(); ok {
+		return d
 	}
-	if a := x.op.Spec.Actions[i].EtcdRecover; a != nil {
-		return etcdRecoverTimeout(a)
+	if a.PowerOff != nil {
+		return gracefulWindow(a.PowerOff) + x.r.powerTimeout()
 	}
-	if a := x.op.Spec.Actions[i].PowerOff; a != nil {
-		return gracefulWindow(a) + x.r.powerTimeout()
-	}
-	if a := x.op.Spec.Actions[i].InsertMedia; a != nil && a.BootAssetRef == nil {
+	if a.InsertMedia != nil && a.InsertMedia.BootAssetRef == nil {
 		// The image is downloaded into the media store first.
 		return fetchTimeout + x.r.powerTimeout()
-	}
-	if d, ok := talosStepBudget(x.op.Spec.Actions[i]); ok {
-		return d
 	}
 	return x.r.powerTimeout()
 }
 
 func gracefulWindow(a *metalv1alpha1.PowerOffAction) time.Duration {
 	return time.Duration(a.GracefulTimeoutSeconds) * time.Second
-}
-
-func checkInTimeout(a *metalv1alpha1.AwaitCheckInAction) time.Duration {
-	if a.TimeoutSeconds > 0 {
-		return time.Duration(a.TimeoutSeconds) * time.Second
-	}
-	return defaultCheckInTimeout
 }
 
 // power reads the system's reported power state.
@@ -674,7 +661,8 @@ func (x *exec) grantTTL(i int) time.Duration {
 	ttl := grantMargin + x.r.powerTimeout()
 	for _, a := range x.op.Spec.Actions[i:] {
 		if a.AwaitCheckIn != nil {
-			ttl += checkInTimeout(a.AwaitCheckIn)
+			d, _ := a.Budget()
+			ttl += d
 		}
 	}
 	return ttl

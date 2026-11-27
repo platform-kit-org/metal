@@ -666,7 +666,7 @@ func (r *HostClaimReconciler) checkInTimeoutSeconds() int32 {
 	if r.CheckInTimeoutSeconds > 0 {
 		return r.CheckInTimeoutSeconds
 	}
-	return int32(defaultCheckInTimeout.Seconds())
+	return int32(metalv1alpha1.DefaultCheckInTimeout.Seconds())
 }
 
 func claimLabels(claim *metalv1alpha1.HostClaim, purpose string) map[string]string {

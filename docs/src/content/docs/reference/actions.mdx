@@ -54,7 +54,7 @@ Each entry has exactly one action. The [](ctrl:hostoperation) runs the actions i
 | [](act:Cordon) | `cordon` | Kubernetes | no | none |
 | [](act:Drain) | `drain` | Kubernetes | no | 15 min |
 | [](act:Uncordon) | `uncordon` | Kubernetes | no | none |
-| [](act:DeleteKubernetesNode) | `deleteKubernetesNode` | Kubernetes | no | none |
+| [](act:DeleteKubernetesNode) | `deleteKubernetesNode` | Kubernetes | no | 5 min |
 | [](act:TalosReboot) | `talosReboot` | Talos | yes | 20 min |
 | [](act:TalosShutdown) | `talosShutdown` | Talos | yes | 20 min |
 | [](act:TalosUpgrade) | `talosUpgrade` | Talos | yes | 45 min |
@@ -243,7 +243,7 @@ Marks the Kubernetes Node as schedulable again.
 
 ### DeleteKubernetesNode
 
-<Badge text="Kubernetes API" variant="tip" />
+<Badge text="Kubernetes API" variant="tip" /> <Badge text="Budget 5 min" />
 
 Deletes the Node object from the Kubernetes API of the cluster. This is the last step when a node leaves a cluster.
 A Node that is already gone is a success.

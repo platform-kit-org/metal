@@ -30,19 +30,13 @@ The operator does nothing to this machine. No install, no BIOS change, no profil
 
 <Steps>
 
-1. Read the message. It has the two values.
+1. Read the message. It has the two values: the value of the Asset, and the value that the BMC reports.
 
    ```sh
    kubectl describe managementendpoint sim-0001
    ```
 
-2. Read the serial and the BMC MAC from the BMC itself.
-
-   ```sh
-   pk-metal check --insecure https://192.0.2.21
-   ```
-
-3. Compare them with the [](kind:Asset) and the ledger line.
+2. Compare them with the [](kind:Asset) and the ledger line.
 
 </Steps>
 

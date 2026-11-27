@@ -179,8 +179,7 @@ func RunTree(t *testing.T, baseURL string, f *sim.Fixture) {
 	t.Run("etags-and-preconditions", func(t *testing.T) {
 		tr.t = t
 		if !f.Protocol.ETags {
-			// Without ETags a PATCH carrying an If-Match the service never
-			// issued must still go through: there is nothing to compare.
+			// Without ETags the service sends no tag.
 			resp, _ := tr.do(http.MethodGet, "/redfish/v1/Systems/"+f.Systems[0].ID, nil, nil)
 			assert.Empty(t, resp.Header.Get("ETag"), "the fixture declares no ETags")
 			return

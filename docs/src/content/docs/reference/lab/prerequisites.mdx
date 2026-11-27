@@ -188,6 +188,7 @@ A member of the `docker` group has the same rights as root on that workstation.
 | `curl` | Install the package. |
 | The Docker daemon answers | Install Docker Engine and start it. |
 | Docker is Docker Engine, as root | Remove `podman-docker`. Do not use Docker Desktop or rootless Docker. |
+| The kernel forwards IPv4 packets (`net.ipv4.ip_forward=1`) | Restart Docker. Do not set `"ip-forward": false` in `/etc/docker/daemon.json`. |
 | The kind configuration is readable | Set or unset [`PK_LAB_KIND_CONFIG`](lab:page/lab-yaml#environment-variables). |
 | cgroup v2 | Boot with `systemd.unified_cgroup_hierarchy=1`, or use an older node image. See [](lab:page/troubleshooting). |
 | `/dev/kvm` is usable, if the machines use KVM | Set virtualization to on in the firmware. Join the group `kvm`. Or set `accel: tcg`. |

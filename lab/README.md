@@ -446,7 +446,6 @@ changes, on the workstation:
 
 - a bridge `pkbr0` with the address `10.77.0.1/24`, and one tap per machine,
   owned by you so that QEMU runs without root;
-- `net.ipv4.ip_forward=1`, if it was off; `down` turns it off again;
 - iptables rules, each with the comment `pk-metal-lab`: accept forwarded
   traffic from and to the bridge (in `DOCKER-USER`, or `FORWARD` without
   Docker), accept input to `10.77.0.1` from the bridge and from Docker's

@@ -145,7 +145,7 @@ type Patch struct {
 	Inline string `yaml:"inline"`
 }
 
-// The lab network. lab/net.sh (PK_LAB_ADDRESS) and lab/kind.yaml use the same
+// The lab network. lab/net.sh and lab/kind.yaml use the same
 // gateway address; it is fixed here rather than in the spec so that the three
 // cannot drift apart.
 var (

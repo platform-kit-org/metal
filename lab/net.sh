@@ -13,8 +13,7 @@
 # reported instead.
 #
 # What it changes on the workstation, as root:
-#   - a bridge (pkbr0 with 10.77.0.1/24 by default) and one tap per machine;
-#   - net.ipv4.ip_forward=1, if it was off (down turns it off again);
+#   - a bridge (pkbr0 with 10.77.0.1/24) and one tap per machine;
 #   - iptables rules, each with the comment pk-metal-lab: ACCEPT for traffic
 #     from and to the bridge (DOCKER-USER, or FORWARD without Docker), ACCEPT
 #     for input to 10.77.0.1 from the bridge and from Docker's bridges, and a
@@ -31,25 +30,18 @@ HELP="usage: $SCRIPT up [tap...] | down | status [tap...]
 
   up      create the bridge, the named taps and the firewall rules (idempotent)
   down    remove what up created: marked taps on the bridge, the bridge, the rules
-  status  show the bridge, the taps and the rules; non-zero when something is missing
+  status  show the bridge, the taps and the rules; non-zero when something is missing"
 
-environment variables:
-  PK_LAB_BRIDGE     bridge name (default: pkbr0)
-  PK_LAB_ADDRESS    the workstation's address on the bridge, with prefix (default: 10.77.0.1/24)
-  PK_LAB_TAP_USER   owner of the taps (default: the invoking user, \$SUDO_USER under sudo)"
-
-BRIDGE=${PK_LAB_BRIDGE:-pkbr0}
-ADDRESS=${PK_LAB_ADDRESS:-10.77.0.1/24}
-TAP_USER=${PK_LAB_TAP_USER:-${SUDO_USER:-$(id -un)}}
+# The renderer (metal/internal/lab) and lab/kind.yaml use the same address.
+BRIDGE=pkbr0
+ADDRESS=10.77.0.1/24
+SUBNET=10.77.0.0/24
+# The taps belong to the user who runs the lab, also under sudo.
+TAP_USER=${SUDO_USER:-$(id -un)}
 
 # The mark on everything this script creates: the alias of an interface, the
 # comment of a firewall rule. `down` trusts nothing else.
 MARK=pk-metal-lab
-
-# Whether up turned IPv4 forwarding on is remembered here, so that down can turn
-# it off again only in that case. /run does not survive a reboot, and neither
-# does the sysctl, so the two cannot disagree.
-STATE_DIR=/run/pk-metal-lab
 
 usage() { echo "$HELP" >&2; }
 
@@ -84,21 +76,6 @@ preflight() {
   fi
 }
 
-# The network of an address in CIDR notation: 10.77.0.1/24 -> 10.77.0.0/24.
-# Only the prefix lengths that fall on a byte boundary are supported, which is
-# all a lab needs and keeps this readable.
-subnet_of() {
-  local address=$1 ip prefix a b c
-  ip=${address%/*}
-  prefix=${address#*/}
-  IFS=. read -r a b c _ <<<"$ip"
-  case "$prefix" in
-    24) echo "$a.$b.$c.0/24" ;;
-    16) echo "$a.$b.0.0/16" ;;
-    *) die "PK_LAB_ADDRESS=$address: only /24 and /16 are supported, e.g.: PK_LAB_ADDRESS=10.77.0.1/24" ;;
-  esac
-}
-
 link_exists() { ip link show dev "$1" >/dev/null 2>&1; }
 
 link_is_ours() {
@@ -123,8 +100,7 @@ forward_chain() {
 # the given forward chain. up, down and status all read this one list, so they
 # cannot disagree about what the lab's rules are.
 rules() {
-  local chain=$1 bridge=$2 address=$3 subnet
-  subnet=$(subnet_of "$address")
+  local chain=$1 bridge=$2 address=$3
   # VM to VM (bridged frames pass through FORWARD when br_netfilter is loaded,
   # which docker and kind do), VM to the uplink and VM to the kind network.
   echo "filter $chain -i $bridge -j ACCEPT"
@@ -139,7 +115,7 @@ rules() {
   echo "filter INPUT -i $bridge -d ${address%/*}/32 -j ACCEPT"
   echo "filter INPUT -i br-+ -d ${address%/*}/32 -j ACCEPT"
   # Egress for the VMs: image pulls, time, DNS.
-  echo "nat POSTROUTING -s $subnet ! -o $bridge -j MASQUERADE"
+  echo "nat POSTROUTING -s $SUBNET ! -o $bridge -j MASQUERADE"
 }
 
 # Rules earlier versions of this script made and the current one no longer
@@ -177,7 +153,7 @@ up_bridge() {
   local bridge=$1 address=$2
   if link_exists "$bridge"; then
     link_is_ours "$bridge" || die "an interface named $bridge exists and was not made by this script.
-  Remove it (sudo ip link del $bridge) or give the lab another name: PK_LAB_BRIDGE=pkbr1 $SCRIPT up"
+  Remove it: sudo ip link del $bridge"
   else
     step "bridge $bridge"
     # A fixed MAC: a bridge otherwise takes the lowest MAC among its ports and
@@ -229,18 +205,17 @@ up_firewalld() {
     "")
       step "firewalld: $bridge into the zone trusted (runtime only)"
       as_root firewall-cmd --quiet --zone=trusted --add-interface="$bridge"
-      as_root mkdir -p "$STATE_DIR"
-      as_root touch "$STATE_DIR/firewalld"
       ;;
     *) die "firewalld has $bridge in the zone $zone, which drops the lab's traffic.
   Move it: sudo firewall-cmd --zone=trusted --change-interface=$bridge, then rerun: $SCRIPT up" ;;
   esac
 }
 
+# A bridge of the same name that is not ours keeps its zone.
 down_firewalld() {
   local bridge=$1
-  [[ -e $STATE_DIR/firewalld ]] || return 0
   firewalld_running || return 0
+  ! link_exists "$bridge" || link_is_ours "$bridge" || return 0
   if [[ $(firewalld_zone "$bridge") == trusted ]]; then
     step "firewalld: $bridge out of the zone trusted"
     as_root firewall-cmd --quiet --zone=trusted --remove-interface="$bridge" || true
@@ -291,21 +266,10 @@ warn_foreign_drops() {
   done < <(foreign_drop_chains "$bridge")
 }
 
-up_forwarding() {
-  if [[ $(cat /proc/sys/net/ipv4/ip_forward) != 1 ]]; then
-    step "enable IPv4 forwarding"
-    as_root mkdir -p "$STATE_DIR"
-    as_root touch "$STATE_DIR/ip_forward"
-    as_root sysctl -q -w net.ipv4.ip_forward=1
-  fi
-}
-
 up() {
   local bridge=$1 address=$2 user=$3
   shift 3
   local chain tap table rule_chain rule
-  id -u "$user" >/dev/null 2>&1 \
-    || die "user $user does not exist. Name the owner of the taps: PK_LAB_TAP_USER=<user> $SCRIPT up"
   [[ -c /dev/net/tun ]] \
     || die "/dev/net/tun is missing. Load the module: sudo modprobe tun"
 
@@ -313,13 +277,12 @@ up() {
   for tap in "$@"; do
     up_tap "$tap" "$bridge" "$user"
   done
-  up_forwarding
 
   chain=$(forward_chain)
   step "firewall rules (forwarding in $chain)"
   while read -r table rule_chain rule; do
     # $rule is a list of iptables arguments built by rules() from this script's
-    # own constants and the two validated settings; it is split on purpose.
+    # own constants; it is split on purpose.
     # shellcheck disable=SC2086
     add_rule "$table" "$rule_chain" $rule
   done < <(rules "$chain" "$bridge" "$address")
@@ -371,12 +334,6 @@ down() {
     step "remove bridge $bridge"
     as_root ip link del dev "$bridge"
   fi
-
-  if [[ -e $STATE_DIR/ip_forward ]]; then
-    step "disable IPv4 forwarding (up had enabled it)"
-    as_root sysctl -q -w net.ipv4.ip_forward=0
-  fi
-  as_root rm -rf "$STATE_DIR"
   echo "lab network down" >&2
 }
 

@@ -231,6 +231,8 @@ kvm_usable() { [[ -r /dev/kvm && -w /dev/kvm ]]; }
 
 net_tools_present() { have ip && have iptables; }
 
+ip_forward_on() { [[ $(</proc/sys/net/ipv4/ip_forward) == 1 ]]; }
+
 # The workstation's CPU architecture as Go and Talos name it.
 host_arch() {
   case "$(uname -m)" in
@@ -425,6 +427,11 @@ doctor() {
     check "docker runs as root (rootless Docker is not supported)" \
       "the lab's network expects the kind node on a host bridge and Docker's rules in the host firewall; rootless Docker gives neither. Use the system Docker Engine: unset DOCKER_HOST, or docker context use default" \
       docker_is_rootful || missing=$((missing + 1))
+    # The machines' traffic is routed through the workstation. Docker Engine
+    # turns IPv4 forwarding on when it starts; lab/net.sh does not.
+    check "IPv4 forwarding is on (Docker Engine turns it on)" \
+      "restart Docker: sudo systemctl restart docker. Do not set \"ip-forward\": false in /etc/docker/daemon.json" \
+      ip_forward_on || missing=$((missing + 1))
   else
     missing=$((missing + 1))
   fi
@@ -458,7 +465,7 @@ doctor() {
   # sudo -v only refreshes sudo's timestamp and runs nothing as root, but it can
   # ask for the password here, in a command that otherwise changes nothing.
   check "sudo (the lab network needs root; this may ask for your password)" \
-    "run from a terminal where sudo can ask for the password, or configure passwordless sudo for ip, iptables, sysctl, nft and firewall-cmd" \
+    "run from a terminal where sudo can ask for the password, or configure passwordless sudo for ip, iptables, nft and firewall-cmd" \
     sudo_usable || missing=$((missing + 1))
   if firewalld_active; then
     # firewalld (RHEL, Fedora) keeps its own nftables table, and its reject

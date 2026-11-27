@@ -94,6 +94,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if p := r.URL.Path; len(p) > 1 && strings.HasSuffix(p, "/") {
 		r.URL.Path = strings.TrimRight(p, "/")
 	}
+	if err := s.st.checkReachable(); err != nil {
+		s.fail(w, err)
+		return
+	}
 	if !s.authorized(r) {
 		w.Header().Set("WWW-Authenticate", `Basic realm="redfish"`)
 		s.fail(w, &Error{

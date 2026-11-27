@@ -23,10 +23,6 @@ func (s *Server) updateRoutes() {
 }
 
 func (s *Server) updateService(w http.ResponseWriter, r *http.Request) {
-	if _, err := s.st.Manager(r.Context()); err != nil { // reachability gate
-		s.fail(w, err)
-		return
-	}
 	doc := resource("#UpdateService.v1_14_1.UpdateService", updateServiceURI, "UpdateService", "Update Service")
 	doc["ServiceEnabled"] = true
 	doc["FirmwareInventory"] = link(firmwareInventoryURI)

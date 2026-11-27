@@ -150,6 +150,14 @@ func (s *State) reachable() error {
 	return nil
 }
 
+// checkReachable is reachable for a caller that does not hold the lock: the
+// HTTP tier asks it before each request.
+func (s *State) checkReachable() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.reachable()
+}
+
 // system finds a fixture system by id.
 func (f *Fixture) system(id string) *FixtureSystem {
 	for i := range f.Systems {

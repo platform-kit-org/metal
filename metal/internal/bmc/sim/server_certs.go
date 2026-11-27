@@ -41,10 +41,6 @@ func (s *Server) certRoutes() {
 }
 
 func (s *Server) certificateService(w http.ResponseWriter, r *http.Request) {
-	if _, err := s.st.Manager(r.Context()); err != nil { // reachability gate
-		s.fail(w, err)
-		return
-	}
 	doc := resource("#CertificateService.v1_0_6.CertificateService", certServiceURI, "CertificateService", "Certificate Service")
 	doc["CertificateLocations"] = link(certServiceURI + "/CertificateLocations")
 	doc["Actions"] = map[string]any{
@@ -181,10 +177,6 @@ func (s *Server) securityService(w http.ResponseWriter, r *http.Request) {
 // httpsCert mirrors the iBMC's HttpsCert shape: the served certificate's
 // identity, the pending CSR (null when none), and the action set.
 func (s *Server) httpsCert(w http.ResponseWriter, r *http.Request) {
-	if _, err := s.st.Manager(r.Context()); err != nil { // reachability gate
-		s.fail(w, err)
-		return
-	}
 	self := managerURI + "/SecurityService/HttpsCert"
 	var serverCert any
 	if leaf := s.st.ServedLeaf(); leaf != nil {
@@ -272,10 +264,6 @@ func (s *Server) importServerCertificate(w http.ResponseWriter, r *http.Request)
 // smcSSLCert mirrors the X12's SSLCert shape — including the vendor's
 // VaildFrom typo, verbatim.
 func (s *Server) smcSSLCert(w http.ResponseWriter, r *http.Request) {
-	if _, err := s.st.Manager(r.Context()); err != nil { // reachability gate
-		s.fail(w, err)
-		return
-	}
 	doc := resource("#SmcSSLCert.v1_0_0.SmcSSLCert", smcSSLCertURI, "SSLCert", "SSL Certificate")
 	doc["Actions"] = map[string]any{
 		"#SmcSSLCert.Upload": map[string]any{

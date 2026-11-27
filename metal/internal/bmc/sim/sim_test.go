@@ -139,14 +139,14 @@ func selfSigned(t *testing.T, cn string) (certPEM, keyPEM []byte) {
 }
 
 func TestFaultInjection(t *testing.T) {
-	f, err := sim.LoadFixture("supermicro-x12")
-	require.NoError(t, err)
-	st := sim.NewState(f)
+	w, st := newWire(t, "supermicro-x12", nil)
 	ctx := context.Background()
 
 	st.SetFault(sim.FaultUnreachable, true)
-	_, err = st.Systems(ctx)
+	_, err := st.Systems(ctx)
 	assert.Error(t, err, "unreachable fault must fail reads")
+	resp, _ := w.get("/redfish/v1")
+	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode, "unreachable fault must fail every request, also the service root")
 	st.SetFault(sim.FaultUnreachable, false)
 
 	// The lying oracle: power off, but the BMC keeps reporting On.

@@ -15,21 +15,25 @@ Each runbook has the same parts: symptoms, impact, diagnosis, fix and verificati
 
 Each alert links to one runbook in its `runbook_url` annotation.
 
-| Alert | Runbook |
-| --- | --- |
-| `PkMetalMetricsAbsent` | [](rb:management-cluster-lost) |
-| `PkMetalAdmissionGateDegraded` | [](rb:admission-gate-degraded) |
-| `PkMetalReconcileFailing`, `PkMetalReconcilePanicked` | [](rb:reconcile-failing) |
-| `PkMetalOperationWorkersBusy` | [](rb:workers-busy) |
-| `PkMetalOperationFailed` | [](rb:operation-failed) |
-| `PkMetalOperationStuck` | [](rb:operation-stuck) |
-| `PkMetalOperationBlocked`, `PkMetalApprovalWaiting` | [](rb:operation-held) |
-| `PkMetalBMCUnreachable` | [](rb:bmc-unreachable) |
-| `PkMetalNodeNotReady` | [](rb:node-not-ready) |
-| `PkMetalClusterUnavailable` | [](rb:cluster-unavailable) |
-| `PkMetalEtcdBackupStale`, `PkMetalEtcdBackupMissing` | [](rb:backup-failing) |
-| `PkMetalCredentialsExpiring` | [](rb:credentials-not-renewed) |
-| `PkMetalRolloutStalled`, `PkMetalRolloutFailed` | [](rb:rollout-paused) |
+| Alert | Fires when | Runbook |
+| --- | --- | --- |
+| `PkMetalMetricsAbsent` | Prometheus did not scrape the manager, for 10 minutes | [](rb:management-cluster-lost) |
+| `PkMetalAdmissionGateDegraded` | An admission policy of the approval gate, or its binding, is missing or does not deny, for 2 minutes | [](rb:admission-gate-degraded) |
+| `PkMetalReconcileFailing` | More than half of the passes of one controller fail, for 30 minutes | [](rb:reconcile-failing) |
+| `PkMetalReconcilePanicked` | A controller panicked in the last hour | [](rb:reconcile-failing) |
+| `PkMetalOperationWorkersBusy` | Each operation worker is busy, for 1 hour | [](rb:workers-busy) |
+| `PkMetalOperationFailed` | An operation failed, for 5 minutes | [](rb:operation-failed) |
+| `PkMetalOperationStuck` | An operation is in one step for more than 2 hours | [](rb:operation-stuck) |
+| `PkMetalOperationBlocked` | An approved operation did not start for 1 hour, and no window or queue holds it | [](rb:operation-held) |
+| `PkMetalApprovalWaiting` | An operation waits more than one day for approval | [](rb:operation-held) |
+| `PkMetalBMCUnreachable` | A BMC does not answer, for 15 minutes | [](rb:bmc-unreachable) |
+| `PkMetalNodeNotReady` | A node that answered before is not `Ready`, for 15 minutes | [](rb:node-not-ready) |
+| `PkMetalClusterUnavailable` | A bootstrapped cluster is not available, for 15 minutes | [](rb:cluster-unavailable) |
+| `PkMetalEtcdBackupStale` | The newest verified backup is older than two backup intervals | [](rb:backup-failing) |
+| `PkMetalEtcdBackupMissing` | A backup policy has no verified snapshot after 1 hour | [](rb:backup-failing) |
+| `PkMetalCredentialsExpiring` | A published credential has less than one sixth of its lifetime left | [](rb:credentials-not-renewed) |
+| `PkMetalRolloutStalled` | A rollout waits for health, cannot plan, or waits after its first node, for 1 hour | [](rb:rollout-paused) |
+| `PkMetalRolloutFailed` | A node of a rollout failed, or its plan changed and no later rollout replaces it, for 5 minutes | [](rb:rollout-paused) |
 
 ## Machines and BMCs
 

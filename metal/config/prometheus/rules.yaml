@@ -9,7 +9,7 @@
 #   kubectl apply -k metal/config/prometheus
 #
 # The thresholds are starting points. Every alert links its runbook
-# (annotations.runbook_url); the docs site (operate/day-2/monitor) lists them.
+# (annotations.runbook_url); the docs site (operate/runbooks) lists them.
 # rules_test.yaml holds promtool unit tests: mise run metrics:rules.
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule

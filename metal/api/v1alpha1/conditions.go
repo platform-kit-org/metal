@@ -102,12 +102,12 @@ const (
 	// rollout is gone, not approved, aborted or approved for another planHash, or
 	// its plan gives this node other actions. The machine did not change.
 	ReasonRolloutRefused = "RolloutRefused"
-	// ReasonWaiverRefused on Executed=False: the operator proposed the operation
-	// with no approval of its own, but it is not one of the kinds the operator
-	// may run without a person: the node step of an approved rollout, the
-	// install of a claim set to Automatic, or a release. The executor refuses
-	// it before it acts on the machine. A request with the operator's token
-	// that the operator code did not make ends here.
+	// ReasonWaiverRefused on Approved=False and Executed=False: the operator
+	// proposed the operation with no approval of its own, but it is not one
+	// of the kinds the operator may run without a person: the node step of an
+	// approved rollout, the install of a claim set to Automatic, or a release.
+	// The executor refuses it before it acts on the machine. A request with
+	// the operator's token that the operator code did not make ends here.
 	ReasonWaiverRefused = "WaiverRefused"
 )
 
@@ -303,35 +303,39 @@ const (
 	// ReasonHandedOff on Provisioned=True: the machine checked in with the
 	// node's config.
 	ReasonHandedOff = "HandedOff"
-	// ReasonAwaitingRender: the TalosNode (or its cluster) is missing or has
-	// no rendered config yet.
+	// ReasonAwaitingRender on Provisioned=False: the TalosNode (or its cluster)
+	// is missing or has no rendered config yet.
 	ReasonAwaitingRender = "AwaitingRender"
-	// ReasonAwaitingBootAsset: the installer image, the config medium or the
-	// installer with the config built in is not built (Ready) for the current
-	// render yet.
+	// ReasonAwaitingBootAsset on Provisioned=False: the installer image, the
+	// config medium or the installer with the config built in is not built
+	// (Ready) for the current render yet.
 	ReasonAwaitingBootAsset = "AwaitingBootAsset"
-	// ReasonSingleMediumUnsupported: the endpoint can hold one virtual medium
-	// only, and the machine has no Talos to boot from disk. An installer with
-	// the config inside cannot help either. The Talos release of the cluster
-	// cannot read one (before 1.12), or the one slot does not boot an ISO.
+	// ReasonSingleMediumUnsupported on Provisioned=False: the endpoint can hold
+	// one virtual medium only, and the machine has no Talos to boot from disk.
+	// An installer with the config inside cannot help either. The Talos release
+	// of the cluster cannot read one (before 1.12), or the one slot does not
+	// boot an ISO.
 	ReasonSingleMediumUnsupported = "SingleMediumUnsupported"
-	// ReasonNoBootableMedia: the endpoint advertises no insertable media slot
-	// or no removable-media boot target.
+	// ReasonNoBootableMedia on Provisioned=False: the endpoint advertises no
+	// insertable media slot or no removable-media boot target.
 	ReasonNoBootableMedia = "NoBootableMedia"
-	// ReasonReleasing: the claim is being deleted; the release operation
-	// (power off, eject) runs before the machine is handed back.
+	// ReasonReleasing on Provisioned=False: the claim is being deleted; the
+	// release operation (power off, eject) runs before the machine is handed
+	// back.
 	ReasonReleasing = "Releasing"
-	// ReasonReleaseFailed: the release operation failed — the machine stays
-	// bound until a person deletes the failed operation (which retries it).
+	// ReasonReleaseFailed on Provisioned=False: the release operation failed —
+	// the machine stays bound until a person deletes the failed operation (which
+	// retries it).
 	ReasonReleaseFailed = "ReleaseFailed"
-	// ReasonHeldByUser: the claim carries the metal.platform-kit.org/hold annotation —
-	// nothing is proposed for it until the annotation is removed.
+	// ReasonHeldByUser on Provisioned=False: the claim carries the
+	// metal.platform-kit.org/hold annotation — nothing is proposed for it until
+	// the annotation is removed.
 	ReasonHeldByUser = "HeldByUser"
-	// ReasonHostInMaintenance: the bound host carries the
-	// metal.platform-kit.org/maintenance annotation, so the operator proposes nothing for
-	// it. It is also the reason on Maintenance=True and on the blockedOn of a
-	// host in maintenance. An operation that waits for the end of the
-	// maintenance has it on Executed=Unknown.
+	// ReasonHostInMaintenance on Provisioned=False: the bound host carries
+	// the metal.platform-kit.org/maintenance annotation, so the operator
+	// proposes nothing for it. It is also the reason on Maintenance=True and
+	// on the blockedOn of a host in maintenance. An operation that waits for
+	// the end of the maintenance has it on Executed=Unknown.
 	ReasonHostInMaintenance = "HostInMaintenance"
 	// ReasonSelfDisruption: the step would reboot or power off a machine that
 	// the operator needs. This is the node of its pod, or a control plane of
@@ -377,18 +381,22 @@ const (
 	// ReasonBindRetained on Bound=True: the assetRef no longer resolves but a live
 	// bind exists — alert-and-hold, a resolution failure never releases a machine.
 	ReasonBindRetained = "BindRetained"
-	// ReasonAssetNotFound: the referenced Asset does not exist.
+	// ReasonAssetNotFound on Bound=False: the referenced Asset does not exist.
 	ReasonAssetNotFound = "AssetNotFound"
 	// ReasonAssetNotMaterialized on a claim's Bound=False: the Asset has no
 	// endpoint, and its Materialized condition says why.
 	ReasonAssetNotMaterialized = "AssetNotMaterialized"
-	// ReasonHostNotDiscovered: no Host has been discovered for the asset yet.
+	// ReasonHostNotDiscovered on Bound=False: no Host has been discovered for
+	// the asset yet.
 	ReasonHostNotDiscovered = "HostNotDiscovered"
-	// ReasonAmbiguousSystem: the endpoint fronts several systems and no systemRef
-	// says which one is meant — a chassis with more than one node in it.
+	// ReasonAmbiguousSystem on Bound=False: the endpoint fronts several systems
+	// and no systemRef says which one is meant — a chassis with more than one
+	// node in it.
 	ReasonAmbiguousSystem = "AmbiguousSystem"
-	// ReasonSystemNotFound: systemRef names no system the endpoint fronts.
+	// ReasonSystemNotFound on Bound=False: systemRef names no system the
+	// endpoint fronts.
 	ReasonSystemNotFound = "SystemNotFound"
-	// ReasonHostAlreadyClaimed: another claim holds the host (first writer won).
+	// ReasonHostAlreadyClaimed on Bound=False: another claim holds the host
+	// (first writer won).
 	ReasonHostAlreadyClaimed = "HostAlreadyClaimed"
 )

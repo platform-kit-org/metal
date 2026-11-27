@@ -10,7 +10,8 @@ const (
 	// ConditionReady: the BootAsset's artifact exists and is fetchable (built
 	// into its artifact Secret, or, factory, addressed by a computed URL).
 	// On a TalosNode it is the check-in verdict instead: the machine's
-	// aggregated status reports stage running and ready.
+	// aggregated status reports stage running and ready. On an
+	// EtcdBackupPolicy, the sink can take snapshots.
 	ConditionReady = "Ready"
 
 	// ConditionMachineReachable: the machine behind a hand-off answers its Talos
@@ -52,7 +53,8 @@ const (
 const (
 	// ReasonConfigRendered on Rendered=True: the config Secret holds the render.
 	ReasonConfigRendered = "ConfigRendered"
-	// ReasonClusterNotFound on Rendered=False: clusterRef names no TalosCluster.
+	// ReasonClusterNotFound on Rendered=False (and on an EtcdBackupPolicy's
+	// Ready=False): clusterRef names no TalosCluster.
 	ReasonClusterNotFound = "ClusterNotFound"
 	// ReasonSecretsUnavailable on Rendered=False (and on a cluster's
 	// Bootstrapped/Available): the secrets bundle Secret is missing,

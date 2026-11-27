@@ -157,11 +157,7 @@ func (c *client) StageFirmware(_ context.Context, image []byte, entryID string) 
 		return fmt.Errorf("bmc: the push URI does not support apply time OnReset (it lists %v); system firmware is only staged for the next reset",
 			us.ApplyTime.SupportedValues)
 	}
-	inv, err := c.svc.UpdateService()
-	if err != nil {
-		return fmt.Errorf("bmc: update service: %w", err)
-	}
-	entries, err := inv.FirmwareInventory()
+	entries, err := us.typed.FirmwareInventory()
 	if err != nil {
 		return fmt.Errorf("bmc: firmware inventory: %w", err)
 	}

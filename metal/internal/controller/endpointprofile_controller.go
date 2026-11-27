@@ -534,9 +534,11 @@ func (r *EndpointConvergenceReconciler) isFactoryAccount(ctx context.Context, ep
 }
 
 // ntp converges the manager's time sources: read, write on drift, prove by
-// re-reading — the write succeeding proves nothing.
+// re-reading — the write succeeding proves nothing. It reads the managed
+// credentials from the API server: the credentials lane can have promoted a
+// new password in this pass, and the cache can still hold the old one.
 func (r *EndpointConvergenceReconciler) ntp(ctx context.Context, ep *metalv1alpha1.ManagementEndpoint, pol *metalv1alpha1.NTPPolicy) (metav1.ConditionStatus, string, string, error) {
-	cfg, reason, err := endpointClientConfig(ctx, r.Client, r.CredentialsNamespace, ep, false)
+	cfg, reason, err := endpointClientConfig(ctx, r.reader(), r.CredentialsNamespace, ep, false)
 	if err != nil {
 		return metav1.ConditionFalse, reason, err.Error(), nil
 	}

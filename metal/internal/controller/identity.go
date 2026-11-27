@@ -307,7 +307,8 @@ const csrTimeout = 5 * time.Minute
 // managerCSR has a csr-native manager build the request — the key never
 // leaves it.
 func (r *EndpointConvergenceReconciler) managerCSR(ctx context.Context, ep *metalv1alpha1.ManagementEndpoint, desired identityDesired) ([]byte, error) {
-	cfg, _, err := endpointClientConfig(ctx, r.Client, r.CredentialsNamespace, ep, false)
+	// The password can be new in this pass: see ntp.
+	cfg, _, err := endpointClientConfig(ctx, r.reader(), r.CredentialsNamespace, ep, false)
 	if err != nil {
 		return nil, err
 	}
@@ -375,7 +376,8 @@ func (r *EndpointConvergenceReconciler) pushIdentity(ctx context.Context, ep *me
 	if err != nil {
 		return nil, err
 	}
-	cfg, _, err := endpointClientConfig(ctx, r.Client, r.CredentialsNamespace, ep, false)
+	// The password can be new in this pass: see ntp.
+	cfg, _, err := endpointClientConfig(ctx, r.reader(), r.CredentialsNamespace, ep, false)
 	if err != nil {
 		return nil, err
 	}

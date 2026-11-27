@@ -33,7 +33,7 @@ the check to make a change pass.
 | A decision that a later pass cannot undo reads its inputs through the API reader (`r.reader()`, `APIReader`), not the cache. Mark the function `//pk:uncached`. A function that removes a finalizer has `//pk:uncached`, or `//pk:cached-ok <reason>`. | Two rollouts on one cluster, a second key for a BMC identity, an old password set again, a finalizer released while a claim held the node. | `mise run lint:reads` (`internal/lint`). Each fixed decision is in `mustBeUncached`. |
 | A field selector on a list from the API reader names a field that the CRD declares with `// +kubebuilder:selectablefield`. In unit tests, give the fake client the same field with `WithIndex`. | The API server refuses the list, and nothing starts. The fake client accepts any field. | `TestFieldSelectorsAreSelectableFields`, envtest `TestAPIServerFiltersByHostAndCluster`. |
 | A change of the code of a function that the protocol model mirrors also changes the model. | The model proves an older protocol. | `TestModelMirrorsTheCode` (`go test ./spec`) prints the new fingerprint; record it only after `TestProtocolModel` passes on a model in line. |
-| A change of the code of a Go function that a TLA+ specification names (a `\* go:` line in `metal/spec`) also changes the specification. | The specification proves an older protocol. | `TestSpecSync` (`go test ./spec`, part of `mise run test`). Read the operator that names the function, change it if the code does something new, run `mise run spec`, then record with `go test ./spec -run TestSpecSync -update`. |
+| A change of the code of a Go function that a TLA+ specification names (a `\* go:` line in `metal/spec`) also changes the specification. | The specification proves an older protocol. | `TestSpecSync` (`go test ./spec`). Its failure message says what to do. |
 | An alert names only series that the manager serves, and a runbook that exists. | An alert that never fires. | `TestAlertRulesNameServedSeriesAndRunbooks`, `mise run metrics:rules`. |
 | A name stamp (mutating policy) and the validating policy of the same field agree. | The API server writes a value that the next check refuses. | envtest `TestNameStampMatchesTheValidatingPolicies`. |
 | A runbook step uses only what `pk-metal-oncall` may do. | 403 in the first step of an incident. | envtest `TestOnCallRole` lists the steps. Add a case when a runbook gets a new `kubectl` verb or resource. |
@@ -46,15 +46,14 @@ the check to make a change pass.
    fail; then restore the fix.
 2. A test that passes either way proves nothing. A conformance check that
    waits for a later read-back can hide an error of an earlier step.
-3. For a stale cache, give the reconciler a client whose reads answer from an
-   older snapshot (`staleLists`, `staleSecrets`, `staleClaims` in
-   `internal/controller`), and the real store as `APIReader`.
+3. For a stale cache, follow the skill `.claude/skills/stale-cache-fix`. It
+   names the test clients that answer from an older snapshot.
 
 ## Keep the repository consistent
 
-A change is complete when the code, the tests, the docs and the generated
-files agree. `.claude/skills/change-checklist` lists what else to change for
-each kind of change.
+The skill `.claude/skills/change-checklist` lists what else to change for each
+kind of change, so that the code, the tests, the docs and the generated files
+agree.
 
 ## Writing
 

@@ -87,7 +87,9 @@ func (r *hostWipeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	if _, maint := inMaintenance(host); maint {
 		return ctrl.Result{}, nil
 	}
-	if r.installedHere(ctx, host.Name) {
+	if here, err := r.installedHere(ctx, host); err != nil {
+		return ctrl.Result{}, err
+	} else if here {
 		// A claim runs a node on it: that is no leftover, and a wipe would
 		// destroy it. The claim's own removal or reinstall resets it.
 		logf.FromContext(ctx).Info("wipe not proposed: a claim runs a node on the host", "host", host.Name)
@@ -160,18 +162,21 @@ func wipeOp(namespace, proposer, host, name string, asset *osv1alpha1.BootAsset,
 	}
 }
 
-// installedHere: a claim's hand-off record names the host.
-func (r *hostWipeReconciler) installedHere(ctx context.Context, host string) bool {
-	claims := &metalv1alpha1.HostClaimList{}
-	if err := r.List(ctx, claims); err != nil {
-		return true
+// installedHere: the claim that holds the host has a hand-off record that
+// names it. A free host runs no node of a live claim: a release unbinds a
+// host only after its release operation, or when no boot ran on it. A moved
+// claim keeps the record of its old host until the new install succeeds.
+func (r *hostWipeReconciler) installedHere(ctx context.Context, host *metalv1alpha1.Host) (bool, error) {
+	ref := host.Spec.ClaimRef
+	if ref == nil {
+		return false, nil
 	}
-	for _, c := range claims.Items {
-		if h := c.Status.HandOff; h != nil && h.Host == host {
-			return true
-		}
+	claim := &metalv1alpha1.HostClaim{}
+	if err := r.Get(ctx, client.ObjectKey{Namespace: ref.Namespace, Name: ref.Name}, claim); err != nil {
+		return false, client.IgnoreNotFound(err)
 	}
-	return false
+	h := claim.Status.HandOff
+	return h != nil && h.Host == host.Name, nil
 }
 
 // ensureWipeAsset finds or creates the factory image of this Talos version

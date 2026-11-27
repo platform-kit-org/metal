@@ -117,7 +117,7 @@ The lane also runs the controller `host-wipe`, `For` [](kind:Host).
 It acts only on a Host with the annotation `metal.platform-kit.org/wipe`, which [](cli:wipe) sets.
 
 1. If the Host has no `metal.platform-kit.org/disk-not-wiped`, remove the wipe request.
-2. If a claim records an install on the Host, or the Host is in maintenance, do nothing.
+2. If the claim that holds the Host records an install on it, or the Host is in maintenance, do nothing.
 3. Make a factory [](kind:BootAsset) whose kernel argument `talos.experimental.wipe=system` wipes the system disk.
 4. Propose a wipe operation: eject all slots, insert the image, set a one-time boot override, power cycle. It always needs approval.
 5. When the operation succeeded, remove both annotations.

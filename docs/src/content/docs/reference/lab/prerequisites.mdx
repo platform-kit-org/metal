@@ -21,7 +21,7 @@ The virtual lab runs on a Linux workstation or a CI runner.
 
 <dl class="pk-glance">
   <dt>System</dt>
-  <dd>Linux on x86-64, with KVM and cgroup v2. See [Operating systems](#operating-systems).</dd>
+  <dd>Linux on x86-64 or ARM64, with cgroup v2. With KVM, the machines are fast. See [Operating systems](#operating-systems).</dd>
   <dt>Memory</dt>
   <dd>About 12 GiB free for the default size. `3cp+2w` needs about 19 GiB.</dd>
   <dt>Disk</dt>
@@ -29,7 +29,7 @@ The virtual lab runs on a Linux workstation or a CI runner.
   <dt>Container engine</dt>
   <dd>Docker Engine, as root.</dd>
   <dt>Packages</dt>
-  <dd>QEMU, `qemu-img`, OVMF, `ip`, `iptables`, `curl`, `sudo`</dd>
+  <dd>QEMU, `qemu-img`, UEFI firmware (OVMF or AAVMF), `ip`, `iptables`, `curl`, `sudo`</dd>
   <dt>Tool manager</dt>
   <dd>[mise](https://mise.jdx.dev/)</dd>
   <dt>Tools from mise</dt>
@@ -43,8 +43,17 @@ The virtual lab runs on a Linux workstation or a CI runner.
 | System | Result | Reason |
 | --- | --- | --- |
 | Linux on x86-64, with `/dev/kvm` | Works | The project builds and tests the lab on it. |
-| Linux on ARM64 | Not supported | The machines are x86-64 QEMU machines. KVM runs them only on an x86-64 host. |
-| macOS | Does not work | There is no KVM, and Docker Desktop cannot get to the lab bridge. A Linux virtual machine with nested virtualization can work. Nobody tested it. |
+| Linux on ARM64 | Not tested end to end | The machines are ARM64 QEMU machines. A test boots an ARM64 Talos machine under TCG to its configuration. Nobody ran the full lab. |
+| macOS on Apple silicon | In a Linux VM | Run the lab in an ARM64 Linux virtual machine. See [Apple silicon](#apple-silicon). |
+| macOS on Intel | Does not work | There is no KVM, and Docker Desktop cannot get to the lab bridge. A Linux virtual machine with nested virtualization can work. Nobody tested it. |
+
+The renderer selects the architecture and the accelerator of the machines. Set them in [lab.yaml](lab:page/lab-yaml) to change the selection.
+
+| Workstation | Machines | Accelerator |
+| --- | --- | --- |
+| x86-64, `/dev/kvm` usable | x86-64 (`amd64`) | KVM |
+| ARM64, `/dev/kvm` usable | ARM64 (`arm64`) | KVM |
+| No usable `/dev/kvm` | The architecture of the workstation | TCG. QEMU emulates the CPU. A boot takes minutes. |
 | Windows with WSL2 | Not tested | WSL2 must give `/dev/kvm`, cgroup v2 and Docker Engine in the WSL2 system, not Docker Desktop. |
 
 ## Install the packages
@@ -54,7 +63,9 @@ The virtual lab runs on a Linux workstation or a CI runner.
    | Distribution | Command |
    | --- | --- |
    | Debian, Ubuntu | `sudo apt-get install qemu-system-x86 qemu-utils ovmf curl iproute2 iptables` |
+   | Debian, Ubuntu on ARM64 | `sudo apt-get install qemu-system-arm qemu-utils qemu-efi-aarch64 curl iproute2 iptables` |
    | Fedora | `sudo dnf install qemu-system-x86-core qemu-img edk2-ovmf curl iproute iptables-nft` |
+   | Fedora on ARM64 | `sudo dnf install qemu-system-aarch64-core qemu-img edk2-aarch64 curl iproute iptables-nft` |
    | RHEL 9, Rocky, Alma | `sudo dnf install qemu-kvm qemu-img edk2-ovmf curl iproute iptables-nft` |
    | Other distributions | Not tested. Install the same programs. If the doctor does not find them, set `PK_METAL_QEMU`, `PK_METAL_OVMF_CODE` and `PK_METAL_OVMF_VARS`. |
 
@@ -91,6 +102,49 @@ The virtual lab runs on a Linux workstation or a CI runner.
    The last line is `the workstation has what the lab needs`.
 
 On RHEL and its rebuilds, QEMU is `/usr/libexec/qemu-kvm`. The fleet finds it there.
+
+## Apple silicon
+
+macOS has no KVM and no Linux bridge. Run the lab in an ARM64 Linux virtual machine (VM) on the Mac.
+The lab machines in that VM are ARM64 machines.
+
+```
+macOS (M1 or later)
+└─ UTM: ARM64 Linux VM            ← lab/lab.sh runs here
+   ├─ Docker Engine: kind node    ← the operator
+   ├─ pk-metal sim fleet          ← the simulated BMCs
+   └─ qemu-system-aarch64 × 3     ← the Talos machines: KVM or TCG
+```
+
+1. Install [UTM](https://mac.getutm.app/).
+
+2. Make a VM: **Virtualize**, **Linux**, with an ARM64 server image of Debian 13 or Ubuntu 24.04.
+
+   | Setting | Value |
+   | --- | --- |
+   | CPU cores | 4 or more. TCG uses one host thread for each CPU of a machine. |
+   | Memory | 14 GiB for the default size. 8 GiB for `PK_LAB_NODES=1cp+0w`. |
+   | Disk | 64 GiB |
+
+3. In the VM, do the steps in [Install the packages](#install-the-packages). Use the row for ARM64.
+
+4. Check the VM.
+
+   ```sh
+   mise run lab:doctor
+   ```
+
+   The line `the lab spec renders` names the architecture and the accelerator, for example `arm64 machines under tcg`.
+
+| Mac | Accelerator in the VM | Reason |
+| --- | --- | --- |
+| M1, M2 | TCG | The hypervisor of macOS gives no nested virtualization on these chips. The VM has no `/dev/kvm`. |
+| M3 or later, macOS 15 or later | KVM, if the VM has a usable `/dev/kvm` | The hypervisor of macOS can give nested virtualization on these chips. The lab uses KVM when `/dev/kvm` is usable. |
+
+<Callout type="note">
+Under TCG, each step that boots a machine takes longer. Give [](lab:wait) more time: `PK_LAB_WAIT_TIMEOUT=4800`.
+The firmware-hang guard waits 3 minutes under TCG, not 90 seconds.
+</Callout>
 
 ## Memory
 
@@ -136,9 +190,9 @@ A member of the `docker` group has the same rights as root on that workstation.
 | Docker is Docker Engine, as root | Remove `podman-docker`. Do not use Docker Desktop or rootless Docker. |
 | The kind configuration is readable | Set or unset [`PK_LAB_KIND_CONFIG`](lab:page/lab-yaml#environment-variables). |
 | cgroup v2 | Boot with `systemd.unified_cgroup_hierarchy=1`, or use an older node image. See [](lab:page/troubleshooting). |
-| `/dev/kvm` is usable | Set virtualization to on in the firmware. Join the group `kvm`. |
-| QEMU and `qemu-img` | Install the packages, or set `PK_METAL_QEMU`. |
-| OVMF | Install the package, or set `PK_METAL_OVMF_CODE` and `PK_METAL_OVMF_VARS`. |
+| `/dev/kvm` is usable, if the machines use KVM | Set virtualization to on in the firmware. Join the group `kvm`. Or set `accel: tcg`. |
+| QEMU for the architecture of the machines, and `qemu-img` | Install the packages, or set `PK_METAL_QEMU`. |
+| UEFI firmware for the architecture of the machines (OVMF, AAVMF) | Install the package, or set `PK_METAL_OVMF_CODE` and `PK_METAL_OVMF_VARS`. |
 | `ip` and `iptables` | Install `iproute2` and `iptables`. |
 | `sudo` | Use a terminal where `sudo` can ask for the password. |
 | `firewall-cmd`, if `firewalld` is active | Install `firewalld`. |

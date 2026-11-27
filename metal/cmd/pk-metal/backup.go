@@ -308,7 +308,7 @@ func openSnapshot(ctx context.Context, cl client.Client, s *osv1alpha1.EtcdSnaps
 	}
 	if p.Spec.Sink.S3 == nil {
 		return nil, fmt.Errorf("snapshot %s is on the operator's backup volume (%s), which pk-metal cannot read from "+
-			"here. Copy it off the volume first, then pass the file with --in or --from-file; "+
+			"here. Copy it off the volume first, then pass the file with --in; "+
 			"https://metal.platform-kit.org/operate/day-2/restore-etcd/#copy-a-snapshot-from-a-pvc-sink has the commands", s.Name, s.Status.Location)
 	}
 	s3 := p.Spec.Sink.S3

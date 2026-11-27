@@ -2151,7 +2151,7 @@ EOF
   done
   # The lab's admin approves what lab-restorer proposed: two people.
   approve_pending "$root" "$lab_dir" >/dev/null
-  until "$cli" restore upload "$namespace/$op" --identity "$dir/identity.txt" --from-file "$dir/snapshot.db.age" >&2; do
+  until "$cli" restore upload "$namespace/$op" --identity "$dir/identity.txt" --in "$dir/snapshot.db.age" >&2; do
     (( SECONDS < deadline )) || die "the snapshot upload to $op did not succeed within ${timeout}s; its output above says why"
     approve_pending "$root" "$lab_dir" >/dev/null || true
     sleep 15

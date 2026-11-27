@@ -195,7 +195,6 @@ var flagKinds = map[string]kindSpec{
 	"talosconfig":         {kind: kindFile},
 	"identity":            {kind: kindFile},
 	"in":                  {kind: kindFile},
-	"from-file":           {kind: kindFile},
 	"secret-file":         {kind: kindFile},
 	"secrets":             {kind: kindFile},
 	"bmc-ca":              {kind: kindFile},

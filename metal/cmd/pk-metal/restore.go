@@ -44,7 +44,7 @@ subcommands:
       restore one control plane from a snapshot (etcdRecover); the others
       join it. The newest verified snapshot is used unless --snapshot names
       one.
-  upload <operation> --identity <file> [--from-file <file.age>]
+  upload <operation> --identity <file> [--in <file.age>]
       For an approved etcdRecover operation: decrypt the snapshot on this
       machine with your age identity, check it against the snapshot record,
       and stream it to the node over the Talos API with your talosconfig.
@@ -112,7 +112,7 @@ func restoreCmd(args []string) {
 	case "upload":
 		ns := fs.String("n", operatorNamespace, "namespace of the operation")
 		identity := fs.String("identity", "", "age identity file (required)")
-		fromFile := fs.String("from-file", "", "the encrypted snapshot as a file (needed for a pvc sink)")
+		inFile := fs.String("in", "", "the encrypted snapshot as a file (needed for a pvc sink)")
 		parseFlags(fs, rest)
 		if fs.NArg() != 1 || *identity == "" {
 			badUsage(fs, "give one operation and --identity")
@@ -127,7 +127,7 @@ func restoreCmd(args []string) {
 			die(err)
 		}
 		if err := uploadSnapshot(ctx, cl, machineapi.Dial, uploadInput{
-			Namespace: namespace, Name: name, User: user, Identity: *identity, FromFile: *fromFile,
+			Namespace: namespace, Name: name, User: user, Identity: *identity, FromFile: *inFile,
 			TalosconfigFile: *talosconfigFile,
 		}, os.Stdout); err != nil {
 			die(err)

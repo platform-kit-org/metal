@@ -53,12 +53,17 @@ func (c loggedClient) EtcdStatus(ctx context.Context) (talos.EtcdStatus, error) 
 	return c.Client.EtcdStatus(ctx)
 }
 
+func (c loggedClient) EtcdMembers(ctx context.Context) ([]talos.EtcdMember, error) {
+	c.log.add("EtcdMembers", c.tc)
+	return c.Client.EtcdMembers(ctx)
+}
+
 func (c loggedClient) EtcdSnapshot(ctx context.Context, w io.Writer) (int64, error) {
 	c.log.add("EtcdSnapshot", c.tc)
 	return c.Client.EtcdSnapshot(ctx, w)
 }
 
-// A backup reads etcd's status with os:reader and streams the snapshot with
+// A backup reads etcd's health with os:reader and streams the snapshot with
 // os:etcd:backup. Neither certificate can change a machine; os:admin is not
 // needed for a read.
 func TestEtcdBackupLeastPrivilege(t *testing.T) {
@@ -97,11 +102,12 @@ func TestEtcdBackupLeastPrivilege(t *testing.T) {
 			meta.IsStatusConditionTrue(p.Status.Conditions, osv1alpha1.ConditionBackedUp)
 	}, waitFor, tick, "the snapshot is taken and verified with the narrow roles")
 
-	status, snaps := log.get("EtcdStatus"), log.get("EtcdSnapshot")
+	status, snaps := append(log.get("EtcdMembers"), log.get("EtcdStatus")...), log.get("EtcdSnapshot")
+	require.NotEmpty(t, log.get("EtcdMembers"))
 	require.NotEmpty(t, status)
 	require.NotEmpty(t, snaps)
 	for _, r := range status {
-		assert.Equal(t, []string{"os:reader"}, r, "the status probe reads only")
+		assert.Equal(t, []string{"os:reader"}, r, "the health probe reads only")
 	}
 	for _, r := range snaps {
 		assert.Equal(t, []string{"os:etcd:backup"}, r, "the stream may take a snapshot and nothing else")

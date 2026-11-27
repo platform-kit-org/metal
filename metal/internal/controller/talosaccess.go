@@ -28,7 +28,7 @@ import (
 // asked with a client certificate minted from the cluster's secrets bundle
 // for this one question, and the cluster's Kubernetes API, asked with the
 // admin kubeconfig the TalosCluster reconciler publishes. The executor's
-// Talos steps and the cluster guard both go through here.
+// Talos steps, the cluster guard and the etcd backup lane go through here.
 
 // workloadTimeout bounds one request to a workload cluster's Kubernetes API.
 // A cluster whose API server is down must not hold an executor pass.

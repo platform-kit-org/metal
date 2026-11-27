@@ -492,17 +492,11 @@ func (r *EtcdSnapshotReconciler) take(ctx context.Context, s *osv1alpha1.EtcdSna
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	var cps []osv1alpha1.TalosNode
-	var endpoints []string
-	for _, n := range nodes {
-		if addr := render.NodeAddress(&n); n.Spec.Role == osv1alpha1.RoleControlPlane && addr != "" {
-			cps = append(cps, n)
-			endpoints = append(endpoints, addr)
-		}
-	}
 	// Two short-lived certificates with the least each call needs: os:reader
-	// asks every member for its etcd status, os:etcd:backup streams the
-	// snapshot and can do nothing else. Neither can change a machine.
+	// asks etcd how it is, os:etcd:backup streams the snapshot and can do
+	// nothing else. Neither can change a machine. The endpoint in a config
+	// does not matter: every dial names its own.
+	endpoints := []string{cluster.Spec.Endpoint}
 	reader, err := render.TalosconfigWithRole(bundle, cluster.Name, endpoints, checkinCertTTL, role.Reader)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("mint talosconfig for %s: %w", cluster.Name, err)
@@ -512,7 +506,16 @@ func (r *EtcdSnapshotReconciler) take(ctx context.Context, s *osv1alpha1.EtcdSna
 		return ctrl.Result{}, fmt.Errorf("mint talosconfig for %s: %w", cluster.Name, err)
 	}
 
-	src, why := r.pickMember(ctx, reader, cps)
+	// etcd is read through the same path as the cluster guard's.
+	cps := controlPlanes(nodes, "")
+	rep, err := (&talosAccess{dial: r.Dial, cluster: cluster, talosconfig: reader}).etcdHealth(ctx, cps, nodes)
+	var src *memberSource
+	var why string
+	if err == nil {
+		src, why = pickMember(rep, cps)
+	} else {
+		why = err.Error()
+	}
 	if src == nil {
 		if r.now().Sub(s.CreationTimestamp.Time) > memberWait {
 			return fail("no healthy etcd member to take the snapshot from: " + why)
@@ -525,7 +528,7 @@ func (r *EtcdSnapshotReconciler) take(ctx context.Context, s *osv1alpha1.EtcdSna
 	// Record the start before streaming: the crash rail above reads it.
 	key := target.prefix + s.Name + ".db.age"
 	st.TakenAt = &metav1.Time{Time: r.now()}
-	st.TakenFrom, st.MemberID = src.node, strconv.FormatUint(src.status.MemberID, 16)
+	st.TakenFrom, st.MemberID = src.node, strconv.FormatUint(src.id, 16)
 	st.Key, st.Location = key, sink.URL(key)
 	st.Recipients = slices.Clone(p.Spec.Encryption.AgeRecipients)
 	set(osv1alpha1.ConditionComplete, metav1.ConditionUnknown, osv1alpha1.ReasonTaking,
@@ -581,53 +584,35 @@ func (r *EtcdSnapshotReconciler) policy(ctx context.Context, s *osv1alpha1.EtcdS
 
 type memberSource struct {
 	node, endpoint string
-	status         talos.EtcdStatus
+	id             uint64
 }
 
-// pickMember asks every control plane for its etcd status and picks the
-// member to snapshot: a healthy voting member that follows a leader, a
-// follower before the leader (the snapshot reads the whole database, which
-// the leader should not spend its time on), by name among equals. why says
-// what was wrong with each when none qualifies.
-func (r *EtcdSnapshotReconciler) pickMember(ctx context.Context, talosconfig []byte,
-	cps []osv1alpha1.TalosNode) (*memberSource, string) {
-	var leaders, followers []memberSource
-	var problems []string
-	for _, n := range cps {
-		endpoint := render.NodeAddress(&n)
-		var es talos.EtcdStatus
-		pctx, cancel := context.WithTimeout(ctx, probeTimeout)
-		err := talos.With(pctx, r.Dial, talos.Target{Endpoint: endpoint, Talosconfig: talosconfig}, func(c talos.Client) error {
-			var err error
-			es, err = c.EtcdStatus(pctx)
-			return err
-		})
-		cancel()
-		switch {
-		case err != nil:
-			problems = append(problems, fmt.Sprintf("%s: %v", n.Name, err))
-		case len(es.Errors) > 0:
-			problems = append(problems, fmt.Sprintf("%s: %s", n.Name, strings.Join(es.Errors, "; ")))
-		case es.IsLearner:
-			problems = append(problems, n.Name+": a learner, not yet in sync")
-		case es.LeaderID == 0:
-			problems = append(problems, n.Name+": knows no leader (quorum lost?)")
-		case es.LeaderID == es.MemberID:
-			leaders = append(leaders, memberSource{n.Name, endpoint, es})
-		default:
-			followers = append(followers, memberSource{n.Name, endpoint, es})
+// pickMember picks the etcd member to snapshot: a healthy voting member on
+// one of the control planes, a follower before the leader (the snapshot
+// reads the whole database, which the leader should not spend its time
+// on), by name among equals. why says what is wrong when none qualifies.
+func pickMember(rep *etcdReport, cps []osv1alpha1.TalosNode) (*memberSource, string) {
+	members := slices.Clone(rep.members)
+	slices.SortFunc(members, func(a, b talos.EtcdMember) int { return strings.Compare(a.Hostname, b.Hostname) })
+	var leader *memberSource
+	for _, m := range members {
+		i := slices.IndexFunc(cps, func(n osv1alpha1.TalosNode) bool { return n.Name == m.Hostname })
+		if i < 0 || !rep.healthy(m.ID) {
+			continue
 		}
+		src := &memberSource{node: m.Hostname, endpoint: nodeEndpoint(&cps[i]), id: m.ID}
+		if m.ID != rep.leader {
+			return src, ""
+		}
+		leader = src
 	}
-	if len(followers) > 0 {
-		return &followers[0], ""
+	if leader != nil {
+		return leader, ""
 	}
-	if len(leaders) > 0 {
-		return &leaders[0], ""
+	if probs := rep.problems(0); len(probs) > 0 {
+		return nil, strings.Join(probs, "; ")
 	}
-	if len(cps) == 0 {
-		return nil, "the cluster has no control-plane TalosNode with an address"
-	}
-	return nil, strings.Join(problems, ", ")
+	return nil, "no healthy etcd member runs on a control-plane TalosNode"
 }
 
 // SetupWithManager wires both backup reconcilers: they are one lane.

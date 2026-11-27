@@ -15,6 +15,7 @@ The Go module is in `metal/`. Run tasks from the repository root.
 | `go test -run <Name> ./internal/<pkg>/` in `metal/` | While you work on one test. |
 | `mise run envtest` | A change to a controller, a CRD, RBAC or an admission policy. About 5 minutes; run one test with `go test -run`. |
 | `mise run lint` | Before each commit: golangci-lint (also gofmt and goimports), the typed checks, shellcheck, govulncheck. |
+| `mise run spec` | After a change to a TLA+ specification in `metal/spec`, or to a Go function that one names. Needs a Java runtime. |
 | `mise run generate`, then `mise run generate:check` | After a change to API types, kubebuilder markers, `pk-metal` commands or the glossary. |
 | `mise run docs:check` and `mise run docs:lint` | After a change to a page. |
 
@@ -32,6 +33,7 @@ the check to make a change pass.
 | A decision that a later pass cannot undo reads its inputs through the API reader (`r.reader()`, `APIReader`), not the cache. Mark the function `//pk:uncached`. A function that removes a finalizer has `//pk:uncached`, or `//pk:cached-ok <reason>`. | Two rollouts on one cluster, a second key for a BMC identity, an old password set again, a finalizer released while a claim held the node. | `mise run lint:reads` (`internal/lint`). Each fixed decision is in `mustBeUncached`. |
 | A field selector on a list from the API reader names a field that the CRD declares with `// +kubebuilder:selectablefield`. In unit tests, give the fake client the same field with `WithIndex`. | The API server refuses the list, and nothing starts. The fake client accepts any field. | `TestFieldSelectorsAreSelectableFields`, envtest `TestAPIServerFiltersByHostAndCluster`. |
 | A change of the code of a function that the protocol model mirrors also changes the model. | The model proves an older protocol. | `TestModelMirrorsTheCode` prints the new hash; record it only after `TestProtocolModel` passes on a model in line. |
+| A change of the code of a Go function that a TLA+ specification names (a `\* go:` line in `metal/spec`) also changes the specification. | The specification proves an older protocol. | `TestSpecSync` (`go test ./spec`, part of `mise run test`). Read the operator that names the function, change it if the code does something new, run `mise run spec`, then record with `go test ./spec -run TestSpecSync -update`. |
 | An alert names only series that the manager serves, and a runbook that exists. | An alert that never fires. | `TestAlertRulesNameServedSeriesAndRunbooks`, `mise run metrics:rules`. |
 | A name stamp (mutating policy) and the validating policy of the same field agree. | The API server writes a value that the next check refuses. | envtest `TestNameStampMatchesTheValidatingPolicies`. |
 | A runbook step uses only what `pk-metal-oncall` may do. | 403 in the first step of an incident. | envtest `TestOnCallRole` lists the steps. Add a case when a runbook gets a new `kubectl` verb or resource. |

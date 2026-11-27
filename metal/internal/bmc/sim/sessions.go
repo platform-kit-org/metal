@@ -22,6 +22,7 @@ type session struct {
 	username string
 	password string
 	created  time.Time
+	used     time.Time // the last request the session authenticated
 }
 
 // createSession opens a session for valid credentials.
@@ -49,19 +50,31 @@ func (s *State) createSession(username, password string) (*session, error) {
 	}
 	sess := &session{
 		id: strconv.Itoa(next), token: hex.EncodeToString(raw),
-		username: username, password: password, created: time.Now(),
+		username: username, password: password, created: time.Now(), used: time.Now(),
 	}
 	s.sessions[sess.token] = sess
 	return sess, nil
 }
 
 // sessionValid reports whether a token names a live session whose credential
-// still authenticates.
+// still authenticates. A session idle for longer than the fixture's
+// SessionTimeout ends here; each request it authenticates restarts the clock.
 func (s *State) sessionValid(token string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	sess := s.sessions[token]
-	return sess != nil && s.authenticateLocked(sess.username, sess.password)
+	if sess == nil {
+		return false
+	}
+	if d := s.f.Protocol.SessionTimeout; d > 0 && time.Since(sess.used) > d {
+		delete(s.sessions, token)
+		return false
+	}
+	sess.used = time.Now()
+	// The check of a token is no login: a session whose password changed
+	// ends, without a count towards the lockout.
+	a := s.accountByUser(sess.username)
+	return len(s.accounts) == 0 || (a != nil && a.enabled && !a.locked && a.password == sess.password)
 }
 
 // sessionsView clones the session list for the HTTP tier, sorted by id.

@@ -34,6 +34,7 @@ func (c *client) EnsureAccount(ctx context.Context, username, password string) e
 	if c.readOnly {
 		return errReadOnly
 	}
+	c.renew.changed(username)
 	as, err := c.svc.AccountService()
 	if err != nil {
 		return fmt.Errorf("bmc: account service: %w", err)
@@ -106,6 +107,7 @@ func (c *client) DisableAccount(ctx context.Context, username string) error {
 	if username == "" {
 		return fmt.Errorf("bmc: disable account: no username")
 	}
+	c.renew.changed(username)
 	as, err := c.svc.AccountService()
 	if err != nil {
 		return fmt.Errorf("bmc: account service: %w", err)

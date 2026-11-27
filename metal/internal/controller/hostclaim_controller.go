@@ -225,6 +225,8 @@ func (r *HostClaimReconciler) writeStatus(ctx context.Context, orig, claim *meta
 // claim holds from the API server: a cache that has not yet seen a host bound
 // would let the finalizer go while the host still carries the claim, and the
 // host would then be unbound as it is, with no power-off.
+//
+//pk:cached-ok the update carries the claim's resourceVersion; liveBoundHosts reads the hosts uncached
 func (r *HostClaimReconciler) finishRelease(ctx context.Context, claim *metalv1alpha1.HostClaim) (ctrl.Result, error) {
 	if !controllerutil.ContainsFinalizer(claim, releaseFinalizer) {
 		return ctrl.Result{}, nil
@@ -363,6 +365,8 @@ func (r *HostClaimReconciler) boundHosts(ctx context.Context, key types.Namespac
 // liveBoundHosts is boundHosts read from the API server. The API server
 // cannot filter by claimRef, so every host is read and filtered here; only a
 // release does this, once per pass of a deleted claim.
+//
+//pk:uncached
 func (r *HostClaimReconciler) liveBoundHosts(ctx context.Context, key types.NamespacedName) ([]metalv1alpha1.Host, error) {
 	hosts := &metalv1alpha1.HostList{}
 	if err := r.reader().List(ctx, hosts); err != nil {

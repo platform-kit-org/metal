@@ -65,6 +65,8 @@ type TalosNodeMemberReconciler struct {
 
 // Reconcile adds the finalizer, and removes it from a deleted node whose
 // removal is complete.
+//
+//pk:cached-ok the update carries the node's resourceVersion; blocked reads the claims and operations uncached
 func (r *TalosNodeMemberReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	node := &osv1alpha1.TalosNode{}
 	if err := r.Get(ctx, req.NamespacedName, node); err != nil {
@@ -109,6 +111,8 @@ func (r *TalosNodeMemberReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 }
 
 // blocked says what the deletion of node still waits for, "" for nothing.
+//
+//pk:uncached
 func (r *TalosNodeMemberReconciler) blocked(ctx context.Context, node *osv1alpha1.TalosNode) (string, string, error) {
 	reader := client.Reader(r.Client)
 	if r.APIReader != nil {
@@ -144,8 +148,11 @@ func (r *TalosNodeMemberReconciler) blocked(ctx context.Context, node *osv1alpha
 	if node.Spec.Role != osv1alpha1.RoleControlPlane || r.Dial == nil {
 		return "", "", nil
 	}
+	// The cluster comes from the API server too: a cache from before the
+	// bootstrap, or from before the cluster was there, would skip the etcd
+	// check, and the member would stay in etcd with no node to remove it.
 	cluster := &osv1alpha1.TalosCluster{}
-	if err := r.Get(ctx, client.ObjectKey{Name: node.Spec.ClusterRef.Name}, cluster); err != nil {
+	if err := reader.Get(ctx, client.ObjectKey{Name: node.Spec.ClusterRef.Name}, cluster); err != nil {
 		// A cluster that is gone has no etcd to leave a member in.
 		return "", "", client.IgnoreNotFound(err)
 	}

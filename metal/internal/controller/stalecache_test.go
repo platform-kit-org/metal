@@ -153,3 +153,38 @@ func TestMemberFinalizerReadsTheClaimsFromTheAPIServer(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, reason, "from the stale cache alone, the node would go")
 }
+
+// staleBootstrap answers reads of a TalosCluster as a cache from before the
+// bootstrap does.
+type staleBootstrap struct{ client.Client }
+
+func (c staleBootstrap) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+	if err := c.Client.Get(ctx, key, obj, opts...); err != nil {
+		return err
+	}
+	if cl, ok := obj.(*osv1alpha1.TalosCluster); ok {
+		cl.Status.BootstrappedAt = nil
+	}
+	return nil
+}
+
+// The member finalizer of a control plane waits while etcd lists the node.
+// It reads the cluster from the API server: a cache from before the
+// bootstrap would skip the etcd check, and the member would stay in etcd
+// with no node left to remove it.
+func TestMemberFinalizerReadsTheClusterFromTheAPIServer(t *testing.T) {
+	lab := newLifecycleLab(t, []string{"cp-1", "cp-2"}, nil)
+	node := &osv1alpha1.TalosNode{}
+	require.NoError(t, lab.r.Get(t.Context(), client.ObjectKey{Name: "cp-2"}, node))
+	r := &TalosNodeMemberReconciler{Client: staleBootstrap{lab.r.Client}, APIReader: lab.r.Client,
+		Dial: lab.fleet.Dialer(), CredentialsNamespace: "pk-metal", OperationsNamespace: "pk-metal"}
+
+	reason, _, err := r.blocked(t.Context(), node)
+	require.NoError(t, err)
+	assert.Equal(t, osv1alpha1.ReasonEtcdMemberRemains, reason)
+
+	r.APIReader = nil
+	reason, _, err = r.blocked(t.Context(), node)
+	require.NoError(t, err)
+	assert.Empty(t, reason, "from the stale cache alone, the node would go")
+}

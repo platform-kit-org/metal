@@ -63,21 +63,13 @@ func (r *RolloutProposer) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	if !cluster.DeletionTimestamp.IsZero() || cluster.Status.BootstrappedAt == nil {
 		return ctrl.Result{}, nil
 	}
-	// The rollouts come from the API server, not the cache. The event of a
-	// node whose drift moves on can arrive before the cache shows the
-	// rollout this lane proposed a moment ago; from the cache, the cluster
-	// would get a second rollout for another set of nodes.
-	reader := client.Reader(r.Client)
-	if r.APIReader != nil {
-		reader = r.APIReader
-	}
-	rollouts := &osv1alpha1.TalosRolloutList{}
-	if err := reader.List(ctx, rollouts, client.MatchingFields{rolloutClusterField: cluster.Name}); err != nil {
+	rollouts, err := r.clusterRollouts(ctx, cluster.Name)
+	if err != nil {
 		return ctrl.Result{}, err
 	}
 	existing := map[string]*osv1alpha1.TalosRollout{}
-	for i := range rollouts.Items {
-		ro := &rollouts.Items[i]
+	for i := range rollouts {
+		ro := &rollouts[i]
 		if ro.Spec.ClusterRef.Name != cluster.Name {
 			continue
 		}
@@ -128,6 +120,24 @@ func (r *RolloutProposer) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	}
 	logf.FromContext(ctx).Info("proposed rollout", "cluster", cluster.Name, "rollout", ro.Name, "kind", ro.Spec.Kind)
 	return ctrl.Result{}, nil
+}
+
+// clusterRollouts lists the rollouts of cluster from the API server, not
+// the cache. The event of a node whose drift moves on can arrive before the
+// cache shows the rollout this lane proposed a moment ago; from the cache,
+// the cluster would get a second rollout for another set of nodes.
+//
+//pk:uncached
+func (r *RolloutProposer) clusterRollouts(ctx context.Context, cluster string) ([]osv1alpha1.TalosRollout, error) {
+	reader := client.Reader(r.Client)
+	if r.APIReader != nil {
+		reader = r.APIReader
+	}
+	rollouts := &osv1alpha1.TalosRolloutList{}
+	if err := reader.List(ctx, rollouts, client.MatchingFields{rolloutClusterField: cluster}); err != nil {
+		return nil, err
+	}
+	return rollouts.Items, nil
 }
 
 // clusterRequesters names the people who last changed what a cluster's

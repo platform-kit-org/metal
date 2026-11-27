@@ -70,7 +70,8 @@ mise run docs:check
 | --- | --- |
 | `lint:go` | `golangci-lint` with the configuration in `metal/.golangci.yml`. It also fails on a file that `gofmt` or `goimports` would change. `golangci-lint fmt` in `metal/` writes the change. |
 | `lint:phase` | The phase rule. See the invariants below. |
-| `lint:shell` | `bash -n` and `shellcheck` for the scripts in `lab/` and `metal/hack/` |
+| `lint:reads` | The rule for uncached reads. See the invariants below. |
+| `lint:shell` | `bash -n` and `shellcheck` for the scripts in `lab/`, `metal/hack/` and `.claude/hooks/` |
 | `lint:vuln` | `govulncheck`: the known vulnerabilities in the code that the module calls. It reads `vuln.go.dev`. |
 | `generate` | Writes the deepcopy code, the CRDs, the role of the manager and the reference data of this site |
 | `generate:check` | Fails if a generated file does not agree with its source |
@@ -87,6 +88,7 @@ These rules keep the operator safe. A change that breaks one of them is wrong, e
 | --- | --- | --- |
 | Only the package `internal/phase` writes `status.phase` and `status.blockedOn`. No controller reads them. | The conditions are the facts. The phase is a summary for people. See [](concept:phases-and-conditions). | `mise run lint:phase`: a typed check of each write and read in the module. The controller tests also compare each object with its conditions after each subtest. |
 | Each writer of a status has its own field manager, and it applies only its own fields. | Two writers of one field delete the work of each other. | The check after each subtest of the controller tests: each manager owns only its part. See `status.go`. |
+| A decision that a later pass cannot undo reads its inputs from the API server, not from the cache. Mark the function that reads them `//pk:uncached`. A function that removes a finalizer has `//pk:uncached`, or `//pk:cached-ok` and the reason. | The cache can be late. A finalizer that came off, or a second operation that started, stays. | `mise run lint:reads`: a typed check of each marked function and each removal of a finalizer. The stale-cache tests of each fixed decision. |
 | A change to a machine is a step of a [](kind:HostOperation), and a disruptive operation runs only after an approval. | A person decides before a machine changes. See [](concept:approval). | The admission policies, with tests in `internal/envtest/policy_test.go`. The controllers that only read use a BMC client that refuses each write. |
 | The operator does not invent a fact. An address comes from the ledger, a serial from the BMC, a decision from a person. | A wrong guess installs the wrong machine. See [](concept:assert-vs-observe). | No single check. Review each new default and each fallback for this rule. |
 
@@ -131,6 +133,17 @@ Rows 5, 6 and 7 fail without a message. A wrong answer in row 6 lets an action s
 - `mise run docs:dev` serves the site with live reload.
 - A link to a kind, a command or a page uses its category and id: `[](kind:Host)`. A new page declares its id in the frontmatter (`xref`).
 - The reference tables for fields, flags, conditions and phases come from the code. Change the comment in the Go source, then run `mise run generate`.
+
+## Work with a coding agent
+
+The repository has files for coding agents. They are also useful to a person.
+
+| File | What it holds |
+| --- | --- |
+| `AGENTS.md` | The commands, the rules that a check now holds, and how to prove a fix. `CLAUDE.md` imports it. |
+| `.claude/skills/change-checklist` | What else to change for each kind of change. |
+| `.claude/skills/stale-cache-fix` | How to find a decision on a stale cache, fix it and test it. |
+| `.claude/settings.json` | Two hooks. One refuses an edit of a generated file. One formats a Go file after an edit. |
 
 ## Related
 

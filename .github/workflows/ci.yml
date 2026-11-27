@@ -131,6 +131,9 @@ jobs:
       # does not hide what the others have to say.
       - name: Phase invariant
         run: mise run lint:phase
+      - name: Uncached reads
+        if: always()
+        run: mise run lint:reads
       - name: Shell scripts
         if: always()
         run: mise run lint:shell

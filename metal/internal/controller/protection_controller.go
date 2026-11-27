@@ -34,6 +34,9 @@ const fieldOwnerProtection = "pk-metal-protection"
 // is released, and the collection the delete started then completes.
 type ProtectionReconciler struct {
 	client.Client
+	// APIReader reads the hosts straight from the API server before an
+	// endpoint loses its protection. SetupWithManager wires the manager's.
+	APIReader client.Reader
 }
 
 // +kubebuilder:rbac:groups=metal.platform-kit.org,resources=hosts,verbs=get;list;watch;patch
@@ -57,6 +60,7 @@ func (r *ProtectionReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	if err := r.List(ctx, hosts); err != nil {
 		return ctrl.Result{}, err
 	}
+	var live *[]metalv1alpha1.Host
 	for _, path := range host.Status.ManagedBy {
 		ep := &metalv1alpha1.ManagementEndpoint{}
 		if err := r.Get(ctx, client.ObjectKey{Name: path.EndpointRef.Name}, ep); err != nil {
@@ -66,6 +70,17 @@ func (r *ProtectionReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 			continue
 		}
 		holder := claimedHostBehind(hosts.Items, ep.Name)
+		if holder == nil && controllerutil.ContainsFinalizer(ep, claimProtection) {
+			// The finalizer comes off: ask the API server, not the cache.
+			if live == nil {
+				items, err := r.liveHosts(ctx)
+				if err != nil {
+					return ctrl.Result{}, err
+				}
+				live = &items
+			}
+			holder = claimedHostBehind(*live, ep.Name)
+		}
 		if err := r.ensureFinalizer(ctx, ep, holder != nil); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -74,6 +89,25 @@ func (r *ProtectionReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		}
 	}
 	return ctrl.Result{}, nil
+}
+
+// liveHosts lists the hosts from the API server. The protection finalizer
+// on a deleting endpoint is the last thing that holds it: once it comes off,
+// the endpoint goes, and the release can no longer power the machine off
+// through it. A cache that has not yet seen another host behind the endpoint
+// bound to a claim would let it go.
+//
+//pk:uncached
+func (r *ProtectionReconciler) liveHosts(ctx context.Context) ([]metalv1alpha1.Host, error) {
+	reader := client.Reader(r.Client)
+	if r.APIReader != nil {
+		reader = r.APIReader
+	}
+	hosts := &metalv1alpha1.HostList{}
+	if err := reader.List(ctx, hosts); err != nil {
+		return nil, err
+	}
+	return hosts.Items, nil
 }
 
 // claimedHostBehind returns a claimed host the endpoint fronts, if any.
@@ -94,6 +128,8 @@ func claimedHostBehind(hosts []metalv1alpha1.Host, endpoint string) *metalv1alph
 // ensureFinalizer converges the protection finalizer on want with an
 // optimistic-lock patch: finalizers are a list, and a blind merge patch would
 // drop one someone else added in between.
+//
+//pk:cached-ok the patch carries the object's resourceVersion; Reconcile reads the hosts uncached before an endpoint's finalizer comes off
 func (r *ProtectionReconciler) ensureFinalizer(ctx context.Context, obj client.Object, want bool) error {
 	if controllerutil.ContainsFinalizer(obj, claimProtection) == want {
 		return nil
@@ -136,6 +172,9 @@ func (r *ProtectionReconciler) markEndpointHold(ctx context.Context, ep *metalv1
 }
 
 func (r *ProtectionReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if r.APIReader == nil {
+		r.APIReader = mgr.GetAPIReader()
+	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&metalv1alpha1.Host{}).
 		Watches(&metalv1alpha1.ManagementEndpoint{}, handler.EnqueueRequestsFromMapFunc(

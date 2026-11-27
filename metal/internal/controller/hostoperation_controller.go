@@ -952,6 +952,8 @@ func (r *HostOperationReconciler) expire(ctx context.Context, op *metalv1alpha1.
 // start: it returns why. Such a boot was made from a stale read of a claim
 // already being deleted; once started, it could run after the release handed
 // the machine back. Both are read from the API server.
+//
+//pk:uncached
 func (r *HostOperationReconciler) recordBootStart(ctx context.Context, op *metalv1alpha1.HostOperation,
 	cached *metalv1alpha1.Host) (refused string, err error) {
 	uid := op.Labels[labelClaimUID]
@@ -1079,6 +1081,8 @@ func (r *HostOperationReconciler) activePredecessor(ctx context.Context, op *met
 // confirms here and then writes its baseline is seen by the next. The API
 // server filters by host: each start reads the operations of one host, not
 // those of the fleet.
+//
+//pk:uncached
 func (r *HostOperationReconciler) activePredecessorUncached(ctx context.Context, op *metalv1alpha1.HostOperation) (string, error) {
 	ops := &metalv1alpha1.HostOperationList{}
 	if err := r.reader().List(ctx, ops, client.MatchingFields{opHostIndex: op.Spec.HostRef.Name}); err != nil {

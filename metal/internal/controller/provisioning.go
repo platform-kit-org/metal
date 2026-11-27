@@ -1225,6 +1225,8 @@ func bootRan(ops []metalv1alpha1.HostOperation, hostName string) bool {
 // operation that captured its baseline since the read has a newer version,
 // so its delete fails and the pass is retried, and one deleted first can no
 // longer write a baseline, so it never reaches a step that touches the BMC.
+//
+//pk:uncached
 func (r *HostClaimReconciler) bootRanUncached(ctx context.Context, claim *metalv1alpha1.HostClaim, hostName string) (bool, error) {
 	ops := &metalv1alpha1.HostOperationList{}
 	if err := r.reader().List(ctx, ops, client.InNamespace(r.OperationsNamespace), client.MatchingLabels{

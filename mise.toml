@@ -110,17 +110,17 @@ CGO_ENABLED=1 KUBEBUILDER_ASSETS="$assets" go test -race ./...
 '''
 
 [tasks.lint]
-description = "golangci-lint, the phase invariant, shellcheck and the known vulnerabilities"
-depends = ["lint:go", "lint:phase", "lint:shell", "lint:vuln"]
+description = "golangci-lint, the phase invariant, the uncached reads, shellcheck and the known vulnerabilities"
+depends = ["lint:go", "lint:phase", "lint:reads", "lint:shell", "lint:vuln"]
 
 [tasks."lint:shell"]
-description = "bash -n and shellcheck over the lab and hack scripts"
+description = "bash -n and shellcheck over the lab, hack and agent hook scripts"
 # shellcheck is a system package (apt-get install shellcheck); there is no mise pin for it.
 run = '''
-for script in lab/*.sh metal/hack/*.sh; do
+for script in lab/*.sh metal/hack/*.sh .claude/hooks/*.sh; do
   bash -n "$script"
 done
-shellcheck --severity=warning lab/*.sh metal/hack/*.sh
+shellcheck --severity=warning lab/*.sh metal/hack/*.sh .claude/hooks/*.sh
 echo "lint:shell: clean"
 '''
 
@@ -136,6 +136,13 @@ dir = "metal"
 # golang.org/x modules that the binaries link. The Go checksum database checks
 # the download. govulncheck reads https://vuln.go.dev.
 run = "go run golang.org/x/vuln/cmd/govulncheck@v1.10.0 ./..."
+
+[tasks."lint:reads"]
+description = "A decision that a later pass cannot undo reads its inputs from the API server, not the cache (a typed check)"
+dir = "metal"
+# The functions marked //pk:uncached, and each removal of a finalizer. See
+# internal/lint/uncached_test.go.
+run = "go test -count=1 -run TestDecisionsReadTheAPIServer ./internal/lint/"
 
 [tasks."lint:phase"]
 description = "Only internal/phase writes .Status.Phase/.Status.BlockedOn, and reconcilers never read them (a typed check)"

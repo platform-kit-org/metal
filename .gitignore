@@ -1,6 +1,10 @@
 metal/bin/
 metal/.cache/
-.claude/
+# The agent state of one workstation. The shared agent files are committed.
+.claude/*
+!.claude/settings.json
+!.claude/hooks/
+!.claude/skills/
 mise.local.toml
 .lab/
 /metal/manager

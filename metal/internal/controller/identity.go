@@ -209,6 +209,8 @@ func (r *EndpointConvergenceReconciler) identityWith(ctx context.Context, ep *me
 // ensureIdentityInFlight returns the in-flight Secret for this desired
 // state, generating the CSR (on the manager or locally, per dialect) when
 // none matches.
+//
+//pk:uncached
 func (r *EndpointConvergenceReconciler) ensureIdentityInFlight(ctx context.Context, ep *metalv1alpha1.ManagementEndpoint, desired identityDesired, hash string, dialect bmc.IdentityDialect) (*corev1.Secret, []byte, error) {
 	sec := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
 		Name: identitySecretName(ep.Name), Namespace: r.CredentialsNamespace,

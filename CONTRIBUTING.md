@@ -60,11 +60,11 @@ part of the specification above it, change it if needed, run
 ## Lint
 
 ```sh
-mise run lint          # golangci-lint, the phase check, shellcheck, govulncheck
+mise run lint          # golangci-lint, typed checks, shellcheck, govulncheck
 ```
 
-CI runs the four parts as separate steps: `lint:go`, `lint:phase`,
-`lint:shell` and `lint:vuln`. `lint:go` also fails on a file that `gofmt` or
+CI runs the five parts as separate steps: `lint:go`, `lint:phase`,
+`lint:reads`, `lint:shell` and `lint:vuln`. `lint:go` also fails on a file that `gofmt` or
 `goimports` would change; `golangci-lint fmt` in `metal/` writes the change.
 
 ## Generated files
@@ -92,6 +92,9 @@ A change must keep these rules.
 
 - Only `metal/internal/phase` writes `status.phase` and `status.blockedOn`.
   Reconcilers do not read them. `mise run lint:phase` checks this.
+- A decision that a later pass cannot undo reads its inputs from the API
+  server, not from the cache. `mise run lint:reads` checks the functions
+  marked `//pk:uncached` and each removal of a finalizer.
 - Each writer of a status has its own server-side-apply field owner.
 - Every change to a machine goes through a HostOperation that a person
   approved.

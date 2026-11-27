@@ -180,22 +180,10 @@ func orDash(s string) string {
 }
 
 func simCmd(args []string) {
-	if len(args) > 0 && args[0] == "fleet" {
-		simFleetCmd(args[1:])
+	sub, rest := subcommand("sim", args)
+	if sub == "fleet" {
+		simFleetCmd(rest)
 		return
-	}
-	if len(args) < 1 || args[0] != "serve" {
-		w, code := os.Stderr, 1
-		if len(args) > 0 && (args[0] == "-h" || args[0] == "-help" || args[0] == "--help") {
-			w, code = os.Stdout, 0
-		}
-		fmt.Fprintln(w, `pk-metal sim: run simulated BMCs (Redfish) for tests and demos
-
-usage: pk-metal sim serve [--fixture <name|path>] [--listen addr] [--tls] [--verbose]
-       pk-metal sim fleet --config <file> [--verbose] [--state-listen addr]
-
-run: pk-metal sim serve -h, or pk-metal sim fleet -h, for the flags`)
-		os.Exit(code)
 	}
 	fs := newFlags("sim serve")
 	fixture := fs.String("fixture", "generic",
@@ -203,7 +191,7 @@ run: pk-metal sim serve -h, or pk-metal sim fleet -h, for the flags`)
 	listen := fs.String("listen", "127.0.0.1:8000", "listen address")
 	serveTLS := fs.Bool("tls", false, "serve HTTPS with an ephemeral self-signed certificate (what spec.address requires)")
 	verbose := fs.Bool("verbose", false, "log every request (default: only state-changing ones)")
-	parseFlags(fs, args[1:])
+	parseFlags(fs, rest)
 
 	f, err := sim.LoadFixture(*fixture)
 	if err != nil {

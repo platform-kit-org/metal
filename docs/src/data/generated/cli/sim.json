@@ -1,16 +1,84 @@
 {
   "name": "sim",
   "summary": "run simulated BMCs for tests: serve one, or a fleet with a virtual machine behind each",
-  "synopsis": "serve [--fixture <name|path>] [--listen addr] [--tls] [--verbose]",
+  "synopsis": "serve [flags] | fleet --config <file>",
   "usage": [
-    "pk-metal sim serve [--fixture <name|path>] [--listen addr] [--tls] [--verbose]",
-    "pk-metal sim fleet --config <file> [--verbose] [--state-listen addr]"
+    "pk-metal sim serve [flags] | fleet --config <file>"
   ],
   "changes": false,
   "needsCluster": false,
-  "description": "run: pk-metal sim serve -h, or pk-metal sim fleet -h, for the flags",
+  "description": "",
   "examples": [],
   "exitStatus": [],
   "flags": [],
-  "subcommands": []
+  "subcommands": [
+    {
+      "name": "serve",
+      "synopsis": "serve [flags]",
+      "flags": [
+        {
+          "name": "fixture",
+          "type": "string",
+          "default": "generic",
+          "usage": "embedded fixture name (generic, huawei-2288h-v5, supermicro-x12) or a path to a fixture YAML",
+          "global": false
+        },
+        {
+          "name": "listen",
+          "type": "string",
+          "default": "127.0.0.1:8000",
+          "usage": "listen address",
+          "global": false
+        },
+        {
+          "name": "tls",
+          "type": "bool",
+          "default": "",
+          "usage": "serve HTTPS with an ephemeral self-signed certificate (what spec.address requires)",
+          "global": false
+        },
+        {
+          "name": "verbose",
+          "type": "bool",
+          "default": "",
+          "usage": "log every request (default: only state-changing ones)",
+          "global": false
+        }
+      ]
+    },
+    {
+      "name": "fleet",
+      "synopsis": "fleet --config <file>",
+      "flags": [
+        {
+          "name": "config",
+          "type": "string",
+          "default": "",
+          "usage": "fleet file (YAML): the machines, their BMC addresses, identities and backends",
+          "global": false
+        },
+        {
+          "name": "hang-timeout",
+          "type": "duration",
+          "default": "1m30s",
+          "usage": "power-cycle a VM (up to three times per power-on) when its console shows only firmware screen control for this long after a power-on (0: never; not given: 1m30s under kvm, 3m0s under tcg)",
+          "global": false
+        },
+        {
+          "name": "state-listen",
+          "type": "string",
+          "default": "127.0.0.1:8440",
+          "usage": "address of the read-only state endpoint (plain HTTP, GET /state; \"\" serves none); keep it on loopback",
+          "global": false
+        },
+        {
+          "name": "verbose",
+          "type": "bool",
+          "default": "",
+          "usage": "log every request (default: only state-changing ones)",
+          "global": false
+        }
+      ]
+    }
+  ]
 }

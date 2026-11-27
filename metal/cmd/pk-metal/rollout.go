@@ -51,12 +51,7 @@ examples:
 }
 
 func rolloutCmd(args []string) {
-	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
-		fs := newFlags("rollout")
-		parseFlags(fs, args)
-		badUsage(fs, "give a subcommand: list, show, approve, resume, pause or abort")
-	}
-	sub, rest := args[0], args[1:]
+	sub, rest := subcommand("rollout", args)
 	fs := newFlags("rollout " + sub)
 	// Only approve and abort ask, so only they take --yes: on the others it
 	// would be accepted and mean nothing.
@@ -110,8 +105,6 @@ func rolloutCmd(args []string) {
 		run = func(ctx context.Context, cl client.Client) error {
 			return abortRollout(ctx, cl, fs.Arg(0), prompt{Yes: *yes, Interactive: isTerminal(os.Stdin), In: os.Stdin, Out: os.Stdout})
 		}
-	default:
-		badUsage(fs, "unknown subcommand "+sub+": give list, show, approve, resume, pause or abort")
 	}
 	onCluster(run)
 }

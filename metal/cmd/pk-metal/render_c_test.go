@@ -65,7 +65,7 @@ func TestRenderNoCredentials(t *testing.T) {
 
 func TestRenderRefusesLongCredentials(t *testing.T) {
 	for _, ttl := range []string{"721h", "0s"} {
-		code, stderr := runCLI(t, "render", "--dir=d", "--secrets=s", "--credentials-ttl="+ttl)
+		code, _, stderr := runCLI(t, "render", "--dir=d", "--secrets=s", "--credentials-ttl="+ttl)
 		assert.Equal(t, 1, code, stderr)
 		assert.Contains(t, stderr, "--credentials-ttl must be more than 0 and at most 720h")
 	}

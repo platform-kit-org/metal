@@ -95,26 +95,6 @@ export const groups = [
   },
 ];
 
-/**
- * Flags that the generated data does not have: `pk-metal sim` parses its two
- * subcommands by hand, so docgen sees no flag set.
- * Source: metal/cmd/pk-metal/main.go (simCmd) and fleet.go (simFleetCmd).
- */
-export const handFlags: Record<string, Flag[]> = {
-  'sim serve': [
-    { name: 'fixture', type: 'string', default: 'generic', usage: 'name of a built-in fixture (generic, huawei-2288h-v5, supermicro-x12) or the path of a fixture YAML file', global: false },
-    { name: 'listen', type: 'string', default: '127.0.0.1:8000', usage: 'listen address', global: false },
-    { name: 'tls', type: 'bool', default: '', usage: 'serve HTTPS with a temporary self-signed certificate', global: false },
-    { name: 'verbose', type: 'bool', default: '', usage: 'log each request (default: only the requests that change state)', global: false },
-  ],
-  'sim fleet': [
-    { name: 'config', type: 'string', default: '', usage: 'fleet file (YAML): the machines, their BMC addresses, identities and backends (required)', global: false },
-    { name: 'state-listen', type: 'string', default: '127.0.0.1:8440', usage: 'address of the read-only state endpoint (plain HTTP); an empty value serves none', global: false },
-    { name: 'hang-timeout', type: 'duration', default: '', usage: 'power cycle a virtual machine one time when its console shows only firmware output for this long after a power-on (0: never)', global: false },
-    { name: 'verbose', type: 'bool', default: '', usage: 'log each request (default: only the requests that change state)', global: false },
-  ],
-};
-
 /** `--yes`, or `-n` for a flag with a one-letter name. Go accepts one or two dashes for each. */
 export function flagText(f: Flag): string {
   return f.name.length === 1 ? `-${f.name}` : `--${f.name}`;

@@ -49,12 +49,7 @@ Restoring is pk-metal restore; https://metal.platform-kit.org/operate/day-2/rest
 }
 
 func backupCmd(args []string) {
-	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
-		fs := newFlags("backup")
-		parseFlags(fs, args)
-		badUsage(fs, "name a subcommand: now, list, get or decrypt")
-	}
-	sub, rest := args[0], args[1:]
+	sub, rest := subcommand("backup", args)
 	fs := newFlags("backup " + sub)
 	addGlobalFlags(fs)
 	ctx, stop := signalContext()
@@ -111,8 +106,6 @@ func backupCmd(args []string) {
 		if err := decryptSnapshot(ctx, cl, fs.Arg(0), *in, *identity, *out, os.Stdout); err != nil {
 			die(err)
 		}
-	default:
-		badUsage(fs, fmt.Sprintf("unknown subcommand %q: now, list, get or decrypt", sub))
 	}
 }
 

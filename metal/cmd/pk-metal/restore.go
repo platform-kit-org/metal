@@ -69,12 +69,7 @@ const restoreReason = "EtcdRestore"
 const labelRestoreCluster = "os.platform-kit.org/etcd-restore"
 
 func restoreCmd(args []string) {
-	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
-		fs := newFlags("restore")
-		parseFlags(fs, args)
-		badUsage(fs, "name a subcommand: plan or upload")
-	}
-	sub, rest := args[0], args[1:]
+	sub, rest := subcommand("restore", args)
 	fs := newFlags("restore " + sub)
 	addGlobalFlags(fs)
 	talosconfigFile := fs.String("talosconfig", "", "talosconfig file (default: the cluster's published Secret)")
@@ -137,8 +132,6 @@ func restoreCmd(args []string) {
 		}, os.Stdout); err != nil {
 			die(err)
 		}
-	default:
-		badUsage(fs, fmt.Sprintf("unknown subcommand %q: plan or upload", sub))
 	}
 }
 

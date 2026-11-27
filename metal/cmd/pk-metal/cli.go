@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"slices"
 	"strings"
 	"syscall"
 )
@@ -121,7 +122,8 @@ func main() {
 			if c == nil {
 				dief("unknown command %q; run: pk-metal help", args[1])
 			}
-			c.run([]string{"-h"})
+			// help <verb> <subcommand> prints what <verb> <subcommand> -h prints.
+			c.run(append(slices.Clone(args[2:]), "-h"))
 			return
 		}
 		usage(os.Stdout)
@@ -179,6 +181,41 @@ func newFlags(name string) *flag.FlagSet {
 		fs.PrintDefaults()
 	}
 	return fs
+}
+
+// verbSubcommands are the subcommands of a verb, read from its synopsis
+// ("list | show <rollout> | ..."): the first word of each alternative, when
+// every alternative starts with a plain word.
+func verbSubcommands(c *command) []string {
+	alts := strings.Split(c.synopsis, " | ")
+	if len(alts) < 2 {
+		return nil
+	}
+	var subs []string
+	for _, alt := range alts {
+		word, _, _ := strings.Cut(strings.TrimSpace(alt), " ")
+		if word == "" || strings.ContainsAny(word, "-[<|") {
+			return nil
+		}
+		subs = append(subs, word)
+	}
+	return subs
+}
+
+// subcommand splits the subcommand off the arguments of a verb that has
+// them. -h before it prints the help of the verb; no subcommand, or one that
+// verbSubcommands does not list, is a bad call.
+func subcommand(verb string, args []string) (sub string, rest []string) {
+	fs := newFlags(verb)
+	subs := verbSubcommands(lookup(verb))
+	switch {
+	case len(args) == 0 || strings.HasPrefix(args[0], "-"):
+		parseFlags(fs, args)
+		badUsage(fs, "name a subcommand: "+strings.Join(subs, ", "))
+	case !slices.Contains(subs, args[0]):
+		badUsage(fs, fmt.Sprintf("unknown subcommand %q: give %s", args[0], strings.Join(subs, ", ")))
+	}
+	return args[0], args[1:]
 }
 
 // verbHelp is longer help text for the verbs that need it, printed by -h.

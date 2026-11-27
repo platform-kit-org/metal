@@ -97,25 +97,6 @@ func flagName(name string) string {
 	return "--" + name
 }
 
-// verbSubcommands are the subcommands of a verb, read from its synopsis
-// ("list | show <rollout> | ..."): the first word of each alternative, when
-// every alternative starts with a plain word.
-func verbSubcommands(c *command) []string {
-	alts := strings.Split(c.synopsis, " | ")
-	if len(alts) < 2 {
-		return nil
-	}
-	var subs []string
-	for _, alt := range alts {
-		word, _, _ := strings.Cut(strings.TrimSpace(alt), " ")
-		if word == "" || strings.ContainsAny(word, "-[<|") {
-			return nil
-		}
-		subs = append(subs, word)
-	}
-	return subs
-}
-
 // --- what each argument and flag value is ------------------------------------
 
 // kind names what an argument or a flag value is, and so where its

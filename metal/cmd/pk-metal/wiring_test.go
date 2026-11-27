@@ -29,20 +29,20 @@ func TestMain(m *testing.M) {
 }
 
 // runCLI runs pk-metal with args in a child process and returns its exit
-// code and stderr.
-func runCLI(t *testing.T, args ...string) (int, string) {
+// code, stdout and stderr.
+func runCLI(t *testing.T, args ...string) (code int, stdout, stderr string) {
 	t.Helper()
 	cmd := exec.Command(os.Args[0], "-test.run=^$")
 	cmd.Env = append(os.Environ(), runAsCLI+"="+strings.Join(args, " "))
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
+	var out, errOut bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &errOut
 	err := cmd.Run()
 	var exit *exec.ExitError
 	if errors.As(err, &exit) {
-		return exit.ExitCode(), stderr.String()
+		return exit.ExitCode(), out.String(), errOut.String()
 	}
 	require.NoError(t, err)
-	return 0, stderr.String()
+	return 0, out.String(), errOut.String()
 }
 
 // Each verb that drives a machine or a cluster refuses a missing argument,
@@ -59,15 +59,30 @@ func TestVerbsNameWhatIsMissing(t *testing.T) {
 		{[]string{"render"}, "--dir and --secrets are required"},
 		{[]string{"render", "--dir=d", "--secrets=s", "extra"}, "render takes no other arguments"},
 		{[]string{"relay", "extra"}, "relay takes no arguments"},
+		{[]string{"sim"}, "name a subcommand: serve, fleet"},
+		{[]string{"backup"}, "name a subcommand: now, list, get, decrypt"},
+		{[]string{"rollout", "lsit"}, `unknown subcommand "lsit": give list, show, approve, resume, pause, abort`},
 	} {
 		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
-			code, stderr := runCLI(t, tc.args...)
+			code, _, stderr := runCLI(t, tc.args...)
 			assert.Equal(t, 1, code, stderr)
 			assert.Contains(t, stderr, tc.want)
 			assert.Contains(t, stderr, "usage: pk-metal "+tc.args[0])
 			assert.Contains(t, stderr, "run: pk-metal help "+tc.args[0])
 		})
 	}
+}
+
+// The help of a verb with subcommands comes from the command table, like the
+// help of every other verb, and help <verb> <subcommand> shows the flags of
+// the subcommand.
+func TestHelpOfSubcommands(t *testing.T) {
+	code, stdout, _ := runCLI(t, "sim", "-h")
+	assert.Equal(t, 0, code)
+	assert.Contains(t, stdout, "usage: pk-metal sim serve [flags] | fleet --config <file>")
+	code, stdout, _ = runCLI(t, "help", "backup", "get")
+	assert.Equal(t, 0, code)
+	assert.Contains(t, stdout, "\n  -o string\n", "the flags of backup get, not of backup")
 }
 
 // pk-metal render writes what the day-0 path consumes: a machine config per

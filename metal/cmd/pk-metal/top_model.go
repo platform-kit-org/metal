@@ -8,6 +8,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/GSI-HPC/go-clikit/termtext"
 	"github.com/charmbracelet/x/ansi"
 	"k8s.io/apimachinery/pkg/types"
 )
@@ -210,8 +211,10 @@ func (m topModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// setStatus shows the outcome of a key: what a verb printed, or its error,
+// which can quote a cluster. It is escaped.
 func (m *topModel) setStatus(s string, bad bool) {
-	m.status, m.statusBad = strings.TrimSpace(s), bad
+	m.status, m.statusBad = strings.TrimSpace(termtext.EscapeLines(s)), bad
 }
 
 func (m topModel) selected() *tile {

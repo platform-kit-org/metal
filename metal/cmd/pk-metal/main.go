@@ -22,6 +22,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/GSI-HPC/go-clikit/termtext"
+
 	"github.com/dennisklein/platform-kit/metal/internal/asset"
 	"github.com/dennisklein/platform-kit/metal/internal/bmc"
 	gofishclient "github.com/dennisklein/platform-kit/metal/internal/bmc/gofish"
@@ -32,6 +34,11 @@ import (
 // Stamped at build time with -ldflags "-X main.version=<tag>", by `mise run build`
 // and by the image build.
 var version = "dev"
+
+// A log line can hold text from a BMC, a cluster or a relay peer: a media
+// id, a system id, an error. The log escapes each line, so that no such text
+// acts on the terminal.
+func init() { log.SetOutput(termtext.NewEscapeWriter(os.Stderr)) }
 
 // bmcFlags are the shared endpoint, auth and trust flags of the verbs that
 // talk to a BMC. The password comes ONLY from PK_METAL_BMC_PASSWORD (never
@@ -141,27 +148,37 @@ func checkCmd(args []string) {
 	defer stop()
 	c := mustConnect(ctx, fs.Arg(0), bf, true) // check is read-only by construction
 	defer c.Close()
+	if err := check(ctx, c, os.Stdout); err != nil {
+		dief("check failed: %v", err)
+	}
+}
 
+// check prints what the BMC says of itself: its manager, its virtual media
+// slots and its systems. The BMC chooses each of these strings, so each is
+// escaped.
+func check(ctx context.Context, c bmc.Client, w io.Writer) error {
+	esc := termtext.Escape
 	m, err := c.Manager(ctx)
 	if err != nil {
-		dief("check failed: %v", err)
+		return err
 	}
-	fmt.Printf("manager:  %s fw %s\n", orDash(m.Vendor), orDash(m.FirmwareVersion))
+	fmt.Fprintf(w, "manager:  %s fw %s\n", esc(orDash(m.Vendor)), esc(orDash(m.FirmwareVersion)))
 	caps, err := c.Capabilities(ctx)
 	if err != nil {
-		dief("check failed: %v", err)
+		return err
 	}
 	for _, id := range slices.Sorted(maps.Keys(caps.MediaDialect)) {
-		fmt.Printf("media:    %-14s dialect=%s\n", id, caps.MediaDialect[id])
+		fmt.Fprintf(w, "media:    %-14s dialect=%s\n", esc(id), caps.MediaDialect[id])
 	}
 	systems, err := c.Systems(ctx)
 	if err != nil {
-		dief("check failed: %v", err)
+		return err
 	}
 	for _, s := range systems {
-		fmt.Printf("system:   %s serial=%s power=%s\n", s.ID, orDash(s.SerialNumber), s.PowerState)
+		fmt.Fprintf(w, "system:   %s serial=%s power=%s\n", esc(s.ID), esc(orDash(s.SerialNumber)), esc(string(s.PowerState)))
 	}
-	fmt.Println("check:    OK (read-only)")
+	fmt.Fprintln(w, "check:    OK (read-only)")
+	return nil
 }
 
 func endpointHost(endpoint string) string {

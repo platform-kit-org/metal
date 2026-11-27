@@ -11,10 +11,11 @@ import (
 	"maps"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
-	"text/tabwriter"
 	"time"
 
+	"github.com/GSI-HPC/go-clikit/termtext"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
@@ -140,7 +141,7 @@ func approveAll(ctx context.Context, cl client.Client, refs []types.NamespacedNa
 			return err
 		}
 		notApproved = append(notApproved, ref.String())
-		fmt.Fprintf(tmpl.Out, "%s: %v\n", ref, err)
+		fmt.Fprintf(tmpl.Out, "%s: %s\n", ref, termtext.Escape(err.Error()))
 		if errors.Is(err, errCannotAsk) || errors.Is(err, errNoAnswer) || ctx.Err() != nil {
 			for _, rest := range refs[i+1:] {
 				notApproved = append(notApproved, rest.String())
@@ -403,17 +404,18 @@ func listPending(ctx context.Context, cl client.Client, w io.Writer, now time.Ti
 	slices.SortFunc(pending, func(a, b metalv1alpha1.HostOperation) int {
 		return strings.Compare(a.Namespace+"/"+a.Name, b.Namespace+"/"+b.Name)
 	})
-	tw := tabwriter.NewWriter(w, 2, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "OPERATION\tHOST\tWHY\tSTEPS\tPROPOSED BY\tAGE")
+	var rows [][]string
 	for _, op := range pending {
 		age := "-"
 		if !op.CreationTimestamp.IsZero() {
 			age = shortDuration(now.Sub(op.CreationTimestamp.Time))
 		}
-		fmt.Fprintf(tw, "%s/%s\t%s\t%s\t%d\t%s\t%s\n", op.Namespace, op.Name, op.Spec.HostRef.Name,
-			orDash(op.Spec.Reason), len(op.Spec.Actions), orDash(op.Spec.ProposedBy), age)
+		rows = append(rows, []string{op.Namespace + "/" + op.Name, op.Spec.HostRef.Name,
+			orDash(op.Spec.Reason), strconv.Itoa(len(op.Spec.Actions)), orDash(op.Spec.ProposedBy), age})
 	}
-	_ = tw.Flush()
+	if err := writeTable(w, "OPERATION\tHOST\tWHY\tSTEPS\tPROPOSED BY\tAGE", rows); err != nil {
+		return err
+	}
 	first := pending[0].Namespace + "/" + pending[0].Name
 	fmt.Fprintf(w, "\nNothing was approved. Name the operations to see their plans and approve them, for example:\n"+
 		"  pk-metal approve %s\n", first)
@@ -497,7 +499,8 @@ func loadPlanContext(ctx context.Context, cl client.Client, op *metalv1alpha1.Ho
 	return pc, nil
 }
 
-// renderPlan says in plain words what the operation will do, in order.
+// renderPlan says in plain words what the operation will do, in order. The
+// plan quotes the operation, its host and its BMCs, so it is escaped.
 func renderPlan(op *metalv1alpha1.HostOperation, pc planContext) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "operation %s/%s\n", op.Namespace, op.Name)
@@ -574,7 +577,7 @@ func renderPlan(op *metalv1alpha1.HostOperation, pc planContext) string {
 		fmt.Fprintf(&b, "  installs Talos onto the disk that matches %s; everything on that disk is overwritten\n",
 			diskSelector(n.Spec.InstallDiskSelector))
 	}
-	return b.String()
+	return termtext.EscapeLines(b.String())
 }
 
 // guardEffect says in plain words which rule an annotation lifts.

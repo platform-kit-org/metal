@@ -10,10 +10,10 @@ import (
 	"os"
 	"slices"
 	"strings"
-	"text/tabwriter"
 	"time"
 
 	"filippo.io/age"
+	"github.com/GSI-HPC/go-clikit/termtext"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -199,13 +199,13 @@ func waitSnapshot(ctx context.Context, cl client.Client, name string, every time
 				}
 				return fmt.Errorf("snapshot %s was stored at %s but is NOT verified: %s", name, s.Status.Location, msg)
 			}
-			fmt.Fprintf(w, "stored and verified: %s, %s, from %s, %s\n", s.Status.Location,
-				humanBytes(s.Status.Size), s.Status.TakenFrom, s.Status.SHA256)
+			fmt.Fprintf(w, "stored and verified: %s, %s, from %s, %s\n", termtext.Escape(s.Status.Location),
+				humanBytes(s.Status.Size), termtext.Escape(s.Status.TakenFrom), termtext.Escape(s.Status.SHA256))
 			return nil
 		case c != nil && c.Status == metav1.ConditionFalse:
 			return fmt.Errorf("snapshot %s failed: %s", name, c.Message)
 		case c != nil && c.Message != last:
-			fmt.Fprintf(w, "  %s\n", c.Message)
+			fmt.Fprintf(w, "  %s\n", termtext.Escape(c.Message))
 			last = c.Message
 		}
 		select {
@@ -237,15 +237,14 @@ func listSnapshots(ctx context.Context, cl client.Client, cluster string, now ti
 		fmt.Fprintln(w, "no etcd snapshots")
 		return nil
 	}
-	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(tw, "NAME\tCLUSTER\tTAKEN\tFROM\tSIZE\tSTATE\tRECIPIENTS\tLOCATION")
+	var rows [][]string
 	for i := range items {
 		s := &items[i]
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", s.Name, orDash(s.Status.ClusterName),
+		rows = append(rows, []string{s.Name, orDash(s.Status.ClusterName),
 			sinceTaken(now, snapTime(s)), orDash(s.Status.TakenFrom), humanBytes(s.Status.Size),
-			snapState(s), orDash(recipientTails(s.Status.Recipients)), orDash(s.Status.Location))
+			snapState(s), orDash(recipientTails(s.Status.Recipients)), orDash(s.Status.Location)})
 	}
-	return tw.Flush()
+	return writeTable(w, "NAME\tCLUSTER\tTAKEN\tFROM\tSIZE\tSTATE\tRECIPIENTS\tLOCATION", rows)
 }
 
 // recipientTailLen is how much of an age public key the list shows: enough

@@ -9,9 +9,9 @@ import (
 	"os"
 	"slices"
 	"strings"
-	"text/tabwriter"
 	"time"
 
+	"github.com/GSI-HPC/go-clikit/termtext"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/types"
@@ -180,8 +180,7 @@ func listRollouts(ctx context.Context, cl client.Client, w io.Writer, now time.T
 		}
 		return strings.Compare(a.Name, b.Name)
 	})
-	tw := tabwriter.NewWriter(w, 2, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ROLLOUT\tCLUSTER\tKIND\tTARGET\tNODES\tSTATE\tAPPROVED BY\tAGE")
+	var rows [][]string
 	for i := range list.Items {
 		ro := &list.Items[i]
 		done := 0
@@ -194,11 +193,10 @@ func listRollouts(ctx context.Context, cl client.Client, w io.Writer, now time.T
 		if !ro.CreationTimestamp.IsZero() {
 			age = shortDuration(now.Sub(ro.CreationTimestamp.Time))
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d/%d\t%s\t%s\t%s\n", ro.Name, ro.Spec.ClusterRef.Name, ro.Spec.Kind,
-			orDash(rolloutTarget(ro)), done, len(ro.Status.Plan), rolloutState(ro), orDash(ro.Spec.Approval.ApprovedBy), age)
+		rows = append(rows, []string{ro.Name, ro.Spec.ClusterRef.Name, string(ro.Spec.Kind), orDash(rolloutTarget(ro)),
+			fmt.Sprintf("%d/%d", done, len(ro.Status.Plan)), rolloutState(ro), orDash(ro.Spec.Approval.ApprovedBy), age})
 	}
-	_ = tw.Flush()
-	return nil
+	return writeTable(w, "ROLLOUT\tCLUSTER\tKIND\tTARGET\tNODES\tSTATE\tAPPROVED BY\tAGE", rows)
 }
 
 func rolloutTarget(ro *osv1alpha1.TalosRollout) string {
@@ -216,7 +214,8 @@ func rolloutTarget(ro *osv1alpha1.TalosRollout) string {
 }
 
 // renderRollout is what a person reads before approving: the order, what
-// changes on each node and whether it reboots, and how far it got.
+// changes on each node and whether it reboots, and how far it got. It quotes
+// the messages of the rollout's conditions and steps, so it is escaped.
 func renderRollout(ro *osv1alpha1.TalosRollout) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "rollout %s: %s on cluster %s", ro.Name, ro.Spec.Kind, ro.Spec.ClusterRef.Name)
@@ -239,7 +238,7 @@ func renderRollout(ro *osv1alpha1.TalosRollout) string {
 	}
 	if len(ro.Status.Plan) == 0 {
 		b.WriteString("\nno plan yet\n")
-		return b.String()
+		return termtext.EscapeLines(b.String())
 	}
 	maxW := ro.Spec.MaxUnavailableWorkers
 	if maxW < 1 {
@@ -276,7 +275,7 @@ func renderRollout(ro *osv1alpha1.TalosRollout) string {
 			fmt.Fprintf(&b, "     steps: %s\n", strings.Join(s.Actions, ", "))
 		}
 	}
-	return b.String()
+	return termtext.EscapeLines(b.String())
 }
 
 // rolloutApproval is one approve call.

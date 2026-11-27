@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/GSI-HPC/go-clikit/termtext"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -95,7 +96,7 @@ func retry(ctx context.Context, cl client.Client, namespace, name string, w io.W
 		if p == metalv1alpha1.OperationAborted {
 			verb = "was aborted"
 		}
-		fmt.Fprintf(w, "operation %s %s: %s\n", ref, verb, why)
+		fmt.Fprintf(w, "operation %s %s: %s\n", ref, verb, termtext.Escape(why))
 	}
 	if convergenceProposal(op) {
 		// Deleting a convergence proposal reads as refusing it, so the

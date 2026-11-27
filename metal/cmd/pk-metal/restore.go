@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/GSI-HPC/go-clikit/termtext"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -498,6 +499,8 @@ func (p *restorePlan) flags() string {
 	return " " + strings.Join(f, " ")
 }
 
+// render is the plan as a person reads it. It quotes what the nodes and
+// their etcd members answered, so it is escaped.
 func (p *restorePlan) render() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "cluster %s: %s\n", p.Cluster, p.Scenario)
@@ -534,7 +537,7 @@ func (p *restorePlan) render() string {
 	for _, n := range p.Notes {
 		fmt.Fprintf(&b, "note: %s\n", n)
 	}
-	return b.String()
+	return termtext.EscapeLines(b.String())
 }
 
 // propose creates the operations; an existing one of the same name is

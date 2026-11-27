@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/GSI-HPC/go-clikit/termtext"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
@@ -76,7 +77,7 @@ func abort(ctx context.Context, cl client.Client, namespace, name, user, reason 
 		return fmt.Errorf("operation %s has finished (%s); there is nothing to abort", ref, opPhase(op))
 	}
 	if by, asked := op.Annotations[metalv1alpha1.AnnotationAbort]; asked {
-		fmt.Fprintf(w, "operation %s is already being aborted (%s)\n", ref, orDash(by))
+		fmt.Fprintf(w, "operation %s is already being aborted (%s)\n", ref, termtext.Escape(orDash(by)))
 		return nil
 	}
 	// Admission accepts an abort only as "<username>: <reason>", so that the

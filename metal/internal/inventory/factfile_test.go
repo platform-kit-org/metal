@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/GSI-HPC/go-clikit/termtext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v4"
@@ -77,9 +78,11 @@ func TestGolden(t *testing.T) {
 // quotes, backslashes, '#', control characters, non-printable Unicode, and
 // bytes that are not UTF-8 at all. Go's %q and YAML's double-quoted escapes
 // agree on most of these but not on invalid UTF-8: Go writes the byte as
-// \xff, YAML reads \xff as the code point U+00FF.
+// \xff, YAML reads \xff as the code point U+00FF. The file is also safe to
+// show on a terminal: an escape sequence, a write to the clipboard (OSC 52),
+// a carriage return or a bidirectional control is written as a YAML escape.
 func TestRoundTrip(t *testing.T) {
-	odd := "a\"b\\c # d\te\x01f g h"
+	odd := "a\"b\\c # d\te\x01f g h \x1b]52;c;aGlp\x07\r\u009b\u202e"
 	bad := "SN\xff\xfe01" // not UTF-8
 	facts := inventory.Facts{
 		Manager: bmc.Manager{FirmwareVersion: odd, Hostname: bad, MAC: "02:00:00:00:00:01"},
@@ -93,6 +96,7 @@ func TestRoundTrip(t *testing.T) {
 	}
 	var buf bytes.Buffer
 	inventory.Write(&buf, "node-01", "192.0.2.10", time.Unix(0, 0), facts)
+	assert.Equal(t, termtext.EscapeLines(buf.String()), buf.String(), "a character acts on the terminal")
 
 	var got struct {
 		BMC struct {

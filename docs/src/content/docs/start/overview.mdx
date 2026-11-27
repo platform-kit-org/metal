@@ -61,12 +61,9 @@ The operator never approves. Your site decides if a person can approve their own
 | Operating system | Talos Linux only, v1.14.0 or later. See [](ref:versions). |
 | Architecture | x86-64 machines in UEFI boot mode. |
 | BMC | Redfish with virtual media. No IPMI, no PXE. See [](ref:hardware). |
-| Tested hardware | Simulated BMCs only. See [](ref:status). |
 | Machine selection | No replica count in the API and no autoscaler. [](cli:scale) picks free Hosts when you run it. |
 | Workloads | The operator installs the cluster. It does not install add-ons or applications. |
 | Operator replicas | One manager. See [Scale and sizing](concept:architecture#scale-and-sizing). |
-| Tested size | One cluster of five virtual machines. |
-| Release | None yet. The API is `v1alpha1` and can change. |
 
 [](ref:compared-with) maps pk-metal to tools that you possibly know.
 

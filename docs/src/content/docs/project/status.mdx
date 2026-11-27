@@ -52,8 +52,8 @@ The project makes no promise about upgrades from one commit to a later one.
 | Unit tests and the race detector | The packages, with simulated BMCs and a fake Talos API | Each push and each pull request |
 | Controller tests | The controllers and the admission policies against a real Kubernetes API server | Each push and each pull request |
 | Kind tier | The operator in kind with a simulated BMC and Talos in a container | Pushes to the branches `main` and `metal` |
-| Virtual lab | QEMU machines behind simulated BMCs. A full install from an Asset to a `Ready` node. | Pushes to a branch `claude/**`, each night, and when a person starts the workflow |
-| Day-2 rounds of the lab | Reboot, config change, Talos upgrade, backup and restore, scale, pivot | Each night, and when a person starts the workflow and selects the round |
+| Virtual lab | QEMU machines behind simulated BMCs. A full install from an Asset to a `Ready` node: [](tut:lab-first-cluster). | Pushes to a branch `claude/**`, each night, and when a person starts the workflow |
+| Day-2 rounds of the lab | Reboot, config change, Talos upgrade ([](tut:lab-day-2)). Scale ([](tut:lab-scaling)). Backup and restore ([](tut:lab-disaster-recovery)). Pivot ([](tut:lab-pivot)). Status tables, metrics and a maintenance window. | Each night, and when a person starts the workflow and selects the round |
 
 GitHub starts the nightly run from the default branch only.
 
@@ -78,22 +78,9 @@ The repository has no test record of an install, a release, a firmware update or
 
 [](ref:hardware) has the models and the features one by one.
 
-## What works in the lab
-
-These paths run end to end in the virtual lab, with real Talos and Kubernetes in virtual machines:
-
-- Install: [](tut:lab-first-cluster)
-- Reboot, config change, Talos upgrade: [](tut:lab-day-2)
-- Add, remove and replace nodes: [](tut:lab-scaling)
-- etcd backup and restore: [](tut:lab-disaster-recovery)
-- Move the operator: [](tut:lab-pivot)
-
-## Limits
-
-[Limits](/start/overview/#limits) on the overview page lists what pk-metal does not do. [](ref:versions) has the supported releases.
-
 ## Related
 
+- [Limits](/start/overview/#limits)
 - [](ref:hardware)
 - [](ref:versions)
 - [](ref:develop)

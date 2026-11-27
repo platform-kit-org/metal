@@ -13,6 +13,8 @@ sources:
   - /repo/metal/internal/bmc/gofish/firmware.go
   - /repo/metal/internal/bmc/gofish/renew.go
   - /repo/metal/internal/boot/boot.go
+  - /repo/metal/internal/bmc/gofish/client.go
+  - /repo/metal/internal/talos/render/factory.go
 ---
 
 import Callout from '../../../components/Callout.astro';
@@ -34,7 +36,6 @@ Do a first install on one machine that holds no data, and stay near it. See [](t
 | Real hardware | A real server and its BMC. | That the fixture is correct, and that the firmware of your machine behaves like it. |
 
 The fixtures of the two vendor models follow what real BMCs of these models served. Notes in the source code record these observations.
-No test in the repository runs against a real BMC without a person, and no result of such a run is in the repository.
 
 ## Requirements for each machine
 
@@ -42,11 +43,12 @@ No test in the repository runs against a real BMC without a person, and no resul
 | --- | --- | --- |
 | Architecture | x86-64 or ARM64, one for each operator. The manager flag `--machine-arch` (default `amd64`) selects the images that the operator asks the image factory and the imager for. | x86-64 in the lab. ARM64 servers are not tested. |
 | Boot mode | UEFI. The operator sets the one-time boot in UEFI mode. | In the lab. Legacy mode is not tested. |
-| Secure Boot | The lab does not use it. | Not tested |
+| Secure Boot | Off. The operator boots the image factory ISO `metal-<arch>.iso`, or the `iso` output of the imager. Secure Boot does not accept these images. | In the lab, off |
 | BMC protocol | Redfish over HTTPS. The operator logs in with a Redfish session, or with HTTP Basic authentication if the BMC has no sessions. IPMI is not used. | In the lab |
-| Virtual media | The BMC can mount an ISO from an HTTPS URL. The BMC needs the license for this. | In the lab |
+| Virtual media | The BMC can mount an ISO from an HTTPS URL. For a medium with a config, the BMC sends a user name and a password: `UserName` and `Password` of `InsertMedia`, or the URL for the Huawei OEM action. The certificate is self-signed if you do not set `--media-cert-secret`. The BMC needs the license for this. | In the lab |
 | Boot override | The BMC can set a one-time boot from the virtual CD. | In the lab |
 | Media slots | Two usable slots, or one slot with the [media store](concept:one-slot-bmc). | In the lab, both shapes |
+| Install disk | A disk that the OS sees directly: NVMe, or a SATA or SAS disk with the controller in HBA mode. Behind a RAID volume, the serial in the inventory is the serial of a member drive. Then select the disk with `model`, `busPath` or `match`. | In the lab, a virtual disk |
 | Network of the BMC | See [](howto:network-checklist). | |
 
 [](howto:check-a-bmc) reads these facts from one BMC and changes nothing.
@@ -59,15 +61,15 @@ No test in the repository runs against a real BMC without a person, and no resul
 | Supermicro X12 (board X12DPi-N6) | 01.07.09 | Tests, and each lab run (`node-3`) | Dialect read from a real BMC. Install not recorded. |
 | Huawei FusionServer 2288H V5 (iBMC) | 6.72 | Tests. Lab run only when you ask for it. | Dialect read from a real BMC. Install not recorded. |
 | Other Supermicro generations (X11, X13) | | None | Not tested |
-| Dell iDRAC | | Two BIOS behaviors of iDRAC 9 in tests. No personality. | Not tested |
-| HPE iLO | | One BIOS behavior of iLO 5 in tests. No personality. | Not tested |
+| Dell iDRAC | | Two BIOS behaviors of iDRAC 9 in tests. No fixture. | Not tested |
+| HPE iLO | | One BIOS behavior of iLO 5 in tests. No fixture. | Not tested |
 | Lenovo XCC and other vendors | | None | Not tested |
 
 A BMC that follows the DMTF specification can work without a change. Each vendor deviates in some place, and the operator knows only the deviations in the table.
 
 ## Features for each model
 
-"Sim" means: proven against the simulated BMC of that model. No cell means "proven on real hardware".
+"Sim" means: proven against the simulated BMC of that model.
 
 | Feature | Action or lane | Generic | Supermicro X12 | Huawei 2288H V5 |
 | --- | --- | --- | --- | --- |
@@ -95,7 +97,7 @@ Some vendors sell Redfish features as a license. The operator cannot see a licen
 
 | Vendor | What the fixture or the vendor documentation says | State |
 | --- | --- | --- |
-| Supermicro X12 | The fixture models a BMC with the out-of-band license `SFT-OOB-LIC`. With that license, the BMC can mount virtual media over HTTP. | From the fixture. Not verified by a test on real hardware. |
+| Supermicro X12 | The fixture models a BMC with the out-of-band license `SFT-OOB-LIC`. With that license, the BMC can mount virtual media from a URL. | From the fixture. Not verified by a test on real hardware. |
 | Huawei iBMC | The fixture names no license. | Not known |
 | Dell, HPE, Lenovo | Virtual media usually needs a paid license level. Ask your vendor. | Not tested |
 

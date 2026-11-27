@@ -27,11 +27,7 @@ At the end, the server runs Talos as a cluster with one control plane.
 
 <Callout type="warning">
 The install overwrites the disk that you select. Use a server with no data that you must keep.
-</Callout>
-
-<Callout type="caution">
-The automatic tests use simulated BMCs. The repository has no record of an install on real hardware.
-Read [](ref:status) and [](ref:hardware) before you start, and stay near the server.
+The repository has no record of an install on real hardware. Read [](ref:status) and [](ref:hardware) before you start, and stay near the server.
 </Callout>
 
 ## Time and prerequisites
@@ -40,7 +36,7 @@ Read [](ref:status) and [](ref:hardware) before you start, and stay near the ser
   <dt>Time</dt>
   <dd>About one hour. The install takes about ten minutes.</dd>
   <dt>Hardware</dt>
-  <dd>One x86-64 server in UEFI boot mode, with a Redfish BMC that has the license for virtual media. One free static address for the node. See [](ref:hardware).</dd>
+  <dd>One x86-64 server in UEFI boot mode, with Secure Boot off. Its Redfish BMC has the license for virtual media. One free static address for the node. See [](ref:hardware).</dd>
   <dt>Network</dt>
   <dd>Your workstation reaches the BMC on TCP 443. The BMC reaches your workstation on TCP 30443. The node reaches the internet.</dd>
   <dt>BMC network</dt>
@@ -84,6 +80,7 @@ Read [](ref:status) and [](ref:hardware) before you start, and stay near the ser
    ```
 
 6. Write down these values: the serial number, the BMC MAC, the node NIC MAC and the install disk serial.
+   A disk behind a RAID volume has no serial in the inventory. See the install disk in [](ref:hardware).
 
 </Steps>
 
@@ -273,7 +270,7 @@ If no Host comes and `kubectl get managementendpoints` shows `Unreachable`, the 
 | The manager pod is not `Running` | [If it fails](howto:install-operator#if-it-fails) of the install how-to |
 | The endpoint is `Unreachable` | [](rb:bmc-unreachable) |
 | The operation fails at `insertMedia` | [](rb:media-slot-busy), and [The BMC and the image factory](howto:network-checklist#the-bmc-and-the-image-factory) |
-| The Host stays `Provisioning`, and the console shows no boot | [](rb:node-not-ready), and the boot mode in [](ref:hardware) |
+| The Host stays `Provisioning`, and the console shows no boot | [](rb:node-not-ready), and the boot mode and Secure Boot in [](ref:hardware) |
 | The operation is `Failed` | [](rb:operation-failed) |
 
 ## What you learned

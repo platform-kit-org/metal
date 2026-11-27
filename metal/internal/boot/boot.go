@@ -170,6 +170,9 @@ func Run(ctx context.Context, o Options) (Result, error) {
 	// The token in the URL is half of the grant: the log shows its start only.
 	logf("boot: serving %d B under a %s grant at https://%s%s", len(iso), o.TTL, host,
 		strings.Replace(grant.Path(), grant.Token, shortToken(grant.Token), 1))
+	withdraw := func(cause error) error {
+		return cleanupAfter(ctx, o.Client, logf, grants, grant.Token, slot, cause)
+	}
 
 	if err := o.Client.InsertMedia(ctx, slot, imageURL,
 		&bmc.MediaCredentials{Username: creds.Username, Password: creds.Password}); err != nil {
@@ -191,7 +194,7 @@ func Run(ctx context.Context, o Options) (Result, error) {
 		override.Mode = "UEFI"
 	}
 	if err := o.Client.SetBootOverride(ctx, system.ID, override); err != nil {
-		return res, cleanupAfter(ctx, o, grants, grant.Token, slot, err)
+		return res, withdraw(err)
 	}
 	logf("boot: boot override %s (once)", target)
 
@@ -203,7 +206,7 @@ func Run(ctx context.Context, o Options) (Result, error) {
 		action := bmc.ActionOn
 		if state, err := o.Client.Power(ctx, system.ID); err != nil || state != bmc.PowerOff {
 			if !o.AllowRestart {
-				return res, cleanupAfter(ctx, o, grants, grant.Token, slot, ErrMachineOn)
+				return res, withdraw(ErrMachineOn)
 			}
 			action = bmc.ActionForceRestart
 		}
@@ -212,7 +215,7 @@ func Run(ctx context.Context, o Options) (Result, error) {
 		// alone is as large as the image.
 		m.arm()
 		if err := o.Client.SetPower(ctx, system.ID, action); err != nil {
-			return res, cleanupAfter(ctx, o, grants, grant.Token, slot, err)
+			return res, withdraw(err)
 		}
 		logf("boot: power %s", action)
 	}
@@ -225,15 +228,14 @@ func Run(ctx context.Context, o Options) (Result, error) {
 		logf("boot: grant expired before a full read")
 	case <-ctx.Done():
 		res.ServedBytes = m.total()
-		return res, cleanupAfter(ctx, o, grants, grant.Token, slot, ctx.Err())
+		return res, withdraw(ctx.Err())
 	}
-	res.ServedBytes = m.total()
 
 	if o.Hold {
 		logf("boot: holding mount and grant until interrupted")
 		<-ctx.Done()
 	}
-	err = cleanupAfter(ctx, o, grants, grant.Token, slot, nil)
+	err = withdraw(nil)
 	res.ServedBytes = m.total()
 	return res, err
 }
@@ -248,13 +250,10 @@ func shortToken(token string) string {
 }
 
 // cleanupAfter withdraws the medium and the grant, keeping cause as the error.
-func cleanupAfter(ctx context.Context, o Options, grants *asset.Grants, token, slot string, cause error) error {
-	logf := o.Logf
-	if logf == nil {
-		logf = func(string, ...any) {}
-	}
+func cleanupAfter(ctx context.Context, c bmc.Client, logf func(string, ...any),
+	grants *asset.Grants, token, slot string, cause error) error {
 	// The BMC may be mid-pull; eject first so the mount drops before its URL dies.
-	if err := EjectAndVerify(context.WithoutCancel(ctx), o.Client, slot, logf); err != nil {
+	if err := EjectAndVerify(context.WithoutCancel(ctx), c, slot, logf); err != nil {
 		logf("boot: eject on cleanup: %v", err)
 	} else {
 		logf("boot: media ejected")
@@ -298,19 +297,10 @@ func pickSlot(ctx context.Context, c bmc.Client, want string) (string, bmc.Media
 	if err != nil {
 		return "", "", fmt.Errorf("boot: media: %w", err)
 	}
-	if slots := InsertableSlots(caps.MediaDialect, media); len(slots) > 0 {
+	if slots := bmc.InsertableSlots(media, caps); len(slots) > 0 {
 		return slots[0], caps.MediaDialect[slots[0]], nil
 	}
 	return "", "", fmt.Errorf("boot: endpoint advertises no insertable media slot")
-}
-
-// InsertableSlots lists the slots that advertise an insert mechanism, the best
-// boot slot first: optical slots lead, wherever they sit in the endpoint's
-// collection, the others follow in the endpoint's order (deterministic). Its
-// length is what decides whether an installer and a config medium can be
-// mounted side by side.
-func InsertableSlots(dialects map[string]bmc.MediaDialect, media []bmc.VirtualMedia) []string {
-	return bmc.InsertableSlots(media, bmc.Capabilities{MediaDialect: dialects})
 }
 
 func pickSystem(ctx context.Context, c bmc.Client, want string) (bmc.System, error) {

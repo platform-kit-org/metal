@@ -164,6 +164,8 @@ patches:
         no_proxy: 10.77.0.0/24,10.96.0.0/12,10.244.0.0/16,.svc,.cluster.local,localhost,127.0.0.1
 ```
 
+[](lab:doctor) checks these servers and the registries the way the machines reach them. See [Outside endpoints](lab:page/prerequisites#outside-endpoints).
+
 <Callout type="note">
 Replace the `ResolverConfig` and `TimeSyncConfig` entries that exist. Do not add a second entry of the same kind.
 Run [](lab:up) before you approve the installs.

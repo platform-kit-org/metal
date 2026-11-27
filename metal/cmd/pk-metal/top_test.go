@@ -21,6 +21,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
@@ -514,6 +515,47 @@ func TestWatchSourceReadsTheFleet(t *testing.T) {
 	assert.Equal(t, "not answering", in.FleetErr)
 	assert.Contains(t, buildTop(in).FleetLine, "not answering")
 }
+
+// A workload cluster that does not answer yet does not stop top: the source
+// asks again until it answers, and says so while it does not.
+func TestWorkloadWatchWaitsForTheCluster(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	src := &watchSource{workload: &workloadWatch{}}
+	assert.Contains(t, src.Read(ctx).Loading, "workload Nodes (the cluster does not answer yet)")
+
+	var calls atomic.Int32
+	inf := stubInformer{}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		src.workload.run(ctx, func(context.Context) (cache.Cache, cache.Informer, error) {
+			if calls.Add(1) < 3 {
+				return nil, nil, errors.New("no route to host")
+			}
+			return nil, inf, nil
+		}, time.Millisecond)
+	}()
+	<-done
+	assert.Equal(t, int32(3), calls.Load())
+	_, got := src.workload.get()
+	assert.Equal(t, cache.Informer(inf), got)
+	assert.Contains(t, src.Read(ctx).Loading, "workload Nodes", "not synced yet")
+
+	// It stops asking when top ends.
+	cancel()
+	w := &workloadWatch{}
+	w.run(ctx, func(context.Context) (cache.Cache, cache.Informer, error) {
+		return nil, nil, errors.New("no route to host")
+	}, time.Hour)
+	_, got = w.get()
+	assert.Nil(t, got)
+}
+
+// stubInformer is an Informer that never syncs.
+type stubInformer struct{ cache.Informer }
+
+func (stubInformer) HasSynced() bool { return false }
 
 // top approves the plan a person saw on the screen, or nothing.
 func TestApproveTheShownPlanOnly(t *testing.T) {

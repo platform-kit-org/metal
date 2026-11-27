@@ -19,6 +19,8 @@ import (
 	"strconv"
 
 	"go.yaml.in/yaml/v4"
+
+	"github.com/dennisklein/platform-kit/metal/internal/machine/qemu"
 )
 
 // Spec is lab/lab.yaml.
@@ -36,6 +38,8 @@ import (
 //	      kind: ResolverConfig
 //	      ...
 //	workload: { name: work, vip: 10.77.0.9, controlPlanes: 1, workers: 0 }
+//	arch: arm64
+//	accel: tcg
 type Spec struct {
 	Cluster       Cluster `yaml:"cluster"`
 	ControlPlanes int     `yaml:"controlPlanes"`
@@ -54,6 +58,42 @@ type Spec struct {
 	// moves from kind onto the first cluster and installs this one from
 	// there. Absent, the lab has one cluster.
 	Workload *Workload `yaml:"workload"`
+	// Arch is the machines' CPU architecture, amd64 or arm64. Empty is the
+	// workstation's own (Resolve).
+	Arch string `yaml:"arch"`
+	// Accel is how QEMU runs the machines: kvm (the workstation's CPU) or
+	// tcg (an emulated CPU, several times slower). Empty is kvm where the
+	// workstation can run the machines with it, else tcg (Resolve).
+	Accel string `yaml:"accel"`
+}
+
+// Host is what the workstation offers the lab's machines.
+type Host struct {
+	// Arch is the workstation's CPU architecture, as Go names it.
+	Arch string
+	// KVM tells that /dev/kvm is there and usable.
+	KVM bool
+}
+
+// Resolve fills an empty Arch and Accel from what the host offers: the
+// host's architecture, and kvm when the host can run it, else tcg. It
+// refuses kvm that the host cannot give.
+func (s *Spec) Resolve(h Host) error {
+	if s.Arch == "" {
+		s.Arch = h.Arch
+	}
+	native := s.Arch == h.Arch && h.KVM
+	switch {
+	case s.Accel == "" && native:
+		s.Accel = qemu.AccelKVM
+	case s.Accel == "":
+		s.Accel = qemu.AccelTCG
+	case s.Accel == qemu.AccelKVM && s.Arch != h.Arch:
+		return fmt.Errorf("accel kvm runs only machines of the workstation's architecture (%s), not %s: use accel tcg, or remove accel", h.Arch, s.Arch)
+	case s.Accel == qemu.AccelKVM && !h.KVM:
+		return errors.New("accel kvm needs a usable /dev/kvm, and this workstation has none: use accel tcg, or remove accel (lab:doctor says how to get KVM)")
+	}
+	return s.Validate()
 }
 
 // Workload is the second cluster. Its machines come after the first
@@ -281,6 +321,12 @@ func (s *Spec) Validate() error {
 		if p.Inline == "" {
 			bad("patches[%d]: inline is empty", i)
 		}
+	}
+	if s.Arch != "" && !slices.Contains(qemu.Arches(), s.Arch) {
+		bad("arch %q is not one of %v", s.Arch, qemu.Arches())
+	}
+	if s.Accel != "" && s.Accel != qemu.AccelKVM && s.Accel != qemu.AccelTCG {
+		bad("accel %q is not one of %s, %s", s.Accel, qemu.AccelKVM, qemu.AccelTCG)
 	}
 	return errors.Join(errs...)
 }

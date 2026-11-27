@@ -74,6 +74,7 @@ The controllers reconcile the [kinds](kind:index) of the API group. [](ctrl:inde
 | `--bmc-insecure` | `false` | Accept any BMC certificate, and pin no key. Each device at the address of a BMC gets its password. For simulated BMCs in a lab only. See [BMC certificates](howto:install-operator#bmc-certificates). |
 | `--poll-interval` | `5m` | How often each BMC is read again. |
 | `--image-factory` | public factory | The host of the Talos image factory. |
+| `--machine-arch` | `amd64` | The CPU architecture of the machines that the operator installs: `amd64` or `arm64`. The factory ISO and the installers of the imager are for this architecture. One operator installs one architecture. |
 | `--registry-ca` | empty | PEM file with the CA of the registry that serves firmware images. |
 | `--media-listen` | `:8443` | The address of the media service (HTTPS). |
 | `--media-url` | empty | `https://host[:port]` where BMCs reach the media service. Empty stops the media service, and with it installs. |

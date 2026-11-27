@@ -29,13 +29,27 @@ var update = flag.Bool("update", false, "rewrite the golden files under testdata
 // The committed spec, the one lab:up and the lab-e2e workflow render.
 var specPath = filepath.Join("..", "..", "..", "lab", "lab.yaml")
 
+// The workstations the tests render for: the x86-64 host with KVM the
+// lab-e2e workflow runs on, and an arm64 VM without nested virtualization
+// (an Apple M1 or M2 under UTM).
+var (
+	x86Host = lab.Host{Arch: "amd64", KVM: true}
+	armHost = lab.Host{Arch: "arm64", KVM: false}
+)
+
 func loadSpec(t *testing.T, size string) *lab.Spec {
+	t.Helper()
+	return loadSpecOn(t, size, x86Host)
+}
+
+func loadSpecOn(t *testing.T, size string, host lab.Host) *lab.Spec {
 	t.Helper()
 	s, err := lab.Load(specPath)
 	require.NoError(t, err)
 	if size != "" {
 		require.NoError(t, s.Resize(size))
 	}
+	require.NoError(t, s.Resolve(host))
 	return s
 }
 
@@ -98,6 +112,7 @@ func TestGolden(t *testing.T) {
 		"3cp+2w":  func() *lab.Spec { return loadSpec(t, "3cp+2w") },
 		"1cp+0w":  func() *lab.Spec { return loadSpec(t, "1cp+0w") },
 		"pivot":   func() *lab.Spec { return pivotSpec(t, "1cp+0w", "1cp+0w") },
+		"arm64":   func() *lab.Spec { return loadSpecOn(t, "", armHost) },
 	} {
 		t.Run(name, func(t *testing.T) {
 			files, err := lab.Render(spec(), "lab/lab.yaml")
@@ -287,4 +302,35 @@ func TestWorkload(t *testing.T) {
 	assert.Contains(t, env, "WORKLOAD_BUNDLE_SECRET=work-talos-secrets\n")
 	assert.Contains(t, env, "WORKLOAD_NODES=2\n")
 	assert.Contains(t, env, "REGISTRY=10.77.0.1:5000\n")
+}
+
+// On an arm64 workstation without KVM the machines are arm64 machines under
+// tcg, and the kernel's serial console is the virt board's PL011 UART.
+func TestArm64Lab(t *testing.T) {
+	s := loadSpecOn(t, "", armHost)
+	files, err := lab.Render(s, "lab/lab.yaml")
+	require.NoError(t, err)
+
+	cfg, err := fleet.Parse(files[lab.FileFleet])
+	require.NoError(t, err)
+	for _, m := range cfg.Machines {
+		require.NotNil(t, m.Qemu, m.Name)
+		assert.Equal(t, "arm64", m.Qemu.Arch, m.Name)
+		assert.Equal(t, "tcg", m.Qemu.Accel, m.Name)
+	}
+	cluster, _ := talosDocs(t, files[lab.FileTalos])
+	assert.Equal(t, []string{"console=ttyAMA0"}, cluster.Spec.Schematic.Customization.ExtraKernelArgs)
+	assert.Contains(t, string(files[lab.FileEnv]), "ARCH=arm64\nACCEL=tcg\n")
+
+	x86 := render(t, "")
+	cluster, _ = talosDocs(t, x86[lab.FileTalos])
+	assert.Equal(t, []string{"console=ttyS0"}, cluster.Spec.Schematic.Customization.ExtraKernelArgs)
+	assert.Contains(t, string(x86[lab.FileEnv]), "ARCH=amd64\nACCEL=kvm\n")
+
+	_, err = lab.Render(&lab.Spec{}, "lab/lab.yaml")
+	require.Error(t, err)
+	unresolved, err := lab.Load(specPath)
+	require.NoError(t, err)
+	_, err = lab.Render(unresolved, "lab/lab.yaml")
+	assert.ErrorContains(t, err, "call Resolve first")
 }

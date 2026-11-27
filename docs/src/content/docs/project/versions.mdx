@@ -27,7 +27,7 @@ The numbers on this page come from the source files in the list above. They are 
 | Talos | v1.14.0 or later. The API refuses an earlier release. | v1.14.6, and v1.14.5 as the start of the upgrade round | `spec.talosVersion` of [](kind:TalosCluster) |
 | Talos, upper end | The releases that the Talos library in the operator knows. The library is `machinery` v1.14.6. | v1.14.6 | `metal/go.mod` |
 | Kubernetes | Each release that the selected Talos release supports. The operator asks the Talos library for the pair. | v1.36.2 | Condition `Rendered`, reason `UnsupportedVersionPair` |
-| Node architecture | x86-64 (`amd64`) only | x86-64 | The operator asks for `metal-amd64.iso` |
+| Node architecture | x86-64 (`amd64`) or ARM64 (`arm64`), one for each operator | x86-64. ARM64: the boot of one lab machine. | The manager flag `--machine-arch`. See [](ctrl:manager). |
 | Boot mode | UEFI | UEFI | [](ref:hardware) |
 
 ### Why the lower limit is v1.14.0
@@ -56,7 +56,7 @@ For a different release, give the manager `--imager-digest=<version>=sha256:<dig
 | What | Needed | Used in the tests |
 | --- | --- | --- |
 | Kubernetes | A release with `ValidatingAdmissionPolicy` in `admissionregistration.k8s.io/v1`: 1.30 or later. Only 1.36 is tested. | 1.36 (kind and the controller tests) |
-| Operator architecture | The architecture of the machine that builds the image. Only x86-64 is tested. | x86-64 |
+| Operator architecture | x86-64 or ARM64. The images of the operator, the imager and kind have both architectures. Only x86-64 is tested. | x86-64 |
 | Operator replicas | One. See [Scale and sizing](concept:architecture#scale-and-sizing). | One |
 
 ## The tools

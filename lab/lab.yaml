@@ -74,3 +74,12 @@ patches:
 # Its machines come after the ones above and take the same role sizes. Without
 # this section, PK_LAB_WORKLOAD=1cp+0w adds it with these values.
 # workload: { name: work, vip: 10.77.0.9, controlPlanes: 1, workers: 0 }
+
+# The machines' CPU architecture (amd64 or arm64) and how QEMU runs them (kvm:
+# the workstation's CPU; tcg: an emulated one, several times slower). Without
+# them, the machines take the workstation's architecture, and kvm where
+# /dev/kvm is usable, else tcg: an x86-64 host with KVM runs amd64 machines
+# under kvm, an Apple M1 or M2 in a UTM VM runs arm64 machines under tcg.
+# PK_LAB_ACCEL overrides accel.
+# arch: arm64
+# accel: tcg

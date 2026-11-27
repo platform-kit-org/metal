@@ -19,6 +19,7 @@ import (
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
 	"github.com/dennisklein/platform-kit/metal/internal/asset"
+	"github.com/dennisklein/platform-kit/metal/internal/talos/render"
 )
 
 // Imager is how the operator runs the Talos imager to build an installer
@@ -41,6 +42,19 @@ type Imager struct {
 	// it embeds, so the Job runs it through a copy of the manager binary that
 	// keeps the output out of the log (internal/imagerrun).
 	HelperImage string
+	// Arch is the CPU architecture of the machines the installers are for
+	// (render.Arches). Empty selects amd64.
+	Arch string
+}
+
+// buildArch is the architecture as the build key records it: empty for
+// amd64, so that an installer built before the operator knew other
+// architectures keeps its key and is not built again.
+func (im *Imager) buildArch() string {
+	if im.Arch == render.ArchAMD64 {
+		return ""
+	}
+	return im.Arch
 }
 
 // DefaultImagerRepository is the upstream imager.
@@ -91,6 +105,8 @@ type imagerInputs struct {
 	Image        string   `json:"image"`
 	KernelArgs   []string `json:"kernelArgs,omitempty"`
 	Extensions   []string `json:"extensions,omitempty"`
+	// Arch is the machine's architecture; empty is amd64 (Imager.buildArch).
+	Arch string `json:"arch,omitempty"`
 }
 
 func (in imagerInputs) key() string {
@@ -131,10 +147,14 @@ func imagerJobName(asset, key string) string {
 // to anyone who can read the Job.
 func imagerArgs(job string, in imagerInputs) []string {
 	cfg := path.Join(imagerConfigMount, asset.ConfigFilename)
+	arch := in.Arch
+	if arch == "" {
+		arch = render.ArchAMD64
+	}
 	args := []string{
 		path.Join(imagerHelperDir, "manager"), "imager-run", cfg,
 		imagerBinary, "iso",
-		"--arch", "amd64",
+		"--arch", arch,
 		"--output", path.Join(imagerStoreMount, asset.BuildDir(job)),
 		"--embedded-config-path", cfg,
 	}

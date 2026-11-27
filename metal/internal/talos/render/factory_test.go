@@ -162,3 +162,22 @@ func TestFactoryHostReachesBothHalves(t *testing.T) {
 	_, err = f.Register(context.Background(), nil)
 	require.NoError(t, err, "the same host must answer the schematic endpoint")
 }
+
+// The boot medium is built for the machines' architecture; the installer
+// image is one multi-architecture index for both.
+func TestFactoryArch(t *testing.T) {
+	f := render.NewFactory("factory.test")
+	amd, err := f.ISOURL(nil, "v1.14.6")
+	require.NoError(t, err)
+	assert.True(t, strings.HasSuffix(amd, "/v1.14.6/metal-amd64.iso"), "amd64 when none is set: %s", amd)
+	installer, err := f.InstallerImage(nil, "v1.14.6")
+	require.NoError(t, err)
+
+	f.Arch = render.ArchARM64
+	arm, err := f.ISOURL(nil, "v1.14.6")
+	require.NoError(t, err)
+	assert.Equal(t, strings.TrimSuffix(amd, "amd64.iso")+"arm64.iso", arm)
+	armInstaller, err := f.InstallerImage(nil, "v1.14.6")
+	require.NoError(t, err)
+	assert.Equal(t, installer, armInstaller)
+}

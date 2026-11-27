@@ -11,7 +11,6 @@ package envtest_test
 
 import (
 	"context"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -19,14 +18,12 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/yaml"
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
@@ -66,27 +63,13 @@ func (w *stubWorkload) SyncKubeProxy(_ context.Context, image string) (bool, str
 	return true, "kube-proxy: done", nil
 }
 
-// installRolloutPolicy loads the committed rollout approval policy; its
-// params are the ones installApprovalPolicy created.
-func installRolloutPolicy(t *testing.T, ctx context.Context, cl client.Client) {
-	t.Helper()
-	docs := strings.Split(readFile(t, filepath.Join("..", "..", "config", "policy", "talosrollout-approval.yaml")), "\n---")
-	require.Len(t, docs, 2)
-	vap := &admissionregistrationv1.ValidatingAdmissionPolicy{}
-	require.NoError(t, yaml.Unmarshal([]byte(docs[0]), vap))
-	require.NoError(t, cl.Create(ctx, vap))
-	binding := &admissionregistrationv1.ValidatingAdmissionPolicyBinding{}
-	require.NoError(t, yaml.Unmarshal([]byte(docs[1]), binding))
-	require.NoError(t, cl.Create(ctx, binding))
-}
-
 func TestRollout(t *testing.T) {
 	st := startEnv(t)
 	cl := st.cl
 	ctx := t.Context()
 	operator := whoAmI(t, ctx, cl)
 	installApprovalPolicy(t, ctx, cl, operator)
-	installRolloutPolicy(t, ctx, cl)
+	installPolicy(t, ctx, cl, "talosrollout-approval.yaml")
 	aliceCl := st.userClient(t, "alice")
 	bobCl := st.userClient(t, "bob")
 

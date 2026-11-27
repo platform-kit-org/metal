@@ -2,20 +2,17 @@ package envtest_test
 
 import (
 	"context"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	authorizationv1 "k8s.io/api/authorization/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/yaml"
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
@@ -26,20 +23,6 @@ const (
 	recipientA = "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p"
 	recipientB = "age1lggyhqrw2nlhcxprm67z43rta597azn8gknawjehu9d9dl0jq3yqqvfafg"
 )
-
-// installPolicy loads one committed policy and its binding from config/policy.
-// The params are the ones installApprovalPolicy created.
-func installPolicy(t *testing.T, ctx context.Context, cl client.Client, file string) {
-	t.Helper()
-	docs := strings.Split(readFile(t, filepath.Join("..", "..", "config", "policy", file)), "\n---")
-	require.Len(t, docs, 2)
-	vap := &admissionregistrationv1.ValidatingAdmissionPolicy{}
-	require.NoError(t, yaml.Unmarshal([]byte(docs[0]), vap))
-	require.NoError(t, cl.Create(ctx, vap))
-	binding := &admissionregistrationv1.ValidatingAdmissionPolicyBinding{}
-	require.NoError(t, yaml.Unmarshal([]byte(docs[1]), binding))
-	require.NoError(t, cl.Create(ctx, binding))
-}
 
 // refusedOnceEnforcing waits until a policy compiles and refuses c's create
 // of obj with a message that contains want. A policy takes a moment to become
@@ -67,9 +50,7 @@ func TestPolicyStreamC(t *testing.T) {
 
 	const operator = "op-sa"
 	installApprovalPolicy(t, ctx, cl, operator)
-	installClaimPolicy(t, ctx, cl)
-	installPolicy(t, ctx, cl, "etcdbackuppolicy-guard.yaml")
-	installPolicy(t, ctx, cl, "endpointprofile-guard.yaml")
+	installPolicy(t, ctx, cl, "hostclaim-provisioning.yaml", "etcdbackuppolicy-guard.yaml", "endpointprofile-guard.yaml")
 
 	// userClient adds system:masters: these clients test admission, not RBAC.
 	operatorCl := st.userClient(t, operator)

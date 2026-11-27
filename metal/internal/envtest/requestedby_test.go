@@ -32,9 +32,7 @@ func TestRequestedBy(t *testing.T) {
 
 	const operator = "op-sa"
 	installApprovalPolicy(t, ctx, cl, operator)
-	installRolloutPolicy(t, ctx, cl)
-	installPolicy(t, ctx, cl, "requested-by.yaml")
-	installPolicy(t, ctx, cl, "requested-by-patches.yaml")
+	installPolicy(t, ctx, cl, "talosrollout-approval.yaml", "requested-by.yaml", "requested-by-patches.yaml")
 	// The base settings allow self-approval; the first subtests are the
 	// rules of a site that forbids it.
 	setSelfApproval(t, ctx, cl, ptr.To("Forbidden"))

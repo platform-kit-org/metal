@@ -9,15 +9,18 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
@@ -27,6 +30,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/config"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
+	"sigs.k8s.io/yaml"
 
 	"github.com/dennisklein/platform-kit/metal/internal/ledger"
 	pkscheme "github.com/dennisklein/platform-kit/metal/internal/scheme"
@@ -162,6 +166,70 @@ func waitUntil[T any, P interface {
 		t.Fatalf("%T %s: condition never met, last %+v", last, key, last)
 	}
 	return last
+}
+
+// installSettings creates the site settings ConfigMap
+// (pk-metal/hostoperation-approval) from the committed one, naming operator
+// as the operator, unless it exists: the policies that take it as params
+// deny everything without it. The manager in these suites runs as the
+// envtest admin, not as the deployed service account.
+func installSettings(t *testing.T, ctx context.Context, cl client.Client, operator string) {
+	t.Helper()
+	docs := strings.Split(readFile(t, filepath.Join("..", "..", "config", "policy", "hostoperation-approval.yaml")), "\n---")
+	require.Len(t, docs, 3)
+	params := &corev1.ConfigMap{}
+	require.NoError(t, yaml.Unmarshal([]byte(docs[2]), params))
+	params.Data["operator"] = operator
+	ensureNamespace(t, ctx, cl, params.Namespace)
+	if err := cl.Create(ctx, params); err != nil && !apierrors.IsAlreadyExists(err) {
+		require.NoError(t, err)
+	}
+}
+
+// installApprovalPolicy loads the committed approval policy, with the site
+// settings of installSettings. The gate under test is the one in
+// config/policy, not a test-local copy.
+func installApprovalPolicy(t *testing.T, ctx context.Context, cl client.Client, operator string) {
+	t.Helper()
+	installSettings(t, ctx, cl, operator)
+	installPolicy(t, ctx, cl, "hostoperation-approval.yaml")
+}
+
+// installPolicy loads committed policies and their bindings from
+// config/policy. Their params are the site settings of installSettings.
+func installPolicy(t *testing.T, ctx context.Context, cl client.Client, files ...string) {
+	t.Helper()
+	installConfig(t, ctx, cl, "policy", files...)
+}
+
+// installStamp loads the committed MutatingAdmissionPolicies of
+// config/name-stamp and their bindings.
+func installStamp(t *testing.T, ctx context.Context, cl client.Client) {
+	t.Helper()
+	installConfig(t, ctx, cl, "name-stamp", "requested-by-stamp.yaml", "guard-lift-stamp.yaml")
+}
+
+// installConfig creates the objects of the files in config/<dir>, except
+// the site settings, which installSettings creates.
+func installConfig(t *testing.T, ctx context.Context, cl client.Client, dir string, files ...string) {
+	t.Helper()
+	for _, file := range files {
+		for _, doc := range strings.Split(readFile(t, filepath.Join("..", "..", "config", dir, file)), "\n---") {
+			u := &unstructured.Unstructured{}
+			require.NoError(t, yaml.Unmarshal([]byte(doc), &u.Object))
+			if u.GetKind() != "ConfigMap" {
+				require.NoError(t, cl.Create(ctx, u))
+			}
+		}
+	}
+}
+
+// whoAmI is the username a client acts as.
+func whoAmI(t *testing.T, ctx context.Context, cl client.Client) string {
+	t.Helper()
+	ssr := &authenticationv1.SelfSubjectReview{}
+	require.NoError(t, cl.Create(ctx, ssr))
+	return ssr.Status.UserInfo.Username
 }
 
 // bundleSecret is a Secret that holds the render package's test secrets

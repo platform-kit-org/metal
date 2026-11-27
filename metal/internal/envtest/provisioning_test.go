@@ -126,7 +126,7 @@ func TestProvisioning(t *testing.T) {
 	operator := whoAmI(t, ctx, managerCl)
 	require.Equal(t, managerUser, operator)
 	installApprovalPolicy(t, ctx, cl, operator)
-	installClaimPolicy(t, ctx, cl)
+	installPolicy(t, ctx, cl, "hostclaim-provisioning.yaml")
 
 	// Alice approves with the committed approver role and nothing else.
 	aliceCl := st.approverClient(t, ctx, "alice")

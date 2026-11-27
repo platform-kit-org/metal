@@ -124,8 +124,7 @@ func TestPivot(t *testing.T) {
 	require.NoError(t, err)
 	operator := whoAmI(t, ctx, managerCl)
 	installApprovalPolicy(t, ctx, cl, operator)
-	installClaimPolicy(t, ctx, cl)
-	installPolicy(t, ctx, cl, "guard-lift.yaml")
+	installPolicy(t, ctx, cl, "hostclaim-provisioning.yaml", "guard-lift.yaml")
 	require.NoError(t, cl.Create(ctx, &corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Name: "pk-metal-manager", Namespace: ns}}))
 	deploy := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{Name: "pk-metal-manager", Namespace: ns},
@@ -358,8 +357,7 @@ func TestPivot(t *testing.T) {
 	// installed them do. The move installs them on the target too. The
 	// site forbids self-approval, as the lab does, so that the policies
 	// ask the move for a name.
-	installPolicy(t, ctx, cl, "requested-by.yaml")
-	installPolicy(t, ctx, cl, "requested-by-patches.yaml")
+	installPolicy(t, ctx, cl, "requested-by.yaml", "requested-by-patches.yaml")
 	setSelfApproval(t, ctx, cl, ptr.To("Forbidden"))
 
 	source, err := pivot.NewCluster("bootstrap", src.cfg, src.scheme)

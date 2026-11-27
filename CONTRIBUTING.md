@@ -107,7 +107,7 @@ The pages are in `docs/src/content/docs`. They use ASD-STE100 style: short
 sentences, active voice, one instruction in each step.
 
 ```sh
-mise run docs:dev      # live preview at http://localhost:4321/platform-kit/
+mise run docs:dev      # live preview at http://localhost:4321/
 mise run docs:check    # build, and check the links (CI runs this)
 mise run docs:lint     # check the prose with Vale
 ```

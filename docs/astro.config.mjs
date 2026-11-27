@@ -31,7 +31,6 @@ export default defineConfig({
   base: base || '/',
   // Old paths of renamed pages (`redirectFrom` frontmatter), so old links and bookmarks work.
   redirects: loadRedirects(base),
-  outDir: process.env.PK_DOCS_OUT || './dist',
   markdown: {
     processor: satteri({
       hastPlugins: [xref({ base }), glossary({ base }), baseLinks({ base })],

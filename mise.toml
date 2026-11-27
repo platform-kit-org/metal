@@ -359,7 +359,7 @@ sources = ["package.json", "package-lock.json"]
 outputs = ["node_modules/.package-lock.json"]
 
 [tasks."docs:dev"]
-description = "Serve the documentation site with live reload at http://localhost:4321/platform-kit/"
+description = "Serve the documentation site with live reload at http://localhost:4321/"
 dir = "docs"
 depends = ["docs:install"]
 env = { ASTRO_TELEMETRY_DISABLED = "1" }

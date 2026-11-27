@@ -166,7 +166,7 @@ The [relay](concept:relay) lets the CLI drive a BMC through a jump host on day 0
 ### Credentials
 
 - Published cluster credentials live 24 hours by default, and 720 hours at most. The operator renews them when one third of the time is left.
-- Only the admin group sets `spec.credentials.ttl` of a [](kind:TalosCluster) to more than 24 hours (`taloscluster-credentials-guard`). The on-call and approver roles can patch a cluster, but they cannot make a published credential live longer.
+- Only the admin group sets `spec.credentials.ttl` of a [](kind:TalosCluster) to more than 24 hours (`taloscluster-credentials-guard`). The on-call role can patch a cluster, but they cannot make a published credential live longer.
 - [](cli:render) writes credentials that live 24 hours by default, and 720 hours at most.
 - `readerTalosconfig` publishes a talosconfig with the `os:reader` role only.
 - The client certificate for the install check-in lives 10 minutes.

@@ -144,8 +144,11 @@ func (r *TalosNodeMemberReconciler) blocked(ctx context.Context, node *osv1alpha
 	if node.Spec.Role != osv1alpha1.RoleControlPlane || r.Dial == nil {
 		return "", "", nil
 	}
+	// The cluster comes from the API server too: a cache from before the
+	// bootstrap, or from before the cluster was there, would skip the etcd
+	// check, and the member would stay in etcd with no node to remove it.
 	cluster := &osv1alpha1.TalosCluster{}
-	if err := r.Get(ctx, client.ObjectKey{Name: node.Spec.ClusterRef.Name}, cluster); err != nil {
+	if err := reader.Get(ctx, client.ObjectKey{Name: node.Spec.ClusterRef.Name}, cluster); err != nil {
 		// A cluster that is gone has no etcd to leave a member in.
 		return "", "", client.IgnoreNotFound(err)
 	}

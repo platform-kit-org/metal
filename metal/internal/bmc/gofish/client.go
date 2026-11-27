@@ -859,7 +859,7 @@ func (c *client) vendor(m *schemas.Manager) string {
 // schema puts it).
 func (c *client) managerHostname(m *schemas.Manager) string {
 	var doc struct{ HostName string }
-	if _, err := c.getJSON(m.ODataID, &doc); err == nil && doc.HostName != "" {
+	if json.Unmarshal(m.RawData, &doc) == nil && doc.HostName != "" {
 		return doc.HostName
 	}
 	if np, err := m.NetworkProtocol(); err == nil && np != nil {

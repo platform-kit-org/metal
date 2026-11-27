@@ -47,7 +47,7 @@ func (c *client) findMediaCollection() (string, error) {
 	slices.SortFunc(systems, func(a, b *schemas.ComputerSystem) int { return compareIDs(a.ID, b.ID) })
 	for _, s := range systems {
 		doc.VirtualMedia = ref{}
-		if _, err := c.getJSON(s.ODataID, &doc); err != nil {
+		if err := json.Unmarshal(s.RawData, &doc); err != nil {
 			return "", fmt.Errorf("bmc: system: %w", err)
 		}
 		if doc.VirtualMedia.ODataID != "" {

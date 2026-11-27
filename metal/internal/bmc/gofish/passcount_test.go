@@ -74,6 +74,8 @@ func TestObservationPassReadsEachResourceOnce(t *testing.T) {
 			for _, res := range []string{"GET /redfish/v1/Managers", "GET /redfish/v1/Chassis", "GET /redfish/v1/UpdateService"} {
 				assert.LessOrEqual(t, seen[res], 1, res)
 			}
+			// The manager is read when it is found, and fresh for Manager.
+			assert.LessOrEqual(t, seen["GET /redfish/v1/Managers/1"], 2, "manager reads")
 			// Before the lookups were kept per session, a pass made 46 to 61
 			// requests on these fixtures.
 			assert.LessOrEqual(t, total, 48, "requests in one pass")

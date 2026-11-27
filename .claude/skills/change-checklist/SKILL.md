@@ -1,6 +1,6 @@
 ---
 name: change-checklist
-description: What else to change in this repository for each kind of change (API field, RBAC, manager flag, alert, runbook, BMC behavior, admission policy, mirrored function), so that code, tests, docs and generated files agree. Use before you commit or open a pull request.
+description: What else to change in this repository for each kind of change (API field, RBAC, manager flag, alert, runbook, BMC behavior, admission policy, mirrored function, TLA+ specification), so that code, tests, docs and generated files agree. Use before you commit or open a pull request.
 ---
 
 # Change checklist
@@ -22,6 +22,7 @@ Paths are from the repository root; the Go module is `metal/`.
 | BMC behavior | The simulator (`metal/internal/bmc/sim`) for each fixture, a protocol knob in `fixture.go` if a vendor differs, a conformance check in `bmctest`. Rows in `reference/hardware.mdx` and `reference/lab/simulated-bmc.mdx`. | `bmctest.Run` for each fixture |
 | An admission policy (`metal/config/policy`, `metal/config/name-stamp`) | The envtest policy tests. `reference/security/admission-policies.mdx`. A stamp and the validating policy of the same field must agree. | envtest `TestNameStampMatchesTheValidatingPolicies` |
 | A function that the protocol model mirrors (see `mirrored` in `internal/controller/model_mirror_test.go`) | The pass of the model that mirrors it in `protocol_model_test.go`. Run `TestProtocolModel`, then record the new hash. | `TestModelMirrorsTheCode` |
+| A function that a TLA+ specification names (a `\* go:` line in `metal/spec/*/*.tla`) | The operator that names it, if the code does something new. Run `mise run spec`, then `go test ./spec -run TestSpecSync -update`. `concepts/protocol-model.mdx` if the steps change. | `TestSpecSync` |
 | A decision that a later pass cannot undo | Read its inputs through the API reader, mark the function `//pk:uncached`, add it to `mustBeUncached`, write a stale-cache test. A row in "Reads from the API server" of `concepts/architecture.mdx`. See the skill `stale-cache-fix`. | `mise run lint:reads` |
 | A new action of a HostOperation | The table "Add an action" of `project/develop.mdx`: eleven places, three of them with no check. | Partly unit tests |
 | A controller | Its page under `reference/controllers/`: watches, loop, writes, failure modes, tests. | `docs:check` for the links only |

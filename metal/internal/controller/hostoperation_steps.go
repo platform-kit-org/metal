@@ -83,6 +83,10 @@ var actionTraits = map[string]struct {
 	// deleting the Kubernetes Node or staging firmware leaves the machine
 	// running. talosApplyConfig disrupts by its mode.
 	disrupts bool
+	// etcd: the action removes an etcd member, by leaving, by ID, or by
+	// wiping a control plane's EPHEMERAL partition. Control planes then
+	// change one at a time (changesEtcd).
+	etcd bool
 	// awaits: the step's budget counts from the end of the previous step,
 	// not from the first look (waitStart).
 	awaits bool
@@ -106,10 +110,10 @@ var actionTraits = map[string]struct {
 	"talosShutdown":         {disrupts: true},
 	"talosUpgrade":          {disrupts: true, pass: talosUpgradePass},
 	"talosApplyConfig":      {},
-	"etcdLeave":             {disrupts: true},
-	"etcdRemoveMember":      {},
+	"etcdLeave":             {disrupts: true, etcd: true},
+	"etcdRemoveMember":      {etcd: true},
 	"etcdForfeitLeadership": {},
-	"talosReset":            {disrupts: true},
+	"talosReset":            {disrupts: true, etcd: true},
 	"waitNodeReady":         {awaits: true},
 	"waitEtcdHealthy":       {awaits: true},
 	"etcdRecover":           {awaits: true},

@@ -114,11 +114,10 @@ func wipesDisk(op *metalv1alpha1.HostOperation) bool {
 	})
 }
 
-// changesEtcd: the operation removes an etcd member, by leaving, by ID, or
-// by wiping a control plane's EPHEMERAL partition.
+// changesEtcd: the operation removes an etcd member (actionTraits).
 func changesEtcd(op *metalv1alpha1.HostOperation) bool {
 	return slices.ContainsFunc(op.Spec.Actions, func(a metalv1alpha1.HostOperationAction) bool {
-		return a.EtcdLeave != nil || a.EtcdRemoveMember != nil || a.TalosReset != nil
+		return actionTraits[a.Key()].etcd
 	})
 }
 

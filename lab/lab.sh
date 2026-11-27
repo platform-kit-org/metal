@@ -72,7 +72,8 @@ environment variables:
                         seconds a day-2 rollout may take (default: 2400)
   PK_LAB_KIND_CONFIG    the kind cluster definition (default: <repo>/lab/kind.yaml);
                         a copy with another node image is how a host still on
-                        cgroup v1 runs the lab, see lab/README.md"
+                        cgroup v1 runs the lab, see
+                        https://metal.platform-kit.org/reference/lab/troubleshooting/#the-kind-cluster-does-not-start"
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 # shellcheck source=lab/distro.sh
@@ -473,7 +474,7 @@ doctor() {
     check "NO_PROXY includes the lab network 10.77.0.0/24 (a proxy is set)" \
       "export NO_PROXY=\"\${NO_PROXY:+\$NO_PROXY,}10.77.0.0/24,localhost,127.0.0.1,.local\"; export no_proxy=\"\$NO_PROXY\" (add the kind network too: docker network inspect kind --format '{{range .IPAM.Config}}{{.Subnet}} {{end}}')" \
       no_proxy_covers_lab || missing=$((missing + 1))
-    note "a proxy is set. The operator in kind gets it from lab:up; the Talos machines do not: see 'Behind a proxy' in lab/README.md."
+    note "a proxy is set. The operator in kind gets it from lab:up; the Talos machines do not: see https://metal.platform-kit.org/reference/lab/network/#behind-a-proxy"
   fi
   reach "$root" "$spec" || missing=$((missing + 1))
 

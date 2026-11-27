@@ -62,7 +62,7 @@ spec:
     # written out so that they are easy to find: a site that blocks public
     # resolvers puts its own here. The machines reach them through the
     # workstation's NAT. A site proxy goes into a second document in the
-    # same way, see "Behind a proxy" in lab/README.md.
+    # same way, see https://metal.platform-kit.org/reference/lab/network/#behind-a-proxy.
     - inline: |
         apiVersion: v1alpha1
         kind: ResolverConfig

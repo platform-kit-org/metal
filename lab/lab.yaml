@@ -14,7 +14,7 @@
 #   disk serial  pklab-disk-<n>
 #
 # Size the lab without editing this file: PK_LAB_NODES=3cp+2w mise run lab:up
-# (see "Size the lab" in lab/README.md).
+# (see https://metal.platform-kit.org/reference/lab/lab-yaml/#pk_lab_nodes).
 cluster:
   name: lab
   talosVersion: v1.14.6
@@ -42,8 +42,8 @@ nodes:
   # goes through the whole path. A Huawei iBMC (huawei-2288h-v5) holds one
   # medium only: its machine boots an installer built for it, with its config
   # inside. To try it, give a machine that personality, for example
-  # node-2: { personality: huawei-2288h-v5 } ("A one-slot BMC" in
-  # lab/README.md).
+  # node-2: { personality: huawei-2288h-v5 } (see
+  # https://metal.platform-kit.org/reference/lab/simulated-bmc/#one-slot-bmc).
   node-3: { personality: supermicro-x12 }
 
 # Talos machine configuration documents, merged into every node's
@@ -61,7 +61,7 @@ patches:
   # written out so that they are easy to find: a site that blocks public
   # resolvers puts its own here. The machines reach them through the
   # workstation's NAT. A site proxy goes into another patch in the same way,
-  # see "Behind a proxy" in lab/README.md.
+  # see https://metal.platform-kit.org/reference/lab/network/#behind-a-proxy.
   - inline: |
       apiVersion: v1alpha1
       kind: ResolverConfig

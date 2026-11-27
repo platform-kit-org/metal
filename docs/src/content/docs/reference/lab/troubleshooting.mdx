@@ -7,7 +7,6 @@ xref: { cat: lab, id: page/troubleshooting }
 sidebar:
   order: 9
 sources:
-  - /repo/lab/README.md
   - /repo/lab/lab.sh
   - /repo/lab/net.sh
 ---
@@ -183,6 +182,8 @@ export TALOSCONFIG=$PWD/.lab/talosconfig
 | `talosctl -n 10.77.0.12 logs kubelet` | The log of one service |
 | `talosctl -n 10.77.0.12 get addresses` | The addresses. Also: `get links`, `get routes`, `get disks` |
 | `talosctl -n 10.77.0.12 --insecure get disks` | The disks of a machine in maintenance mode |
+
+On a real machine, the console is the serial-over-LAN of the BMC, for example `ipmitool -I lanplus -H <bmc> -U <user> sol activate`.
 
 To examine the management cluster, use the kubeconfig of the lab:
 

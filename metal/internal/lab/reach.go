@@ -459,7 +459,7 @@ func FormatReach(w io.Writer, rs []Reach) int {
 func fixFor(p Probe) string {
 	switch {
 	case p.Who == FromWorkstation:
-		return "the workstation needs these endpoints. Behind a proxy, set HTTPS_PROXY and NO_PROXY (lab/README.md, 'Behind a proxy, and site DNS'); without internet, see https://metal.platform-kit.org/operate/day-1/air-gapped-site/"
+		return "the workstation needs these endpoints. Behind a proxy, set HTTPS_PROXY and NO_PROXY (https://metal.platform-kit.org/reference/lab/network/#behind-a-proxy); without internet, see https://metal.platform-kit.org/operate/day-1/air-gapped-site/"
 	case p.Kind == ProbeDNS:
 		return "give the machines DNS servers that this network allows, for example the one in /etc/resolv.conf: change the ResolverConfig patch in lab/lab.yaml"
 	case p.Kind == ProbeNTP:
@@ -467,5 +467,5 @@ func fixFor(p Probe) string {
 	case p.Optional:
 		return "Talos finds the other members of its cluster through the discovery service; Kubernetes and etcd work without it. Point a DiscoveryServiceConfig patch in lab/lab.yaml at a service that this network allows, or accept the warning"
 	}
-	return "the machines pull their images straight through this workstation's NAT, without its proxy. Use a network that allows these registries, a registry mirror (a RegistryMirrorConfig patch in lab/lab.yaml), or give the machines a proxy (lab/README.md, 'Behind a proxy, and site DNS')"
+	return "the machines pull their images straight through this workstation's NAT, without its proxy. Use a network that allows these registries, a registry mirror (a RegistryMirrorConfig patch in lab/lab.yaml), or give the machines a proxy (https://metal.platform-kit.org/reference/lab/network/#behind-a-proxy)"
 }

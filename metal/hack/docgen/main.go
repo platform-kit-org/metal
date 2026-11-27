@@ -28,7 +28,7 @@ func main() {
 	flag.StringVar(&cfg.controllerDir, "controllers", "internal/controller", "controller package: its Named(...) controllers")
 	flag.StringVar(&cfg.glossary, "glossary", "../docs/src/data/glossary.yaml", "hand-written glossary to check (empty: skip the check)")
 	flag.StringVar(&cfg.pkMetal, "pk-metal", "", "pk-metal binary to read the help from (default: build ./cmd/pk-metal into a temporary directory)")
-	apiDirs := flag.String("api", "api/v1alpha1,api/os/v1alpha1", "comma-separated API packages: actions, phases, conditions and enums")
+	apiDirs := flag.String("api", "api/v1alpha1,api/os/v1alpha1", "comma-separated API packages: actions, phases and conditions")
 	scanDirs := flag.String("scan", "api,internal,cmd", "comma-separated trees searched for +kubebuilder:rbac markers and metal.platform-kit.org/os.platform-kit.org keys")
 	flag.Parse()
 	cfg.apiDirs = splitList(*apiDirs)
@@ -120,7 +120,6 @@ func run(cfg config, help helpFunc) error {
 	}
 	files["actions.json"] = src.actions
 	files["phases.json"] = src.phases
-	files["enums.json"] = src.enums
 	files["conditions.json"] = src.conditions
 	files["keys.json"] = src.keys
 

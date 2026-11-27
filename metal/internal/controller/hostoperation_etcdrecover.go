@@ -67,14 +67,14 @@ const (
 // its deadline, and with one budget for all three the version call came too
 // late as well, so a node that only lacked etcd counted as silent and the
 // recovery waited for it for ever. Whether the node answers comes first.
-func probeEtcd(ctx context.Context, dial talos.Dialer, talosconfig []byte, endpoint string) etcdState {
+func probeEtcd(ctx context.Context, acc *talosAccess, endpoint string) etcdState {
 	call := func(fn func(ctx context.Context) error) error {
 		cctx, cancel := context.WithTimeout(ctx, probeTimeout)
 		defer cancel()
 		return fn(cctx)
 	}
 	state := etcdSilent
-	_ = talos.With(ctx, dial, talos.Target{Endpoint: endpoint, Talosconfig: talosconfig}, func(c talos.Client) error {
+	_ = acc.with(ctx, endpoint, func(c talos.Client) error {
 		// Only a machine that answers something counts as more than silent,
 		// not one whose connection broke after the dial.
 		if call(func(ctx context.Context) error { _, err := c.Version(ctx); return err }) != nil {
@@ -99,26 +99,13 @@ func probeEtcd(ctx context.Context, dial talos.Dialer, talosconfig []byte, endpo
 	return state
 }
 
-func (x *exec) etcdRecover(ctx context.Context, a *metalv1alpha1.EtcdRecoverAction) (stepState, error) {
+func (x *exec) etcdRecover(ctx context.Context, node *osv1alpha1.TalosNode, acc *talosAccess,
+	a *metalv1alpha1.EtcdRecoverAction) (stepState, error) {
 	r := x.r
-	if r.TalosDial == nil {
-		return stepState{}, errors.New("this operator has no Talos client wired, so it cannot run etcdRecover")
-	}
-	if hos := x.host.Spec.OS; hos == nil || hos.NodeRef.Name != a.NodeRef.Name {
-		return stepState{}, fmt.Errorf("host %s does not run TalosNode %s (its spec.os names another node or none)",
-			x.host.Name, a.NodeRef.Name)
-	}
-	node := &osv1alpha1.TalosNode{}
-	if err := r.Get(ctx, types.NamespacedName{Name: a.NodeRef.Name}, node); err != nil {
-		return stepState{}, fmt.Errorf("TalosNode %s: %w", a.NodeRef.Name, err)
-	}
 	if node.Spec.Role != osv1alpha1.RoleControlPlane {
 		return stepState{}, fmt.Errorf("TalosNode %s is a %s; etcd is restored on a control plane", node.Name, node.Spec.Role)
 	}
-	cluster := &osv1alpha1.TalosCluster{}
-	if err := r.Get(ctx, types.NamespacedName{Name: node.Spec.ClusterRef.Name}, cluster); err != nil {
-		return stepState{}, fmt.Errorf("TalosCluster %s: %w", node.Spec.ClusterRef.Name, err)
-	}
+	cluster := acc.cluster
 	if cluster.Status.BootstrappedAt == nil && cluster.Annotations[osv1alpha1.AnnotationRestorePending] == "" {
 		return stepState{}, fmt.Errorf("cluster %s was never seen bootstrapped and is not marked %s: there is no lost "+
 			"etcd to restore, and the operator would bootstrap it on its own meanwhile", cluster.Name,
@@ -143,21 +130,13 @@ func (x *exec) etcdRecover(ctx context.Context, a *metalv1alpha1.EtcdRecoverActi
 		return stepState{}, fmt.Errorf("EtcdSnapshot %s is not verified", snap.Name)
 	}
 
-	bundle, err := loadBundle(ctx, r.Client, r.CredentialsNamespace, cluster)
-	if unavailable := (*bundleUnavailable)(nil); errors.As(err, &unavailable) {
-		return stepState{}, errors.New(unavailable.msg)
-	} else if err != nil {
-		return stepState{}, err
-	}
 	members, err := clusterMembers(ctx, r.Client, cluster.Name)
 	if err != nil {
 		return stepState{}, err
 	}
-	var endpoints []string
 	cps := map[string]string{}
 	for _, n := range members {
 		if addr := render.NodeAddress(&n); n.Spec.Role == osv1alpha1.RoleControlPlane && addr != "" {
-			endpoints = append(endpoints, addr)
 			cps[n.Name] = addr
 		}
 	}
@@ -165,13 +144,9 @@ func (x *exec) etcdRecover(ctx context.Context, a *metalv1alpha1.EtcdRecoverActi
 	if target == "" {
 		return stepState{}, fmt.Errorf("TalosNode %s has no address to dial", node.Name)
 	}
-	talosconfig, err := render.Talosconfig(bundle, cluster.Name, endpoints, checkinCertTTL)
-	if err != nil {
-		return stepState{}, fmt.Errorf("mint talosconfig for %s: %w", cluster.Name, err)
-	}
 
 	uploaded := metalv1alpha1.SnapshotUploaded(x.op.Annotations[metalv1alpha1.AnnotationEtcdSnapshotUploaded], a.SHA256)
-	if uploaded && probeEtcd(ctx, r.TalosDial, talosconfig, target) == etcdListening {
+	if uploaded && probeEtcd(ctx, acc, target) == etcdListening {
 		r.recoveries.Delete(x.op.UID)
 		return stepDone, nil
 	}
@@ -181,7 +156,7 @@ func (x *exec) etcdRecover(ctx context.Context, a *metalv1alpha1.EtcdRecoverActi
 	// answer may still hold data.
 	var silent, running []string
 	for _, name := range slices.Sorted(maps.Keys(cps)) {
-		switch probeEtcd(ctx, r.TalosDial, talosconfig, cps[name]) {
+		switch probeEtcd(ctx, acc, cps[name]) {
 		case etcdSilent:
 			silent = append(silent, name)
 		case etcdNoQuorum, etcdListening:
@@ -206,7 +181,7 @@ func (x *exec) etcdRecover(ctx context.Context, a *metalv1alpha1.EtcdRecoverActi
 		return waitingOn("Talos accepted the recovery at %s; waiting for etcd to start on %s from the snapshot",
 			at.(time.Time).UTC().Format(time.RFC3339), node.Name), nil
 	}
-	err = talos.With(ctx, r.TalosDial, talos.Target{Endpoint: target, Talosconfig: talosconfig}, func(c talos.Client) error {
+	err = acc.with(ctx, target, func(c talos.Client) error {
 		return c.Bootstrap(ctx, talos.BootstrapOptions{RecoverEtcd: true})
 	})
 	switch {

@@ -107,39 +107,51 @@ func (x *exec) record(p *metalv1alpha1.TalosStepProgress) error {
 	return nil
 }
 
-// talosStep runs action i when it is one of the Talos or Kubernetes actions;
-// ok is false otherwise.
+// talosStep runs action i when it names a TalosNode: it resolves the node
+// and the access to its cluster once (talosNode), then runs the step. ok is
+// false for the other actions. step runs awaitCheckIn first: it waits for a
+// node that may not exist yet.
 func (x *exec) talosStep(ctx context.Context, i int) (st stepState, ok bool, err error) {
 	a := x.op.Spec.Actions[i]
+	name := a.NodeName()
+	if name == "" {
+		return stepState{}, false, nil
+	}
+	node, acc, err := x.talosNode(ctx, metalv1alpha1.Reference{Name: name})
+	if err != nil {
+		return stepState{}, true, err
+	}
 	switch {
 	case a.Cordon != nil:
-		st, err = x.cordon(ctx, a.Cordon.NodeRef)
+		st, err = x.cordon(ctx, acc, name)
 	case a.Drain != nil:
-		st, err = x.drain(ctx, a.Drain)
+		st, err = x.drain(ctx, acc, a.Drain)
 	case a.Uncordon != nil:
-		st, err = x.uncordon(ctx, a.Uncordon.NodeRef)
+		st, err = x.uncordon(ctx, acc, name)
 	case a.TalosReboot != nil:
-		st, err = x.talosReboot(ctx, i, a.TalosReboot)
+		st, err = x.talosReboot(ctx, i, node, acc, a.TalosReboot)
 	case a.TalosShutdown != nil:
-		st, err = x.talosShutdown(ctx, i, a.TalosShutdown)
+		st, err = x.talosShutdown(ctx, i, node, acc, a.TalosShutdown)
 	case a.TalosUpgrade != nil:
-		st, err = x.talosUpgrade(ctx, i, a.TalosUpgrade)
+		st, err = x.talosUpgrade(ctx, i, node, acc, a.TalosUpgrade)
 	case a.TalosApplyConfig != nil:
-		st, err = x.talosApplyConfig(ctx, i, a.TalosApplyConfig)
+		st, err = x.talosApplyConfig(ctx, i, node, acc, a.TalosApplyConfig)
 	case a.EtcdLeave != nil:
-		st, err = x.etcdLeave(ctx, a.EtcdLeave)
+		st, err = x.etcdLeave(ctx, node, acc, a.EtcdLeave)
 	case a.EtcdRemoveMember != nil:
-		st, err = x.etcdRemoveMember(ctx, a.EtcdRemoveMember)
+		st, err = x.etcdRemoveMember(ctx, node, acc, a.EtcdRemoveMember)
 	case a.TalosReset != nil:
-		st, err = x.talosReset(ctx, i, a.TalosReset)
+		st, err = x.talosReset(ctx, i, node, acc, a.TalosReset)
 	case a.WaitNodeReady != nil:
-		st, err = x.waitNodeReady(ctx, a.WaitNodeReady)
+		st, err = x.waitNodeReady(ctx, node, acc, a.WaitNodeReady)
 	case a.WaitEtcdHealthy != nil:
-		st, err = x.waitEtcdHealthy(ctx, a.WaitEtcdHealthy)
+		st, err = x.waitEtcdHealthy(ctx, node, acc, a.WaitEtcdHealthy)
 	case a.EtcdForfeitLeadership != nil:
-		st, err = x.etcdForfeitLeadership(ctx, a.EtcdForfeitLeadership)
+		st, err = x.etcdForfeitLeadership(ctx, node, acc, a.EtcdForfeitLeadership)
 	case a.DeleteKubernetesNode != nil:
-		st, err = x.deleteKubernetesNode(ctx, a.DeleteKubernetesNode)
+		st, err = x.deleteKubernetesNode(ctx, acc, a.DeleteKubernetesNode)
+	case a.EtcdRecover != nil:
+		st, err = x.etcdRecover(ctx, node, acc, a.EtcdRecover)
 	default:
 		return stepState{}, false, nil
 	}
@@ -148,20 +160,16 @@ func (x *exec) talosStep(ctx context.Context, i int) (st stepState, ok bool, err
 
 // cordon makes the node unschedulable, and records it when this operation
 // did, so that an abort hands back only its own cordon.
-func (x *exec) cordon(ctx context.Context, ref metalv1alpha1.Reference) (stepState, error) {
-	_, acc, err := x.talosNode(ctx, ref)
-	if err != nil {
-		return stepState{}, err
-	}
+func (x *exec) cordon(ctx context.Context, acc *talosAccess, node string) (stepState, error) {
 	kube, err := x.workload(ctx, acc)
 	if err != nil {
 		return stepState{}, err
 	}
-	changed, err := drain.Cordon(ctx, kube, ref.Name)
+	changed, err := drain.Cordon(ctx, kube, node)
 	if err != nil {
 		return stepState{}, err
 	}
-	return stepDone, x.noteCordon(ref.Name, changed)
+	return stepDone, x.noteCordon(node, changed)
 }
 
 func (x *exec) noteCordon(node string, changed bool) error {
@@ -175,31 +183,32 @@ func (x *exec) noteCordon(node string, changed bool) error {
 	return nil
 }
 
-func (x *exec) uncordon(ctx context.Context, ref metalv1alpha1.Reference) (stepState, error) {
-	_, acc, err := x.talosNode(ctx, ref)
-	if err != nil {
+func (x *exec) uncordon(ctx context.Context, acc *talosAccess, node string) (stepState, error) {
+	if err := x.uncordonVia(ctx, acc, node); err != nil {
 		return stepState{}, err
 	}
-	kube, err := x.workload(ctx, acc)
-	if err != nil {
-		return stepState{}, err
-	}
-	if _, err := drain.Uncordon(ctx, kube, ref.Name); err != nil {
-		return stepState{}, err
-	}
-	if x.op.Status.CordonedNode == ref.Name {
+	if x.op.Status.CordonedNode == node {
 		x.op.Status.CordonedNode = ""
 	}
 	return stepDone, nil
 }
 
+// uncordonVia makes the named Node schedulable through the cluster that acc
+// reaches.
+func (x *exec) uncordonVia(ctx context.Context, acc *talosAccess, node string) error {
+	kube, err := x.workload(ctx, acc)
+	if err != nil {
+		return err
+	}
+	if _, err := drain.Uncordon(ctx, kube, node); err != nil {
+		return fmt.Errorf("uncordon %s: %w", node, err)
+	}
+	return nil
+}
+
 // drain cordons the node and evicts its pods, one pass per look; a budget
 // that refuses an eviction is waited out until the step's timeout.
-func (x *exec) drain(ctx context.Context, a *metalv1alpha1.DrainAction) (stepState, error) {
-	_, acc, err := x.talosNode(ctx, a.NodeRef)
-	if err != nil {
-		return stepState{}, err
-	}
+func (x *exec) drain(ctx context.Context, acc *talosAccess, a *metalv1alpha1.DrainAction) (stepState, error) {
 	kube, err := x.workload(ctx, acc)
 	if err != nil {
 		return stepState{}, err
@@ -360,11 +369,8 @@ func cmpOr(s, def string) string {
 	return s
 }
 
-func (x *exec) talosReboot(ctx context.Context, i int, a *metalv1alpha1.TalosRebootAction) (stepState, error) {
-	node, acc, err := x.talosNode(ctx, a.NodeRef)
-	if err != nil {
-		return stepState{}, err
-	}
+func (x *exec) talosReboot(ctx context.Context, i int, node *osv1alpha1.TalosNode, acc *talosAccess,
+	a *metalv1alpha1.TalosRebootAction) (stepState, error) {
 	opts := talos.RebootOptions{Mode: talos.RebootDefault}
 	if a.Mode == "PowerCycle" {
 		opts.Mode = talos.RebootPowerCycle
@@ -376,11 +382,8 @@ func (x *exec) talosReboot(ctx context.Context, i int, a *metalv1alpha1.TalosReb
 
 // talosUpgrade installs the pinned image and waits for the node to run the
 // version the approver saw. A node that already runs it is not upgraded.
-func (x *exec) talosUpgrade(ctx context.Context, i int, a *metalv1alpha1.TalosUpgradeAction) (stepState, error) {
-	node, acc, err := x.talosNode(ctx, a.NodeRef)
-	if err != nil {
-		return stepState{}, err
-	}
+func (x *exec) talosUpgrade(ctx context.Context, i int, node *osv1alpha1.TalosNode, acc *talosAccess,
+	a *metalv1alpha1.TalosUpgradeAction) (stepState, error) {
 	if x.progress(i) == nil {
 		var version string
 		err := acc.with(ctx, nodeEndpoint(node), func(c talos.Client) (err error) {
@@ -413,13 +416,11 @@ func (x *exec) talosUpgrade(ctx context.Context, i int, a *metalv1alpha1.TalosUp
 
 // talosApplyConfig sends the rendered config the approver saw: the Secret's
 // bytes must hash to the pinned digest, or nothing is sent.
-func (x *exec) talosApplyConfig(ctx context.Context, i int, a *metalv1alpha1.TalosApplyConfigAction) (stepState, error) {
-	node, acc, err := x.talosNode(ctx, a.NodeRef)
-	if err != nil {
-		return stepState{}, err
-	}
+func (x *exec) talosApplyConfig(ctx context.Context, i int, node *osv1alpha1.TalosNode, acc *talosAccess,
+	a *metalv1alpha1.TalosApplyConfigAction) (stepState, error) {
 	var cfg []byte
 	if p := x.progress(i); p == nil || p.RequestedAt == nil {
+		var err error
 		if cfg, err = x.pinnedConfig(ctx, a); err != nil {
 			return stepState{}, err
 		}
@@ -537,11 +538,8 @@ func (x *exec) pinnedConfig(ctx context.Context, a *metalv1alpha1.TalosApplyConf
 // request while one runs is refused inside the node and changes nothing. So
 // a request whose answer was lost (RequestedAt not set), or a node that still
 // answers with its old boot time long after it accepted one, is asked again.
-func (x *exec) talosReset(ctx context.Context, i int, a *metalv1alpha1.TalosResetAction) (stepState, error) {
-	node, acc, err := x.talosNode(ctx, a.NodeRef)
-	if err != nil {
-		return stepState{}, err
-	}
+func (x *exec) talosReset(ctx context.Context, i int, node *osv1alpha1.TalosNode, acc *talosAccess,
+	a *metalv1alpha1.TalosResetAction) (stepState, error) {
 	opts := talos.ResetOptions{Graceful: a.Graceful == nil || *a.Graceful, Reboot: a.Reboot}
 	switch a.Mode {
 	case "SystemDisk":
@@ -558,7 +556,7 @@ func (x *exec) talosReset(ctx context.Context, i int, a *metalv1alpha1.TalosRese
 		return x.askReset(ctx, i, node, acc, opts, nil)
 	}
 	var booted time.Time
-	err = acc.with(ctx, nodeEndpoint(node), func(c talos.Client) (err error) {
+	err := acc.with(ctx, nodeEndpoint(node), func(c talos.Client) (err error) {
 		booted, err = c.BootTime(ctx)
 		return err
 	})
@@ -630,14 +628,11 @@ func (x *exec) askReset(ctx context.Context, i int, node *osv1alpha1.TalosNode, 
 // node staying silent for talosGoneAfter. A request whose answer was lost is
 // sent again when the node still answers; one the node accepted is not, since
 // Talos starts its shutdown sequence over on a second request.
-func (x *exec) talosShutdown(ctx context.Context, i int, a *metalv1alpha1.TalosShutdownAction) (stepState, error) {
-	node, acc, err := x.talosNode(ctx, a.NodeRef)
-	if err != nil {
-		return stepState{}, err
-	}
+func (x *exec) talosShutdown(ctx context.Context, i int, node *osv1alpha1.TalosNode, acc *talosAccess,
+	a *metalv1alpha1.TalosShutdownAction) (stepState, error) {
 	endpoint := nodeEndpoint(node)
 	if p := x.progress(i); p != nil {
-		err = acc.with(ctx, endpoint, func(c talos.Client) error {
+		err := acc.with(ctx, endpoint, func(c talos.Client) error {
 			_, err := c.Version(ctx)
 			return err
 		})
@@ -655,7 +650,7 @@ func (x *exec) talosShutdown(ctx context.Context, i int, a *metalv1alpha1.TalosS
 				node.Name, p.RequestedAt.UTC().Format(time.RFC3339)), nil
 		}
 	}
-	err = acc.with(ctx, endpoint, func(c talos.Client) error {
+	err := acc.with(ctx, endpoint, func(c talos.Client) error {
 		return c.Shutdown(ctx, talos.ShutdownOptions{Force: a.Force})
 	})
 	var unreach *unreachableError
@@ -798,11 +793,8 @@ func (x *exec) controlPlanePeers(ctx context.Context, node *osv1alpha1.TalosNode
 
 // etcdLeave makes the node's member leave etcd, asked on the node itself.
 // Its goal is the member's absence from the list a peer keeps.
-func (x *exec) etcdLeave(ctx context.Context, a *metalv1alpha1.EtcdLeaveAction) (stepState, error) {
-	node, acc, err := x.talosNode(ctx, a.NodeRef)
-	if err != nil {
-		return stepState{}, err
-	}
+func (x *exec) etcdLeave(ctx context.Context, node *osv1alpha1.TalosNode, acc *talosAccess,
+	a *metalv1alpha1.EtcdLeaveAction) (stepState, error) {
 	if node.Spec.Role != osv1alpha1.RoleControlPlane {
 		return stepState{}, fmt.Errorf("node %s is a %s, not a control plane: it runs no etcd member", node.Name, node.Spec.Role)
 	}
@@ -843,11 +835,8 @@ func (x *exec) etcdLeave(ctx context.Context, a *metalv1alpha1.EtcdLeaveAction) 
 // node's member leads, asked on the node itself; Talos leaves a follower as
 // it is, so the request is its own goal check. A node whose member is gone
 // already (a resumed removal) has nothing to hand on.
-func (x *exec) etcdForfeitLeadership(ctx context.Context, a *metalv1alpha1.EtcdForfeitLeadershipAction) (stepState, error) {
-	node, acc, err := x.talosNode(ctx, a.NodeRef)
-	if err != nil {
-		return stepState{}, err
-	}
+func (x *exec) etcdForfeitLeadership(ctx context.Context, node *osv1alpha1.TalosNode, acc *talosAccess,
+	a *metalv1alpha1.EtcdForfeitLeadershipAction) (stepState, error) {
 	if node.Spec.Role != osv1alpha1.RoleControlPlane {
 		return stepState{}, fmt.Errorf("node %s is a %s, not a control plane: it runs no etcd member", node.Name, node.Spec.Role)
 	}
@@ -882,11 +871,8 @@ func (x *exec) etcdForfeitLeadership(ctx context.Context, a *metalv1alpha1.EtcdF
 // deleteKubernetesNode deletes the node's Node object through its cluster's
 // Kubernetes API. Already gone is the goal met; an API that does not answer
 // is a wait, as for the drain.
-func (x *exec) deleteKubernetesNode(ctx context.Context, a *metalv1alpha1.DeleteKubernetesNodeAction) (stepState, error) {
-	_, acc, err := x.talosNode(ctx, a.NodeRef)
-	if err != nil {
-		return stepState{}, err
-	}
+func (x *exec) deleteKubernetesNode(ctx context.Context, acc *talosAccess,
+	a *metalv1alpha1.DeleteKubernetesNodeAction) (stepState, error) {
 	kube, err := x.workload(ctx, acc)
 	if err != nil {
 		return stepState{}, err
@@ -921,11 +907,8 @@ func (a *talosAccess) membersVia(ctx context.Context, via []osv1alpha1.TalosNode
 
 // etcdRemoveMember removes exactly the member the approver saw, by ID,
 // through a peer. A member already gone is success.
-func (x *exec) etcdRemoveMember(ctx context.Context, a *metalv1alpha1.EtcdRemoveMemberAction) (stepState, error) {
-	node, acc, err := x.talosNode(ctx, a.NodeRef)
-	if err != nil {
-		return stepState{}, err
-	}
+func (x *exec) etcdRemoveMember(ctx context.Context, node *osv1alpha1.TalosNode, acc *talosAccess,
+	a *metalv1alpha1.EtcdRemoveMemberAction) (stepState, error) {
 	id, err := strconv.ParseUint(a.MemberID, 16, 64)
 	if err != nil {
 		return stepState{}, fmt.Errorf("member ID %q is not hex: %w", a.MemberID, err)
@@ -978,17 +961,14 @@ func (x *exec) etcdRemoveMember(ctx context.Context, a *metalv1alpha1.EtcdRemove
 // A Ready from before a reboot can outlive it: on a single control plane
 // nothing marks the Node unknown while the cluster is down, so the old
 // condition stands until the controller manager comes back.
-func (x *exec) waitNodeReady(ctx context.Context, a *metalv1alpha1.WaitNodeReadyAction) (stepState, error) {
-	node, acc, err := x.talosNode(ctx, a.NodeRef)
-	if err != nil {
-		return stepState{}, err
-	}
+func (x *exec) waitNodeReady(ctx context.Context, node *osv1alpha1.TalosNode, acc *talosAccess,
+	a *metalv1alpha1.WaitNodeReadyAction) (stepState, error) {
 	var (
 		st      talos.Status
 		version string
 		booted  time.Time
 	)
-	err = acc.with(ctx, nodeEndpoint(node), func(c talos.Client) (err error) {
+	err := acc.with(ctx, nodeEndpoint(node), func(c talos.Client) (err error) {
 		if st, err = c.Status(ctx); err != nil {
 			return err
 		}
@@ -1038,11 +1018,8 @@ func (x *exec) waitNodeReady(ctx context.Context, a *metalv1alpha1.WaitNodeReady
 // waitEtcdHealthy waits until every member of the cluster's etcd answers,
 // votes and reports no error, no alarm is raised, and the node's own member
 // is among them.
-func (x *exec) waitEtcdHealthy(ctx context.Context, a *metalv1alpha1.WaitEtcdHealthyAction) (stepState, error) {
-	node, acc, err := x.talosNode(ctx, a.NodeRef)
-	if err != nil {
-		return stepState{}, err
-	}
+func (x *exec) waitEtcdHealthy(ctx context.Context, node *osv1alpha1.TalosNode, acc *talosAccess,
+	a *metalv1alpha1.WaitEtcdHealthyAction) (stepState, error) {
 	via, all, err := x.controlPlanePeers(ctx, node, true)
 	if err != nil {
 		return stepState{}, err

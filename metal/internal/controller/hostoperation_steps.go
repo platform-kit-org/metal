@@ -46,11 +46,7 @@ func (x *exec) step(ctx context.Context, i int) (stepState, error) {
 		}
 		return stepDone, err
 	case a.EjectMedia != nil:
-		cl, _, err := x.client(ctx)
-		if err != nil {
-			return stepState{}, err
-		}
-		return stepDone, boot.EjectAndVerify(ctx, cl, a.EjectMedia.MediaID, nil)
+		return stepDone, x.eject(ctx, a.EjectMedia.MediaID)
 	case a.ApplyBios != nil:
 		cl, sysID, err := x.client(ctx)
 		if err != nil {
@@ -65,8 +61,6 @@ func (x *exec) step(ctx context.Context, i int) (stepState, error) {
 		return stepDone, x.flashFirmware(ctx, i, cl, a.FlashFirmware)
 	case a.AwaitCheckIn != nil:
 		return x.awaitCheckIn(ctx, a.AwaitCheckIn)
-	case a.EtcdRecover != nil:
-		return x.etcdRecover(ctx, a.EtcdRecover)
 	case a.StageFirmware != nil:
 		return stepDone, x.stageFirmware(ctx, i, a.StageFirmware)
 	}
@@ -120,6 +114,15 @@ var actionTraits = map[string]struct {
 	"waitEtcdHealthy":       {awaits: true},
 	"etcdRecover":           {awaits: true},
 	"deleteKubernetesNode":  {},
+}
+
+// eject empties a virtual media slot and reads it back empty.
+func (x *exec) eject(ctx context.Context, slot string) error {
+	cl, _, err := x.client(ctx)
+	if err != nil {
+		return err
+	}
+	return boot.EjectAndVerify(ctx, cl, slot, nil)
 }
 
 // waitStart is where a waiting step's budget counts from.

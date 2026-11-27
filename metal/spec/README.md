@@ -30,7 +30,9 @@ pinned version and checksum to `metal/bin/tla/`.
 ## Keep a specification and the code in step
 
 - A `\* go: <package>.<function> <fingerprint>` line names a Go function that
-  the operator below it mirrors.
+  the operator below it mirrors. The Go protocol model
+  (`internal/controller/protocol_model_test.go`) names the functions that its
+  passes mirror with `// go:` lines, and the same test checks them.
 - `go test ./spec` (part of `mise run test`) fails when such a function
   changes or is gone, and when the configurations and the Go test check
   invariants with different names.
@@ -38,5 +40,5 @@ pinned version and checksum to `metal/bin/tla/`.
   run `mise run spec`, then record the new fingerprints:
 
   ```sh
-  go test ./spec -run TestSpecSync -update
+  go test ./spec -run TestSpecSync/<file> -update
   ```

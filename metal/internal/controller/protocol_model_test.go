@@ -50,7 +50,9 @@ import (
 // releaseNeedsPerson, approvalWaived, disruptionVerdict, and the phase
 // derivations. The control flow around them
 // (release, provision, the executor's Reconcile) is mirrored by hand, branch
-// by branch; the comments name the branch. Reads the real code makes through
+// by branch; the comments name the branch. A "// go:" line above a pass
+// names the function it mirrors, with a fingerprint that TestSpecSync
+// (metal/spec) checks. Reads the real code makes through
 // the API reader (the hosts of a deleted claim, bootRanUncached,
 // activePredecessorUncached) read the current world.
 
@@ -380,6 +382,8 @@ func (p *pass) delete(i opSlot) {
 }
 
 // claimPass mirrors HostClaimReconciler.Reconcile over view v.
+//
+// go: controller.HostClaimReconciler.Reconcile f483186c1bc6
 func claimPass(s state, v view, mask uint8) *pass {
 	p := newPass(s, fmt.Sprintf("claim reconcile (stale %04b)", mask))
 	c := v.Claim
@@ -420,6 +424,8 @@ func claimPass(s state, v view, mask uint8) *pass {
 }
 
 // provision mirrors HostClaimReconciler.provision for the bound host.
+//
+// go: controller.HostClaimReconciler.provision c3c6afc9a724
 func (p *pass) provision(v view, claim mClaim, host mHost) {
 	boot := v.Ops[slotBoot]
 	withdraw := func() {
@@ -451,6 +457,9 @@ func (p *pass) provision(v view, claim mClaim, host mHost) {
 }
 
 // release mirrors HostClaimReconciler.release and finishRelease.
+//
+// go: controller.HostClaimReconciler.release 35999f23f29c
+// go: controller.HostClaimReconciler.finishRelease 0988f8ac9564
 func (p *pass) release(v view) {
 	claim := claimObj(v.Claim)
 	isHeld := held(v.Claim)
@@ -558,6 +567,8 @@ func (p *pass) unbind(read mHost) bool {
 
 // executorPass mirrors HostOperationReconciler.Reconcile for slot i: at most
 // one step per pass, which only adds interleavings.
+//
+// go: controller.HostOperationReconciler.Reconcile 7f6da928f6a1
 func executorPass(s state, v view, mask uint8, i opSlot, fail bool) *pass {
 	verb := "pass"
 	if fail {

@@ -64,7 +64,7 @@ A TLA+ specification and three model tests check the protocol across many orders
 5. A power action on a control plane of the operator cluster starts only with `metal.platform-kit.org/allow-self-disruption`.
 
 The model calls the same helper functions as the controllers. Only the control flow is written again in the test.
-`TestModelMirrorsTheCode` keeps a hash of each function whose control flow the model writes again. A change of the code in one of them fails the test, so that a person brings the model in line before the hash changes. A change of a comment does not count.
+A `// go:` line above each pass of the model keeps a hash of the function whose control flow the pass writes again. `TestSpecSync` checks these lines and the `\* go:` lines of the TLA+ specification. A change of the code of such a function fails the test, so that a person brings the model in line before the hash changes. A change of a comment does not count.
 
 ## The hand-off of a Host: TLA+ and stale reads
 

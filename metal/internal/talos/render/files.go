@@ -123,34 +123,3 @@ func (m *Manifests) add(file string, doc []byte) error {
 	}
 	return nil
 }
-
-// WriteFiles dumps a cluster and its nodes as one file per object, in the
-// form LoadDir reads back. TypeMeta is stamped here (on copies): objects read
-// from the API server arrive without it.
-func WriteFiles(dir string, cluster *osv1alpha1.TalosCluster, nodes []osv1alpha1.TalosNode) error {
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	write := func(name string, obj any) error {
-		data, err := sigsyaml.Marshal(obj)
-		if err != nil {
-			return err
-		}
-		return os.WriteFile(filepath.Join(dir, name), data, 0o644)
-	}
-	c := *cluster
-	c.TypeMeta = metav1.TypeMeta{APIVersion: osv1alpha1.GroupVersion.String(), Kind: "TalosCluster"}
-	c.Status = osv1alpha1.TalosClusterStatus{}
-	if err := write("taloscluster-"+c.Name+".yaml", &c); err != nil {
-		return err
-	}
-	for i := range nodes {
-		n := nodes[i]
-		n.TypeMeta = metav1.TypeMeta{APIVersion: osv1alpha1.GroupVersion.String(), Kind: "TalosNode"}
-		n.Status = osv1alpha1.TalosNodeStatus{}
-		if err := write("talosnode-"+n.Name+".yaml", &n); err != nil {
-			return err
-		}
-	}
-	return nil
-}

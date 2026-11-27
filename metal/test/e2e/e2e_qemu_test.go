@@ -333,8 +333,7 @@ func TestE2EQemu(t *testing.T) {
 		// No in-band config: the config travelled on the medium, so the
 		// machine comes up configured and only answers securely — the metal
 		// flow, end to end. The wait covers install, reboot, and etcd.
-		crDir := t.TempDir()
-		require.NoError(t, render.WriteFiles(crDir, talosCluster, []osv1alpha1.TalosNode{*talosNode}))
+		crDir := writeCRDir(t, talosCluster, talosNode)
 		secretPath := filepath.Join(t.TempDir(), render.BundleKey)
 		require.NoError(t, os.WriteFile(secretPath, bundleBytes, 0o600))
 

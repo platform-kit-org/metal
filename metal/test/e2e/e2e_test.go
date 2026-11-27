@@ -44,6 +44,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
+	sigsyaml "sigs.k8s.io/yaml"
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
@@ -357,10 +358,9 @@ func TestE2EKind(t *testing.T) {
 
 		// The REAL CLI, on the same inputs a day-0 operator would hold: the CR
 		// dir and the secrets bundle.
-		crDir := t.TempDir()
-		require.NoError(t, render.WriteFiles(crDir, talosCluster, []osv1alpha1.TalosNode{*talosNode}))
-		// The secret lives NEXT TO the CR dir, never in it — LoadDir walks the
-		// whole directory and rightly refuses foreign documents.
+		crDir := writeCRDir(t, talosCluster, talosNode)
+		// The bundle stays outside the CR dir: it holds the cluster keys, and
+		// the CR dir is a git checkout.
 		secretPath := filepath.Join(t.TempDir(), render.BundleKey)
 		require.NoError(t, os.WriteFile(secretPath, bundleBytes, 0o600))
 
@@ -508,4 +508,26 @@ func newBundle(t *testing.T, talosVersion string) []byte {
 	_, err = render.LoadBundle(data, talosVersion)
 	require.NoError(t, err, "the generated bundle round-trips through the operator's decoder")
 	return data
+}
+
+// writeCRDir writes a cluster and its node, one file for each, to a new
+// directory in the form that `pk-metal bootstrap --dir` reads. TypeMeta is set
+// on copies: objects read from the API server arrive without it.
+func writeCRDir(t *testing.T, cluster *osv1alpha1.TalosCluster, node *osv1alpha1.TalosNode) string {
+	t.Helper()
+	dir := t.TempDir()
+	write := func(name string, obj any) {
+		data, err := sigsyaml.Marshal(obj)
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(filepath.Join(dir, name), data, 0o644))
+	}
+	c := *cluster
+	c.TypeMeta = metav1.TypeMeta{APIVersion: osv1alpha1.GroupVersion.String(), Kind: "TalosCluster"}
+	c.Status = osv1alpha1.TalosClusterStatus{}
+	write("taloscluster-"+c.Name+".yaml", &c)
+	n := *node
+	n.TypeMeta = metav1.TypeMeta{APIVersion: osv1alpha1.GroupVersion.String(), Kind: "TalosNode"}
+	n.Status = osv1alpha1.TalosNodeStatus{}
+	write("talosnode-"+n.Name+".yaml", &n)
+	return dir
 }

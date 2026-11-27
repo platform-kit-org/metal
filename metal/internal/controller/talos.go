@@ -91,7 +91,9 @@ func configMapReader(ctx context.Context, c client.Reader, namespace string) ren
 	}
 }
 
-// hostsByNode maps each TalosNode that a Host's spec.os names to that Host.
+// hostsByNode maps each TalosNode that a Host's spec.os names to that Host. A
+// plain list-and-filter: the rack is small, and this avoids a cross-controller
+// index.
 func hostsByNode(ctx context.Context, c client.Reader) (map[string]string, error) {
 	hosts := &metalv1alpha1.HostList{}
 	if err := c.List(ctx, hosts); err != nil {

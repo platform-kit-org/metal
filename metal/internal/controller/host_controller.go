@@ -502,7 +502,7 @@ func (r *HostReconciler) hostsForClaim(ctx context.Context, obj client.Object) [
 
 // hostsForNode re-projects the Hosts whose hand-off names the node — its
 // check-in observations feed Booted/OSReady. List-and-filter, same rationale
-// as nodeHandedOff.
+// as hostsByNode.
 func (r *HostReconciler) hostsForNode(ctx context.Context, obj client.Object) []ctrl.Request {
 	hosts := &metalv1alpha1.HostList{}
 	if err := r.List(ctx, hosts); err != nil {

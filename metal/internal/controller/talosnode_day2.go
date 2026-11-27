@@ -307,13 +307,7 @@ func (r *TalosNodeReconciler) rolloutActive(ctx context.Context, cluster string)
 	if err := r.List(ctx, rollouts); err != nil {
 		return false, err
 	}
-	for i := range rollouts.Items {
-		ro := &rollouts.Items[i]
-		if ro.Spec.ClusterRef.Name == cluster && ro.Spec.Approval.ApprovedBy != "" && !rolloutFinished(ro) {
-			return true, nil
-		}
-	}
-	return false, nil
+	return clusterHolder(rollouts.Items, cluster) != nil, nil
 }
 
 // nodesForRollout re-enters a rollout's nodes when it moves: an approved

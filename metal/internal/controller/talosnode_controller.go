@@ -218,11 +218,11 @@ func (r *TalosNodeReconciler) checkin(ctx context.Context, node *osv1alpha1.Talo
 	if r.Dial == nil {
 		return ctrl.Result{}, nil
 	}
-	handed, err := nodeHandedOff(ctx, r.Client, node.Name)
+	hosts, err := hostsByNode(ctx, r.Client)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	if !handed {
+	if _, handed := hosts[node.Name]; !handed {
 		// No machine is handed this node: nothing to observe. Stale
 		// observations leave with the hand-off (the release path).
 		meta.RemoveStatusCondition(&node.Status.Conditions, osv1alpha1.ConditionMachineReachable)
@@ -327,21 +327,6 @@ func (r *TalosNodeReconciler) observe(ctx context.Context, tcfg []byte, endpoint
 		return talos.Status{}, "", "", err
 	}
 	return talos.Status{}, version, "maintenance", nil
-}
-
-// nodeHandedOff reports whether any Host's OS hand-off names this node. A plain
-// list-and-filter: the rack is small and this avoids a cross-controller index.
-func nodeHandedOff(ctx context.Context, cl client.Client, nodeName string) (bool, error) {
-	hosts := &metalv1alpha1.HostList{}
-	if err := cl.List(ctx, hosts); err != nil {
-		return false, err
-	}
-	for i := range hosts.Items {
-		if os := hosts.Items[i].Spec.OS; os != nil && os.NodeRef.Name == nodeName {
-			return true, nil
-		}
-	}
-	return false, nil
 }
 
 func (r *TalosNodeReconciler) SetupWithManager(mgr ctrl.Manager) error {

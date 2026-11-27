@@ -241,13 +241,9 @@ func (m topModel) key(k string) (tea.Model, tea.Cmd) {
 				ns, name, shortDuration(approvalWindow)), true)
 			return m, nil
 		}
-		m.busy = true
 		m.setStatus("approving "+ns+"/"+name+" …", false)
 		act := m.act
-		return m, m.bounded(func(ctx context.Context) tea.Msg {
-			text, err := act.Approve(ctx, ns, name, plan)
-			return topDoneMsg{text, err}
-		})
+		return m.run(func(ctx context.Context) (string, error) { return act.Approve(ctx, ns, name, plan) })
 	}
 	n := len(m.data.Tiles)
 	switch k {
@@ -291,24 +287,26 @@ func (m topModel) key(k string) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		ns, name, on := t.ClaimNS, t.ClaimName, !t.OnHold
-		m.busy = true
-		return m, m.bounded(func(ctx context.Context) tea.Msg {
-			text, err := act.Hold(ctx, ns, name, on)
-			return topDoneMsg{text, err}
-		})
+		return m.run(func(ctx context.Context) (string, error) { return act.Hold(ctx, ns, name, on) })
 	case "r":
 		if t.Op == nil || !t.Op.Failed {
 			m.setStatus(t.Title+": no failed operation to retry", false)
 			return m, nil
 		}
 		ns, name := t.Op.Namespace, t.Op.Name
-		m.busy = true
-		return m, m.bounded(func(ctx context.Context) tea.Msg {
-			text, err := act.Retry(ctx, ns, name)
-			return topDoneMsg{text, err}
-		})
+		return m.run(func(ctx context.Context) (string, error) { return act.Retry(ctx, ns, name) })
 	}
 	return m, nil
+}
+
+// run starts an action that changes the cluster: the view is busy until its
+// result, which becomes the status line.
+func (m topModel) run(call func(context.Context) (string, error)) (tea.Model, tea.Cmd) {
+	m.busy = true
+	return m, m.bounded(func(ctx context.Context) tea.Msg {
+		text, err := call(ctx)
+		return topDoneMsg{text, err}
+	})
 }
 
 // Styles. The marks carry the meaning; colour only repeats it.
@@ -424,10 +422,7 @@ func (m topModel) header(width int) string {
 	if len(m.data.Loading) > 0 {
 		lines = append(lines, styleWait.Render("still reading: "+strings.Join(m.data.Loading, ", ")))
 	}
-	for i := range lines {
-		lines[i] = ansi.Truncate(lines[i], width, "…")
-	}
-	return strings.Join(lines, "\n")
+	return fit(lines, width)
 }
 
 // tileWidth is the least outer width of one tile; as many as fit go side by
@@ -479,10 +474,7 @@ func (m topModel) renderTile(t tile, selected bool, w int) string {
 	default:
 		l = append(l, styleDim.Render("no operation, no node"))
 	}
-	for i := range l {
-		l[i] = ansi.Truncate(l[i], inner, "…")
-	}
-	return style.Width(w).Render(strings.Join(l, "\n"))
+	return style.Width(w).Render(fit(l, inner))
 }
 
 func titleLine(t tile) string {
@@ -582,10 +574,7 @@ func (m topModel) detail(t tile, width, height int) string {
 			l = append(l, styleDim.Render("│ ")+s)
 		}
 	}
-	for i := range l {
-		l[i] = ansi.Truncate(l[i], inner, "…")
-	}
-	return style.Width(width).Render(strings.Join(l, "\n"))
+	return style.Width(width).Render(fit(l, inner))
 }
 
 // field is one labelled fact of the detail panel. A fact that does not fit
@@ -697,6 +686,11 @@ func (m topModel) footer(width int) string {
 		}
 		lines = append(lines, st.Render(oneLine(m.status)))
 	}
+	return fit(lines, width)
+}
+
+// fit cuts each line to width, with "…" where it cuts, and joins the lines.
+func fit(lines []string, width int) string {
 	for i := range lines {
 		lines[i] = ansi.Truncate(lines[i], width, "…")
 	}

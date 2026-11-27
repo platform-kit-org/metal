@@ -29,11 +29,5 @@ Paths are from the repository root; the Go module is `metal/`.
 
 ## Before you commit
 
-```sh
-mise run lint
-mise run generate:check
-mise run test
-mise run docs:check   # when a page changed
-```
-
-Run `mise run envtest` for a change to a controller, a CRD, RBAC or a policy.
+Run the checks in "Before you commit" of
+`docs/src/content/docs/project/develop.mdx`.

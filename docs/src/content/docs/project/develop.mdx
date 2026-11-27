@@ -48,6 +48,7 @@ Each level is slower than the one before it, and it proves more. Run the lowest 
 | Unit tests | `mise run test` | Simulated BMCs and a fake Talos API, in the test process | Seconds to minutes | Go |
 | Controller tests | `mise run envtest` | A real Kubernetes API server and etcd, with the admission policies | Minutes | The task downloads the binaries |
 | Race detector | `mise run test:race` | The two levels above, with `-race` | Minutes | A C compiler |
+| TLA+ model check | `mise run spec` | TLC on the specifications in `metal/spec`. See [](concept:protocol-model). | Minutes | A Java runtime. The task downloads the TLA+ tools. |
 | Kind tier | `mise run e2e:kind` | The operator against kind, a simulated BMC, Talos in a container | Many minutes | Docker, a kind cluster named `pk-metal` |
 | VM tier | `mise run e2e:qemu` | A simulated BMC with a QEMU machine. A real install from virtual media. | Many minutes | KVM, QEMU, OVMF |
 | Virtual lab | `mise run lab:up`, then `mise run lab:wait` | kind, the operator image, QEMU machines, real Talos and Kubernetes | 15 minutes or more | See [](lab:page/prerequisites) |
@@ -55,6 +56,7 @@ Each level is slower than the one before it, and it proves more. Run the lowest 
 | Hardware checks | `mise run test:hardware` | One real BMC, read only. See [](cli:check#check-the-client-against-real-hardware). | Minutes | `PK_METAL_HW_URL` and `PK_METAL_BMC_PASSWORD` |
 
 - [](ref:status) says which levels run in CI, and when.
+- A change to the code comes with a test. Put a controller test in `metal/internal/controller`, with the fake client. Use `metal/internal/envtest` only for a test that needs a real API server, for example for an admission policy.
 - To run one controller test, give its name: `mise run envtest -run TestRBAC`. A plain `go test` skips the controller tests and reports `ok`.
 - The unattended lab tasks [](lab:day2), [](lab:upgrade), [](lab:scale), [](lab:backup-restore) and [](lab:pivot) are the day-2 levels.
 - Only the hardware checks use a real BMC, and CI does not run them. See [](ref:hardware).
@@ -63,9 +65,17 @@ Each level is slower than the one before it, and it proves more. Run the lowest 
 
 ```sh
 mise run lint
+mise run test
 mise run generate:check
-mise run docs:check
 ```
+
+Also run the tasks that your change needs:
+
+- `mise run envtest` after a change to a controller, a CRD, RBAC or an admission policy.
+- `mise run spec` after a change to a TLA+ specification, or to a Go function that a `\* go:` line of a specification names.
+- `mise run docs:check` after a change to a page.
+
+`mise run lint` runs the `lint:` tasks and `metrics:rules`.
 
 | Task | What it checks |
 | --- | --- |
@@ -74,11 +84,13 @@ mise run docs:check
 | `lint:reads` | The rule for uncached reads. See the invariants below. |
 | `lint:shell` | `bash -n` and `shellcheck` for the scripts in `lab/`, `metal/hack/` and `.claude/hooks/` |
 | `lint:vuln` | `govulncheck`: the known vulnerabilities in the code that the module calls. It reads `vuln.go.dev`. |
+| `metrics:rules` | `promtool`: the alert rules in `metal/config/prometheus` and their unit tests |
 | `generate` | Writes the deepcopy code, the CRDs, the role of the manager and the reference data of this site |
-| `generate:check` | Fails if a generated file does not agree with its source |
-| `docs:check` | Builds this site and checks each link |
+| `generate:check` | Runs `generate`, and fails if it changes a file |
+| `docs:check` | Builds this site, checks each link, and runs `docs:lint` and the other checks of the pages |
 | `docs:lint` | Checks the text of the pages against the writing rules |
 
+After a change to an API type, a `+kubebuilder` marker, a `pk-metal` command or the glossary, run `mise run generate`. Commit the result with your change.
 Do not edit a generated file by hand: `metal/config/crd/`, `metal/config/rbac/role.yaml`, `docs/src/data/generated/`, `zz_generated.deepcopy.go`.
 
 ## The invariants

@@ -485,6 +485,63 @@ func TestConvergence(t *testing.T) {
 		require.Eventually(t, func() bool { return len(biosOps(smcHost)) == 2 }, waitFor, tick)
 	})
 
+	st.run(t, "a plan withdrawn under a hold is no refusal", func(t *testing.T) {
+		threshold := func(v int) {
+			baseline := &metalv1alpha1.BiosProfile{}
+			require.NoError(t, cl.Get(ctx, client.ObjectKey{Name: "x12-baseline"}, baseline))
+			baseline.Spec.Attributes["CorrectableErrorThreshold"] = jv(t, v)
+			require.NoError(t, cl.Update(ctx, baseline))
+		}
+		// nil removes the mark.
+		notWiped := func(v any) {
+			h := host(smcHost)
+			raw, err := json.Marshal(map[string]any{"metadata": map[string]any{"annotations": map[string]any{
+				metalv1alpha1.AnnotationDiskNotWiped: v}}})
+			require.NoError(t, err)
+			require.NoError(t, cl.Patch(ctx, &h, client.RawPatch(types.MergePatchType, raw)))
+		}
+		// The verdict of this generation of the settings, not of the one before.
+		current := func(reason string) func(metalv1alpha1.BiosSettings) bool {
+			return func(bs metalv1alpha1.BiosSettings) bool {
+				c := converged(bs)
+				return c != nil && c.Reason == reason && c.ObservedGeneration == bs.Generation
+			}
+		}
+
+		threshold(4000)
+		bs := waitSettings(smcHost, func(bs metalv1alpha1.BiosSettings) bool {
+			return current(metalv1alpha1.ReasonAwaitingOperation)(bs) && bs.Status.Proposed != nil
+		})
+		first := bs.Status.Proposed.Operation
+
+		// The machine may now hold a released node's install, and the plan
+		// changes: the old proposal is withdrawn and forgotten.
+		notWiped("lab/gone")
+		threshold(5000)
+		held := waitSettings(smcHost, current(metalv1alpha1.ReasonDiskNotWiped))
+		assert.Nil(t, held.Status.Proposed, "the withdrawn plan is forgotten")
+		ns, name, _ := strings.Cut(first, "/")
+		require.Eventually(t, func() bool {
+			return apierrors.IsNotFound(cl.Get(ctx, client.ObjectKey{Namespace: ns, Name: name}, &metalv1alpha1.HostOperation{}))
+		}, waitFor, tick, "the unapproved proposal is withdrawn")
+
+		// Back to the first plan: the operator withdrew it, nobody refused it.
+		threshold(4000)
+		waitSettings(smcHost, current(metalv1alpha1.ReasonDiskNotWiped))
+		notWiped(nil)
+		bs = waitSettings(smcHost, func(bs metalv1alpha1.BiosSettings) bool {
+			return current(metalv1alpha1.ReasonAwaitingOperation)(bs) && bs.Status.Proposed != nil
+		})
+		again := bs.Status.Proposed.Operation
+
+		// Keep the state and the record count the later subtests reason about.
+		threshold(3000)
+		waitSettings(smcHost, current(metalv1alpha1.ReasonInSync))
+		ns, name, _ = strings.Cut(again, "/")
+		require.NoError(t, cl.Delete(ctx, &metalv1alpha1.HostOperation{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns}}))
+		require.Eventually(t, func() bool { return len(biosOps(smcHost)) == 2 }, waitFor, tick)
+	})
+
 	st.run(t, "firmware converges before bios", func(t *testing.T) {
 		fw := &metalv1alpha1.FirmwareProfile{
 			ObjectMeta: metav1.ObjectMeta{Name: "x12-fw"},

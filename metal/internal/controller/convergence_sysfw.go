@@ -134,7 +134,7 @@ func (r *ConvergenceReconciler) systemFirmware(ctx context.Context, host *metalv
 	targets, conflicts := mergeSystemFirmware(profiles)
 	cond := metalv1alpha1.ConditionSystemFirmwareConverged
 	if len(targets) == 0 && len(conflicts) == 0 {
-		if err := r.withdrawObsolete(ctx, host.Status.SystemFirmwareProposed); err != nil {
+		if err := r.withdrawPlan(ctx, &host.Status.SystemFirmwareProposed, whyMovedOn); err != nil {
 			return false, err
 		}
 		meta.RemoveStatusCondition(&host.Status.Conditions, cond)
@@ -192,7 +192,7 @@ func (r *ConvergenceReconciler) systemFirmware(ctx context.Context, host *metalv
 		return false, err
 	}
 	if nodeHold != "" {
-		if err := r.withdrawPlan(ctx, &host.Status.SystemFirmwareProposed); err != nil {
+		if err := r.withdrawPlan(ctx, &host.Status.SystemFirmwareProposed, whyNodeGone); err != nil {
 			return false, err
 		}
 		setCond(cond, metav1.ConditionFalse, metalv1alpha1.ReasonInstalledNodeMissing, what+"; "+nodeHold)
@@ -215,7 +215,7 @@ func (r *ConvergenceReconciler) systemFirmware(ctx context.Context, host *metalv
 			what+" — no path advertises the proven multipart-push transport")
 		return false, nil
 	}
-	if err := r.withdrawObsolete(ctx, host.Status.SystemFirmwareProposed); err != nil {
+	if err := r.withdrawPlan(ctx, &host.Status.SystemFirmwareProposed, whyMovedOn); err != nil {
 		return false, err
 	}
 	// Applying it reboots the machine, like a BIOS change.

@@ -183,7 +183,7 @@ func (r *ConvergenceReconciler) matchedProfiles(ctx context.Context, host *metal
 // cluster-state join — the endpoint poll already serves the manager version.
 func (r *ConvergenceReconciler) firmware(ctx context.Context, host *metalv1alpha1.Host, profiles []metalv1alpha1.FirmwareProfile, setCond func(string, metav1.ConditionStatus, string, string)) (bool, error) {
 	if len(profiles) == 0 {
-		if err := r.withdrawObsolete(ctx, host.Status.FirmwareProposed); err != nil {
+		if err := r.withdrawPlan(ctx, &host.Status.FirmwareProposed, whyMovedOn); err != nil {
 			return false, err
 		}
 		meta.RemoveStatusCondition(&host.Status.Conditions, metalv1alpha1.ConditionFirmwareConverged)
@@ -249,7 +249,7 @@ func (r *ConvergenceReconciler) firmware(ctx context.Context, host *metalv1alpha
 			drifted+" — no path advertises the proven multipart-push transport")
 		return false, nil
 	}
-	if err := r.withdrawObsolete(ctx, host.Status.FirmwareProposed); err != nil {
+	if err := r.withdrawPlan(ctx, &host.Status.FirmwareProposed, whyMovedOn); err != nil {
 		return false, err
 	}
 	op := r.proposal(host.Name, "firmware", hash, metalv1alpha1.OperationReasonFirmwareConvergence, []metalv1alpha1.HostOperationAction{
@@ -286,7 +286,7 @@ func (r *ConvergenceReconciler) bios(ctx context.Context, host *metalv1alpha1.Ho
 		case err != nil:
 			return false, err
 		default:
-			if err := r.withdrawObsolete(ctx, settings.Status.Proposed); err != nil {
+			if err := r.withdrawPlan(ctx, &settings.Status.Proposed, whyMovedOn); err != nil {
 				return false, err
 			}
 			if err := r.Delete(ctx, settings); err != nil && !apierrors.IsNotFound(err) {
@@ -359,7 +359,7 @@ func (r *ConvergenceReconciler) bios(ctx context.Context, host *metalv1alpha1.Ho
 		if nodeHold != "" {
 			// A proposal made while the node was there names it in every
 			// drain step: take it back while nobody approved it yet.
-			if err := r.withdrawPlan(ctx, &settings.Status.Proposed); err != nil {
+			if err := r.withdrawPlan(ctx, &settings.Status.Proposed, whyNodeGone); err != nil {
 				return false, err
 			}
 			reason = metalv1alpha1.ReasonInstalledNodeMissing
@@ -378,7 +378,7 @@ func (r *ConvergenceReconciler) bios(ctx context.Context, host *metalv1alpha1.Ho
 			}
 			settings.Status.Proposed = nil
 		}
-		if err := r.withdrawObsolete(ctx, settings.Status.Proposed); err != nil {
+		if err := r.withdrawPlan(ctx, &settings.Status.Proposed, whyMovedOn); err != nil {
 			return false, err
 		}
 		// The change takes effect at a reboot, which the operation does.
@@ -426,28 +426,6 @@ func (r *ConvergenceReconciler) bios(ctx context.Context, host *metalv1alpha1.Ho
 	}
 	setCond(metalv1alpha1.ConditionBiosConverged, status, reason, msg)
 	return requeue, nil
-}
-
-// withdrawObsolete deletes a superseded proposal that never got its gate —
-// when the desired state moves on (a profile edit, a transient partial merge
-// completing), the controller retracts its own un-actioned request instead of
-// stranding it in front of the approver. An approved, running, or finished
-// operation is not touched: it is active work or history.
-func (r *ConvergenceReconciler) withdrawObsolete(ctx context.Context, plan *metalv1alpha1.ProposedPlan) error {
-	if plan == nil {
-		return nil
-	}
-	ns, name, _ := strings.Cut(plan.Operation, "/")
-	op := &metalv1alpha1.HostOperation{}
-	if err := r.Get(ctx, types.NamespacedName{Namespace: ns, Name: name}, op); err != nil {
-		return client.IgnoreNotFound(err)
-	}
-	if !op.AwaitsApproval() {
-		return nil
-	}
-	logf.FromContext(ctx).Info("withdrew obsolete proposal", "operation", plan.Operation)
-	return client.IgnoreNotFound(deleteOp(ctx, r.Client, r.Audit, op, audit.DeleteWithdrawn,
-		"the desired state moved on before anyone approved it", client.Preconditions{UID: &op.UID}))
 }
 
 // planVerdict derives a held plan's condition live from the operation or its

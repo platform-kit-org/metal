@@ -353,6 +353,18 @@ func TestPauseAndStart(t *testing.T) {
 	assert.Equal(t, int32(2), *d.Spec.Replicas)
 }
 
+func TestRunNamesHowToStopAManagerThatDoesNotRun(t *testing.T) {
+	m := fakeMover(t, operatorObjects(0, map[string]string{AnnotationMovedTo: "dst-id"}),
+		operatorObjects(1, map[string]string{AnnotationSource: "src-id"}))
+	m.Options.Poll = time.Millisecond
+	m.Options.Timeout = 20 * time.Millisecond
+	_, err := m.Run(context.Background())
+	require.ErrorContains(t, err, "to run and lead")
+	assert.ErrorContains(t, err, "kubectl -n pk-metal scale deployment pk-metal-manager --replicas=0 (on talos)",
+		"the target manager is scaled up: it starts later next to the source unless the person stops it")
+	assert.ErrorContains(t, err, m.resumeSourceCommand())
+}
+
 func TestPauseWaitsForTheLease(t *testing.T) {
 	ctx := context.Background()
 	held := &coordinationv1.Lease{

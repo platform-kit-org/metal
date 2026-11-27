@@ -2,6 +2,7 @@ package pivot
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
@@ -358,6 +360,26 @@ func TestPauseAndStart(t *testing.T) {
 	require.NoError(t, m.Start(ctx))
 	require.NoError(t, m.Target.Client.Get(ctx, client.ObjectKey{Namespace: "pk-metal", Name: "pk-metal-manager"}, d))
 	assert.Equal(t, int32(2), *d.Spec.Replicas)
+}
+
+// A rerun after the start only verifies. The target manager runs then, so an
+// error must not tell the person to start the source manager again: two
+// managers would act on the same machines.
+func TestRunResumedKeepsTheSourcePaused(t *testing.T) {
+	m := fakeMover(t, operatorObjects(0, map[string]string{AnnotationMovedTo: "dst-id"}),
+		operatorObjects(1, map[string]string{AnnotationSource: "src-id"}))
+	refused := errors.New("hostoperations is forbidden")
+	m.Source.Client = interceptor.NewClient(m.Source.Client.(client.WithWatch), interceptor.Funcs{
+		List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+			if _, ok := list.(*metalv1alpha1.HostOperationList); ok {
+				return refused
+			}
+			return c.List(ctx, list, opts...)
+		},
+	})
+	_, err := m.Run(context.Background())
+	require.ErrorIs(t, err, refused)
+	assert.NotContains(t, err.Error(), m.resumeSourceCommand())
 }
 
 func TestPauseWaitsForTheLease(t *testing.T) {

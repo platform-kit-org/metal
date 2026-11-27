@@ -117,7 +117,7 @@ func run(c *config, log logr.Logger) error {
 	// from somewhere nobody registered a schematic with.
 	factory := render.NewFactory(c.imageFactory)
 	factory.Arch = c.machineArch
-	log.Info("image factory", "host", c.imageFactory, "machineArch", c.machineArch)
+	log.Info("image factory", "imageFactory", c.imageFactory, "machineArch", c.machineArch)
 
 	tlsDefault := c.endpointTLS()
 
@@ -178,7 +178,7 @@ func run(c *config, log logr.Logger) error {
 				return fmt.Errorf("find the manager's own image for the imager Jobs (or set --imager-helper-image): %w", err)
 			}
 		}
-		log.Info("media store", "dir", c.mediaStore, "claim", c.storeClaim, "imager", c.imagerRepo,
+		log.Info("media store", "dir", c.mediaStore, "storeClaim", c.storeClaim, "imager", c.imagerRepo,
 			"pinned", c.imagerPins.String(), "helper", helper)
 	} else if media != nil {
 		// The media service serves the factory installers too, which the

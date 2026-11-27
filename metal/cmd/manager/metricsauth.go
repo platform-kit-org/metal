@@ -120,7 +120,7 @@ func (g *metricsGate) filter(log logr.Logger, next http.Handler) (http.Handler, 
 		}
 		allowed, err := g.rev.authorize(req.Context(), user, verb, path)
 		if err != nil {
-			log.Error(err, "metrics: access review failed", "user", user.Username)
+			log.Error(err, "metrics: access review failed", "username", user.Username)
 			http.Error(w, "access review failed", http.StatusInternalServerError)
 			return
 		}

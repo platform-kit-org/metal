@@ -479,7 +479,7 @@ func (r *EndpointConvergenceReconciler) ensureCertificateRequest(ctx context.Con
 	if err := r.Create(ctx, cr); err != nil && !apierrors.IsAlreadyExists(err) {
 		return fmt.Errorf("certificaterequest %s: %w", name, err)
 	}
-	logf.FromContext(ctx).Info("requested identity certificate", "endpoint", ep.Name, "certificaterequest", name)
+	logf.FromContext(ctx).Info("requested identity certificate", "certificateRequest", name)
 	return nil
 }
 

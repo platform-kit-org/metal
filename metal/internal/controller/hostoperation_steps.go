@@ -238,8 +238,7 @@ func (x *exec) powerOff(ctx context.Context, a *metalv1alpha1.PowerOffAction) (s
 			if transient(ctx, err) {
 				return stepState{}, err
 			}
-			logf.FromContext(ctx).Info("BMC refused a graceful shutdown, forcing the machine off",
-				"operation", x.op.Name, "error", err.Error())
+			logf.FromContext(ctx).Info("BMC refused a graceful shutdown, forcing the machine off", "error", err.Error())
 			return x.powerTo(ctx, bmc.PowerOff)
 		}
 		x.op.Status.ShutdownRequested = &metav1.MicroTime{Time: time.Now()}
@@ -379,7 +378,7 @@ func (x *exec) insertURL(ctx context.Context, cl bmc.Client, i int, a *metalv1al
 	key := types.NamespacedName{Namespace: x.op.Namespace, Name: x.op.Name}
 	name, sum := urlStoreName(key), strings.TrimPrefix(a.Digest, "sha256:")
 	if !x.r.Store.Has(name, sum) {
-		st := x.r.fetcher().start(x.r.Store, x.r.imageClient(), a.ImageURL, name, sum, a.Digest)
+		st := x.r.fetcher().start(logf.FromContext(ctx), x.r.Store, x.r.imageClient(), a.ImageURL, name, sum, a.Digest)
 		switch {
 		case st.running:
 			return &artifactPending{msg: fmt.Sprintf("the operator downloads %s into its media store", redact.String(a.ImageURL))}
@@ -448,8 +447,7 @@ func (x *exec) mountGranted(ctx context.Context, cl bmc.Client, i int, slot, fil
 	if err != nil {
 		return err
 	}
-	logf.FromContext(ctx).Info("mounting granted medium", "operation", x.op.Name, "medium", filename,
-		"slot", slot, "expires", g.ExpiresAt)
+	logf.FromContext(ctx).Info("mounting granted medium", "medium", filename, "slot", slot, "expires", g.ExpiresAt)
 	var bmcCreds *bmc.MediaCredentials
 	if creds != nil {
 		bmcCreds = &bmc.MediaCredentials{Username: creds.Username, Password: creds.Password}
@@ -490,8 +488,7 @@ func (x *exec) remount(ctx context.Context, recorded int) error {
 		if ok, err := x.stillMounted(ctx, in); err != nil || ok {
 			return err
 		}
-		logf.FromContext(ctx).Info("re-mounting a medium the slot no longer holds",
-			"operation", x.op.Name, "slot", in.MediaID)
+		logf.FromContext(ctx).Info("re-mounting a medium the slot no longer holds", "slot", in.MediaID)
 		if err := x.insertMedia(ctx, j, in); err != nil {
 			return fmt.Errorf("re-mount on %s: %w", in.MediaID, err)
 		}

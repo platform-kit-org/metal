@@ -80,7 +80,7 @@ func (r *hostWipeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			if err := r.Update(ctx, host); err != nil {
 				return ctrl.Result{}, client.IgnoreNotFound(err)
 			}
-			logf.FromContext(ctx).Info("host wiped", "host", host.Name, "operation", op.Namespace+"/"+op.Name)
+			logf.FromContext(ctx).Info("host wiped", "operation", op.Namespace+"/"+op.Name)
 		}
 		return ctrl.Result{}, nil
 	}
@@ -90,7 +90,7 @@ func (r *hostWipeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	if r.installedHere(ctx, host.Name) {
 		// A claim runs a node on it: that is no leftover, and a wipe would
 		// destroy it. The claim's own removal or reinstall resets it.
-		logf.FromContext(ctx).Info("wipe not proposed: a claim runs a node on the host", "host", host.Name)
+		logf.FromContext(ctx).Info("wipe not proposed: a claim runs a node on the host")
 		return ctrl.Result{}, nil
 	}
 	if msg, err := r.Self.Check(ctx, host); err != nil || msg != "" {
@@ -110,7 +110,7 @@ func (r *hostWipeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 	target, err := boot.PickTarget(shape.targets)
 	if err != nil {
-		logf.FromContext(ctx).Info("wipe not proposed", "host", host.Name, "why", err.Error())
+		logf.FromContext(ctx).Info("wipe not proposed", "error", err.Error())
 		return ctrl.Result{}, nil
 	}
 	op := wipeOp(r.OperationsNamespace, r.Proposer, host.Name, name, asset, shape, target)

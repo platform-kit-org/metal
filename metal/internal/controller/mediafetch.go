@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"github.com/go-logr/logr"
 
 	"github.com/dennisklein/platform-kit/metal/internal/asset"
 	"github.com/dennisklein/platform-kit/metal/internal/redact"
@@ -54,8 +54,9 @@ type fetchState struct {
 
 // start downloads url into the store under name and key unless that
 // download runs already, and reports where it is. want, when set, is the
-// digest the image must have. hc decides whose certificates count.
-func (f *mediaFetcher) start(store *asset.Store, hc *http.Client, url, name, key, want string) fetchState {
+// digest the image must have. hc decides whose certificates count. log is
+// the logger of the reconcile that asks, so the lines name its object.
+func (f *mediaFetcher) start(log logr.Logger, store *asset.Store, hc *http.Client, url, name, key, want string) fetchState {
 	id := name + "/" + key
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -74,7 +75,7 @@ func (f *mediaFetcher) start(store *asset.Store, hc *http.Client, url, name, key
 	f.running.Go(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
 		defer cancel()
-		log := logf.Log.WithName("media-fetch").WithValues("asset", name, "url", redact.String(url))
+		log := log.WithValues("url", redact.String(url))
 		log.Info("downloading an image into the media store")
 		sum, size, err := store.Fetch(ctx, hc, url, name, key, want)
 		if err != nil {

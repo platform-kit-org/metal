@@ -193,8 +193,7 @@ func (r *ManagementEndpointReconciler) observe(ctx context.Context, ep *metalv1a
 // the log when a BMC moves to Basic: then each request carries the password.
 func (r *ManagementEndpointReconciler) noteAuthentication(ctx context.Context, ep *metalv1alpha1.ManagementEndpoint, auth string) {
 	if auth == gofishclient.AuthBasic && ep.Status.Authentication != auth {
-		logf.FromContext(ctx).Info("BMC offers no Redfish session: each request carries the password (HTTP Basic)",
-			"endpoint", ep.Name)
+		logf.FromContext(ctx).Info("BMC offers no Redfish session: each request carries the password (HTTP Basic)")
 	}
 	ep.Status.Authentication = auth
 }

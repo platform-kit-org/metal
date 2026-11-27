@@ -146,7 +146,7 @@ func (r *BootAssetReconciler) fetchImage(ctx context.Context, ba *osv1alpha1.Boo
 		setCondition(&ba.Status.Conditions, ba.Generation, osv1alpha1.ConditionReady, metav1.ConditionTrue, osv1alpha1.ReasonImageDownloaded, "")
 		return ctrl.Result{}
 	}
-	st := r.fetcher().start(r.Store, r.Factory.ImageClient(), url, ba.Name, key, "")
+	st := r.fetcher().start(logf.FromContext(ctx), r.Store, r.Factory.ImageClient(), url, ba.Name, key, "")
 	switch {
 	case st.running:
 		r.hold(ba, osv1alpha1.ReasonBuilding, fmt.Sprintf(
@@ -159,7 +159,7 @@ func (r *BootAssetReconciler) fetchImage(ctx context.Context, ba *osv1alpha1.Boo
 	ba.Status.Digest, ba.Status.Size, ba.Status.BuildKey = st.sum, st.size, key
 	setCondition(&ba.Status.Conditions, ba.Generation, osv1alpha1.ConditionReady, metav1.ConditionTrue, osv1alpha1.ReasonImageDownloaded, "")
 	if err := r.Store.Prune(ba.Name, key); err != nil {
-		logf.FromContext(ctx).Error(err, "prune superseded installers", "bootAsset", ba.Name)
+		logf.FromContext(ctx).Error(err, "prune superseded installers")
 	}
 	return ctrl.Result{}
 }
@@ -261,8 +261,7 @@ func (r *BootAssetReconciler) build(ctx context.Context, ba *osv1alpha1.BootAsse
 		return fmt.Errorf("write artifact secret for %s: %w", ba.Name, err)
 	}
 	if op != controllerutil.OperationResultNone {
-		logf.FromContext(ctx).Info("built boot artifact", "bootAsset", ba.Name, "secret", artifact.Name,
-			"bytes", len(iso), "op", op)
+		logf.FromContext(ctx).Info("built boot artifact", "secret", artifact.Name, "bytes", len(iso), "result", op)
 	}
 
 	ba.Status.ArtifactSecretRef = &osv1alpha1.SecretReference{Namespace: artifact.Namespace, Name: artifact.Name}

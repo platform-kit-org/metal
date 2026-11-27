@@ -28,10 +28,10 @@ import (
 // and write the new hash here.
 var mirrored = map[string]string{
 	"HostClaimReconciler.Reconcile":     "11e5864fd8a6d5b8",
-	"HostClaimReconciler.finishRelease": "0988f8ac95640f6b",
+	"HostClaimReconciler.finishRelease": "58b8a9b818a175d0",
 	"HostClaimReconciler.provision":     "a16b2ff10da7f84a",
 	"HostClaimReconciler.release":       "8eb2f9f9080841ce",
-	"HostOperationReconciler.Reconcile": "833d2f3cd2c811a2",
+	"HostOperationReconciler.Reconcile": "ee3c2b6be18f7bac",
 }
 
 // TestModelMirrorsTheCode fails when a function that the protocol model

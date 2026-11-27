@@ -174,7 +174,7 @@ DeleteClaim(c) ==
 \* The cached claim exists and is not being deleted: AddFinalizer, bind,
 \* writeStatus. Each write is an Update; the first conflict ends the pass.
 \* go: controller.HostClaimReconciler.Reconcile 0e364a68365c
-\* go: controller.HostClaimReconciler.bind df7b6b5fb51d
+\* go: controller.HostClaimReconciler.bind ef2dbcf6d76d
 \* go: controller.HostClaimReconciler.writeStatus eaf9514465d0
 ClaimBind(c) ==
     LET cl   == cache.claims[c]
@@ -201,7 +201,7 @@ ClaimBind(c) ==
 \* The cached claim is being deleted and carries the finalizer:
 \* finishRelease and release. The hosts come from the API reader
 \* (liveBoundHosts); the release operations from the cache.
-\* go: controller.HostClaimReconciler.finishRelease 0988f8ac9564
+\* go: controller.HostClaimReconciler.finishRelease 58b8a9b818a1
 \* go: controller.HostClaimReconciler.liveBoundHosts d4c505783ee8
 \* go: controller.HostClaimReconciler.release b7ba6a9d9c48
 \* go: controller.HostClaimReconciler.recordPowerOff c0f1bdd325c8
@@ -261,7 +261,7 @@ ClaimGone(c) ==
 \* HostReconciler.Reconcile: projectOS from the cached node, factsFor with
 \* the cached claim, StampHost, and a status apply when the result differs
 \* from the cached status.
-\* go: controller.HostReconciler.Reconcile fc50c1c8de21
+\* go: controller.HostReconciler.Reconcile c5f429c505a7
 \* go: controller.HostReconciler.applyStatus 1f380381ef89
 HostReconcile ==
     LET h  == cache.hosts

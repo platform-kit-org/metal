@@ -310,7 +310,7 @@ func (r *EtcdBackupPolicyReconciler) reconcile(ctx context.Context, p *osv1alpha
 			return ctrl.Result{}, err
 		}
 		pruned[name] = true
-		log.Info("pruned etcd snapshot", "policy", p.Name, "snapshot", name, "location", s.Status.Location)
+		log.Info("pruned etcd snapshot", "snapshot", name, "location", s.Status.Location)
 	}
 
 	// The summary, newest first.
@@ -387,7 +387,7 @@ func (r *EtcdBackupPolicyReconciler) reconcile(ctx context.Context, p *osv1alpha
 		}
 		st.LastScheduleTime = &metav1.Time{Time: now}
 		next = now.Add(interval)
-		log.Info("scheduled etcd snapshot", "policy", p.Name, "snapshot", name)
+		log.Info("scheduled etcd snapshot", "snapshot", name)
 	}
 
 	wait := next.Sub(now)
@@ -466,7 +466,7 @@ func (r *EtcdSnapshotReconciler) take(ctx context.Context, s *osv1alpha1.EtcdSna
 	}
 	fail := func(msg string) (ctrl.Result, error) {
 		set(osv1alpha1.ConditionComplete, metav1.ConditionFalse, osv1alpha1.ReasonSnapshotFailed, msg)
-		log.Info("etcd snapshot failed", "snapshot", s.Name, "reason", msg)
+		log.Info("etcd snapshot failed", "message", msg)
 		return ctrl.Result{}, nil
 	}
 

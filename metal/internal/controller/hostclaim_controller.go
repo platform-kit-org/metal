@@ -247,7 +247,7 @@ func (r *HostClaimReconciler) finishRelease(ctx context.Context, claim *metalv1a
 	if err := r.Update(ctx, claim); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
-	logf.FromContext(ctx).Info("released claim", "claim", claim.Namespace+"/"+claim.Name)
+	logf.FromContext(ctx).Info("released claim")
 	return ctrl.Result{}, nil
 }
 
@@ -349,7 +349,7 @@ func (r *HostClaimReconciler) bind(ctx context.Context, claim *metalv1alpha1.Hos
 	if err := r.Update(ctx, host); err != nil {
 		return "", "", err
 	}
-	logf.FromContext(ctx).Info("bound host", "host", target, "claim", claim.Namespace+"/"+claim.Name)
+	logf.FromContext(ctx).Info("bound host", "host", target)
 	return "", "", nil
 }
 

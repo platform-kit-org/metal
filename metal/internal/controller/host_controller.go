@@ -101,7 +101,7 @@ func (r *HostReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		return ctrl.Result{}, fmt.Errorf("materialize host %s: %w", req.Name, err)
 	}
 	if op == controllerutil.OperationResultCreated {
-		logf.FromContext(ctx).Info("materialized host", "host", req.Name, "paths", len(paths))
+		logf.FromContext(ctx).Info("materialized host", "paths", len(paths))
 	}
 
 	// The bound claim, when its UID still matches the pointer — the source of

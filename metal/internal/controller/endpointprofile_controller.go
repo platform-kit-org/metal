@@ -555,7 +555,7 @@ func (r *EndpointConvergenceReconciler) ntp(ctx context.Context, ep *metalv1alph
 		if !ntpEqual(got, want) {
 			return fmt.Errorf("wrote %v but read back %v", want.Servers, got.Servers)
 		}
-		logf.FromContext(ctx).Info("converged NTP", "endpoint", ep.Name, "servers", want.Servers)
+		logf.FromContext(ctx).Info("converged NTP", "servers", want.Servers)
 		return nil
 	})
 	if err != nil {

@@ -106,7 +106,7 @@ func (r *TalosNodeMemberReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		r.Audit.GuardLifted(audit.Object{Kind: audit.KindTalosNode, Name: node.Name, UID: node.UID},
 			metalv1alpha1.AnnotationAckEtcdRisk, v, "")
 	}
-	logf.FromContext(ctx).Info("TalosNode left its cluster", "node", node.Name, "cluster", node.Spec.ClusterRef.Name)
+	logf.FromContext(ctx).Info("TalosNode left its cluster", "cluster", node.Spec.ClusterRef.Name)
 	return ctrl.Result{}, nil
 }
 

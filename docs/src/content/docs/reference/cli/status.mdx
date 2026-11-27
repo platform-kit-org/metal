@@ -55,6 +55,7 @@ The command takes no arguments.
 
 The command shows `OPERATION`, `CLAIM`, `CLUSTER`, `NODE` and `ROLLOUT` only when they have rows.
 A failed operation stays in the table until you run [](cli:retry).
+The note of a failed step of a rollout names the rollout and not `pk-metal retry`. The rollout does not make the step again.
 
 ### Rows that need a person
 
@@ -131,7 +132,7 @@ watch -n 10 pk-metal status
 | `version` | `1`. Keys do not change while the version is 1. New keys can come. |
 | `needsAttention` | `true` if one row or more needs a person. |
 | `hosts` | `name`, `asset`, `vendor`, `phase`, `claim`, `node` (`name`, `address`, or `null`), `pathsUp`, `pathsTotal`, `blockedOn`, `message`, `needsAttention` |
-| `operations` | `namespace`, `name`, `host`, `phase`, `approvedBy`, `awaitsApproval`, `blockedOn`, `message`, `needsAttention` |
+| `operations` | `namespace`, `name`, `host`, `phase`, `approvedBy`, `awaitsApproval`, `blockedOn`, `message`, `needsAttention`, `rollout` (the [](kind:TalosRollout) of a step) |
 | `endpoints` | `name`, `asset`, `vendor`, `phase`, `address`, `blockedOn`, `message`, `needsAttention` |
 | `claims` | `namespace`, `name`, `asset`, `host`, `phase`, `blockedOn`, `message`, `onHold`, `needsAttention` |
 | `clusters` | `name`, `talosVersion`, `talosVersionsRunning`, `kubernetesVersion`, `kubernetesVersionRunning`, `controlPlanes`, `readyControlPlanes`, `workers`, `readyWorkers`, `available`, `etcd`, `bootstrappedAt`, `backup`, `backupMessage`, `message`, `needsAttention` |

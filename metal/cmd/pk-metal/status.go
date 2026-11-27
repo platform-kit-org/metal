@@ -168,6 +168,7 @@ type opStatus struct {
 	BlockedOn      string `json:"blockedOn"`
 	Message        string `json:"message"`
 	NeedsAttention bool   `json:"needsAttention"`
+	Rollout        string `json:"rollout"` // the TalosRollout that this operation is a step of
 }
 
 type epStatus struct {
@@ -358,6 +359,9 @@ func addMachines(rep *statusReport, in topInput) {
 			Phase: string(op.Status.Phase), ApprovedBy: op.Spec.Approval.ApprovedBy,
 			AwaitsApproval: op.AwaitsApproval(), BlockedOn: op.Status.BlockedOn}
 		row.Message = opMessage(&op)
+		if op.Spec.RolloutRef != nil {
+			row.Rollout = op.Spec.RolloutRef.Name
+		}
 		// Queued behind another operation or waiting for its maintenance
 		// window is the plan working, not something a person must do.
 		row.NeedsAttention = row.AwaitsApproval ||
@@ -429,7 +433,12 @@ func renderReport(rep statusReport) string {
 		}
 		ref := nsName(op.Namespace, op.Name)
 		ops.row(ref, op.Host, orDash(op.Phase), orDash(op.ApprovedBy), op.BlockedOn)
+		ended := op.Phase == string(metalv1alpha1.OperationFailed) || op.Phase == string(metalv1alpha1.OperationAborted)
 		switch {
+		case ended && op.Rollout != "":
+			// retry deletes the step, and the rollout does not make it again.
+			ops.notes = append(ops.notes, note(ref, op.Message, strings.ToLower(op.Phase))+
+				"; a step of rollout "+op.Rollout+": pk-metal rollout show "+op.Rollout)
 		case op.Phase == string(metalv1alpha1.OperationFailed):
 			ops.notes = append(ops.notes, note(ref, op.Message, "failed")+"; to try again: pk-metal retry "+ref)
 		case op.Phase == string(metalv1alpha1.OperationAborted):

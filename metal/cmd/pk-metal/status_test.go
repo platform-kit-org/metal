@@ -201,7 +201,7 @@ func TestStatusJSONShape(t *testing.T) {
 	assert.ElementsMatch(t, []string{"name", "asset", "vendor", "phase", "claim", "node", "pathsUp", "pathsTotal",
 		"blockedOn", "message", "needsAttention"}, keys(first("hosts")))
 	assert.ElementsMatch(t, []string{"namespace", "name", "host", "phase", "approvedBy", "awaitsApproval", "blockedOn", "message",
-		"needsAttention"}, keys(first("operations")))
+		"needsAttention", "rollout"}, keys(first("operations")))
 	assert.ElementsMatch(t, []string{"name", "asset", "vendor", "phase", "address", "blockedOn", "message",
 		"needsAttention"}, keys(first("endpoints")))
 	assert.ElementsMatch(t, []string{"namespace", "name", "asset", "host", "phase", "blockedOn", "message", "onHold",
@@ -301,6 +301,24 @@ func TestStatusShowsWhyARunningOperationWaits(t *testing.T) {
 	assert.Equal(t, msg, rep.Operations[0].Message)
 	assert.False(t, rep.NeedsAttention, "a running operation is the plan working")
 	assert.Contains(t, renderReport(rep), "\n  pk-metal/run: "+msg+"\n")
+}
+
+// A step of a rollout that failed or was aborted sends the person to the
+// rollout: pk-metal retry deletes the step, and the rollout does not make
+// it again.
+func TestStatusSendsAFailedRolloutStepToTheRollout(t *testing.T) {
+	op := metalv1alpha1.HostOperation{ObjectMeta: metav1.ObjectMeta{Namespace: "pk-metal", Name: "upgrade-cp-1"},
+		Spec: metalv1alpha1.HostOperationSpec{HostRef: metalv1alpha1.Reference{Name: "simx12b000001"},
+			RolloutRef: &metalv1alpha1.RolloutReference{Name: "lab-talosupgrade-1a2b3c4d"}},
+		Status: metalv1alpha1.HostOperationStatus{Phase: metalv1alpha1.OperationFailed}}
+	aborted := *op.DeepCopy()
+	aborted.Name, aborted.Status.Phase = "upgrade-cp-2", metalv1alpha1.OperationAborted
+	rep := buildStatus(topInput{Ops: []metalv1alpha1.HostOperation{op, aborted}}, nil)
+	assert.Equal(t, "lab-talosupgrade-1a2b3c4d", rep.Operations[0].Rollout)
+	out := renderReport(rep)
+	assert.Contains(t, out, "pk-metal/upgrade-cp-1: failed; a step of rollout lab-talosupgrade-1a2b3c4d: pk-metal rollout show lab-talosupgrade-1a2b3c4d\n")
+	assert.Contains(t, out, "pk-metal/upgrade-cp-2: aborted; a step of rollout lab-talosupgrade-1a2b3c4d: pk-metal rollout show lab-talosupgrade-1a2b3c4d\n")
+	assert.NotContains(t, out, "pk-metal retry")
 }
 
 // A kind that the caller may not read fails the command: an empty ROLLOUT

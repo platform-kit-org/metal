@@ -197,13 +197,40 @@ A member of the `docker` group has the same rights as root on that workstation.
 | `sudo` | Use a terminal where `sudo` can ask for the password. |
 | `firewall-cmd`, if `firewalld` is active | Install `firewalld`. |
 | `NO_PROXY` includes `10.77.0.0/24`, if a proxy is set | See [Behind a proxy](lab:page/network#behind-a-proxy). |
-| `https://factory.talos.dev` answers | Give the workstation access, or set a proxy. |
-| `https://ghcr.io` answers | Give the machines access through the workstation. |
+| The outside endpoints answer | See [Outside endpoints](#outside-endpoints). |
 | The lab spec renders | The message names the line to correct in `lab/lab.yaml`. |
 | Available memory | Stop other programs, or use a smaller size. |
 | Free disk below `.lab/` | Free some space, or set `PK_LAB_DIR`. |
 
 The doctor changes nothing. The `sudo` check can ask for your password.
+
+## Outside endpoints
+
+The lab needs endpoints outside the workstation.
+The doctor checks each endpoint at the same time, with a limit of 5 seconds, and shows a table.
+A guest or captive network often lets the DNS server and the web traffic of the workstation through, and stops the traffic of the machines.
+
+| Who | Endpoint | Check | For |
+| --- | --- | --- | --- |
+| Workstation | `https://factory.talos.dev/` | HTTPS | Boot media and schematics, for the operator |
+| Workstation | `https://registry-1.docker.io/v2/`, `production.cloudflare.docker.com:443` | HTTPS, TLS | The kind node, the registry and the image build |
+| Workstation | `https://gcr.io/v2/` | HTTPS | The base of the operator image |
+| Workstation | `https://proxy.golang.org/` | HTTPS | The Go modules of the image build |
+| Machines | Each DNS server, port 53 | A DNS query over UDP | All names. The defaults are `1.1.1.1` and `8.8.8.8`. |
+| Machines | Each NTP server, port 123 | An SNTP request over UDP | The clock. The default is `time.cloudflare.com`. |
+| Machines | `https://factory.talos.dev/v2/` | HTTPS | The installer image |
+| Machines | `https://ghcr.io/v2/`, `pkg-containers.githubusercontent.com:443` | HTTPS, TLS | The kubelet and flannel |
+| Machines | `https://registry.k8s.io/v2/` and the mirror that it sends to | HTTPS | The control plane, etcd and CoreDNS |
+| Machines | `discovery.talos.dev:443` | TLS | Cluster discovery |
+
+- The requests of the workstation use its proxy, if `HTTPS_PROXY` is set.
+- The requests of the machines go through the NAT of the workstation, without its proxy. The doctor sends them from the workstation, on the same way out.
+- The doctor reads the servers of the machines from the `patches` list of [lab.yaml](lab:page/lab-yaml): DNS, NTP, discovery, registry mirrors and proxy. Without a patch, the doctor uses the defaults of Talos.
+- For a registry with a mirror, the doctor checks the mirror.
+- Any HTTP status, also `401`, shows that the way is open.
+- A certificate that the workstation does not trust shows a captive portal or a TLS proxy on the way.
+- The doctor shows `warn` for the NTP servers and the discovery service, and continues. Without NTP, each boot waits 2 minutes for the clock. Without the discovery service, `talosctl get members` shows no members. Kubernetes and etcd work without it.
+- For each `MISS` or `warn` line, a `fix:` line follows the table. To change the servers of the machines, see [Behind a proxy](lab:page/network#behind-a-proxy).
 
 ## Related tasks
 

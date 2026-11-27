@@ -350,9 +350,23 @@ no_proxy_covers_lab() {
   return 1
 }
 
-# Any HTTP answer means the host is reachable; only a network or TLS failure
-# fails this.
-reachable() { curl --silent --output /dev/null --max-time 10 "$1"; }
+# reach checks every endpoint outside the workstation that the lab needs, in
+# parallel, and shows them as a table: what the workstation downloads (through
+# its proxy, if one is set), and what the Talos machines reach through its NAT
+# (their DNS and NTP servers from the spec's patches, the registries, the
+# discovery service). A guest or captive network often lets the workstation's
+# own resolver and web traffic out and blocks the rest. It fails when an
+# endpoint the lab needs does not answer; an optional one only warns.
+reach() {
+  local root=$1 spec=$2 misses
+  echo "      outside endpoints the lab needs (the machines go through this workstation's NAT, without its proxy):" >&2
+  misses=$(cd "$root/metal" && go run ./hack/labreach --spec "$spec") || misses=
+  if [[ -z $misses ]]; then
+    echo "MISS  the outside endpoints could not be checked; the message above says why" >&2
+    return 1
+  fi
+  (( misses == 0 ))
+}
 
 sudo_usable() { (( EUID == 0 )) || sudo -n true || sudo -v; }
 
@@ -461,14 +475,7 @@ doctor() {
       no_proxy_covers_lab || missing=$((missing + 1))
     note "a proxy is set. The operator in kind gets it from lab:up; the Talos machines do not: see 'Behind a proxy' in lab/README.md."
   fi
-  # The operator downloads the installer images from the Talos image factory
-  # and serves them to the simulated BMCs; it registers its image builds there.
-  check "https://factory.talos.dev answers (installer images)" \
-    "the lab needs it from this workstation. Behind a proxy, set HTTPS_PROXY and NO_PROXY (lab/README.md, 'Behind a proxy'); without internet, see https://metal.platform-kit.org/operate/day-1/air-gapped-site/" \
-    reachable https://factory.talos.dev/ || missing=$((missing + 1))
-  check "https://ghcr.io answers (Talos and Kubernetes images, pulled by the machines through this host's NAT)" \
-    "the machines pull from ghcr.io and registry.k8s.io through this host. Behind a proxy, give them one too (lab/README.md, 'Behind a proxy')" \
-    reachable https://ghcr.io/ || missing=$((missing + 1))
+  reach "$root" "$spec" || missing=$((missing + 1))
 
   # The render's own messages are the fix, so they are shown instead of a
   # generic one.

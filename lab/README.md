@@ -473,7 +473,10 @@ export no_proxy="$NO_PROXY"
 
 Add the kind network as well (`docker network inspect kind --format '{{range
 .IPAM.Config}}{{.Subnet}} {{end}}'`). `lab:doctor` checks `NO_PROXY` and
-whether the image factory answers. `lab:up` passes the proxy on to the
+every endpoint outside the workstation that the lab needs: the workstation's
+downloads through its proxy, and the machines' DNS and NTP servers,
+registries and discovery service the way the machines reach them (through
+the NAT, with the servers and the proxy of the `patches:` list). `lab:up` passes the proxy on to the
 operator's Deployment (`.lab/deploy/proxy.yaml`). Docker's own proxy, for
 pulling the kind node image, is set in the Docker service, not here.
 

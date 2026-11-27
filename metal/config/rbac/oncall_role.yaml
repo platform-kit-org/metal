@@ -10,7 +10,10 @@
 #   - patch an Asset to correct its ledger facts;
 #   - delete a TalosRollout to stop it for good.
 # It may also read the manager's /metrics (the manager asks the API server
-# whether a caller may get that URL), for a look when Prometheus is down.
+# whether a caller may get that URL), for a look when Prometheus is down,
+# and the admission policies, to find the one PkMetalAdmissionGateDegraded
+# names. The Role below reads the manager's pod, log and Deployment, and the
+# imager Jobs, in pk-metal only: the runbooks read the manager log.
 # It holds no patch on HostOperations or TalosRollouts: that is approval, and
 # belongs to pk-metal-approver. Bind both to a person who must also approve,
 # abort, or resume. It holds no Secret. Nothing binds it by default.
@@ -44,5 +47,28 @@ rules:
   - apiGroups: ["events.k8s.io"]
     resources: ["events"]
     verbs: ["get", "list", "watch"]
+  - apiGroups: ["admissionregistration.k8s.io"]
+    resources: ["validatingadmissionpolicies", "validatingadmissionpolicybindings",
+      "mutatingadmissionpolicies", "mutatingadmissionpolicybindings"]
+    verbs: ["get", "list", "watch"]
   - nonResourceURLs: ["/metrics"]
     verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: pk-metal-oncall
+  namespace: pk-metal
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "endpoints"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list", "watch"]

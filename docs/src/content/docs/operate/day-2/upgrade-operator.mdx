@@ -1,0 +1,107 @@
+---
+title: Upgrade the operator
+description: Read what the new version changes in the API, apply the new image and CRDs, and see what happens to the work that runs.
+type: howto
+day: 2
+xref: { cat: howto, id: upgrade-operator }
+sidebar:
+  order: 24
+sources:
+  - /repo/metal/hack/crddiff/main.go
+  - /repo/mise.toml
+  - /repo/metal/config/manager/deployment.yaml
+  - /repo/metal/config/samples/site-overlay/kustomization.yaml
+  - /repo/metal/config/samples/site-overlay/bindings.yaml
+  - /repo/metal/internal/controller/hostoperation_steps.go
+  - /repo/metal/cmd/manager/main.go
+---
+
+import { Steps } from '@astrojs/starlight/components';
+import Callout from '../../../../components/Callout.astro';
+
+## Goal
+
+Replace the operator in the management cluster with a newer commit. The machines, the clusters and the approvals stay.
+
+## Before you start
+
+- You have your site overlay, as in [](howto:install-operator).
+- You are cluster admin in the management cluster. The upgrade changes CRDs and admission policies.
+- pk-metal has no releases yet. The version is the commit. The API is `v1alpha1` and can change without a new version. See [](ref:status).
+
+## What happens to work that runs
+
+The Deployment has `strategy: Recreate`. The old manager stops before the new one starts. Thus no two managers act at the same time.
+
+- The old manager gives back its leader lease when it stops. The new manager takes it and continues each operation from its status.
+- The media grants live in the memory of the old manager, and they go with it. If a BMC reads a medium at that time, the read fails. The new manager ejects the medium and mounts it again under a new grant.
+- A rollout stays where it is. A node step that ran continues from its status.
+- The operator does not act on machines between the stop and the start.
+
+## Steps
+
+<Steps>
+
+1. Find the commit that runs now. The image tag is the commit.
+
+   ```sh
+   kubectl -n pk-metal get deployment pk-metal-manager \
+     -o jsonpath='{.spec.template.spec.containers[0].image}{"\n"}'
+   ```
+
+2. Read what the new commit changes in the API. Use the commit from step 1. Run this in your clone, at the new commit.
+
+   ```sh
+   CRD_DIFF_BASE=<commit> mise run crd:diff
+   ```
+
+   The command lists what goes, what a manifest must now set, and new limits and rules. Each `breaking` line can refuse a manifest that worked before, or an update of a stored object. Change your manifests first.
+
+3. Read the upgrade notes below for each commit between the two.
+
+4. Build the image and push it to your registry.
+
+   ```sh
+   PK_IMAGE_NAME=registry.example.org/platform/pk-metal mise run image
+   ```
+
+5. Set the new tag in `images` of `kustomization.yaml` in your overlay.
+
+6. Apply the overlay. Server-side apply is necessary for the CRDs.
+
+   ```sh
+   kubectl apply --server-side -k overlay
+   ```
+
+7. Wait for the new manager.
+
+   ```sh
+   kubectl -n pk-metal rollout status deployment/pk-metal-manager
+   ```
+
+</Steps>
+
+## Verify
+
+- `kubectl wait --for=condition=Established crd --all --timeout=60s` returns.
+- The alert `PkMetalAdmissionGateDegraded` does not fire. See [](rb:admission-gate-degraded).
+- [](cli:status) shows the operations and rollouts as before the upgrade.
+
+## Return to the old commit
+
+Apply the overlay with the old tag.
+
+- A field that only the new CRDs have stays in the stored objects until the next write. Then the API server drops it.
+- A kind that only the new commit has stays, but no manager reads it. Delete its objects first if you do not upgrade again.
+
+## Upgrade notes
+
+| Change | What to do |
+| --- | --- |
+| The admin group gets the roles `pk-metal-admin` in place of `cluster-admin`. | The new bindings of the sample have new names. After the apply, delete the old binding: `kubectl delete clusterrolebinding pk-metal-admins`. Until then, the admin group still has `cluster-admin`. See [](ref:rbac). |
+| The component `config/name-stamp` writes your username into `requested-by` and into guard lifts. It needs Kubernetes 1.36 or later. | The sample site overlay includes it. On an older release, remove it from `components`. See [](ref:admission-policies#the-name-stamps). |
+| `status.managerType` of [](kind:ManagementEndpoint) goes. | Nothing. The operator did not read it. |
+
+<Callout type="note">
+`mise run crd:diff` runs for each pull request in CI. The result is on the summary page of the run, in the job that checks the generated files.
+</Callout>

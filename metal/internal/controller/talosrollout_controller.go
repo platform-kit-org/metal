@@ -149,14 +149,16 @@ func (r *TalosRolloutReconciler) Reconcile(ctx context.Context, req ctrl.Request
 }
 
 // expire deletes a succeeded rollout once the site's retention
-// (retention.go) has run out since it completed. A rollout that failed, was
-// aborted or whose plan changed under its approval stays until a person
-// deletes it: that is where they decide what next, and the proposer asks
-// again once it is gone. The rollout's operations go with it (they are
-// its dependents); each gets its audit line before the rollout's own.
+// (retention.go) has run out since it completed. So it does with one whose
+// plan changed under its approval, once a later rollout of the cluster
+// carries the change: it ran nothing. A rollout that failed or was aborted,
+// or whose changed plan nobody carries, stays until a person deletes it:
+// that is where they decide what next, and the proposer asks again once it
+// is gone. The rollout's operations go with it (they are its dependents);
+// each gets its audit line before the rollout's own.
 func (r *TalosRolloutReconciler) expire(ctx context.Context, ro *osv1alpha1.TalosRollout) (ctrl.Result, error) {
 	c := meta.FindStatusCondition(ro.Status.Conditions, osv1alpha1.ConditionComplete)
-	if c.Status != metav1.ConditionTrue {
+	if c.Status != metav1.ConditionTrue && c.Reason != osv1alpha1.ReasonPlanChanged {
 		return ctrl.Result{}, nil
 	}
 	keep, err := siteRetention(ctx, r.Client, r.Namespace)
@@ -172,6 +174,11 @@ func (r *TalosRolloutReconciler) expire(ctx context.Context, ro *osv1alpha1.Talo
 	if wait := time.Until(c.LastTransitionTime.Add(keep.keep)); wait > 0 {
 		return ctrl.Result{RequeueAfter: min(wait, settingsRecheck)}, nil
 	}
+	if c.Status != metav1.ConditionTrue {
+		if later, err := r.superseded(ctx, ro); err != nil || !later {
+			return ctrl.Result{RequeueAfter: settingsRecheck}, err
+		}
+	}
 	ops := &metalv1alpha1.HostOperationList{}
 	if err := r.List(ctx, ops, client.InNamespace(r.OperationsNamespace),
 		client.MatchingLabels{osv1alpha1.LabelRollout: ro.Name}); err != nil {
@@ -185,6 +192,20 @@ func (r *TalosRolloutReconciler) expire(ctx context.Context, ro *osv1alpha1.Talo
 	r.Audit.Deleted(rolloutObject(ro), audit.DeleteRetentionExpired, fmt.Sprintf("completed %s ago; site retention %s",
 		time.Since(c.LastTransitionTime.Time).Round(time.Second), keep))
 	return ctrl.Result{}, client.IgnoreNotFound(r.Delete(ctx, ro, client.Preconditions{UID: &ro.UID}))
+}
+
+// superseded reads, from the API server, whether a later rollout of the
+// cluster carries the change that the approval of ro no longer covered.
+// The delete that follows cannot be undone, so a cache that still shows a
+// later rollout that a person deleted must not decide it.
+//
+//pk:uncached
+func (r *TalosRolloutReconciler) superseded(ctx context.Context, ro *osv1alpha1.TalosRollout) (bool, error) {
+	rollouts := &osv1alpha1.TalosRolloutList{}
+	if err := r.reader().List(ctx, rollouts, client.MatchingFields{rolloutClusterField: ro.Spec.ClusterRef.Name}); err != nil {
+		return false, err
+	}
+	return metrics.Superseded(ro, rollouts.Items), nil
 }
 
 // reportProgress feeds the rollout progress metric from the status this

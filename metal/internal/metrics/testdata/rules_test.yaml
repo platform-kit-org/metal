@@ -137,6 +137,38 @@ tests:
               description: "pk-metal status shows the ROLLOUT table; kubectl describe talosrollout upgrade says what it waits for."
               runbook_url: https://metal.platform-kit.org/operate/runbooks/rollout-paused/
 
+  # A failed rollout pages. So does one whose plan changed: the collector
+  # serves it only while no later rollout of the cluster carries the change,
+  # so a person must decide.
+  - interval: 1m
+    input_series:
+      - series: 'pk_metal_rollout_condition{rollout="upgrade",cluster="c",reason="RolloutFailed"}'
+        values: '1x30'
+      - series: 'pk_metal_rollout_condition{rollout="reboot",cluster="d",reason="PlanChanged"}'
+        values: '1x30'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: PkMetalRolloutFailed
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              rollout: upgrade
+              cluster: c
+              reason: RolloutFailed
+            exp_annotations:
+              summary: "TalosRollout upgrade of cluster c ended without finishing: RolloutFailed"
+              description: "Nodes it already changed stay changed. kubectl describe talosrollout upgrade says which step failed."
+              runbook_url: https://metal.platform-kit.org/operate/runbooks/rollout-paused/
+          - exp_labels:
+              severity: warning
+              rollout: reboot
+              cluster: d
+              reason: PlanChanged
+            exp_annotations:
+              summary: "TalosRollout reboot of cluster d ended without finishing: PlanChanged"
+              description: "Nodes it already changed stay changed. kubectl describe talosrollout reboot says which step failed."
+              runbook_url: https://metal.platform-kit.org/operate/runbooks/rollout-paused/
+
   # Waiting for a maintenance window is the plan working; the cluster guard
   # holding an approved operation for an hour is not.
   - interval: 1m

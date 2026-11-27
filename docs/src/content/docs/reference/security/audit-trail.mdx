@@ -231,6 +231,7 @@ The operator deletes only these records:
 
 - A `Succeeded` operation that has `spec.ttlSecondsAfterFinished`: after its TTL or the retention, whichever is longer. The operator sets a TTL on releases, wipes and convergence proposals. The TTL is frozen after creation, so an approver cannot add one to a record that must stay.
 - A `Succeeded` rollout, after the retention. Its operations go with it, and each gets a `deleted` line.
+- A rollout that ended with `PlanChanged`, after the retention, when a later rollout of the same cluster exists. Nothing ran.
 - A proposal that nobody approved, when a newer plan replaces it or its cause goes away. The retention does not apply, because nothing ran. The `deleted` line has the reason `Withdrawn`.
 
 The operator keeps each `Failed` or `Aborted` record. A person deletes it, for example with [](cli:retry).

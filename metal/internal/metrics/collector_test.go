@@ -125,7 +125,7 @@ func TestCollectorRolloutCondition(t *testing.T) {
 		rollout("new"),
 	}
 	gatherCompare(t, time.Now(), objs, `
-# HELP pk_metal_rollout_condition 1 for each TalosRollout that has not succeeded, with the reason it is where it is (AwaitingApproval, PlanBlocked, WaitingForHealth, PausedAfterFirstNode, RolloutFailed, …).
+# HELP pk_metal_rollout_condition 1 for each TalosRollout that has not succeeded and that no later rollout of its cluster replaces, with the reason it is where it is (AwaitingApproval, PlanBlocked, WaitingForHealth, PausedAfterFirstNode, RolloutFailed, PlanChanged, …).
 # TYPE pk_metal_rollout_condition gauge
 pk_metal_rollout_condition{cluster="c",reason="AwaitingApproval",rollout="waiting"} 1
 pk_metal_rollout_condition{cluster="c",reason="NotStarted",rollout="new"} 1
@@ -138,6 +138,32 @@ pk_metal_rollout_condition{cluster="c",reason="WaitingForHealth",rollout="health
 	st := RolloutStateOf(objs[4].(*osv1alpha1.TalosRollout))
 	assert.True(t, st.Ended)
 	assert.False(t, st.Succeeded)
+}
+
+// A rollout whose plan changed under its approval ran nothing. Once a later
+// rollout of the same cluster carries the change, it is history, as a
+// succeeded one is. With no later rollout (one that a person wrote, or the
+// proposer's last round), it stays a series, and PkMetalRolloutFailed fires.
+func TestCollectorSupersededRollout(t *testing.T) {
+	t0 := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+	created := func(ro *osv1alpha1.TalosRollout, cluster string, at time.Time) *osv1alpha1.TalosRollout {
+		ro.Spec.ClusterRef.Name = cluster
+		ro.CreationTimestamp = metav1.NewTime(at)
+		return ro
+	}
+	changed := cond(osv1alpha1.ConditionComplete, "False", osv1alpha1.ReasonPlanChanged)
+	objs := []client.Object{
+		created(rollout("upgrade", changed), "c", t0),
+		created(rollout("upgrade-2", cond(osv1alpha1.ConditionApproved, "False", osv1alpha1.ReasonAwaitingApproval)), "c", t0.Add(time.Hour)),
+		created(rollout("reboot", changed), "d", t0.Add(time.Hour)),
+		created(rollout("other", cond(osv1alpha1.ConditionComplete, "True", osv1alpha1.ReasonRolloutSucceeded)), "e", t0.Add(2*time.Hour)),
+	}
+	gatherCompare(t, time.Now(), objs, `
+# HELP pk_metal_rollout_condition 1 for each TalosRollout that has not succeeded and that no later rollout of its cluster replaces, with the reason it is where it is (AwaitingApproval, PlanBlocked, WaitingForHealth, PausedAfterFirstNode, RolloutFailed, PlanChanged, …).
+# TYPE pk_metal_rollout_condition gauge
+pk_metal_rollout_condition{cluster="c",reason="AwaitingApproval",rollout="upgrade-2"} 1
+pk_metal_rollout_condition{cluster="d",reason="PlanChanged",rollout="reboot"} 1
+`, "pk_metal_rollout_condition")
 }
 
 // A running operation reports the step it is in and for how long: from the

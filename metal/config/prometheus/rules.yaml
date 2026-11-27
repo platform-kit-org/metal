@@ -238,7 +238,9 @@ spec:
             runbook_url: https://metal.platform-kit.org/operate/runbooks/rollout-paused/
         - alert: PkMetalRolloutFailed
           # A failed step or an approval that does not cover the plan ends
-          # the rollout; it never goes on by itself.
+          # the rollout; it never goes on by itself. The collector drops a
+          # PlanChanged rollout once a later rollout of the cluster carries
+          # the change, so only one that waits for a person pages.
           expr: max by (rollout, cluster, reason) (pk_metal_rollout_condition{reason=~"RolloutFailed|PlanChanged"}) == 1
           for: 5m
           labels:

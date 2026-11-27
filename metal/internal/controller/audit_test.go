@@ -420,28 +420,43 @@ func TestOperationRetention(t *testing.T) {
 }
 
 // A succeeded rollout goes after the site's retention, its operations
-// with it, each with its line first; a failed one stays.
+// with it, each with its line first; so does one whose plan changed, which
+// ran nothing, once a later rollout of the cluster carries the change. A
+// failed one stays, and so does a changed plan with no later rollout.
 func TestRolloutRetention(t *testing.T) {
+	ok, failed := metav1.ConditionTrue, metav1.ConditionFalse
 	for name, tc := range map[string]struct {
 		retention *string
 		status    metav1.ConditionStatus
+		reason    string
+		later     bool
 		gone      bool
 	}{
-		"Forever keeps a succeeded rollout": {retention: ptr.To("Forever"), status: metav1.ConditionTrue},
-		"a duration lets it go":             {retention: ptr.To("24h"), status: metav1.ConditionTrue, gone: true},
-		"a failed rollout stays":            {retention: ptr.To("24h"), status: metav1.ConditionFalse},
+		"Forever keeps a succeeded rollout":      {retention: ptr.To("Forever"), status: ok, reason: osv1alpha1.ReasonRolloutSucceeded},
+		"a duration lets it go":                  {retention: ptr.To("24h"), status: ok, reason: osv1alpha1.ReasonRolloutSucceeded, gone: true},
+		"a changed plan with a later one goes":   {retention: ptr.To("24h"), status: failed, reason: osv1alpha1.ReasonPlanChanged, later: true, gone: true},
+		"a changed plan with no later one stays": {retention: ptr.To("24h"), status: failed, reason: osv1alpha1.ReasonPlanChanged},
+		"a failed rollout stays":                 {retention: ptr.To("24h"), status: failed, reason: osv1alpha1.ReasonRolloutFailed, later: true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			ro := rolloutFixture()
+			ro.CreationTimestamp = metav1.NewTime(time.Now().Add(-72 * time.Hour))
 			ro.Status.Conditions = []metav1.Condition{{Type: osv1alpha1.ConditionComplete, Status: tc.status,
-				Reason: osv1alpha1.ReasonRolloutSucceeded, LastTransitionTime: metav1.NewTime(time.Now().Add(-48 * time.Hour))}}
+				Reason: tc.reason, LastTransitionTime: metav1.NewTime(time.Now().Add(-48 * time.Hour))}}
 			op := preClearedOp(metalv1alpha1.HostOperationAction{PowerCycle: &metalv1alpha1.PowerCycleAction{}})
 			op.Labels = map[string]string{osv1alpha1.LabelRollout: ro.Name}
 			op.OwnerReferences = []metav1.OwnerReference{{APIVersion: osv1alpha1.GroupVersion.String(), Kind: "TalosRollout",
 				Name: ro.Name, UID: ro.UID, Controller: ptr.To(true)}}
-			cl := fake.NewClientBuilder().WithScheme(testScheme(t)).
+			objs := []client.Object{ro, op, settings(tc.retention)}
+			if tc.later {
+				next := rolloutFixture()
+				next.Name, next.UID = ro.Name+"-2", "ro-uid-2"
+				next.CreationTimestamp = metav1.NewTime(ro.CreationTimestamp.Add(time.Minute))
+				objs = append(objs, next)
+			}
+			cl := byCluster(fake.NewClientBuilder().WithScheme(testScheme(t)).
 				WithStatusSubresource(&osv1alpha1.TalosRollout{}).
-				WithObjects(ro, op, settings(tc.retention)).Build()
+				WithObjects(objs...)).Build()
 			var b bytes.Buffer
 			r := &TalosRolloutReconciler{Client: cl, Namespace: "pk-metal", OperationsNamespace: "pk-metal",
 				Audit: audit.New(&b, testOperator)}

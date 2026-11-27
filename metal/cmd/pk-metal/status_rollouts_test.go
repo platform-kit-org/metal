@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -40,14 +41,26 @@ func TestStatusRolloutTable(t *testing.T) {
 			Message: "next step waits: node cp-2 is not Ready"})
 	done := statusRollout("old", []osv1alpha1.RolloutNodeState{ok},
 		metav1.Condition{Type: osv1alpha1.ConditionComplete, Status: "True", Reason: osv1alpha1.ReasonRolloutSucceeded})
+	// moved ran nothing, and health, created after it, carries its change.
+	moved := statusRollout("moved", []osv1alpha1.RolloutNodeState{pending},
+		metav1.Condition{Type: osv1alpha1.ConditionComplete, Status: "False", Reason: osv1alpha1.ReasonPlanChanged})
+	health.CreationTimestamp = metav1.NewTime(moved.CreationTimestamp.Add(time.Hour))
 
 	rep := buildReport(nil, nil, nil, nil, nil)
-	addRollouts(&rep, []osv1alpha1.TalosRollout{*health, *done})
+	addRollouts(&rep, []osv1alpha1.TalosRollout{*health, *done, *moved})
 	assert.False(t, rep.NeedsAttention, "waiting for health between nodes is the plan working; the alert covers a long wait")
 	out := renderReport(rep)
 	assert.Contains(t, out, "ROLLOUT")
 	assert.Contains(t, out, "WaitingForHealth")
 	assert.NotContains(t, out, "old ", "a succeeded rollout is history")
+	assert.NotContains(t, out, "moved", "a later rollout of the cluster carries the change: history")
+
+	// With no later rollout (one that a person wrote, or the proposer's last
+	// round), nobody carries the change: a person decides.
+	rep = buildReport(nil, nil, nil, nil, nil)
+	addRollouts(&rep, []osv1alpha1.TalosRollout{*done, *moved})
+	assert.True(t, rep.NeedsAttention, "a plan that changed with no later rollout waits for a person")
+	assert.Regexp(t, `moved\s+lab\s+Upgrade\s+0/1\s+PlanChanged`, renderReport(rep))
 
 	rep = buildReport(nil, nil, nil, nil, nil)
 	addRollouts(&rep, []osv1alpha1.TalosRollout{*canary, *health, *done})

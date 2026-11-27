@@ -299,7 +299,10 @@ func (r *EtcdBackupPolicyReconciler) reconcile(ctx context.Context, p *osv1alpha
 				continue
 			}
 			if err := sink.Delete(ctx, s.Status.Key); err != nil {
-				log.Error(err, "prune: delete stored snapshot", "snapshot", name)
+				// The rest is refused too: one line, and the records
+				// without a stored object are still pruned.
+				log.Error(err, "retention paused: the sink refused a delete; stored snapshots stay until it accepts", "snapshot", name)
+				sink = nil
 				continue
 			}
 		}
@@ -307,7 +310,7 @@ func (r *EtcdBackupPolicyReconciler) reconcile(ctx context.Context, p *osv1alpha
 			return ctrl.Result{}, err
 		}
 		pruned[name] = true
-		log.Info("pruned etcd snapshot", "policy", p.Name, "snapshot", name, "location", s.Status.Location)
+		log.Info("pruned etcd snapshot", "snapshot", name, "location", s.Status.Location)
 	}
 
 	// The summary, newest first.
@@ -339,6 +342,10 @@ func (r *EtcdBackupPolicyReconciler) reconcile(ctx context.Context, p *osv1alpha
 		}
 	}
 	window := 2 * interval
+	if inProgress {
+		// The due snapshot runs: it is not missed until it ends.
+		window += memberWait + snapshotTimeout
+	}
 	var flip time.Duration // until BackedUp turns False on its own
 	switch last := st.LastSuccessfulSnapshot; {
 	case last == nil:
@@ -380,7 +387,7 @@ func (r *EtcdBackupPolicyReconciler) reconcile(ctx context.Context, p *osv1alpha
 		}
 		st.LastScheduleTime = &metav1.Time{Time: now}
 		next = now.Add(interval)
-		log.Info("scheduled etcd snapshot", "policy", p.Name, "snapshot", name)
+		log.Info("scheduled etcd snapshot", "snapshot", name)
 	}
 
 	wait := next.Sub(now)
@@ -459,7 +466,7 @@ func (r *EtcdSnapshotReconciler) take(ctx context.Context, s *osv1alpha1.EtcdSna
 	}
 	fail := func(msg string) (ctrl.Result, error) {
 		set(osv1alpha1.ConditionComplete, metav1.ConditionFalse, osv1alpha1.ReasonSnapshotFailed, msg)
-		log.Info("etcd snapshot failed", "snapshot", s.Name, "reason", msg)
+		log.Info("etcd snapshot failed", "message", msg)
 		return ctrl.Result{}, nil
 	}
 
@@ -573,25 +580,26 @@ func (r *EtcdSnapshotReconciler) take(ctx context.Context, s *osv1alpha1.EtcdSna
 			st.Size, src.node, len(st.Recipients), st.Location))
 
 	// Verified: what came off etcd is an intact snapshot, and what the
-	// sink holds is exactly what was sent.
+	// sink holds is exactly what was sent. A damaged one is not read back.
 	if err := stored.Plain.Valid(); err != nil {
 		set(osv1alpha1.ConditionVerified, metav1.ConditionFalse, osv1alpha1.ReasonDamaged, err.Error())
-		return ctrl.Result{}, nil
+	} else {
+		size, sum, err := etcdbackup.ReadBack(ctx, sink, key)
+		switch {
+		case err != nil:
+			set(osv1alpha1.ConditionVerified, metav1.ConditionFalse, osv1alpha1.ReasonReadBackFailed, err.Error())
+		case size != stored.CipherSize || sum != stored.CipherSHA256:
+			set(osv1alpha1.ConditionVerified, metav1.ConditionFalse, osv1alpha1.ReasonReadBackFailed, fmt.Sprintf(
+				"the sink holds %d bytes with sha256 %s, not the %d bytes with sha256 %s that were sent",
+				size, sum, stored.CipherSize, stored.CipherSHA256))
+		default:
+			set(osv1alpha1.ConditionVerified, metav1.ConditionTrue, osv1alpha1.ReasonIntact, fmt.Sprintf(
+				"etcd's integrity hash matches, a bbolt database of %d pages of %d bytes (transaction %d), "+
+					"and the sink holds the ciphertext sent", stored.Plain.PageCount, stored.Plain.PageSize, stored.Plain.TxID))
+		}
 	}
-	size, sum, err := etcdbackup.ReadBack(ctx, sink, key)
-	switch {
-	case err != nil:
-		set(osv1alpha1.ConditionVerified, metav1.ConditionFalse, osv1alpha1.ReasonReadBackFailed, err.Error())
-	case size != stored.CipherSize || sum != stored.CipherSHA256:
-		set(osv1alpha1.ConditionVerified, metav1.ConditionFalse, osv1alpha1.ReasonReadBackFailed, fmt.Sprintf(
-			"the sink holds %d bytes with sha256 %s, not the %d bytes with sha256 %s that were sent",
-			size, sum, stored.CipherSize, stored.CipherSHA256))
-	default:
-		set(osv1alpha1.ConditionVerified, metav1.ConditionTrue, osv1alpha1.ReasonIntact, fmt.Sprintf(
-			"etcd's integrity hash matches, a bbolt database of %d pages of %d bytes (transaction %d), "+
-				"and the sink holds the ciphertext sent", stored.Plain.PageCount, stored.Plain.PageSize, stored.Plain.TxID))
-	}
-	log.Info("etcd snapshot stored", "snapshot", s.Name, "from", src.node, "location", st.Location, "bytes", st.Size)
+	log.Info("etcd snapshot stored", "from", src.node, "location", st.Location, "bytes", st.Size,
+		"verified", meta.FindStatusCondition(st.Conditions, osv1alpha1.ConditionVerified).Reason)
 	return ctrl.Result{}, nil
 }
 

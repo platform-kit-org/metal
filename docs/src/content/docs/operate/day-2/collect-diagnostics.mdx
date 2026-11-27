@@ -45,10 +45,10 @@ Put all facts about a fault in one directory, before you change anything.
    kubectl get metal -A -o yaml > objects.yaml
    ```
 
-4. Save the events of the operator namespace.
+4. Save the events of all namespaces.
 
    ```sh
-   kubectl -n pk-metal get events --sort-by=.lastTimestamp > events.txt
+   kubectl get events -A --sort-by=.lastTimestamp > events.txt
    ```
 
 5. Save the manager log.

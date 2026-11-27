@@ -19,7 +19,7 @@ import { Steps } from '@astrojs/starlight/components';
   <dt>[](cli:status)</dt>
   <dd>The `BACKUP` column of the cluster. Exit status 2.</dd>
   <dt>Alert</dt>
-  <dd>`PkMetalEtcdBackupStale`: the newest verified snapshot is older than two intervals of the policy, the same rule as `BackupTooOld`. `PkMetalEtcdBackupMissing`: a policy exists, but no snapshot was ever verified.</dd>
+  <dd>`PkMetalEtcdBackupStale`: the newest verified snapshot is older than two intervals of the policy. `BackupTooOld` has the same rule, but it also waits for a snapshot that runs. `PkMetalEtcdBackupMissing`: a policy exists, but no snapshot was ever verified.</dd>
 </dl>
 
 ## Impact

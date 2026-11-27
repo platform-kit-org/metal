@@ -34,7 +34,7 @@ Read the `BLOCKED` value and the note line in [](cli:status). Then find it in th
 | Reason | Why | What to do |
 | --- | --- | --- |
 | `AwaitingApproval` | Nobody approved it | [](howto:approve-hold-retry) |
-| `OperationQueued` | Another operation runs on the same Host | Wait. One operation at a time for each Host. |
+| `OperationQueued` | Another operation runs on the same Host, or on a Host behind the same BMC | Wait. One operation at a time for each Host, and one pass at a time for each BMC. |
 | `OutsideMaintenanceWindow` | A window covers the Host and it is not open | Wait, or set `metal.platform-kit.org/ignore-window` to `<username>: <reason>`. See [](howto:maintenance-windows). If the message says "none of them opens again" or "cannot read", no window opens: correct the window. |
 | `ClusterDisruption` | Another control plane is down, or etcd is not healthy without this one | Wait. To repair a broken etcd, set `metal.platform-kit.org/override-cluster-guard` to `<username>: <reason>`. |
 | `SelfDisruption` | The step would reboot a machine that the operator runs on | Move the operator, or set `metal.platform-kit.org/allow-self-disruption` on the Host. See [](concept:self-protection). |

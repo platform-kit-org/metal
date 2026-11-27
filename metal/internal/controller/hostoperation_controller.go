@@ -222,16 +222,16 @@ func (r *HostOperationReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		if apierrors.IsNotFound(err) {
 			// A deleted operation takes its grants with it: whatever it
 			// mounted stops answering.
-			r.forget(req.NamespacedName)
+			r.forget(ctx, req.NamespacedName)
 		}
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 	if !op.DeletionTimestamp.IsZero() {
-		r.forget(req.NamespacedName)
+		r.forget(ctx, req.NamespacedName)
 		return ctrl.Result{}, nil
 	}
 	if op.Finished() {
-		r.forget(req.NamespacedName)
+		r.forget(ctx, req.NamespacedName)
 		return r.expire(ctx, op)
 	}
 
@@ -255,7 +255,7 @@ func (r *HostOperationReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	// An abort of an operation that has not started ends it at once:
 	// nothing was done to the machine, so there is nothing to undo.
 	if by, asked := op.Annotations[metalv1alpha1.AnnotationAbort]; asked && op.Status.Baseline == nil {
-		return r.finishAborted(op, req.NamespacedName, setCond, flush,
+		return r.finishAborted(ctx, op, req.NamespacedName, setCond, flush,
 			abortMessage(by, "before it started", nil, nil)+"; nothing was done to the machine")
 	}
 
@@ -321,10 +321,15 @@ func (r *HostOperationReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	// queue check below and the baseline write are one step only while no
 	// other pass on the host runs between them, and one BMC is driven by one
 	// pass at a time, as before. A pass that finds either taken comes back
-	// later; it changed nothing yet.
+	// later; it changed nothing yet. Its status says that it is approved
+	// and that it waits.
 	keys := passKeys(host)
 	if !r.locks.tryLock(keys) {
-		return ctrl.Result{RequeueAfter: r.waitInterval()}, nil
+		if op.Status.Baseline == nil {
+			setCond(metalv1alpha1.ConditionExecuted, metav1.ConditionUnknown, metalv1alpha1.ReasonOperationQueued,
+				"another pass runs on host "+host.Name+" or on a BMC that manages it; this one starts after it")
+		}
+		return ctrl.Result{RequeueAfter: r.waitInterval()}, client.IgnoreNotFound(flush())
 	}
 	defer r.locks.unlock(keys)
 
@@ -429,7 +434,7 @@ func (r *HostOperationReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			metalv1alpha1.ReasonStepFailed, fmt.Sprintf("step %d/%d %s: %s", i+1, len(op.Spec.Actions), name, msg))
 		r.Recorder.Eventf(op, nil, corev1.EventTypeWarning, metalv1alpha1.ReasonStepFailed,
 			"Execute", "step %s failed: %s", name, msg)
-		r.forget(req.NamespacedName)
+		r.forget(ctx, req.NamespacedName)
 		return ctrl.Result{}, client.IgnoreNotFound(flush())
 	}
 	// wait leaves step i in flight and comes back after the given pause.
@@ -465,7 +470,7 @@ func (r *HostOperationReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 				". Delete the operation to stop trying", r.waitInterval())
 		}
 		where := fmt.Sprintf("before step %d/%d %s", i+1, len(op.Spec.Actions), actionName(op.Spec.Actions[i]))
-		return r.finishAborted(op, req.NamespacedName, setCond, flush, abortMessage(by, where, undone, failed))
+		return r.finishAborted(ctx, op, req.NamespacedName, setCond, flush, abortMessage(by, where, undone, failed))
 	}
 
 	start := recordedSteps(op)
@@ -488,7 +493,7 @@ func (r *HostOperationReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		// steps, unless the step ahead already acted.
 		gone, by, asked, err := r.opNow(ctx, req.NamespacedName)
 		if err != nil || gone {
-			r.forget(req.NamespacedName)
+			r.forget(ctx, req.NamespacedName)
 			return ctrl.Result{}, err
 		}
 		if asked && !x.acted(i) {
@@ -552,7 +557,7 @@ func (r *HostOperationReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			op.Status.ObservedResetTime = &metav1.MicroTime{Time: after.LastResetTime}
 		}
 	}
-	r.forget(req.NamespacedName)
+	r.forget(ctx, req.NamespacedName)
 	setCond(metalv1alpha1.ConditionExecuted, metav1.ConditionTrue,
 		metalv1alpha1.ReasonStepsSucceeded, fmt.Sprintf("%d steps", len(op.Spec.Actions)))
 	r.Recorder.Eventf(op, nil, corev1.EventTypeNormal, metalv1alpha1.ReasonStepsSucceeded,
@@ -698,13 +703,13 @@ func (c *stepClocks) forget(key types.NamespacedName) {
 
 // forget drops what this process holds for an operation that ended: its
 // grants, and its step clock.
-func (r *HostOperationReconciler) forget(key types.NamespacedName) {
+func (r *HostOperationReconciler) forget(ctx context.Context, key types.NamespacedName) {
 	r.revokeGrants(key)
 	r.clock.forget(key)
 	// The images the operation downloaded by URL go with it.
 	if r.Store != nil {
 		if err := r.Store.RemoveAsset(urlStoreName(key)); err != nil {
-			logf.Log.WithName("hostoperation").Error(err, "remove the images the operation downloaded", "operation", key.String())
+			logf.FromContext(ctx).Error(err, "remove the images the operation downloaded")
 		}
 	}
 }
@@ -850,14 +855,14 @@ func (r *HostOperationReconciler) opNow(ctx context.Context, key types.Namespace
 
 // finishAborted ends the operation as Aborted, with the record of it as the
 // last step.
-func (r *HostOperationReconciler) finishAborted(op *metalv1alpha1.HostOperation, key types.NamespacedName,
+func (r *HostOperationReconciler) finishAborted(ctx context.Context, op *metalv1alpha1.HostOperation, key types.NamespacedName,
 	setCond func(string, metav1.ConditionStatus, string, string), flush func() error, msg string) (ctrl.Result, error) {
 	op.Status.Steps = append(op.Status.Steps, metalv1alpha1.OperationStep{
 		Action: "abort", Phase: "Aborted", Message: msg, FinishedAt: ptrTime(metav1.Now()),
 	})
 	setCond(metalv1alpha1.ConditionExecuted, metav1.ConditionFalse, metalv1alpha1.ReasonAborted, msg)
 	r.Recorder.Eventf(op, nil, corev1.EventTypeWarning, metalv1alpha1.ReasonAborted, "Abort", "%s", msg)
-	r.forget(key)
+	r.forget(ctx, key)
 	return ctrl.Result{}, client.IgnoreNotFound(flush())
 }
 
@@ -885,9 +890,7 @@ func (r *HostOperationReconciler) revokeGrants(key types.NamespacedName) {
 	if r.Media == nil {
 		return
 	}
-	if n := r.Media.Grants.RevokeAsset(grantHandle(key)); n > 0 {
-		logf.Log.WithName("hostoperation").Info("revoked media grants", "operation", key.String(), "grants", n)
-	}
+	r.Media.Grants.RevokeAsset(grantHandle(key))
 }
 
 // opSucceeded: finished with every step at its goal.
@@ -919,9 +922,6 @@ func (r *HostOperationReconciler) expire(ctx context.Context, op *metalv1alpha1.
 		return ctrl.Result{}, err
 	}
 	if keep.forever {
-		if keep.problem != "" {
-			logf.FromContext(ctx).Info(keep.problem)
-		}
 		return ctrl.Result{RequeueAfter: settingsRecheck}, nil
 	}
 	ttl := time.Duration(*op.Spec.TTLSecondsAfterFinished) * time.Second

@@ -113,7 +113,7 @@ func (r *BootAssetReconciler) embed(ctx context.Context, ba *osv1alpha1.BootAsse
 		}
 	}
 	if gone != "" {
-		logf.FromContext(ctx).Info("stored installer is gone", "bootAsset", ba.Name, "key", key, "why", gone)
+		logf.FromContext(ctx).Info("stored installer is gone", "key", key, "message", gone)
 		ba.Status.Digest, ba.Status.Size, ba.Status.BuildKey = "", 0, ""
 		gone += "; building it again. "
 	}
@@ -144,7 +144,7 @@ func (r *BootAssetReconciler) embed(ctx context.Context, ba *osv1alpha1.BootAsse
 			r.hold(ba, osv1alpha1.ReasonBuildFailed, fmt.Sprintf("import the output of imager Job %s/%s: %v", r.Namespace, jobName, err))
 			return nil
 		}
-		logf.FromContext(ctx).Info("imported embedded installer", "bootAsset", ba.Name, "job", jobName, "key", key)
+		logf.FromContext(ctx).Info("imported embedded installer", "job", jobName, "key", key)
 	}
 
 	ba.Status.Digest, ba.Status.Size = sum, size
@@ -156,7 +156,7 @@ func (r *BootAssetReconciler) embed(ctx context.Context, ba *osv1alpha1.BootAsse
 		return err
 	}
 	if err := r.Store.Prune(ba.Name, key); err != nil {
-		logf.FromContext(ctx).Error(err, "prune superseded installers", "bootAsset", ba.Name)
+		logf.FromContext(ctx).Error(err, "prune superseded installers")
 	}
 	return nil
 }
@@ -175,7 +175,7 @@ func (r *BootAssetReconciler) startBuild(ctx context.Context, ba *osv1alpha1.Boo
 	if err := r.Create(ctx, job); err != nil && !apierrors.IsAlreadyExists(err) {
 		return fmt.Errorf("create imager Job %s: %w", jobName, err)
 	}
-	logf.FromContext(ctx).Info("started imager Job", "bootAsset", ba.Name, "job", jobName, "image", in.Image)
+	logf.FromContext(ctx).Info("started imager Job", "job", jobName, "image", in.Image)
 	r.hold(ba, osv1alpha1.ReasonBuilding, fmt.Sprintf("%sstarted imager Job %s/%s", why, r.Namespace, jobName))
 	return nil
 }

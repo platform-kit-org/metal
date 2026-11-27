@@ -13,6 +13,8 @@ import (
 	"net"
 	"sync"
 	"time"
+
+	"github.com/go-logr/logr"
 )
 
 const (
@@ -117,8 +119,8 @@ func (s *SelfSigned) GetCertificate(*tls.ClientHelloInfo) (*tls.Certificate, err
 type Reloading struct {
 	Load     func(ctx context.Context) (tls.Certificate, error)
 	Interval time.Duration
-	// Logf reports reloads and failed loads; nil is silent.
-	Logf func(format string, args ...any)
+	// Log reports reloads and failed loads; the zero Logger discards.
+	Log logr.Logger
 
 	mu   sync.RWMutex
 	cert *tls.Certificate
@@ -162,8 +164,8 @@ func (r *Reloading) reload(ctx context.Context) error {
 	if r.cert != nil && r.cert.Leaf.Equal(c.Leaf) {
 		return nil
 	}
-	if r.cert != nil && r.Logf != nil {
-		r.Logf("media certificate reloaded: serial %s, valid until %s", c.Leaf.SerialNumber, c.Leaf.NotAfter.UTC().Format(time.RFC3339))
+	if r.cert != nil {
+		r.Log.Info("media certificate reloaded", "serial", c.Leaf.SerialNumber.String(), "notAfter", c.Leaf.NotAfter.UTC())
 	}
 	r.cert = &c
 	return nil
@@ -183,8 +185,8 @@ func (r *Reloading) Start(ctx context.Context) error {
 		case <-ctx.Done():
 			return nil
 		case <-t.C:
-			if err := r.reload(ctx); err != nil && r.Logf != nil {
-				r.Logf("media certificate not reloaded, the one in service stays: %v", err)
+			if err := r.reload(ctx); err != nil {
+				r.Log.Error(err, "media certificate not reloaded; the one in service stays")
 			}
 		}
 	}

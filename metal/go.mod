@@ -64,6 +64,9 @@ require (
 	github.com/siderolabs/talos/pkg/machinery v1.14.6
 	github.com/stmcginnis/gofish v0.23.0
 	github.com/stretchr/testify v1.12.1
+	// Already linked through controller-runtime, whose zap logger the manager sets up:
+	// the ts layout and the stack trace level of each log line.
+	go.uber.org/zap v1.28.0
 	go.yaml.in/yaml/v4 v4.0.0-rc.6
 	// Already linked through controller-gen; go/packages loads the module typed for the
 	// test that keeps Phase and BlockedOn written only by internal/phase.
@@ -185,7 +188,6 @@ require (
 	github.com/zeebo/xxh3 v1.1.0 // indirect
 	go.opentelemetry.io/otel/sdk/metric v1.45.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	go.uber.org/zap v1.28.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/crypto v0.58.0 // indirect

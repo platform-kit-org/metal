@@ -201,7 +201,6 @@ func (r *EndpointConvergenceReconciler) identityWith(ctx context.Context, ep *me
 		PlanHash: hash, Fingerprint: certFingerprint(pushedLeaf),
 		PublicKey: gofishclient.PublicKeyPin(pushedLeaf),
 	}
-	logf.FromContext(ctx).Info("pushed identity", "endpoint", ep.Name, "cn", desired.CommonName)
 	return metav1.ConditionFalse, metalv1alpha1.ReasonIdentityPushed,
 		"identity pushed and manager restarted — the next observation verifies", nil
 }
@@ -480,7 +479,7 @@ func (r *EndpointConvergenceReconciler) ensureCertificateRequest(ctx context.Con
 	if err := r.Create(ctx, cr); err != nil && !apierrors.IsAlreadyExists(err) {
 		return fmt.Errorf("certificaterequest %s: %w", name, err)
 	}
-	logf.FromContext(ctx).Info("requested identity certificate", "endpoint", ep.Name, "certificaterequest", name)
+	logf.FromContext(ctx).Info("requested identity certificate", "certificateRequest", name)
 	return nil
 }
 

@@ -12,7 +12,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
@@ -169,7 +168,6 @@ func (r *HostClaimReconciler) removeNode(ctx context.Context, claim *metalv1alph
 		if boots[i].Finished() || !boots[i].DeletionTimestamp.IsZero() {
 			continue
 		}
-		logf.FromContext(ctx).Info("stopped boot operation of a deleted node", "operation", boots[i].Namespace+"/"+boots[i].Name)
 		if err := deleteOp(ctx, r.Client, r.Audit, &boots[i], audit.DeleteStopped,
 			"TalosNode "+node.Name+" is being deleted"); client.IgnoreNotFound(err) != nil {
 			return err
@@ -230,7 +228,6 @@ func (r *HostClaimReconciler) removeNode(ctx context.Context, claim *metalv1alph
 		if err := r.Create(ctx, op); err != nil && !apierrors.IsAlreadyExists(err) {
 			return err
 		}
-		logf.FromContext(ctx).Info("proposed node removal", "operation", op.Namespace+"/"+op.Name, "node", node.Name, "host", host.Name)
 	}
 	ref := op.Namespace + "/" + op.Name
 	ex := meta.FindStatusCondition(op.Status.Conditions, metalv1alpha1.ConditionExecuted)

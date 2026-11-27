@@ -143,7 +143,11 @@ func (r *ProtectionReconciler) ensureFinalizer(ctx context.Context, obj client.O
 	if err := r.Patch(ctx, obj, client.MergeFromWithOptions(base, client.MergeFromWithOptimisticLock{})); err != nil {
 		return client.IgnoreNotFound(err)
 	}
-	logf.FromContext(ctx).Info("claim protection", "kind", fmt.Sprintf("%T", obj), "name", obj.GetName(), "held", want)
+	key := "host"
+	if _, ok := obj.(*metalv1alpha1.ManagementEndpoint); ok {
+		key = "endpoint"
+	}
+	logf.FromContext(ctx).Info("claim protection", key, obj.GetName(), "held", want)
 	return nil
 }
 

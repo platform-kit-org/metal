@@ -10,7 +10,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
 	"github.com/dennisklein/platform-kit/metal/internal/bmc"
@@ -240,7 +239,6 @@ func (r *ConvergenceReconciler) systemFirmware(ctx context.Context, host *metalv
 	if err := r.propose(ctx, op); err != nil {
 		return false, err
 	}
-	logf.FromContext(ctx).Info("proposed operation", "operation", op.Namespace+"/"+op.Name, "host", host.Name, "reason", op.Spec.Reason)
 	host.Status.SystemFirmwareProposed = &metalv1alpha1.ProposedPlan{PlanHash: hash, Operation: op.Namespace + "/" + op.Name}
 	setCond(cond, metav1.ConditionFalse, metalv1alpha1.ReasonAwaitingOperation,
 		fmt.Sprintf("%s; operation %s/%s proposed", what, op.Namespace, op.Name))

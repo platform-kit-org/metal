@@ -91,11 +91,12 @@ The controllers reconcile the [kinds](kind:index) of the API group. [](ctrl:inde
 | `--operation-workers` | `4` | How many operations the manager works on at the same time, each on a different host. From 1 to 64. A firmware flash keeps one for up to 15 minutes, and keeps its image in memory. If you set more, give the manager more memory. |
 | `--node-name` | `$NODE_NAME` | The Kubernetes node of the pod. With it, the self guard works. See [](ctrl:protection). |
 | `--metrics-bind-address` | `0` (off) | Address of `/metrics`. |
+| `--metrics-secure` | `true` | Serve `/metrics` over HTTPS, only to a caller whose token may `get` the URL `/metrics`. `false` serves plain HTTP to each caller that reaches the port. |
 | `--health-probe-bind-address` | `0` (off) | Address of `/healthz` and `/readyz`. |
 | `--leader-elect` | `false` | Use leader election. |
 | `--version` | | Print the version and stop. |
 
-The manager refuses to start when `--ledger` is empty, a duration is out of range, or `--media-store-claim` has no `--media-store`. Each error message names the fix.
+The manager refuses to start with a flag value that it cannot use. Each error message names the fix.
 
 ## The ledger
 
@@ -152,6 +153,23 @@ All series have the prefix `pk_metal_`. They come from the cache at scrape time.
 <Callout type="note">
 `pk-metal pivot` scales the manager to zero and waits for the lease. The lease release on a clean stop keeps that wait short. See [](cli:pivot).
 </Callout>
+
+## Logs
+
+The manager writes its log to standard error. Each line is one JSON object. A line of the controllers has these keys:
+
+| Key | Value |
+| --- | --- |
+| `ts` | The time, RFC 3339 with nanoseconds. |
+| `level` | `info` or `error`. No flag changes the level. |
+| `logger` | The part of the manager that writes the line. |
+| `msg` | A fixed message. |
+| `controller`, the kind (for example `HostClaim`), `namespace`, `name`, `reconcileID` | On a line of a reconcile: the controller and the object of the pass. |
+| `error` | On an error line: the error. |
+
+- After 100 lines with the same `msg` in one second, the manager writes only each 100th line. To count errors, use `controller_runtime_reconcile_total{result="error"}`, as [](rb:reconcile-failing) does.
+- The lines with `"logger":"audit"` are the [](ref:audit-trail), with their own keys. The manager writes each audit line directly, and drops none.
+- Only the line `Observed a panic` has a stack trace, in the key `stacktrace`.
 
 ## Permissions
 

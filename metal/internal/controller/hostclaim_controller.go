@@ -117,7 +117,7 @@ func (r *HostClaimReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			// The claim is gone without passing through release (created
 			// before the finalizer existed, or the finalizer was removed by
 			// hand) — unbind what it still holds.
-			return ctrl.Result{}, r.releaseAll(ctx, bound, "")
+			return ctrl.Result{}, r.releaseAll(ctx, bound, "the claim is gone without its release: not powered off")
 		}
 		return ctrl.Result{}, err
 	}
@@ -247,7 +247,7 @@ func (r *HostClaimReconciler) finishRelease(ctx context.Context, claim *metalv1a
 	if err := r.Update(ctx, claim); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
-	logf.FromContext(ctx).Info("released claim", "claim", claim.Namespace+"/"+claim.Name)
+	logf.FromContext(ctx).Info("released claim")
 	return ctrl.Result{}, nil
 }
 
@@ -349,7 +349,7 @@ func (r *HostClaimReconciler) bind(ctx context.Context, claim *metalv1alpha1.Hos
 	if err := r.Update(ctx, host); err != nil {
 		return "", "", err
 	}
-	logf.FromContext(ctx).Info("bound host", "host", target, "claim", claim.Namespace+"/"+claim.Name)
+	logf.FromContext(ctx).Info("bound host", "host", target)
 	return "", "", nil
 }
 
@@ -388,13 +388,11 @@ func hostOSFrom(claim *metalv1alpha1.HostClaim) *metalv1alpha1.HostOS {
 }
 
 // releaseAll clears the bind pointer, the OS hand-off and the release's
-// power-off record from every listed host except keep.
-func (r *HostClaimReconciler) releaseAll(ctx context.Context, bound []metalv1alpha1.Host, keep string) error {
+// power-off record from every listed host. how tells the log how the
+// machine was released.
+func (r *HostClaimReconciler) releaseAll(ctx context.Context, bound []metalv1alpha1.Host, how string) error {
 	for i := range bound {
 		host := &bound[i]
-		if host.Name == keep {
-			continue
-		}
 		host.Spec.ClaimRef = nil
 		host.Spec.OS = nil
 		delete(host.Annotations, annotationReleasePowerOff)
@@ -404,7 +402,7 @@ func (r *HostClaimReconciler) releaseAll(ctx context.Context, bound []metalv1alp
 			}
 			return err
 		}
-		logf.FromContext(ctx).Info("released host", "host", host.Name)
+		logf.FromContext(ctx).Info("released host", "host", host.Name, "how", how)
 	}
 	return nil
 }

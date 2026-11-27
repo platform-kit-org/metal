@@ -19,7 +19,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
@@ -265,7 +264,6 @@ func (r *ConvergenceReconciler) firmware(ctx context.Context, host *metalv1alpha
 	if err := r.propose(ctx, op); err != nil {
 		return false, err
 	}
-	logf.FromContext(ctx).Info("proposed operation", "operation", op.Namespace+"/"+op.Name, "host", host.Name, "reason", op.Spec.Reason)
 	host.Status.FirmwareProposed = &metalv1alpha1.ProposedPlan{
 		PlanHash: hash, Operation: op.Namespace + "/" + op.Name,
 	}
@@ -412,7 +410,6 @@ func (r *ConvergenceReconciler) bios(ctx context.Context, host *metalv1alpha1.Ho
 		if err := r.propose(ctx, op); err != nil {
 			return false, err
 		}
-		logf.FromContext(ctx).Info("proposed operation", "operation", op.Namespace+"/"+op.Name, "host", host.Name, "reason", op.Spec.Reason)
 		settings.Status.Proposed = &metalv1alpha1.ProposedPlan{
 			PlanHash: hash, Operation: op.Namespace + "/" + op.Name,
 		}
@@ -445,7 +442,6 @@ func (r *ConvergenceReconciler) withdrawObsolete(ctx context.Context, plan *meta
 	if !op.AwaitsApproval() {
 		return nil
 	}
-	logf.FromContext(ctx).Info("withdrew obsolete proposal", "operation", plan.Operation)
 	return client.IgnoreNotFound(deleteOp(ctx, r.Client, r.Audit, op, audit.DeleteWithdrawn,
 		"the desired state moved on before anyone approved it", client.Preconditions{UID: &op.UID}))
 }
@@ -477,7 +473,6 @@ func (r *ConvergenceReconciler) planVerdict(ctx context.Context, plan *metalv1al
 		return metalv1alpha1.ReasonAwaitingOperation, "operation " + plan.Operation + " in flight", false, nil
 	case c.Status == metav1.ConditionFalse:
 		if _, ok := op.Annotations[metalv1alpha1.AnnotationRetry]; ok {
-			logf.FromContext(ctx).Info("retry requested; replacing the failed proposal", "operation", plan.Operation)
 			// Preconditioned on the object read: a retry mark is honoured
 			// for the failed operation it was set on, never for another
 			// that took its name since.

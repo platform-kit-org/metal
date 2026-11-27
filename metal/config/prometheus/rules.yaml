@@ -177,10 +177,12 @@ spec:
             description: "Its Kubernetes API does not answer or a node is not Ready. kubectl describe taloscluster {{ $labels.cluster }} gives the reason."
             runbook_url: https://metal.platform-kit.org/operate/runbooks/cluster-unavailable/
         - alert: PkMetalEtcdBackupStale
-          # The same rule as the backup controller's BackedUp=False/
+          # The rule of the backup controller's BackedUp=False/
           # BackupTooOld: one missed snapshot is not yet an alert, two in a
-          # row are. The interval is the shortest of the cluster's
-          # policies (spec.interval has no default).
+          # row are. The controller also waits for a snapshot that runs;
+          # this rule cannot see one, so a snapshot that runs for more than
+          # 5m after one miss fires it. The interval is the shortest of the
+          # cluster's policies (spec.interval has no default).
           expr: |
             time() - max by (cluster) (pk_metal_etcd_backup_last_success_timestamp_seconds)
               > 2 * min by (cluster) (pk_metal_etcd_backup_interval_seconds)

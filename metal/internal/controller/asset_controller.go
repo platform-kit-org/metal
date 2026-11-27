@@ -135,7 +135,7 @@ func (r *AssetReconciler) materialize(ctx context.Context, asset *metalv1alpha1.
 		return fmt.Errorf("materialize endpoint %s: %w", asset.Name, err)
 	}
 	if op != controllerutil.OperationResultNone {
-		logf.FromContext(ctx).Info("materialized endpoint", "endpoint", ep.Name, "op", op, "address", addr)
+		logf.FromContext(ctx).Info("materialized endpoint", "endpoint", ep.Name, "result", op, "address", addr)
 	}
 	set(metav1.ConditionTrue, metalv1alpha1.ReasonEndpointMaterialized,
 		fmt.Sprintf("endpoint %s at %s", ep.Name, addr))

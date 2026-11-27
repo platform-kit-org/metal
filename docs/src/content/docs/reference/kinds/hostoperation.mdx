@@ -114,7 +114,7 @@ An approved operation starts only when all gates open. The operator checks them 
 | --- | --- | --- | --- |
 | Abort | `metal.platform-kit.org/abort` is set | none: ends as Aborted | none |
 | Rollout | the rollout does not cover the operation | none: ends as Failed (`RolloutRefused`) | none |
-| Queue | another operation holds the Host | `OperationQueued` | wait |
+| Queue | another operation holds the Host, or a pass runs on a Host behind the same BMC | `OperationQueued` | wait |
 | Host maintenance | the Host has `metal.platform-kit.org/maintenance` | `HostInMaintenance` | remove the annotation |
 | Window | a [](kind:MaintenanceWindow) covers the Host and none is open | `OutsideMaintenanceWindow` | wait, or `metal.platform-kit.org/ignore-window` |
 | Self guard | a disruptive action targets a machine that runs the operator | `SelfDisruption` | `metal.platform-kit.org/allow-self-disruption` on the Host |

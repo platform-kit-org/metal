@@ -93,7 +93,7 @@ func (r *TalosClusterReconciler) guardBundle(ctx context.Context, cluster *osv1a
 		return fmt.Errorf("keep applied bundle of %s: %w", cluster.Name, err)
 	}
 	if op != controllerutil.OperationResultNone {
-		logf.FromContext(ctx).Info("recorded the secrets bundle the machines run", "cluster", cluster.Name, "op", op)
+		logf.FromContext(ctx).Info("recorded the secrets bundle the machines run", "result", op)
 	}
 	set(metav1.ConditionFalse, osv1alpha1.ReasonBundleApplied, "the machines run the bundle the spec names")
 	return nil

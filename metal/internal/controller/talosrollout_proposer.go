@@ -14,7 +14,6 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
@@ -118,7 +117,6 @@ func (r *RolloutProposer) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	if err := r.Create(ctx, ro); client.IgnoreAlreadyExists(err) != nil {
 		return ctrl.Result{}, fmt.Errorf("propose rollout %s: %w", ro.Name, err)
 	}
-	logf.FromContext(ctx).Info("proposed rollout", "cluster", cluster.Name, "rollout", ro.Name, "kind", ro.Spec.Kind)
 	return ctrl.Result{}, nil
 }
 

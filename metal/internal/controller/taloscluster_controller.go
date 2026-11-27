@@ -213,14 +213,14 @@ func (r *TalosClusterReconciler) reconcile(ctx context.Context, cluster *osv1alp
 			// Remembered the first time it is seen, so that a later loss of
 			// every member's etcd data reads as a loss, not as a new cluster.
 			st.BootstrappedAt = ptrTime(metav1.Now())
-			logf.FromContext(ctx).Info("cluster bootstrapped", "cluster", cluster.Name, "detail", b.Message)
+			logf.FromContext(ctx).Info("cluster bootstrapped", "message", b.Message)
 		}
 	case b.Reason == osv1alpha1.ReasonBootstrapRequested:
 		if !b.RequestedAt.Equal(requestedAt) {
 			// A new request: restart the condition so its transition time is
 			// the moment the call was accepted, even when it was already
 			// Unknown (a request repeated after the grace window).
-			logf.FromContext(ctx).Info("requested etcd bootstrap", "cluster", cluster.Name, "detail", b.Message)
+			logf.FromContext(ctx).Info("requested etcd bootstrap", "message", b.Message)
 			r.requests.Store(cluster.UID, b.RequestedAt)
 			meta.RemoveStatusCondition(&st.Conditions, osv1alpha1.ConditionBootstrapped)
 			meta.SetStatusCondition(&st.Conditions, metav1.Condition{
@@ -350,7 +350,7 @@ func (r *TalosClusterReconciler) credential(ctx context.Context, cluster *osv1al
 		return nil, nil, fmt.Errorf("publish %s for %s: %w", key, cluster.Name, err)
 	}
 	if op != controllerutil.OperationResultNone {
-		logf.FromContext(ctx).Info("published admin credential", "cluster", cluster.Name, "secret", name, "op", op)
+		logf.FromContext(ctx).Info("published admin credential", "secret", name, "result", op)
 	}
 	return data, &osv1alpha1.SecretReference{Namespace: secret.Namespace, Name: secret.Name}, nil
 }

@@ -99,7 +99,7 @@ func (r *TalosNodeReconciler) writeConfigSecret(ctx context.Context, node *osv1a
 		}
 		return nil, fmt.Errorf("write config secret %s: %w", key, err)
 	}
-	logf.FromContext(ctx).Info("rendered machine config", "node", node.Name, "secret", secret.Name, "digest", sum.String())
+	logf.FromContext(ctx).Info("rendered machine config", "secret", secret.Name, "digest", sum.String())
 	return secret, nil
 }
 
@@ -166,7 +166,7 @@ func (r *TalosNodeReconciler) collectConfigSecrets(ctx context.Context, node *os
 		if err := r.Delete(ctx, s, client.Preconditions{UID: &s.UID}); client.IgnoreNotFound(err) != nil {
 			return fmt.Errorf("collect config secret %s: %w", s.Name, err)
 		}
-		logf.FromContext(ctx).Info("collected config secret", "node", node.Name, "secret", s.Name)
+		logf.FromContext(ctx).Info("collected config secret", "secret", s.Name)
 	}
 	return nil
 }

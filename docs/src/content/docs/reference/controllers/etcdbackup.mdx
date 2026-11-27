@@ -62,7 +62,7 @@ The etcd backup lane has two controllers. `etcdbackuppolicy` schedules and prune
 1. Read the policy and its [](kind:TalosCluster).
 2. Build the sink and parse the age recipients. Set `Ready`.
 3. Delete snapshots that the retention no longer keeps. Delete the stored object first. Delete the record after it. The newest verified snapshot always stays.
-4. Write the summary, newest first. Set `BackedUp`. It turns False when the newest verified snapshot is older than twice the interval.
+4. Write the summary, newest first. Set `BackedUp`. It turns False when the newest verified snapshot is older than twice the interval. While a snapshot runs, the limit is 40 minutes longer: the maximum time of one snapshot.
 5. If the interval passed, the policy is not suspended and no snapshot runs, create a new EtcdSnapshot.
 
 ## Snapshot loop

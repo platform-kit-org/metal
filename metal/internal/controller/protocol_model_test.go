@@ -591,6 +591,9 @@ func executorPass(s state, v view, mask uint8, i opSlot, fail bool) *pass {
 		}
 		return p
 	}
+	// A pass that finds its host or BMC lock taken (passLocks) writes Queued
+	// and comes back later. The model runs the passes on one host one at a
+	// time, so it has no such pass, and the write changes no other state.
 	if obj.Status.Baseline == nil {
 		if maintenance(v.Host) {
 			return p

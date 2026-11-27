@@ -70,6 +70,25 @@ func TestSettingsChangesAreAudited(t *testing.T) {
 	}
 }
 
+// A retention that the operator cannot read keeps every record. The message
+// of the settings line tells it once, not each finished record each hour.
+func TestABadRetentionIsToldInTheSettingsLine(t *testing.T) {
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "pk-metal", Name: siteSettingsConfigMap},
+		Data:       map[string]string{"retention": "30 days"},
+	}
+	var buf bytes.Buffer
+	r := &SettingsReconciler{Client: fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(cm).Build(),
+		Namespace: "pk-metal", Audit: audit.New(&buf, testOperator)}
+	for range 2 {
+		_, err := r.Reconcile(t.Context(), ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cm)})
+		require.NoError(t, err)
+	}
+	lines := trail(t, &buf)
+	require.Equal(t, []string{"settings.read"}, eventNames(lines))
+	assert.Contains(t, lines[0].Message, `retention "30 days" in ConfigMap hostoperation-approval is not Forever`)
+}
+
 func gateScheme(t *testing.T) *runtime.Scheme {
 	s := testScheme(t)
 	require.NoError(t, admissionregistrationv1.AddToScheme(s))

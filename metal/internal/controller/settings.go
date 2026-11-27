@@ -25,7 +25,7 @@ import (
 
 // settingsKeys are the keys of the site settings ConfigMap that decide who
 // may do what: the audit trail records each change of them.
-var settingsKeys = []string{"selfApproval", "retention", "adminGroup", "operator"}
+var settingsKeys = []string{"selfApproval", retentionKey, "adminGroup", "operator"}
 
 // GatePolicies are the admission policies of the approval gate
 // (config/policy). Each must exist with failurePolicy Fail, and have a
@@ -93,6 +93,12 @@ func (r *SettingsReconciler) observeSettings(cm *corev1.ConfigMap, exists bool) 
 			}
 		}
 	}
+	// A retention that the operator cannot read keeps every record. The
+	// line says so once, and not each finished record on each pass.
+	msg := ""
+	if v, ok := values[retentionKey]; ok {
+		msg = parseRetention(v).problem
+	}
 	o := audit.Object{Kind: audit.KindConfigMap, Namespace: r.Namespace, Name: siteSettingsConfigMap, UID: cm.UID}
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -100,13 +106,13 @@ func (r *SettingsReconciler) observeSettings(cm *corev1.ConfigMap, exists bool) 
 	case !r.read && !exists:
 		r.Audit.SettingsRead(o, nil, settingsGone)
 	case !r.read:
-		r.Audit.SettingsRead(o, values, "")
+		r.Audit.SettingsRead(o, values, msg)
 	case maps.Equal(r.seen, values) && exists:
 		return
 	case !exists:
 		r.Audit.SettingsChanged(o, r.seen, nil, settingsGone)
 	default:
-		r.Audit.SettingsChanged(o, r.seen, values, "")
+		r.Audit.SettingsChanged(o, r.seen, values, msg)
 	}
 	r.read, r.seen = true, values
 }

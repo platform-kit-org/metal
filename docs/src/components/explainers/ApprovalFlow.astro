@@ -7,10 +7,6 @@ import Explainer from '../Explainer.astro';
 import Box from '../diagram/Box.astro';
 import Edge from '../diagram/Edge.astro';
 
-interface Props {
-  start?: number;
-}
-const { start = 0 } = Astro.props;
 const steps = [
   {
     title: 'Propose',
@@ -65,7 +61,7 @@ const steps = [
 const k = (p: string) => `/reference/kinds/${p}/`;
 ---
 
-<Explainer title="Approval gate" steps={steps as any} start={start}>
+<Explainer title="Approval gate" steps={steps as any} {...Astro.props}>
   <svg viewBox="0 0 720 290" role="img" aria-labelledby="ex-appr-t" xmlns="http://www.w3.org/2000/svg" class="pk-stage-svg">
     <title id="ex-appr-t">A controller proposes a HostOperation. A person approves it through the admission policy. The executor checks the gates, then runs the actions on the machine.</title>
     <Box node="ctrl" x={15} y={20} w={170} h={54} label="Controller" sub="proposer" cat="ctrl" href="/reference/controllers/" />

@@ -8,10 +8,6 @@ import Box from '../diagram/Box.astro';
 import Edge from '../diagram/Edge.astro';
 import Zone from '../diagram/Zone.astro';
 
-interface Props {
-  start?: number;
-}
-const { start = 0 } = Astro.props;
 const steps = [
   {
     title: 'Bootstrap',
@@ -72,7 +68,7 @@ const steps = [
 ];
 ---
 
-<Explainer title="Move the operator (pivot)" steps={steps as any} start={start}>
+<Explainer title="Move the operator (pivot)" steps={steps as any} {...Astro.props}>
   <svg viewBox="0 0 720 270" role="img" aria-labelledby="ex-piv-t" xmlns="http://www.w3.org/2000/svg" class="pk-stage-svg">
     <title id="ex-piv-t">pk-metal pivot pauses the operator in the source cluster, installs it on the target cluster, copies the objects, starts the target manager and watches it.</title>
     <Zone x={10} y={10} w={250} h={150} label="bootstrap cluster (kind)" />

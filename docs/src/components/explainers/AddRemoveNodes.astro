@@ -6,10 +6,6 @@ import Explainer from '../Explainer.astro';
 import Box from '../diagram/Box.astro';
 import Edge from '../diagram/Edge.astro';
 
-interface Props {
-  start?: number;
-}
-const { start = 0 } = Astro.props;
 const steps = [
   {
     title: 'Plan',
@@ -71,7 +67,7 @@ const steps = [
 const k = (p: string) => `/reference/kinds/${p}/`;
 ---
 
-<Explainer title="Add and remove control planes" steps={steps as any} start={start}>
+<Explainer title="Add and remove control planes" steps={steps as any} {...Astro.props}>
   <svg viewBox="0 0 720 260" role="img" aria-labelledby="ex-scale-t" xmlns="http://www.w3.org/2000/svg" class="pk-stage-svg">
     <title id="ex-scale-t">pk-metal scale writes HostClaims. Control planes join etcd one at a time, as a learner first. They leave one at a time, and the leader leaves last.</title>
     <Box node="you" x={15} y={20} w={170} h={54} label="You" sub="pk-metal scale" variant="soft" />

@@ -120,7 +120,7 @@ All names start with `pk_metal_`.
   <dt>`host_phase`, `host_blocked`</dt>
   <dd>The phase of each Host, and the reason when it waits.</dd>
   <dt>`operation_failed`, `operation_awaiting_approval_seconds`, `operation_blocked`</dt>
-  <dd>Operations that need a person, and approved operations that did not start.</dd>
+  <dd>Operations that need a person, and approved operations that did not start. A failed step of a rollout shows only in `rollout_condition`.</dd>
   <dt>`operation_running_seconds`</dt>
   <dd>How long a running operation is in its current step, with the step.</dd>
   <dt>`bmc_reachable`</dt>

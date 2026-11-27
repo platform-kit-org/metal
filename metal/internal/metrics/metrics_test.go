@@ -64,6 +64,11 @@ current-context: c
 		Status: metalv1alpha1.HostOperationStatus{Phase: metalv1alpha1.OperationFailed,
 			Conditions: []metav1.Condition{cond(metalv1alpha1.ConditionExecuted, "False", "StepFailed")}},
 	}
+	// A rollout's step pages through the rollout (pk_metal_rollout_condition),
+	// once: pk-metal retry cannot redo it.
+	step := failed.DeepCopy()
+	step.Name, step.Spec.Reason = "upgrade-cp-1", "TalosUpgrade"
+	step.Spec.RolloutRef = &metalv1alpha1.RolloutReference{Name: "c-talosupgrade-0a0b0c0d"}
 	held := &metalv1alpha1.HostOperation{
 		ObjectMeta: metav1.ObjectMeta{Namespace: "pk-metal", Name: "held"},
 		Spec: metalv1alpha1.HostOperationSpec{HostRef: metalv1alpha1.Reference{Name: "node-1"},
@@ -91,7 +96,7 @@ current-context: c
 	}
 
 	c := &Collector{
-		Reader:               newReader(t, append(secrets, host, waiting, failed, held, ep, unprobed, node, cluster)...),
+		Reader:               newReader(t, append(secrets, host, waiting, failed, step, held, ep, unprobed, node, cluster)...),
 		CredentialsNamespace: "pk-metal",
 		Now:                  func() time.Time { return now },
 	}
@@ -108,7 +113,7 @@ pk_metal_host_blocked{host="node-1",reason="Approval(BiosConvergence)"} 1
 # HELP pk_metal_operation_awaiting_approval_seconds How long each HostOperation has been waiting for approval.
 # TYPE pk_metal_operation_awaiting_approval_seconds gauge
 pk_metal_operation_awaiting_approval_seconds{host="node-1",namespace="pk-metal",operation="bios",reason="BiosConvergence"} 7200
-# HELP pk_metal_operation_failed 1 for each HostOperation that failed and still waits for a person (retry or delete).
+# HELP pk_metal_operation_failed 1 for each HostOperation that failed and still waits for a person (retry or delete); a rollout's step reports through rollout_condition.
 # TYPE pk_metal_operation_failed gauge
 pk_metal_operation_failed{host="node-1",namespace="pk-metal",operation="flash",reason="FirmwareConvergence"} 1
 # HELP pk_metal_operation_blocked 1 for each approved HostOperation that has not started, with the reason it waits (OperationQueued, OutsideMaintenanceWindow, …).
@@ -118,7 +123,7 @@ pk_metal_operation_blocked{host="node-1",namespace="pk-metal",operation="held",r
 # TYPE pk_metal_operations gauge
 pk_metal_operations{action="applyBios",phase="AwaitingApproval"} 1
 pk_metal_operations{action="powerCycle",phase="AwaitingApproval"} 1
-pk_metal_operations{action="powerCycle",phase="Failed"} 1
+pk_metal_operations{action="powerCycle",phase="Failed"} 2
 pk_metal_operations{action="powerCycle",phase="Proposed"} 1
 # HELP pk_metal_bmc_reachable 1 when a ManagementEndpoint answers Redfish, 0 when it does not; absent while not yet probed.
 # TYPE pk_metal_bmc_reachable gauge

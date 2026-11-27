@@ -137,7 +137,7 @@ All series have the prefix `pk_metal_`. They come from the cache at scrape time.
 | `host_phase` | host, phase | 1 for the phase of each Host. |
 | `host_blocked` | host, reason | 1 while a Host is blocked. |
 | `operations` | phase, action | HostOperations by phase and action. |
-| `operation_failed` | namespace, operation, host, reason | 1 for each failed operation that waits for a person. |
+| `operation_failed` | namespace, operation, host, reason | 1 for each failed operation that waits for a person. A failed step of a rollout shows only in `rollout_condition`. |
 | `operation_awaiting_approval_seconds` | namespace, operation, host, reason | How long an operation waits for approval. |
 | `operation_blocked` | namespace, operation, host, reason | 1 for each approved operation that did not start. |
 | `bmc_reachable` | endpoint | 1 when the BMC answers Redfish. |

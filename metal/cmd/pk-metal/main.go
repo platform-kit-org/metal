@@ -99,7 +99,6 @@ func mustConnect(ctx context.Context, endpoint string, f bmcFlags, readOnly bool
 
 func inventoryCmd(args []string) {
 	fs := newFlags("inventory")
-	node := fs.String("node", "", "node name for the fact file (default: derived from the endpoint host)")
 	address := fs.String("address", "", "address label for the fact file (default: endpoint host)")
 	system := fs.String("system", "", "system id to describe (default: the BMC's only system)")
 	bf := connectFlags(fs)
@@ -108,12 +107,8 @@ func inventoryCmd(args []string) {
 		badUsage(fs, "give exactly one BMC URL, for example https://10.0.0.5")
 	}
 	endpoint := fs.Arg(0)
-	host := endpointHost(endpoint)
 	if *address == "" {
-		*address = host
-	}
-	if *node == "" {
-		*node = host
+		*address = endpointHost(endpoint)
 	}
 
 	ctx, stop := signalContext()
@@ -127,7 +122,7 @@ func inventoryCmd(args []string) {
 	if facts, err = facts.Pick(*system); err != nil {
 		die(err)
 	}
-	inventory.Write(os.Stdout, *node, *address, time.Now(), facts)
+	inventory.Write(os.Stdout, *address, time.Now(), facts)
 }
 
 func checkCmd(args []string) {

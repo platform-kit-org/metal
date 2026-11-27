@@ -33,13 +33,6 @@
       "global": false
     },
     {
-      "name": "node",
-      "type": "string",
-      "default": "",
-      "usage": "node name for the fact file (default: derived from the endpoint host)",
-      "global": false
-    },
-    {
       "name": "system",
       "type": "string",
       "default": "",

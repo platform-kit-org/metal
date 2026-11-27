@@ -205,7 +205,6 @@ var flagKinds = map[string]kindSpec{
 	"fixture":             {kind: kindFixture},
 	"relay-secret-file":   {kind: kindFile},
 	// Names that are not objects of the cluster.
-	"inventory:node": {}, // the name for the fact file
 	"bootstrap:node": {}, // a TalosNode of --dir
 	"endpoint":       {}, // the address of the bootstrap --node
 	// Free text: durations, numbers, versions, addresses, names and reasons.

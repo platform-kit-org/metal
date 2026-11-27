@@ -53,7 +53,7 @@ Make sure that one BMC answers, and find its serial number, media slots and NIC 
 3. Read the inventory into a file.
 
    ```sh
-   pk-metal inventory --user admin --insecure --node sim-0001 https://192.0.2.21 > sim-0001.yaml
+   pk-metal inventory --user admin --insecure https://192.0.2.21 > sim-0001.yaml
    ```
 
    The file has the BMC MAC, the media slots, the serial number, the NICs and the drives. If the BMC has more than one system, add `--system <id>`. The command then describes that system.

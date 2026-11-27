@@ -18,12 +18,12 @@ import (
 // another value than the BMC sent invents a fact. Every string written must
 // read back as itself (bytes that are not UTF-8 as U+FFFD).
 func FuzzFactFile(f *testing.F) {
-	f.Add("node-infra", "Huawei", "2288H V5", "SIMHW2288V5000391", "0c:c4:7a:12:34:56", "SAMSUNG MZ7LH480")
-	f.Add("n1", "", "", "", "", "")
-	f.Add("n1", "a # b", "x: y", "'q'", "\"dq\"", "line\nbreak")
-	f.Add("n1", "\xff\xfe", " ", "\x00", "\t", "- item")
-	f.Add("n1", "yes", "null", "~", "0x10", "1e3")
-	f.Fuzz(func(t *testing.T, node, manufacturer, model, serial, mac, driveModel string) {
+	f.Add("Huawei", "2288H V5", "SIMHW2288V5000391", "0c:c4:7a:12:34:56", "SAMSUNG MZ7LH480")
+	f.Add("", "", "", "", "")
+	f.Add("a # b", "x: y", "'q'", "\"dq\"", "line\nbreak")
+	f.Add("\xff\xfe", " ", "\x00", "\t", "- item")
+	f.Add("yes", "null", "~", "0x10", "1e3")
+	f.Fuzz(func(t *testing.T, manufacturer, model, serial, mac, driveModel string) {
 		facts := inventory.Facts{
 			Manager: bmc.Manager{MAC: mac},
 			Systems: []bmc.System{{
@@ -34,11 +34,10 @@ func FuzzFactFile(f *testing.F) {
 			}},
 		}
 		var buf bytes.Buffer
-		inventory.Write(&buf, node, "https://10.0.0.21", time.Unix(0, 0), facts)
+		inventory.Write(&buf, "https://10.0.0.21", time.Unix(0, 0), facts)
 
 		var doc struct {
-			Node string `yaml:"node"`
-			BMC  struct {
+			BMC struct {
 				MAC string `yaml:"mac"`
 			} `yaml:"bmc"`
 			System struct {
@@ -57,7 +56,6 @@ func FuzzFactFile(f *testing.F) {
 			}
 			return strings.ToValidUTF8(s, "�")
 		}
-		assert.Equal(t, strings.ToValidUTF8(node, "�"), doc.Node, "node")
 		assert.Equal(t, want(mac), doc.BMC.MAC, "mac")
 		assert.Equal(t, want(manufacturer), doc.System.Manufacturer, "manufacturer")
 		assert.Equal(t, want(model), doc.System.Model, "model")

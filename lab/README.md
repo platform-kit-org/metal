@@ -558,8 +558,8 @@ DNS"), Talos cannot pull its installer or set its clock.
 before it tries a boot option: the console log then holds only screen-clear
 sequences and no text. Rarely the installer's boot manager runs its
 countdown, clears the screen, and no kernel follows. The fleet watches for
-both. When a VM's console gains nothing readable for 90 seconds after a
-power-on, before the kernel banner (`Linux version`), the fleet power-cycles
+both. When a VM's console gains nothing readable for 90 seconds (3 minutes
+under tcg) after a power-on, before the kernel banner (`Linux version`), the fleet power-cycles
 it and logs `FIRMWARE HANG` or `LOADER HANG` in `.lab/fleet.log`; the state
 endpoint counts it as `backend.hangCycles`. It tries up to three times per
 power-on, and never after the kernel started, so a running system is never

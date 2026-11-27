@@ -92,7 +92,8 @@ type Options struct {
 	MAC string
 	// HangTimeout is how long the console may gain nothing readable after a
 	// power-on, before the kernel starts, until the VM is power-cycled
-	// (see hang.go). Zero is DefaultHangTimeout; negative turns the guard off.
+	// (see hang.go). Zero is DefaultHangTimeout under kvm and
+	// DefaultHangTimeoutTCG under tcg; negative turns the guard off.
 	HangTimeout time.Duration
 	// Logf receives what the machine does on its own, such as the guard's
 	// power cycle; nil is log.Printf.

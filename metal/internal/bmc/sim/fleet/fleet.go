@@ -30,8 +30,8 @@ type Options struct {
 	RequestHistory int
 	// HangTimeout is the qemu backend's firmware-hang guard: how long a VM
 	// may show only screen control sequences on its console after a
-	// power-on before it is power-cycled, once. Zero is
-	// qemu.DefaultHangTimeout; negative turns the guard off.
+	// power-on before it is power-cycled, once. Zero is the driver's
+	// default for the VM's accelerator; negative turns the guard off.
 	HangTimeout time.Duration
 }
 

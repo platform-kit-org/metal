@@ -31,10 +31,23 @@ import (
 // hangTries is how many times the guard power-cycles one power-on.
 const hangTries = 3
 
-// DefaultHangTimeout is how long a freshly powered-on VM may go without
-// readable console output, before its kernel starts, until the guard
-// power-cycles it.
+// DefaultHangTimeout is how long a freshly powered-on VM under kvm may go
+// without readable console output, before its kernel starts, until the
+// guard power-cycles it.
 const DefaultHangTimeout = 90 * time.Second
+
+// DefaultHangTimeoutTCG is the same for a VM under tcg. An emulated CPU
+// loads the kernel and the initramfs from the CD several times slower, and a
+// host that runs three machines at once shares its cores between them.
+const DefaultHangTimeoutTCG = 3 * time.Minute
+
+// defaultHangTimeout is the guard's timeout for a machine that sets none.
+func defaultHangTimeout(accel string) time.Duration {
+	if accel == AccelKVM {
+		return DefaultHangTimeout
+	}
+	return DefaultHangTimeoutTCG
+}
 
 // hangCheckEvery is how often the guard reads the console.
 const hangCheckEvery = 2 * time.Second
@@ -226,7 +239,7 @@ func (b *bannerScan) found(data []byte) bool {
 func (m *Machine) armGuard(offset int64) {
 	timeout := m.o.HangTimeout
 	if timeout == 0 {
-		timeout = DefaultHangTimeout
+		timeout = defaultHangTimeout(m.o.Accel)
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()

@@ -1043,6 +1043,11 @@ func (r *HostClaimReconciler) release(ctx context.Context, claim *metalv1alpha1.
 		return false, err
 	}
 
+	// pk-metal replace releases the old machine of a claim that stays.
+	cause := "is deleted"
+	if claim.DeletionTimestamp.IsZero() {
+		cause = "moves to another machine"
+	}
 	why, held := heldBy(claim)
 	keepRecords := held
 	done := true
@@ -1088,14 +1093,14 @@ func (r *HostClaimReconciler) release(ctx context.Context, claim *metalv1alpha1.
 					}
 				}
 				set(metalv1alpha1.ReasonHeldByUser, fmt.Sprintf(
-					"held%s: the claim is deleted, but host %s is neither shut down nor released while the claim carries the %s annotation. To go on: %s",
-					why, host.Name, metalv1alpha1.AnnotationHold, releaseHoldCommand(claim)))
+					"held%s: the claim %s, but host %s is neither shut down nor released while the claim carries the %s annotation. To go on: %s",
+					why, cause, host.Name, metalv1alpha1.AnnotationHold, releaseHoldCommand(claim)))
 				done = false
 				continue
 			}
 			if _, maint := inMaintenance(host); maint && op == nil {
 				set(metalv1alpha1.ReasonHostInMaintenance, maintenanceNote(host)+
-					": the claim is deleted, but the machine is shut down and released only after it is given back: "+endMaintenanceCommand(host))
+					": the claim "+cause+", but the machine is shut down and released only after it is given back: "+endMaintenanceCommand(host))
 				done, keepRecords = false, true
 				continue
 			}
@@ -1108,12 +1113,12 @@ func (r *HostClaimReconciler) release(ctx context.Context, claim *metalv1alpha1.
 					if err := r.recordPowerOff(ctx, host, claim, false); err != nil {
 						return false, err
 					}
-					set(metalv1alpha1.ReasonSelfDisruption, "the claim is deleted, but the machine is not shut down: "+msg)
+					set(metalv1alpha1.ReasonSelfDisruption, "the claim "+cause+", but the machine is not shut down: "+msg)
 					done, keepRecords = false, true
 					continue
 				}
 				var reason, waiting string
-				if op, reason, waiting, err = r.releaseOp(ctx, claim, host, name, provisionOps); err != nil {
+				if op, reason, waiting, err = r.releaseOp(ctx, claim, host, name, cause, provisionOps); err != nil {
 					return false, err
 				}
 				if op == nil {
@@ -1184,7 +1189,7 @@ func (r *HostClaimReconciler) release(ctx context.Context, claim *metalv1alpha1.
 	for i := range provisionOps {
 		if !provisionOps[i].Finished() && provisionOps[i].DeletionTimestamp.IsZero() {
 			if err := deleteOp(ctx, r.Client, r.Audit, &provisionOps[i], audit.DeleteStopped,
-				"claim "+claim.Namespace+"/"+claim.Name+" is being deleted"); client.IgnoreNotFound(err) != nil {
+				"claim "+claim.Namespace+"/"+claim.Name+" "+cause); client.IgnoreNotFound(err) != nil {
 				return false, err
 			}
 		}
@@ -1192,16 +1197,16 @@ func (r *HostClaimReconciler) release(ctx context.Context, claim *metalv1alpha1.
 	if !done {
 		return false, nil
 	}
-	// The boot records belong to a claim that no longer exists. They are
-	// the claim's working state, not only its history, so they go with it
-	// and are not kept for the site's retention; the audit trail keeps
-	// what they decided.
+	// The boot records belong to a machine that the claim gave back. They
+	// are the claim's working state, not only its history, so they go with
+	// the machine and are not kept for the site's retention; the audit trail
+	// keeps what they decided.
 	for i := range provisionOps {
 		if !provisionOps[i].DeletionTimestamp.IsZero() {
 			continue
 		}
 		if err := deleteOp(ctx, r.Client, r.Audit, &provisionOps[i], audit.DeleteRecordOfRemoved,
-			"claim "+claim.Namespace+"/"+claim.Name+" is deleted and its machine released"); client.IgnoreNotFound(err) != nil {
+			"claim "+claim.Namespace+"/"+claim.Name+" "+cause+"; the machine it held is released"); client.IgnoreNotFound(err) != nil {
 			return false, err
 		}
 	}
@@ -1289,14 +1294,15 @@ func opExists(ops []metalv1alpha1.HostOperation, name string) bool {
 
 // releaseOp builds the release of host: the exit operation (exitOp) of the
 // node that the host, or the claim's hand-off record, names. When that
-// TalosNode is gone, the release only shuts the machine down.
+// TalosNode is gone, the release only shuts the machine down. cause says why
+// the claim gives the machine back.
 //
 // The eject list is fixed when the operation is created, so it is built only
 // from slots that were read. While no reachable, inventoried endpoint fronts
 // the host, releaseOp returns nil and says what it waits for; the endpoint
 // and host watches bring the claim back when that changes. The power-off
 // could not run before then either.
-func (r *HostClaimReconciler) releaseOp(ctx context.Context, claim *metalv1alpha1.HostClaim, host *metalv1alpha1.Host, name string,
+func (r *HostClaimReconciler) releaseOp(ctx context.Context, claim *metalv1alpha1.HostClaim, host *metalv1alpha1.Host, name, cause string,
 	provisionOps []metalv1alpha1.HostOperation) (*metalv1alpha1.HostOperation, string, string, error) {
 	shape, err := r.endpointShape(ctx, host)
 	if err != nil {
@@ -1326,7 +1332,7 @@ func (r *HostClaimReconciler) releaseOp(ctx context.Context, claim *metalv1alpha
 	op, reason, msg, err := r.exitOp(ctx, claim, host, node, nodeName, name, purposeRelease,
 		metalv1alpha1.RequestedBy(claim.Annotations), shape.insertable, provisionOps)
 	if reason != "" {
-		msg = "the claim is deleted, but " + msg
+		msg = "the claim " + cause + ", but " + msg
 	}
 	return op, reason, msg, err
 }

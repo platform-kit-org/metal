@@ -16,6 +16,7 @@ import (
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
+	"github.com/dennisklein/platform-kit/metal/internal/audit"
 )
 
 // claimReconcilerFor builds a claim reconciler over a fake API that also
@@ -242,6 +243,38 @@ func TestReleasePowersOffOnlyWhatABootTouched(t *testing.T) {
 			assert.Empty(t, left, "the unfinished boot is withdrawn either way")
 		})
 	}
+}
+
+func TestReleaseOfAMovedClaimSaysThatItMoves(t *testing.T) {
+	// pk-metal replace releases the old machine of a claim that is not
+	// deleted.
+	claim := testClaim("node-b")
+	host := &metalv1alpha1.Host{
+		ObjectMeta: metav1.ObjectMeta{Name: "host-a"},
+		Spec: metalv1alpha1.HostSpec{
+			ClaimRef: &metalv1alpha1.ClaimReference{Namespace: claim.Namespace, Name: claim.Name, UID: claim.UID},
+		},
+	}
+	var b strings.Builder
+	r := claimReconcilerFor(t, onPath(host), bootOp("proposed", "node-b", false, false))
+	r.Audit = audit.New(&b, testOperator)
+
+	claim.Annotations = map[string]string{metalv1alpha1.AnnotationHold: ""}
+	claim.Status.HandOff = &metalv1alpha1.ClaimHandOff{Host: "host-a", Node: "node-b", Operation: "pk-metal/boot", At: metav1.Now()}
+	_, err := r.release(t.Context(), claim, []metalv1alpha1.Host{*host})
+	require.NoError(t, err)
+	c := meta.FindStatusCondition(claim.Status.Conditions, metalv1alpha1.ConditionProvisioned)
+	require.NotNil(t, c)
+	assert.Contains(t, c.Message, "the claim moves to another machine, but")
+
+	// Nothing ran: the old machine goes back, and its boot records go.
+	claim.Annotations, claim.Status.HandOff = nil, nil
+	done, err := r.release(t.Context(), claim, []metalv1alpha1.Host{*host})
+	require.NoError(t, err)
+	require.True(t, done)
+	assert.Contains(t, b.String(), "claim default/claim moves to another machine")
+	assert.NotContains(t, b.String(), "is deleted")
+	assert.NotContains(t, b.String(), "is being deleted")
 }
 
 func TestReleaseTextNamesTheShutdownWindowOfTheOperation(t *testing.T) {

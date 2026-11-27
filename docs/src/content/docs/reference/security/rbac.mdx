@@ -146,8 +146,8 @@ subjects:
 | Point a claim at another machine ([](cli:replace)) | A member of the admin group. | `hostclaim-provisioning` |
 | Lift a maintenance window or the cluster guard on an operation | A holder of `patch` on operations. | RBAC |
 | Ask for an etcd snapshot now | A holder of `pk-metal-backup`. | RBAC |
-| Create a backup policy, or change its recipients or sink | A member of the admin group. | `etcdbackuppolicy-guard` |
-| Create or change an EndpointProfile | A member of the admin group. | `endpointprofile-guard` |
+| Create a backup policy, or change its recipients or sink | A member of the admin group. | `admin-guard` |
+| Create or change an EndpointProfile | A member of the admin group. | `admin-guard` |
 | Restore etcd | An approved [](act:EtcdRecover) operation. | The same approval gate |
 
 ### What the runbooks do

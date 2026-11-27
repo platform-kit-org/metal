@@ -68,8 +68,7 @@ func TestPolicyStreamC(t *testing.T) {
 	const operator = "op-sa"
 	installApprovalPolicy(t, ctx, cl, operator)
 	installClaimPolicy(t, ctx, cl)
-	installPolicy(t, ctx, cl, "etcdbackuppolicy-guard.yaml")
-	installPolicy(t, ctx, cl, "endpointprofile-guard.yaml")
+	installPolicy(t, ctx, cl, "admin-guard.yaml")
 
 	// userClient adds system:masters: these clients test admission, not RBAC.
 	operatorCl := st.userClient(t, operator)
@@ -190,10 +189,10 @@ func TestPolicyStreamC(t *testing.T) {
 				},
 			}
 		}
-		err := cl.Create(ctx, tc("c8-long", 721*time.Hour))
-		require.Error(t, err)
+		err := ada.Create(ctx, tc("c8-long", 721*time.Hour))
+		require.Error(t, err, "not even an admin")
 		assert.Contains(t, err.Error(), "ttl must be at most 720h")
-		require.NoError(t, cl.Create(ctx, tc("c8-month", 720*time.Hour)))
+		require.NoError(t, ada.Create(ctx, tc("c8-month", 720*time.Hour)))
 	})
 }
 

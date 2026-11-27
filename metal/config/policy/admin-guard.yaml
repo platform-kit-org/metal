@@ -1,0 +1,119 @@
+# The admin-only changes of three kinds that have no approval of their own.
+# Each rule lets an UPDATE pass that leaves its fields as they are, so the
+# operator's own writes (finalizers, status) and the other edits never need
+# the group.
+#
+# EndpointProfile: the operator applies a profile to every ManagementEndpoint
+# it selects. It creates an Administrator account on each BMC (credentials),
+# sets its time sources (ntp), and replaces its HTTPS identity with a
+# certificate from the issuer it names (tls), which restarts the BMC. Merging
+# a profile is the approval:
+#   - only a member of the admin group creates a profile or changes its spec.
+#
+# EtcdBackupPolicy: a snapshot holds every Secret of the cluster. Its age
+# recipients decide who can decrypt it, and its sink (and the credentials and
+# CA the sink names) decides where the ciphertext goes. A person who adds
+# their own recipient reads every later snapshot:
+#   - only a member of the admin group creates a policy or changes
+#     spec.encryption (the recipients) or spec.sink (s3 endpoint, bucket,
+#     credentialsSecretRef, caSecretRef, or pvc). interval, retention and
+#     suspend stay open to the authors of the policy.
+#
+# TalosCluster: spec.credentials.ttl sets how long the admin kubeconfig and
+# the admin talosconfig that the operator publishes stay valid. A copy of one
+# cannot be revoked short of a CA rotation, so the ttl bounds a leaked copy.
+# The CRD caps it at 720h for everyone; this policy caps it at 24h (the
+# default) for everyone but the admin group:
+#   - only a member of the admin group sets spec.credentials.ttl to more
+#     than 24h. Anybody who may patch the cluster (pk-metal-oncall) may
+#     shorten the ttl or remove it.
+#
+# The admin group comes from the parameters of hostoperation-approval.yaml; a
+# missing ConfigMap denies every create and update of the three kinds: the
+# gate fails closed.
+#
+# CEL note: oldObject is null on CREATE; every reference to it sits behind a
+# lazily-evaluated request.operation ternary. Variables are lazy too, so a
+# rule reads only the variables of its own kind.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: admin-guard
+spec:
+  failurePolicy: Fail
+  paramKind:
+    apiVersion: v1
+    kind: ConfigMap
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["metal.platform-kit.org"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["endpointprofiles"]
+      - apiGroups: ["os.platform-kit.org"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["etcdbackuppolicies", "talosclusters"]
+  variables:
+    - name: res
+      expression: "request.resource.resource"
+    - name: specChanged
+      expression: "request.operation == 'CREATE' || object.spec != oldObject.spec"
+    - name: readersOrPlaceChanged
+      expression: >-
+        request.operation == 'CREATE'
+        || object.spec.encryption != oldObject.spec.encryption
+        || object.spec.sink != oldObject.spec.sink
+    - name: newTTL
+      expression: "duration(object.spec.?credentials.?ttl.orValue('24h'))"
+    - name: oldTTL
+      expression: >-
+        request.operation == 'UPDATE'
+        ? duration(oldObject.spec.?credentials.?ttl.orValue('24h')) : duration('24h')
+    - name: stretched
+      expression: "variables.newTTL > duration('24h') && variables.newTTL != variables.oldTTL"
+    - name: isAdmin
+      expression: >-
+        has(params.data) && has(params.data.adminGroup) && params.data.adminGroup != ''
+        && has(request.userInfo.groups) && params.data.adminGroup in request.userInfo.groups
+    # The second half of every refusal: who the request came from and how to
+    # get into the group.
+    - name: howToJoin
+      expression: >-
+        '; you are ' + request.userInfo.username + ' (groups: '
+        + (has(request.userInfo.groups) ? request.userInfo.groups.join(', ') : 'none')
+        + '). Group membership comes from your credential, not from a binding:'
+        + ' the O= of your client certificate, a groups claim of your OIDC provider,'
+        + ' or --as-group when you impersonate.'
+        + ' In the virtual lab, apply as a member: mise run lab:apply <file>'
+  validations:
+    - expression: "variables.res != 'endpointprofiles' || !variables.specChanged || variables.isAdmin"
+      messageExpression: >-
+        'only an admin (group ' + params.data.adminGroup + ') may create or change an EndpointProfile'
+        + ' (it sets the account, time sources and TLS identity of every BMC it selects)'
+        + variables.howToJoin
+      reason: Forbidden
+    - expression: "variables.res != 'etcdbackuppolicies' || !variables.readersOrPlaceChanged || variables.isAdmin"
+      messageExpression: >-
+        'only an admin (group ' + params.data.adminGroup + ') may create a backup policy or change its'
+        + ' encryption or sink (they decide who can read the snapshots and where they go)'
+        + variables.howToJoin
+      reason: Forbidden
+    - expression: "variables.res != 'talosclusters' || !variables.stretched || variables.isAdmin"
+      messageExpression: >-
+        'only an admin (group ' + params.data.adminGroup + ') may set spec.credentials.ttl above 24h'
+        + ' (a published admin credential stays valid that long and cannot be revoked)'
+        + variables.howToJoin
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: admin-guard
+spec:
+  policyName: admin-guard
+  validationActions: ["Deny"]
+  paramRef:
+    name: hostoperation-approval
+    namespace: pk-metal
+    parameterNotFoundAction: Deny

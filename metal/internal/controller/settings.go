@@ -34,9 +34,7 @@ var settingsKeys = []string{"selfApproval", "retention", "adminGroup", "operator
 var GatePolicies = []string{
 	"hostoperation-approval",
 	"hostclaim-provisioning",
-	"etcdbackuppolicy-guard",
-	"endpointprofile-guard",
-	"taloscluster-credentials-guard",
+	"admin-guard",
 	"guard-lift",
 	"requested-by",
 	"requested-by-patches",

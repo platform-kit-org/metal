@@ -1,15 +1,13 @@
 ---
 title: Admission policies
-description: The nine ValidatingAdmissionPolicies that guard approval, provisioning, backups, BMC settings, guard lifts, the name of the requester and the site settings, rule by rule, and the MutatingAdmissionPolicies that write your username for you.
+description: The seven ValidatingAdmissionPolicies that guard approval, provisioning, backups, BMC settings, guard lifts, the name of the requester and the site settings, rule by rule, and the MutatingAdmissionPolicies that write your username for you.
 type: reference
 eyebrow: Reference · security
 xref: { cat: ref, id: admission-policies }
 sources:
   - /repo/metal/config/policy/hostoperation-approval.yaml
   - /repo/metal/config/policy/hostclaim-provisioning.yaml
-  - /repo/metal/config/policy/etcdbackuppolicy-guard.yaml
-  - /repo/metal/config/policy/endpointprofile-guard.yaml
-  - /repo/metal/config/policy/taloscluster-credentials-guard.yaml
+  - /repo/metal/config/policy/admin-guard.yaml
   - /repo/metal/config/policy/guard-lift.yaml
   - /repo/metal/config/policy/requested-by.yaml
   - /repo/metal/config/policy/requested-by-patches.yaml
@@ -25,7 +23,7 @@ import Edge from '../../../../components/diagram/Edge.astro';
 import Callout from '../../../../components/Callout.astro';
 
 RBAC says who may create or patch an object. It cannot see the name that a person writes into a field.
-Nine [ValidatingAdmissionPolicies](term:vap) close that gap. They are [CEL](term:cel) in the API server: no webhook, no certificate, no pod.
+Seven [ValidatingAdmissionPolicies](term:vap) close that gap. They are [CEL](term:cel) in the API server: no webhook, no certificate, no pod.
 Three MutatingAdmissionPolicies write your username into the annotations that these policies check. See [The name stamps](#the-name-stamps).
 
 ## At a glance
@@ -34,15 +32,13 @@ Three MutatingAdmissionPolicies write your username into the annotations that th
 | --- | --- | --- | --- |
 | `hostoperation-approval` | [](kind:HostOperation), [](kind:TalosRollout) | CREATE, UPDATE | The approval gate of one operation or one rollout plan. |
 | `hostclaim-provisioning` | [](kind:HostClaim) | CREATE, UPDATE | Who may choose the OS of a machine, and who may skip the boot approval. |
-| `etcdbackuppolicy-guard` | [](kind:EtcdBackupPolicy) | CREATE, UPDATE | Who may choose who can read the etcd backups, and where they go. |
-| `endpointprofile-guard` | [](kind:EndpointProfile) | CREATE, UPDATE | Who may change what the operator writes to the BMCs. |
-| `taloscluster-credentials-guard` | [](kind:TalosCluster) | CREATE, UPDATE | Who may make the published admin credentials live longer than 24 hours. |
+| `admin-guard` | [](kind:EndpointProfile), [](kind:EtcdBackupPolicy), [](kind:TalosCluster) | CREATE, UPDATE | The changes that only an admin makes to kinds without an approval. |
 | `guard-lift` | HostOperation, HostClaim, [](kind:TalosNode), [](kind:Host) | CREATE, UPDATE | A guard lift or a decision names the person who sets it, and a reason. Only the operator removes `disk-not-wiped` without a named waiver. |
 | `requested-by` | TalosCluster, TalosNode, HostClaim, [](kind:BiosProfile), [](kind:FirmwareProfile), Host, TalosRollout | CREATE, UPDATE, DELETE | If `selfApproval` is `Forbidden`, a change that makes the operator propose work names the user who asked for it. |
 | `requested-by-patches` | ConfigMaps with `os.platform-kit.org/patch` | CREATE, UPDATE, DELETE | The rules of `requested-by` for the Talos config patches. |
 | `settings-guard` | The ConfigMap `pk-metal/hostoperation-approval` | CREATE, UPDATE, DELETE | Only the admin group changes or deletes the site settings. |
 
-All nine have these settings:
+All seven have these settings:
 
 <dl>
   <dt>`failurePolicy: Fail`</dt>
@@ -153,37 +149,25 @@ Cluster admin (`system:masters`) is not enough. The policy asks for the group `p
 A ClusterRoleBinding does not make you a member of a group. Your credential does. See [Get into the admin group](ref:rbac#get-into-the-admin-group).
 </Callout>
 
-## `etcdbackuppolicy-guard`
+## `admin-guard`
 
-A snapshot holds each Secret of the cluster. The age recipients decide who can decrypt it. The sink decides where the ciphertext goes. A person who adds a recipient can read each later snapshot. So these changes are an admin decision.
+Three kinds have no approval of their own. So some of their changes are an admin decision.
+
+- An [](kind:EndpointProfile): the operator applies it to each BMC that it selects. It makes an Administrator account, sets the NTP servers, and replaces the TLS identity, which restarts the BMC.
+- An [](kind:EtcdBackupPolicy): a snapshot holds each Secret of the cluster. The age recipients decide who can decrypt it. The sink decides where the ciphertext goes. A person who adds a recipient can read each later snapshot.
+- A [](kind:TalosCluster): `spec.credentials.ttl` sets how long the published admin kubeconfig and talosconfig are valid. Nobody can revoke a copy before it expires. The CRD allows 720 hours at most.
 
 | # | Rule | When | Message |
 | --- | --- | --- | --- |
-| 1 | Only an admin creates a backup policy, or changes `spec.encryption` or `spec.sink`. | CREATE, UPDATE | only an admin may create a backup policy or change its encryption or sink |
+| 1 | Only an admin creates an EndpointProfile or changes its `spec`. | CREATE, UPDATE | only an admin may create or change an EndpointProfile |
+| 2 | Only an admin creates a backup policy, or changes `spec.encryption` or `spec.sink`. | CREATE, UPDATE | only an admin may create a backup policy or change its encryption or sink |
+| 3 | Only an admin sets `spec.credentials.ttl` of a cluster to more than 24 hours. | CREATE, UPDATE, when the value changes | only an admin may set spec.credentials.ttl above 24h |
 
-- The sink includes the S3 endpoint, the bucket, `credentialsSecretRef` and `caSecretRef`.
-- `spec.interval`, `spec.retention` and `spec.suspend` need no admin.
+- Labels and annotations of a profile need no admin.
+- The sink includes the S3 endpoint, the bucket, `credentialsSecretRef` and `caSecretRef`. `spec.interval`, `spec.retention` and `spec.suspend` need no admin.
 - The CRD schema refuses an `http://` S3 endpoint unless [`allowPlainHTTP`](kind:EtcdBackupPolicy#spec.sink.s3.allowPlainHTTP) is `true`. Set it only for a store in a lab.
-
-## `endpointprofile-guard`
-
-An [](kind:EndpointProfile) has no approval of its own. The operator applies it to each BMC that it selects. It makes an Administrator account, sets the NTP servers, and replaces the TLS identity, which restarts the BMC.
-
-| # | Rule | When | Message |
-| --- | --- | --- | --- |
-| 1 | Only an admin creates a profile or changes its `spec`. | CREATE, UPDATE | only an admin may create or change an EndpointProfile |
-
-Labels and annotations of a profile need no admin.
-
-## `taloscluster-credentials-guard`
-
-`spec.credentials.ttl` of a [](kind:TalosCluster) sets how long the published admin kubeconfig and talosconfig are valid. Nobody can revoke a copy before it expires. The CRD allows 720 hours at most.
-
-| # | Rule | When | Message |
-| --- | --- | --- | --- |
-| 1 | Only an admin sets `spec.credentials.ttl` to more than 24 hours. | CREATE, UPDATE, when the value changes | only an admin may set spec.credentials.ttl above 24h |
-
-Each person who can patch a cluster can make the time shorter, or remove it. The on-call role can patch clusters.
+- Each person who can patch a cluster can make the time shorter, or remove it. The on-call role can patch clusters.
+- Each refusal says who you are, your groups, and where group membership comes from.
 
 ## `guard-lift`
 

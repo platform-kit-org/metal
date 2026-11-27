@@ -2091,7 +2091,7 @@ day2_backup_restore() {
 
   step "EtcdBackupPolicy $policy, a snapshot, and markers around it"
   # Only a member of the admin group creates a backup policy
-  # (metal/config/policy/etcdbackuppolicy-guard.yaml): act as one.
+  # (metal/config/policy/admin-guard.yaml): act as one.
   kubectl apply --server-side --as=lab-admin --as-group=pk-metal:admins \
     --as-group=system:authenticated -f - >&2 <<EOF
 apiVersion: os.platform-kit.org/v1alpha1

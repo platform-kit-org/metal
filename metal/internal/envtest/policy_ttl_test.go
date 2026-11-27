@@ -21,7 +21,7 @@ func TestCredentialTTLGuard(t *testing.T) {
 	ctx := t.Context()
 	cl := st.cl
 	installApprovalPolicy(t, ctx, cl, "op-sa")
-	installPolicy(t, ctx, cl, "taloscluster-credentials-guard.yaml")
+	installPolicy(t, ctx, cl, "admin-guard.yaml")
 	alice := st.userClient(t, "alice")
 	ada := st.userClient(t, "ada", adminGroup)
 

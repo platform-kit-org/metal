@@ -6,6 +6,9 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -804,4 +807,70 @@ func TestUnimplementedActionFailsBeforeAnythingRuns(t *testing.T) {
 	assert.Nil(t, got.Status.Baseline, "the operation never started")
 	assert.Empty(t, rec.powers, "nothing was done to the machine")
 	assert.Equal(t, metalv1alpha1.OperationFailed, got.Status.Phase)
+}
+
+// The grant of a config medium ends when the node checks in: from then on
+// the machine runs its config, and a URL that still serves its secrets is
+// only a risk.
+func TestCheckInRevokesTheGrants(t *testing.T) {
+	check := metalv1alpha1.HostOperationAction{AwaitCheckIn: &metalv1alpha1.AwaitCheckInAction{
+		NodeRef: metalv1alpha1.Reference{Name: "node-a"}, TimeoutSeconds: 600}}
+	op := preClearedOp(check)
+	node := &osv1alpha1.TalosNode{ObjectMeta: metav1.ObjectMeta{Name: "node-a"}}
+	r, _, rec := executorFor(t, "generic", op, node)
+	r.Media = startMedia(t)
+	handle := grantHandle(client.ObjectKeyFromObject(op))
+	creds, err := asset.MintCredentials()
+	require.NoError(t, err)
+	_, err = r.Media.Grants.Issue(handle, "node-a.iso", []byte("config"), time.Hour, creds)
+	require.NoError(t, err)
+
+	x := &exec{r: r, op: op, cl: rec, systemID: "1", host: &metalv1alpha1.Host{ObjectMeta: metav1.ObjectMeta{Name: "host-a"}}}
+	st, err := x.awaitCheckIn(t.Context(), check.AwaitCheckIn)
+	require.NoError(t, err)
+	require.False(t, st.done)
+	_, live := r.Media.Grants.Live(handle, "node-a.iso")
+	assert.True(t, live, "the grant lives while the machine boots")
+
+	node.Status.Conditions = []metav1.Condition{{Type: osv1alpha1.ConditionMachineReachable,
+		Status: metav1.ConditionTrue, Reason: osv1alpha1.ReasonMachineAPI, LastTransitionTime: metav1.Now()}}
+	require.NoError(t, r.Update(t.Context(), node))
+	st, err = x.awaitCheckIn(t.Context(), check.AwaitCheckIn)
+	require.NoError(t, err)
+	require.True(t, st.done)
+	_, live = r.Media.Grants.Live(handle, "node-a.iso")
+	assert.False(t, live, "the check-in ends the grant")
+}
+
+// slowFixture writes the generic fixture with the timing of a real BMC: a
+// reset takes a while to show in the power state, and every answer is late.
+func slowFixture(t *testing.T) string {
+	t.Helper()
+	raw, err := os.ReadFile("../bmc/sim/fixtures/generic.yaml")
+	require.NoError(t, err)
+	slow := strings.Replace(string(raw), "protocol:\n",
+		"protocol:\n  power_transition: 700ms\n  latency: 5ms\n", 1)
+	require.NotEqual(t, string(raw), slow)
+	path := filepath.Join(t.TempDir(), "slow.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(slow), 0o600))
+	return path
+}
+
+// On a BMC that reports PoweringOff and PoweringOn while a reset takes
+// effect, a power cycle is still one off and one on: a pass that finds the
+// machine on its way does not send the action again.
+func TestPowerCycleOnASlowBMC(t *testing.T) {
+	r, st, rec := executorFor(t, slowFixture(t),
+		preClearedOp(metalv1alpha1.HostOperationAction{PowerCycle: &metalv1alpha1.PowerCycleAction{}}))
+	require.NoError(t, st.SetPower(t.Context(), "1", bmc.ActionOn))
+	require.Eventually(t, func() bool {
+		p, err := st.Power(t.Context(), "1")
+		return err == nil && p == bmc.PowerOn
+	}, 5*time.Second, 50*time.Millisecond)
+	before := st.Resets("1")
+
+	op := runOp(t, r)
+	require.True(t, opSucceeded(op), "%+v", op.Status)
+	assert.Equal(t, []bmc.PowerAction{bmc.ActionForceOff, bmc.ActionOn}, rec.powers, "one off, one on")
+	assert.Equal(t, before+1, st.Resets("1"), "exactly one boot")
 }

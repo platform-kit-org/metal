@@ -440,9 +440,10 @@ func TestTopReadsOnChangeAndTick(t *testing.T) {
 	assert.True(t, m.reading)
 	m, cmd = feed(t, m, topDataMsg(src.Read(context.Background())))
 	assert.False(t, m.reading)
-	assert.NotNil(t, cmd, "the next tick is scheduled")
-	_, cmd = feed(t, m, topTickMsg{})
-	assert.NotNil(t, cmd, "a tick reads again")
+	assert.Nil(t, cmd, "a read schedules no tick: one tick loop runs, whatever starts a read")
+	m, cmd = feed(t, m, topTickMsg{})
+	assert.NotNil(t, cmd, "a tick reads again and schedules the next tick")
+	assert.True(t, m.reading)
 }
 
 // The program runs the model end to end: it reads, draws and quits on q.

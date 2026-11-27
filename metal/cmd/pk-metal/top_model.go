@@ -134,8 +134,10 @@ func newTopModel(src topSource, act topActions, changes <-chan struct{}, every t
 	return topModel{src: src, act: act, changes: changes, every: every}
 }
 
+// Init starts the one tick loop: each tick reads and schedules the next. A
+// read that a change or a key starts schedules no tick of its own.
 func (m topModel) Init() tea.Cmd {
-	return tea.Batch(m.read(), m.waitChange())
+	return tea.Batch(func() tea.Msg { return topTickMsg{} }, m.waitChange())
 }
 
 // read fetches a new topInput, unless a read is under way.
@@ -181,9 +183,9 @@ func (m topModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.sel >= len(m.data.Tiles) {
 			m.sel = max(0, len(m.data.Tiles)-1)
 		}
-		return m, m.tick()
+		return m, nil
 	case topTickMsg:
-		return m, m.read()
+		return m, tea.Batch(m.read(), m.tick())
 	case topChangeMsg:
 		return m, tea.Batch(m.read(), m.waitChange())
 	case topPlanMsg:

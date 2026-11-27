@@ -64,6 +64,7 @@ Give `--ack-etcd-risk` only when you accept the risk. A cluster with three contr
 
 <Callout type="note">
 Examine the TalosNode before you replace. If it names its install disk by serial number or its network link by MAC address, it fits one machine only. Change these values to the values of the new machine.
+If the old machine still answers, change the values after its release. An earlier change makes the operator propose a Config rollout for the old machine.
 </Callout>
 
 For hardware that still works, add the new node first and remove the old node after that. Then etcd always has enough members.

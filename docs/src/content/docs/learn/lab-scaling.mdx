@@ -240,6 +240,7 @@ You move `node-2` from the Host `pklab0002` to the free Host `pklab0005`, as you
    ```
 
 5. Change the disk and the network link of the [](kind:TalosNode) to the values of the new machine, as the admin.
+   The old machine still answers, so do this after its release. An earlier change makes the operator propose a Config rollout for the old machine.
    The API server sets the annotation `metal.platform-kit.org/requested-by` to `lab-admin`.
 
    ```sh

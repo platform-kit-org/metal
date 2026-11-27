@@ -134,6 +134,17 @@ Rows 5, 6 and 7 fail without a message. A wrong answer in row 6 lets an action s
 - A link to a kind, a command or a page uses its category and id: `[](kind:Host)`. A new page declares its id in the frontmatter (`xref`).
 - The reference tables for fields, flags, conditions and phases come from the code. Change the comment in the Go source, then run `mise run generate`.
 
+## Work with a coding agent
+
+The repository has files for coding agents. They are also useful to a person.
+
+| File | What it holds |
+| --- | --- |
+| `AGENTS.md` | The commands, the rules that a check now holds, and how to prove a fix. `CLAUDE.md` imports it. |
+| `.claude/skills/change-checklist` | What else to change for each kind of change. |
+| `.claude/skills/stale-cache-fix` | How to find a decision on a stale cache, fix it and test it. |
+| `.claude/settings.json` | Two hooks. One refuses an edit of a generated file. One formats a Go file after an edit. |
+
 ## Related
 
 - [](concept:architecture)

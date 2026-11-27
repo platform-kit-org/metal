@@ -19,7 +19,7 @@ Stop all new proposals for one machine while you work on its hardware.
 
 ## Before you start
 
-- If the machine runs a node, drain it first or reboot it out with [](howto:reboot-a-node). Maintenance mode does not drain.
+- If the machine runs a node, drain it first with `kubectl drain`. Maintenance mode does not drain.
 - You know the [](kind:Host) name. It is the serial number in lower case.
 
 ## Steps

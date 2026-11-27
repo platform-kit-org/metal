@@ -412,6 +412,11 @@ func renderReport(rep statusReport) string {
 		}
 	}
 
+	// A bound claim shows on its host row only, its hold too.
+	held := map[string]bool{}
+	for _, c := range rep.Claims {
+		held[nsName(c.Namespace, c.Name)] = c.OnHold
+	}
 	var rows [][]string
 	var notes []string
 	for _, h := range rep.Hosts {
@@ -423,7 +428,7 @@ func renderReport(rep statusReport) string {
 			}
 		}
 		rows = append(rows, []string{h.Name, orDash(h.Asset), orDash(h.Vendor), orDash(h.Phase), orDash(h.Claim), node,
-			fmt.Sprintf("%d/%d", h.PathsUp, h.PathsTotal), h.BlockedOn})
+			fmt.Sprintf("%d/%d", h.PathsUp, h.PathsTotal), onHold(h.BlockedOn, held[h.Claim])})
 		if h.NeedsAttention {
 			notes = append(notes, note(h.Name, h.Message, h.BlockedOn))
 		}
@@ -469,11 +474,7 @@ func renderReport(rep statusReport) string {
 			continue
 		}
 		ref := nsName(c.Namespace, c.Name)
-		blocked := c.BlockedOn
-		if c.OnHold {
-			blocked = strings.TrimSpace(blocked + " (on hold)")
-		}
-		rows = append(rows, []string{ref, c.Asset, orDash(c.Phase), blocked})
+		rows = append(rows, []string{ref, c.Asset, orDash(c.Phase), onHold(c.BlockedOn, c.OnHold)})
 		if c.NeedsAttention {
 			notes = append(notes, note(ref, c.Message, c.BlockedOn))
 		}
@@ -484,6 +485,14 @@ func renderReport(rep statusReport) string {
 	renderClusters(rep, section)
 	renderRollouts(rep, section)
 	return sb.String()
+}
+
+// onHold is the BLOCKED column of a row whose claim may be on hold.
+func onHold(blocked string, held bool) string {
+	if held {
+		return strings.TrimSpace(blocked + " (on hold)")
+	}
+	return blocked
 }
 
 // note is the "why" line under a table: the controller's sentence, or the bare

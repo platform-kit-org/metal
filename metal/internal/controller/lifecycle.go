@@ -236,9 +236,8 @@ func (r *HostClaimReconciler) removeNode(ctx context.Context, claim *metalv1alph
 	ex := meta.FindStatusCondition(op.Status.Conditions, metalv1alpha1.ConditionExecuted)
 	switch {
 	case op.AwaitsApproval():
-		set(metalv1alpha1.ReasonRemovingNode, fmt.Sprintf(
-			"TalosNode %s is being deleted: its removal %s. To go ahead: pk-metal approve %s. To keep it for now: pk-metal hold %s/%s",
-			node.Name, r.describeRelease(op), ref, claim.Namespace, claim.Name))
+		set(metalv1alpha1.ReasonRemovingNode, fmt.Sprintf("TalosNode %s is being deleted: its removal %s. To go ahead: pk-metal approve %s",
+			node.Name, r.describeRelease(op), ref))
 	case ex != nil && ex.Status == metav1.ConditionFalse:
 		set(metalv1alpha1.ReasonOperationFailed, fmt.Sprintf("removal operation %s of TalosNode %s failed: %s. To try again: pk-metal retry %s",
 			ref, node.Name, ex.Message, ref))

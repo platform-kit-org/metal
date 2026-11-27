@@ -307,3 +307,17 @@ func TestStatusEtcdTurnNeedsNoPerson(t *testing.T) {
 		assert.Equal(t, tc.attention, rep.Hosts[0].NeedsAttention, tc.reason)
 	}
 }
+
+// TestStatusShowsAHeldBoundClaim: a bound claim shows on its host row only,
+// so the hold shows there.
+func TestStatusShowsAHeldBoundClaim(t *testing.T) {
+	hosts, eps, claims, _, nodes := rack()
+	claim := claims[0].DeepCopy()
+	claim.Annotations = map[string]string{holdAnnotation: "disk swap"}
+	out := renderReport(buildReport(hosts, eps, []metalv1alpha1.HostClaim{*claim}, nil, nodes))
+	assert.Regexp(t, `(?m)^simhw2288v5000391\s.*\sOperationFailed \(on hold\)$`, out)
+
+	claim.Status.BlockedOn = ""
+	out = renderReport(buildReport(hosts, eps, []metalv1alpha1.HostClaim{*claim}, nil, nodes))
+	assert.Regexp(t, `(?m)^simhw2288v5000391\s.*\s1/2\s+\(on hold\)$`, out, "a handed-off claim on hold")
+}

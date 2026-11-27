@@ -150,7 +150,7 @@ kubectl -n default get hostclaim node-2 -o wide
 
 | Annotation | Effect | Set it with |
 | --- | --- | --- |
-| `metal.platform-kit.org/hold` | The operator proposes nothing for the claim. It removes the proposals that have no approval. | [](cli:hold) |
+| `metal.platform-kit.org/hold` | The operator proposes no install, reinstall, release or node removal for the claim. It removes the install and release proposals that have no approval. | [](cli:hold) |
 | `metal.platform-kit.org/reinstall` | The operator proposes a wipe and a new install on the same machine. | [](cli:reinstall) |
 | `metal.platform-kit.org/ack-etcd-risk` | You accept the risk for etcd when a control plane goes. | `--ack-etcd-risk` |
 

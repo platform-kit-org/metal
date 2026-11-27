@@ -9,6 +9,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
@@ -42,6 +43,37 @@ type topInput struct {
 	Consoles map[string][]string
 	// Loading names what is not read yet (a watch that has not synced).
 	Loading []string
+}
+
+// kindList is one kind that status and top read: its name, an object of it
+// for a watch, and the list a read fills. A cluster may lack an optional
+// kind: the OS kinds may not be installed.
+type kindList struct {
+	name     string
+	obj      client.Object
+	list     client.ObjectList
+	optional bool
+}
+
+// kinds are the kinds of the input, each with an empty list to read into;
+// fill copies what was read into the input.
+func (in *topInput) kinds() (kinds []kindList, fill func()) {
+	hosts, eps := &metalv1alpha1.HostList{}, &metalv1alpha1.ManagementEndpointList{}
+	claims, ops := &metalv1alpha1.HostClaimList{}, &metalv1alpha1.HostOperationList{}
+	nodes, clusters, rollouts := &osv1alpha1.TalosNodeList{}, &osv1alpha1.TalosClusterList{}, &osv1alpha1.TalosRolloutList{}
+	kinds = []kindList{
+		{"Host", &metalv1alpha1.Host{}, hosts, false},
+		{"ManagementEndpoint", &metalv1alpha1.ManagementEndpoint{}, eps, false},
+		{"HostClaim", &metalv1alpha1.HostClaim{}, claims, false},
+		{"HostOperation", &metalv1alpha1.HostOperation{}, ops, false},
+		{"TalosNode", &osv1alpha1.TalosNode{}, nodes, true},
+		{"TalosCluster", &osv1alpha1.TalosCluster{}, clusters, true},
+		{"TalosRollout", &osv1alpha1.TalosRollout{}, rollouts, true},
+	}
+	return kinds, func() {
+		in.Hosts, in.Endpoints, in.Claims, in.Ops = hosts.Items, eps.Items, claims.Items, ops.Items
+		in.Nodes, in.Clusters, in.Rollouts = nodes.Items, clusters.Items, rollouts.Items
+	}
 }
 
 // state is how a dashboard fact reads at a glance.
@@ -149,7 +181,7 @@ type opLine struct {
 // buildTop joins the cluster's objects and the fleet's machines into tiles.
 // Hosts and fleet machines are matched by serial, then by BMC address.
 func buildTop(in topInput) topData {
-	rep := buildReport(in.Hosts, in.Endpoints, in.Claims, in.Ops, in.Nodes)
+	rep := buildStatus(in, nil)
 	d := topData{Loading: in.Loading}
 
 	talosReady := map[string]*metav1.Condition{}
@@ -182,9 +214,7 @@ func buildTop(in topInput) topData {
 	d.NodeLine = fmt.Sprintf("TalosNodes Ready %d/%d", ready, len(in.Nodes))
 
 	// Rollouts, read as pk-metal status reads them.
-	var ros statusReport
-	addRollouts(&ros, in.Rollouts)
-	for _, r := range ros.Rollouts {
+	for _, r := range rep.Rollouts {
 		if r.State == osv1alpha1.ReasonRolloutSucceeded || r.State == osv1alpha1.ReasonNothingToDo {
 			continue
 		}

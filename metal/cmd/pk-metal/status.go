@@ -113,36 +113,17 @@ func statusCmd(args []string) {
 
 // runStatus reads the cluster, prints the report and returns the exit code.
 func runStatus(ctx context.Context, cl client.Client, format string, w io.Writer) (int, error) {
-	hosts := &metalv1alpha1.HostList{}
-	eps := &metalv1alpha1.ManagementEndpointList{}
-	claims := &metalv1alpha1.HostClaimList{}
-	ops := &metalv1alpha1.HostOperationList{}
-	for _, list := range []client.ObjectList{hosts, eps, claims, ops} {
-		if err := cl.List(ctx, list); err != nil {
-			return exitError, fmt.Errorf("read the cluster: %w", err)
-		}
-	}
-	// The OS kinds fill the NODE column and the CLUSTER and NODE tables: a
-	// cluster without them installed still has a status.
-	nodes := &osv1alpha1.TalosNodeList{}
-	clusters := &osv1alpha1.TalosClusterList{}
-	for _, list := range []client.ObjectList{nodes, clusters} {
-		if err := cl.List(ctx, list); err != nil && !meta.IsNoMatchError(err) {
-			return exitError, fmt.Errorf("read the cluster: %w", err)
-		}
-	}
-	// The BACKUP column comes from the backup policies.
+	var in topInput
+	kinds, fill := in.kinds()
+	// The BACKUP column comes from the backup policies, which top does not show.
 	policies := &osv1alpha1.EtcdBackupPolicyList{}
-	if err := cl.List(ctx, policies); err != nil && !meta.IsNoMatchError(err) {
-		return exitError, fmt.Errorf("read the cluster: %w", err)
+	for _, k := range append(kinds, kindList{name: "EtcdBackupPolicy", list: policies, optional: true}) {
+		if err := cl.List(ctx, k.list); err != nil && (!k.optional || !meta.IsNoMatchError(err)) {
+			return exitError, fmt.Errorf("read the cluster: %w", err)
+		}
 	}
-	rollouts := &osv1alpha1.TalosRolloutList{}
-	if err := cl.List(ctx, rollouts); err != nil && !meta.IsNoMatchError(err) {
-		return exitError, fmt.Errorf("read the cluster: %w", err)
-	}
-	rep := buildReport(hosts.Items, eps.Items, claims.Items, ops.Items, nodes.Items)
-	addClusters(&rep, clusters.Items, nodes.Items, hosts.Items, policies.Items)
-	addRollouts(&rep, rollouts.Items)
+	fill()
+	rep := buildStatus(in, policies.Items)
 	switch format {
 	case "json":
 		enc := json.NewEncoder(w)
@@ -256,27 +237,34 @@ func explain(conds []metav1.Condition, blockedOn string, failTypes ...string) st
 
 func nsName(namespace, name string) string { return namespace + "/" + name }
 
-// buildReport is the pure part of status: objects in, report out, sorted by
-// name so that two runs on the same cluster print the same thing.
-func buildReport(hosts []metalv1alpha1.Host, eps []metalv1alpha1.ManagementEndpoint, claims []metalv1alpha1.HostClaim,
-	ops []metalv1alpha1.HostOperation, nodes []osv1alpha1.TalosNode) statusReport {
+// buildStatus is the pure part of status and top: objects in, report out,
+// sorted by name so that two runs on the same cluster print the same thing.
+// top reads no backup policies.
+func buildStatus(in topInput, policies []osv1alpha1.EtcdBackupPolicy) statusReport {
 	rep := statusReport{Version: 1, Hosts: []hostStatus{}, Operations: []opStatus{}, Endpoints: []epStatus{}, Claims: []claimStatus{},
 		Clusters: []clusterStatus{}, Nodes: []talosNodeStatus{}, Rollouts: []rolloutStatus{}}
+	addMachines(&rep, in)
+	addClusters(&rep, in.Clusters, in.Nodes, in.Hosts, policies)
+	addRollouts(&rep, in.Rollouts)
+	return rep
+}
 
+// addMachines fills the HOST, OPERATION, ENDPOINT and CLAIM rows.
+func addMachines(rep *statusReport, in topInput) {
 	epByName := map[string]*metalv1alpha1.ManagementEndpoint{}
-	for i := range eps {
-		epByName[eps[i].Name] = &eps[i]
+	for i := range in.Endpoints {
+		epByName[in.Endpoints[i].Name] = &in.Endpoints[i]
 	}
 	claimByRef := map[string]*metalv1alpha1.HostClaim{}
-	for i := range claims {
-		claimByRef[nsName(claims[i].Namespace, claims[i].Name)] = &claims[i]
+	for i := range in.Claims {
+		claimByRef[nsName(in.Claims[i].Namespace, in.Claims[i].Name)] = &in.Claims[i]
 	}
 	nodeByName := map[string]*osv1alpha1.TalosNode{}
-	for i := range nodes {
-		nodeByName[nodes[i].Name] = &nodes[i]
+	for i := range in.Nodes {
+		nodeByName[in.Nodes[i].Name] = &in.Nodes[i]
 	}
 
-	for _, h := range hosts {
+	for _, h := range in.Hosts {
 		row := hostStatus{Name: h.Name, Phase: string(h.Status.Phase), BlockedOn: h.Status.BlockedOn,
 			PathsTotal: len(h.Status.ManagedBy)}
 		if h.Status.Identity != nil {
@@ -325,7 +313,7 @@ func buildReport(hosts []metalv1alpha1.Host, eps []metalv1alpha1.ManagementEndpo
 		rep.Hosts = append(rep.Hosts, row)
 	}
 
-	for _, op := range ops {
+	for _, op := range in.Ops {
 		row := opStatus{Namespace: op.Namespace, Name: op.Name, Host: op.Spec.HostRef.Name,
 			Phase: string(op.Status.Phase), ApprovedBy: op.Spec.Approval.ApprovedBy, BlockedOn: op.Status.BlockedOn}
 		row.Message = explain(op.Status.Conditions, op.Status.BlockedOn, metalv1alpha1.ConditionExecuted)
@@ -337,7 +325,7 @@ func buildReport(hosts []metalv1alpha1.Host, eps []metalv1alpha1.ManagementEndpo
 		rep.Operations = append(rep.Operations, row)
 	}
 
-	for _, ep := range eps {
+	for _, ep := range in.Endpoints {
 		row := epStatus{Name: ep.Name, Asset: ep.Spec.AssetRef.Name, Vendor: ep.Status.Vendor,
 			Phase: string(ep.Status.Phase), Address: ep.Spec.Address, BlockedOn: ep.Status.BlockedOn}
 		row.Message = explain(ep.Status.Conditions, ep.Status.BlockedOn,
@@ -347,7 +335,7 @@ func buildReport(hosts []metalv1alpha1.Host, eps []metalv1alpha1.ManagementEndpo
 		rep.Endpoints = append(rep.Endpoints, row)
 	}
 
-	for _, c := range claims {
+	for _, c := range in.Claims {
 		row := claimStatus{Namespace: c.Namespace, Name: c.Name, Asset: c.Spec.AssetRef.Name,
 			Phase: string(c.Status.Phase), BlockedOn: c.Status.BlockedOn}
 		if c.Status.HostRef != nil {
@@ -381,7 +369,6 @@ func buildReport(hosts []metalv1alpha1.Host, eps []metalv1alpha1.ManagementEndpo
 	for _, r := range rep.Claims {
 		attention(r.NeedsAttention)
 	}
-	return rep
 }
 
 // renderReport prints the tables: hosts first (the machines), unfinished

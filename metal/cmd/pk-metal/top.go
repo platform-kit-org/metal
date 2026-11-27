@@ -29,8 +29,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
-	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
-	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
 	"github.com/dennisklein/platform-kit/metal/internal/bmc/sim/fleet"
 )
 
@@ -146,20 +144,6 @@ type watchSource struct {
 	http      *http.Client
 }
 
-// topKinds are the kinds top watches in the management cluster.
-var topKinds = []struct {
-	name string
-	obj  client.Object
-}{
-	{"Host", &metalv1alpha1.Host{}},
-	{"ManagementEndpoint", &metalv1alpha1.ManagementEndpoint{}},
-	{"HostClaim", &metalv1alpha1.HostClaim{}},
-	{"HostOperation", &metalv1alpha1.HostOperation{}},
-	{"TalosNode", &osv1alpha1.TalosNode{}},
-	{"TalosCluster", &osv1alpha1.TalosCluster{}},
-	{"TalosRollout", &osv1alpha1.TalosRollout{}},
-}
-
 func newWatchSource(ctx context.Context, cfg *rest.Config, workloadKubeconfig, fleetURL string,
 	changes chan<- struct{}) (*watchSource, error) {
 	notify := toolscache.ResourceEventHandlerFuncs{
@@ -173,7 +157,8 @@ func newWatchSource(ctx context.Context, cfg *rest.Config, workloadKubeconfig, f
 	}
 	s := &watchSource{mgmt: mgmt, informers: map[string]cache.Informer{}, fleetURL: fleetURL,
 		http: &http.Client{Timeout: 2 * time.Second}}
-	for _, k := range topKinds {
+	kinds, _ := (&topInput{}).kinds()
+	for _, k := range kinds {
 		inf, err := mgmt.GetInformer(ctx, k.obj, cache.BlockUntilSynced(false))
 		if meta.IsNoMatchError(err) {
 			continue
@@ -274,35 +259,13 @@ func poke(ch chan<- struct{}) {
 
 func (s *watchSource) Read(ctx context.Context) topInput {
 	var in topInput
-	lists := map[string]client.ObjectList{
-		"Host":               &metalv1alpha1.HostList{},
-		"ManagementEndpoint": &metalv1alpha1.ManagementEndpointList{},
-		"HostClaim":          &metalv1alpha1.HostClaimList{},
-		"HostOperation":      &metalv1alpha1.HostOperationList{},
-		"TalosNode":          &osv1alpha1.TalosNodeList{},
-		"TalosCluster":       &osv1alpha1.TalosClusterList{},
-		"TalosRollout":       &osv1alpha1.TalosRolloutList{},
-	}
-	for _, k := range topKinds {
-		inf, ok := s.informers[k.name]
-		if !ok {
-			continue
-		}
-		if !inf.HasSynced() {
-			in.Loading = append(in.Loading, k.name)
-			continue
-		}
-		if err := s.mgmt.List(ctx, lists[k.name]); err != nil {
+	kinds, fill := in.kinds()
+	for _, k := range kinds {
+		if inf, ok := s.informers[k.name]; ok && (!inf.HasSynced() || s.mgmt.List(ctx, k.list) != nil) {
 			in.Loading = append(in.Loading, k.name)
 		}
 	}
-	in.Hosts = lists["Host"].(*metalv1alpha1.HostList).Items
-	in.Endpoints = lists["ManagementEndpoint"].(*metalv1alpha1.ManagementEndpointList).Items
-	in.Claims = lists["HostClaim"].(*metalv1alpha1.HostClaimList).Items
-	in.Ops = lists["HostOperation"].(*metalv1alpha1.HostOperationList).Items
-	in.Nodes = lists["TalosNode"].(*osv1alpha1.TalosNodeList).Items
-	in.Clusters = lists["TalosCluster"].(*osv1alpha1.TalosClusterList).Items
-	in.Rollouts = lists["TalosRollout"].(*osv1alpha1.TalosRolloutList).Items
+	fill()
 
 	if s.workload != nil {
 		c, inf := s.workload.get()

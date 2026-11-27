@@ -26,8 +26,7 @@ import (
 // rack is a small cluster: one healthy host, one host whose install failed,
 // two BMCs (one dead), a bound claim, a claim that lost the race for its
 // machine, and operations in every phase status shows differently.
-func rack() ([]metalv1alpha1.Host, []metalv1alpha1.ManagementEndpoint, []metalv1alpha1.HostClaim,
-	[]metalv1alpha1.HostOperation, []osv1alpha1.TalosNode) {
+func rack() topInput {
 	hosts := []metalv1alpha1.Host{
 		{
 			ObjectMeta: metav1.ObjectMeta{Name: "simx12b000001"},
@@ -137,12 +136,12 @@ func rack() ([]metalv1alpha1.Host, []metalv1alpha1.ManagementEndpoint, []metalv1
 		ObjectMeta: metav1.ObjectMeta{Name: "node-2"},
 		Spec:       osv1alpha1.TalosNodeSpec{Role: osv1alpha1.RoleWorker, Address: "10.0.0.12"},
 	}}
-	return hosts, eps, claims, ops, nodes
+	return topInput{Hosts: hosts, Endpoints: eps, Claims: claims, Ops: ops, Nodes: nodes}
 }
 
 func TestRenderStatus(t *testing.T) {
-	hosts, eps, claims, ops, nodes := rack()
-	rep := buildReport(hosts, eps, claims, ops, nodes)
+	in := rack()
+	rep := buildStatus(in, nil)
 	out := renderReport(rep)
 
 	// Column content, not tabwriter's widths, is the contract: assert row shapes.
@@ -173,15 +172,15 @@ func TestRenderStatus(t *testing.T) {
 	assert.True(t, rep.NeedsAttention)
 
 	// No unbound claims → no claims section; no unfinished ops → no operations section.
-	out = renderReport(buildReport(hosts, eps, claims[:1], ops[1:2], nodes))
+	in.Claims, in.Ops = in.Claims[:1], in.Ops[1:2]
+	out = renderReport(buildStatus(in, nil))
 	assert.NotContains(t, out, "\nCLAIM")
 	assert.NotContains(t, out, "OPERATION")
 }
 
 // TestStatusJSONShape pins the documented -o json keys: scripts depend on them.
 func TestStatusJSONShape(t *testing.T) {
-	hosts, eps, claims, ops, nodes := rack()
-	b, err := json.Marshal(buildReport(hosts, eps, claims, ops, nodes))
+	b, err := json.Marshal(buildStatus(rack(), nil))
 	require.NoError(t, err)
 
 	var doc map[string]any
@@ -216,35 +215,35 @@ func TestStatusJSONShape(t *testing.T) {
 	assert.Len(t, doc["operations"], 3, "json lists every operation, succeeded ones too")
 
 	// An empty cluster still has every list, as [] and not null.
-	b, err = json.Marshal(buildReport(nil, nil, nil, nil, nil))
+	b, err = json.Marshal(buildStatus(topInput{}, nil))
 	require.NoError(t, err)
 	assert.JSONEq(t, `{"version":1,"needsAttention":false,"hosts":[],"operations":[],"endpoints":[],"claims":[],"clusters":[],"nodes":[],"rollouts":[]}`, string(b))
 }
 
 func TestStatusExitCodes(t *testing.T) {
 	ctx := context.Background()
-	hosts, eps, claims, ops, nodes := rack()
+	in := rack()
 
-	healthy := fakeClient(&hosts[0], &eps[2])
+	healthy := fakeClient(&in.Hosts[0], &in.Endpoints[2])
 	var out bytes.Buffer
 	code, err := runStatus(ctx, healthy, "table", &out)
 	require.NoError(t, err)
 	assert.Equal(t, exitOK, code, out.String())
 
 	var objs []client.Object
-	for i := range hosts {
-		objs = append(objs, &hosts[i])
+	for i := range in.Hosts {
+		objs = append(objs, &in.Hosts[i])
 	}
-	for i := range eps {
-		objs = append(objs, &eps[i])
+	for i := range in.Endpoints {
+		objs = append(objs, &in.Endpoints[i])
 	}
-	for i := range claims {
-		objs = append(objs, &claims[i])
+	for i := range in.Claims {
+		objs = append(objs, &in.Claims[i])
 	}
-	for i := range ops {
-		objs = append(objs, &ops[i])
+	for i := range in.Ops {
+		objs = append(objs, &in.Ops[i])
 	}
-	objs = append(objs, &nodes[0])
+	objs = append(objs, &in.Nodes[0])
 	out.Reset()
 	code, err = runStatus(ctx, fakeClient(objs...), "json", &out)
 	require.NoError(t, err)
@@ -254,7 +253,7 @@ func TestStatusExitCodes(t *testing.T) {
 	assert.True(t, rep.NeedsAttention)
 
 	// Waiting for approval alone needs a person too.
-	code, err = runStatus(ctx, fakeClient(&hosts[0], &eps[2], &ops[0]), "table", &out)
+	code, err = runStatus(ctx, fakeClient(&in.Hosts[0], &in.Endpoints[2], &in.Ops[0]), "table", &out)
 	require.NoError(t, err)
 	assert.Equal(t, exitAttention, code)
 
@@ -289,8 +288,8 @@ func TestStatusFailsOnAKindItMayNotRead(t *testing.T) {
 // TestStatusWithoutOSKinds: a cluster without the TalosNode kind installed
 // still has a status; only the NODE address stays empty.
 func TestStatusWithoutOSKinds(t *testing.T) {
-	hosts, eps, _, _, _ := rack()
-	cl := fake.NewClientBuilder().WithScheme(newScheme()).WithObjects(&hosts[0], &eps[2]).
+	in := rack()
+	cl := fake.NewClientBuilder().WithScheme(newScheme()).WithObjects(&in.Hosts[0], &in.Endpoints[2]).
 		WithInterceptorFuncs(interceptor.Funcs{
 			List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
 				if _, ok := list.(*osv1alpha1.TalosNodeList); ok {

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -71,4 +72,30 @@ func TestTaskCompletedCriticalIsAFailure(t *testing.T) {
 			bmctest.Run(t, connect(t, serve(t, f).URL, f), f, false)
 		})
 	}
+}
+
+// A 202 with no Location header whose body is no Task names no task
+// monitor: the client does not poll what the body names.
+func TestAcceptedBodyThatIsNoTaskIsNotPolled(t *testing.T) {
+	f, err := sim.LoadFixture("generic")
+	require.NoError(t, err)
+	next := sim.NewServer(sim.NewState(f))
+	const other = "/redfish/v1/NotATask"
+	var polled atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/Actions/ComputerSystem.Reset"):
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = io.WriteString(w, `{"@odata.id":"`+other+`","@odata.type":"#Message.v1_1_1.Message"}`)
+		case r.URL.Path == other:
+			polled.Add(1)
+			http.NotFound(w, r)
+		default:
+			next.ServeHTTP(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	require.NoError(t, connect(t, srv.URL, f).SetPower(t.Context(), f.Systems[0].ID, bmc.ActionForceOff))
+	assert.Zero(t, polled.Load(), "the body names no task monitor")
 }

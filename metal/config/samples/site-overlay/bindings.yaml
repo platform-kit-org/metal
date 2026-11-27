@@ -6,9 +6,9 @@
 #
 # The admin group. The admission policies ask for it by name (ConfigMap
 # hostoperation-approval, key adminGroup, default pk-metal:admins): only its
-# members can make a claim that installs an OS, set automatic approval, or
-# move a claim to a different machine. Membership passes the policies; these
-# bindings give the members the RBAC rights for the objects. The roles
+# members pass the admin checks of the admission policies. Membership passes
+# the policies; these bindings give the members the RBAC rights for the
+# objects. The roles
 # pk-metal-admin come with the base: every pk-metal kind and the Secrets of
 # pk-metal, but no impersonation. Do not bind cluster-admin instead: a member
 # who can impersonate can approve in the name of another person.

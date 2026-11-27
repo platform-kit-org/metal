@@ -149,6 +149,8 @@ subjects:
 | Ask for an etcd snapshot now | A holder of `pk-metal-backup`. | RBAC |
 | Create a backup policy, or change its recipients or sink | A member of the admin group. | `etcdbackuppolicy-guard` |
 | Create or change an EndpointProfile | A member of the admin group. | `endpointprofile-guard` |
+| Set `spec.credentials.ttl` of a cluster above 24 hours | A member of the admin group. | `taloscluster-credentials-guard` |
+| Change or delete the site settings (`selfApproval`, `adminGroup`, `retention`) | A member of the admin group. | `settings-guard` |
 | Restore etcd | An approved [](act:EtcdRecover) operation. | The same approval gate |
 
 ### What the runbooks do

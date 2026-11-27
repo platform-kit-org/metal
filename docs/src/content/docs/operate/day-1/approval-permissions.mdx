@@ -39,7 +39,7 @@ Give each person the rights for their work. Choose if a person can approve a cha
 | Operator | Proposes most operations and rollouts. It never approves. | The service account `pk-metal/pk-metal-manager`. The base binds it. |
 | Proposer | Proposes an operation or a rollout: [](cli:reboot), `pk-metal restore plan --propose`, or a [](kind:TalosRollout) of kind `Reboot`. | `create` on `hostoperations` or `talosrollouts`. `pk-metal-admin` has it. For proposers outside the admin group, write a ClusterRole. |
 | Approver | Approves with [](cli:approve) and [](cli:rollout). Also aborts, pauses, resumes, and lifts guards. | The ClusterRole `pk-metal-approver`. `bindings.yaml` binds it to a group. |
-| Admin group | Names the TalosNode of a claim. Sets automatic approval. Moves a claim to a different machine. Changes backup recipients and EndpointProfiles. Creates operations that need no approval. | The group in the ConfigMap key `adminGroup`, default `pk-metal:admins`. The membership comes from the login, not from a binding. |
+| Admin group | Makes the decisions that no approval covers. See [Who may do what](ref:rbac#who-may-do-what). | The group in the ConfigMap key `adminGroup`, default `pk-metal:admins`. The membership comes from the login, not from a binding. |
 | On call | Follows the [runbooks](rb:index): reads each kind, deletes failed operations, holds claims. It cannot approve. | The ClusterRole and the Role `pk-metal-oncall`. `bindings.yaml` binds both to a group. |
 | GitOps service account | Applies the kinds that you keep in git. | Its own binding. Never give it `pk-metal-approver`. See [](concept:gitops). |
 

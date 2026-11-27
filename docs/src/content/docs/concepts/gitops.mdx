@@ -8,6 +8,9 @@ sidebar:
 sources:
   - /repo/metal/config/samples/kustomization.yaml
   - /repo/metal/config/policy/hostclaim-provisioning.yaml
+  - /repo/metal/config/policy/endpointprofile-guard.yaml
+  - /repo/metal/config/policy/etcdbackuppolicy-guard.yaml
+  - /repo/metal/config/policy/taloscluster-credentials-guard.yaml
   - /repo/metal/config/policy/hostoperation-approval.yaml
   - /repo/metal/config/policy/talosrollout-approval.yaml
   - /repo/metal/config/policy/requested-by.yaml
@@ -31,11 +34,12 @@ The project has no test with a GitOps tool. The rules on this page come from the
 | Kind | In git | Reason |
 | --- | --- | --- |
 | [](kind:Asset) | Yes | Your record of a machine. |
-| [](kind:EndpointProfile), [](kind:BiosProfile), [](kind:FirmwareProfile) | Yes | Your configuration for sets of machines. |
+| [](kind:BiosProfile), [](kind:FirmwareProfile) | Yes | Your configuration for sets of machines. |
+| [](kind:EndpointProfile) | Yes, an admin applies it | Your BMC settings. See [The identity that applies](#the-identity-that-applies). |
 | [](kind:MaintenanceWindow) | Yes | Your schedule. |
 | [](kind:TalosCluster), [](kind:TalosNode) | Yes | The cluster that you want. |
 | [](kind:HostClaim) | Yes, with care | It gives a machine to a node. To delete it is to release the machine. See [What a deletion does](#what-a-deletion-does). |
-| [](kind:EtcdBackupPolicy) | Yes | Your backup schedule. |
+| [](kind:EtcdBackupPolicy) | Yes, an admin applies it | Your backup schedule. See [The identity that applies](#the-identity-that-applies). |
 | [](kind:BootAsset) | Only the ones that you write | The operator makes the others. |
 | The site overlay of the operator | Yes | The image, the flags, the ledger. See [](howto:install-operator). |
 | Secrets that you make: BMC credentials, the Talos secrets bundle, backup credentials | Only encrypted | They are keys. |
@@ -66,7 +70,7 @@ The API server compares the name with the login. See [](concept:approval).
 4. A person reads the plan and approves it with [](cli:approve) or [](cli:rollout).
 
 - Do not give the GitOps tool the role `pk-metal-approver`. Its approval would not be the decision of a person. `selfApproval` does not change this. See [](howto:approval-permissions).
-- A merge can be enough only where the kind says so: an [](kind:EndpointProfile) needs no approval, and a claim with `provisioning.approval: Automatic` installs without one.
+- A merge can be enough only where the kind says so: a claim with `provisioning.approval: Automatic` installs without an approval.
 
 ## The requester in git
 
@@ -78,18 +82,20 @@ Each request that makes the operator propose work names its user in the annotati
 
 ## The identity that applies
 
-The admission policy `hostclaim-provisioning` asks for the admin group in three cases:
+A GitOps tool applies with a service account. That account is not in the admin group, so the API server refuses these objects from it:
 
-- A claim names a TalosNode (`spec.os`).
-- A claim sets `provisioning.approval: Automatic`.
-- A claim moves to a different machine.
+- A claim that names a TalosNode (`spec.os`), sets `provisioning.approval: Automatic`, or moves to a different machine.
+- Each create or change of the spec of an [](kind:EndpointProfile).
+- The create of an [](kind:EtcdBackupPolicy), and a change of its encryption or sink.
+- A TalosCluster with `spec.credentials.ttl` above 24 hours.
 
-A GitOps tool applies with a service account. That account is not in the admin group, so the API server refuses these claims.
+[Who may do what](ref:rbac#who-may-do-what) has the full list.
+
 The project has not yet decided which setup it recommends. The policies let you use these options today:
 
 | Option | Effect | Cost |
 | --- | --- | --- |
-| Keep claims with `spec.os` out of the tool. An admin applies them by hand from git. | The tool manages all other kinds. | One manual step for each new machine. |
+| Keep these objects out of the tool. An admin applies them by hand from git. | The tool never needs the admin group. | One manual step for each new machine, and for each change of a profile or a backup policy. |
 | Let the tool act as a user in the admin group, for example with impersonation. | The tool applies all kinds. | Each person who can merge decides which OS a machine gets. The approver of the install is then the only other check. |
 | Set `adminGroup` in the ConfigMap `hostoperation-approval` to a group that contains the service account. | The same | The same. A member of the admin group can also make operations that need no approval. Do not do this without a review of [](ref:threat-model). |
 
@@ -124,7 +130,7 @@ Some commands change the spec of an object that you keep in git. With a GitOps t
 | --- | --- | --- |
 | [](cli:upgrade) | `spec.talosVersion` or `spec.kubernetesVersion` of the TalosCluster | Change the field in git. Use the command only to read the plan. |
 | [](cli:scale) | Creates and deletes HostClaims | Add or remove the claim files in git. Run the command without `--apply` to see which claims it would change. |
-| [](cli:replace) | `spec.assetRef` of a HostClaim | Change the field in git. |
+| [](cli:replace) | `spec.assetRef` of a HostClaim | An admin changes the field in git. |
 | [](cli:hold), [](cli:unhold), [](cli:reinstall) | An annotation on a HostClaim | The command is enough if your tool does not remove annotations that are not in git. |
 | [](cli:approve), [](cli:rollout), [](cli:abort), [](cli:retry) | Objects of the operator | No conflict. These objects are not in git. |
 

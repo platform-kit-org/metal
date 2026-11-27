@@ -1256,6 +1256,18 @@ terms:
       A person who can approve operations and rollouts. Bind the ClusterRole
       pk-metal-approver to these persons.
 
+  - id: admin-group
+    term: admin group
+    kind: noun
+    domain: safety
+    forms: [admin group]
+    see: ref:rbac#get-into-the-admin-group
+    related: [approver, admission-policy]
+    def: >-
+      The group whose members make the decisions that no approval covers. A
+      site setting names it, pk-metal:admins by default. Membership comes
+      from your credential, not from a RoleBinding.
+
   - id: plan-hash
     term: plan hash
     kind: noun

@@ -3,6 +3,8 @@ package main
 import (
 	"cmp"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
@@ -379,21 +381,33 @@ func getCiphertext(ctx context.Context, cl client.Client, name, out string, w io
 		return err
 	}
 	defer func() { _ = rc.Close() }()
+	return saveCiphertext(s, rc, out, w)
+}
+
+// saveCiphertext writes the stored object of s to the new file out, and
+// removes the file again when its size or sha256 differs from the record.
+func saveCiphertext(s *osv1alpha1.EtcdSnapshot, r io.Reader, out string, w io.Writer) error {
 	f, err := createExclusive(out)
 	if err != nil {
 		return err
 	}
-	n, err := io.Copy(f, rc)
+	h := sha256.New()
+	n, err := io.Copy(io.MultiWriter(f, h), r)
 	if cerr := f.Close(); err == nil {
 		err = cerr
 	}
+	sum := "sha256:" + hex.EncodeToString(h.Sum(nil))
+	switch {
+	case err != nil:
+		err = fmt.Errorf("download %s: %w", s.Status.Location, err)
+	case s.Status.EncryptedSize != 0 && n != s.Status.EncryptedSize:
+		err = fmt.Errorf("downloaded %d bytes, but %d were stored", n, s.Status.EncryptedSize)
+	case s.Status.EncryptedSHA256 != "" && sum != s.Status.EncryptedSHA256:
+		err = fmt.Errorf("downloaded an object with %s, but the stored one has %s", sum, s.Status.EncryptedSHA256)
+	}
 	if err != nil {
 		_ = os.Remove(out)
-		return fmt.Errorf("download %s: %w", s.Status.Location, err)
-	}
-	if s.Status.EncryptedSize != 0 && n != s.Status.EncryptedSize {
-		_ = os.Remove(out)
-		return fmt.Errorf("downloaded %d bytes, but %d were stored", n, s.Status.EncryptedSize)
+		return err
 	}
 	fmt.Fprintf(w, "wrote %s (%s, encrypted; decrypt with: pk-metal backup decrypt --in %s --identity <file>)\n",
 		out, humanBytes(n), out)

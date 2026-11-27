@@ -273,6 +273,7 @@ type EtcdSnapshotStatus struct {
 	SHA256 string `json:"sha256,omitempty"`
 
 	// EncryptedSize and EncryptedSHA256 describe the object in the sink.
+	// pk-metal backup get checks the downloaded object against both.
 	// +optional
 	EncryptedSize int64 `json:"encryptedSize,omitempty"`
 	// +optional

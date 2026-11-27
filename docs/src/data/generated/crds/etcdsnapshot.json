@@ -203,7 +203,7 @@
       "type": "integer",
       "format": "int64",
       "required": false,
-      "description": "EncryptedSize and EncryptedSHA256 describe the object in the sink."
+      "description": "EncryptedSize and EncryptedSHA256 describe the object in the sink. pk-metal backup get checks the downloaded object against both."
     },
     {
       "path": "status.key",

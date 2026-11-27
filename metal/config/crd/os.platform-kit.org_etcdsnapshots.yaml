@@ -122,7 +122,7 @@ spec:
                 encryptedSHA256:
                   type: string
                 encryptedSize:
-                  description: EncryptedSize and EncryptedSHA256 describe the object in the sink.
+                  description: EncryptedSize and EncryptedSHA256 describe the object in the sink. pk-metal backup get checks the downloaded object against both.
                   format: int64
                   type: integer
                 key:

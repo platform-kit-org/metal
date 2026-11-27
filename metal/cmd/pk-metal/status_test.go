@@ -5,10 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -263,6 +266,24 @@ func TestStatusExitCodes(t *testing.T) {
 	code, err = runStatus(ctx, broken, "table", &out)
 	assert.ErrorContains(t, err, "connection refused")
 	assert.Equal(t, exitError, code)
+}
+
+// A kind that the caller may not read fails the command: an empty ROLLOUT
+// table or BACKUP column would read as nothing to do.
+func TestStatusFailsOnAKindItMayNotRead(t *testing.T) {
+	for _, kind := range []client.ObjectList{&osv1alpha1.TalosRolloutList{}, &osv1alpha1.EtcdBackupPolicyList{}} {
+		cl := fake.NewClientBuilder().WithScheme(newScheme()).WithInterceptorFuncs(interceptor.Funcs{
+			List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+				if fmt.Sprintf("%T", list) == fmt.Sprintf("%T", kind) {
+					return apierrors.NewForbidden(schema.GroupResource{Group: "os.platform-kit.org"}, "", errors.New("no rule"))
+				}
+				return c.List(ctx, list, opts...)
+			},
+		}).Build()
+		code, err := runStatus(context.Background(), cl, "json", io.Discard)
+		assert.ErrorContains(t, err, "forbidden", "%T", kind)
+		assert.Equal(t, exitError, code, "%T", kind)
+	}
 }
 
 // TestStatusWithoutOSKinds: a cluster without the TalosNode kind installed

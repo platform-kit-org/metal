@@ -10,7 +10,6 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -132,14 +131,13 @@ func runStatus(ctx context.Context, cl client.Client, format string, w io.Writer
 			return exitError, fmt.Errorf("read the cluster: %w", err)
 		}
 	}
-	// The BACKUP column comes from the backup policies. A person whose role
-	// may not read them (an approver) sees "-" there, not an error.
+	// The BACKUP column comes from the backup policies.
 	policies := &osv1alpha1.EtcdBackupPolicyList{}
-	if err := cl.List(ctx, policies); err != nil && !meta.IsNoMatchError(err) && !apierrors.IsForbidden(err) {
+	if err := cl.List(ctx, policies); err != nil && !meta.IsNoMatchError(err) {
 		return exitError, fmt.Errorf("read the cluster: %w", err)
 	}
 	rollouts := &osv1alpha1.TalosRolloutList{}
-	if err := cl.List(ctx, rollouts); err != nil && !meta.IsNoMatchError(err) && !apierrors.IsForbidden(err) {
+	if err := cl.List(ctx, rollouts); err != nil && !meta.IsNoMatchError(err) {
 		return exitError, fmt.Errorf("read the cluster: %w", err)
 	}
 	rep := buildReport(hosts.Items, eps.Items, claims.Items, ops.Items, nodes.Items)

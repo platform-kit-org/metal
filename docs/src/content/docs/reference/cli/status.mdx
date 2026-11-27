@@ -139,11 +139,10 @@ The lists `operations` and `claims` hold all objects, also the operations that s
 
 | Object | Access | Purpose |
 | --- | --- | --- |
-| [](kind:Host), [](kind:ManagementEndpoint), [](kind:HostClaim), [](kind:HostOperation) | list | The first four tables. The command fails if it cannot read them. |
-| [](kind:TalosCluster), [](kind:TalosNode) | list | The cluster and node tables. A cluster without these kinds shows no such tables. |
-| [](kind:EtcdBackupPolicy) | list | The `BACKUP` column. Without permission, the column is empty. |
+| [](kind:Host), [](kind:ManagementEndpoint), [](kind:HostClaim), [](kind:HostOperation) | list | The first four tables. |
+| [](kind:TalosCluster), [](kind:TalosNode), [](kind:TalosRollout), [](kind:EtcdBackupPolicy) | list | The cluster, node and rollout tables, and the `BACKUP` column. A cluster without these kinds shows no such tables. |
 
-The command writes nothing.
+The command fails if it cannot read one of these kinds. It writes nothing.
 
 ## Exit status
 

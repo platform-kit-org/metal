@@ -22,7 +22,7 @@
     },
     {
       "name": "Next change",
-      "type": "date",
+      "type": "string",
       "jsonPath": ".status.nextChange",
       "priority": 0
     },

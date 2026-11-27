@@ -21,7 +21,7 @@ Reboot one node and give it back to the scheduler when it is `Ready`.
 
 ## Before you start
 
-- A person with `pk-metal-approver` can approve. That is you, if your site allows self-approval. If not, it is a second person. See [](howto:approval-permissions). You propose the reboot.
+- A person with `pk-metal-approver` can approve. See [](howto:approval-permissions). You propose the reboot.
 - The PodDisruptionBudgets of the workloads let one pod leave.
 - The reboot goes through the Talos API. It does not need the BMC.
 
@@ -44,7 +44,7 @@ Reboot one node and give it back to the scheduler when it is `Ready`.
 
    The command makes one [](kind:HostOperation), for example `pk-metal/reboot-w-1-x7k2p`.
 
-2. Approve it. If your site forbids self-approval, ask a second person to approve it.
+2. Approve it.
 
    ```sh
    pk-metal approve pk-metal/reboot-w-1-x7k2p
@@ -101,7 +101,7 @@ A rollout has no reboot mode. For a cold start (`--mode powercycle`) of each nod
 
 <Callout type="note">
 With one control plane only, the cluster guard holds the reboot of the control plane, also in a rollout.
-Set `metal.platform-kit.org/override-cluster-guard` on its operation. The value is `<username>: <reason>`, with your username. See [](ref:audit-trail).
+Set `metal.platform-kit.org/override-cluster-guard` on its operation, with the value `<username>: <reason>`. See [](ref:labels-annotations).
 </Callout>
 
 ## Verify

@@ -15,6 +15,7 @@ import Edge from '../../../../components/diagram/Edge.astro';
 
 Day 2 is all the work after the install, while workloads run on the nodes.
 The rule does not change: the operator proposes, a person approves, the operator does it.
+If `selfApproval` is `Forbidden`, a second person approves. See [](howto:approval-permissions).
 
 <Figure
   title="Two paths for a day-2 change: one HostOperation for one machine, or one TalosRollout for a whole cluster, node by node."

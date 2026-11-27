@@ -24,7 +24,7 @@ Bring the BMC firmware, or the system firmware (BIOS, NIC, RAID), of a group of 
 - The firmware image is in your OCI registry, pinned by digest.
 - If the registry uses an internal CA, the manager has it (`--registry-ca`).
 - The endpoints are `Verified`. The operator writes nothing to a machine that it did not verify.
-- A person can approve one operation for each machine.
+- A person with `pk-metal-approver` can approve one operation for each machine. See [](howto:approval-permissions).
 
 ## Two kinds of firmware
 

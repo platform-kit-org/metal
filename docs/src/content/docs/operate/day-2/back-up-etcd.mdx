@@ -102,13 +102,14 @@ Keep verified, encrypted etcd snapshots of a cluster away from its machines.
    kubectl apply -f prod-offsite.yaml
    ```
 
-6. Take the first snapshot now. The command waits until the operator verifies the snapshot.
+6. Wait until the operator verified the first snapshot. The operator takes it when the policy is new.
 
    ```sh
-   pk-metal backup now prod-offsite
+   kubectl wait --for=condition=BackedUp etcdbackuppolicy/prod-offsite --timeout=1h
+   pk-metal backup list prod
    ```
 
-7. Decrypt it on your workstation, as a test. Without `-o`, the command writes no plain file.
+7. Decrypt the snapshot that the list shows, as a test. Without `-o`, the command writes no plain file.
 
    ```sh
    pk-metal backup decrypt prod-offsite-20261124-060000 --identity ~/.config/age/keys.txt

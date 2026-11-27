@@ -104,7 +104,7 @@ func pivotCmd(args []string) {
 	// go to standard error and name the user who runs it. Keep them.
 	mover, err := whoAmI(ctx, target.Client)
 	if err != nil {
-		die(fmt.Errorf("the move's audit lines must name you: %w", err))
+		die(err)
 	}
 	m, err := pivot.New(ctx, source, target, pivot.Options{
 		Image: *image, MediaURL: *mediaURL, Claims: claims, ForceWaiting: *forceWaiting,

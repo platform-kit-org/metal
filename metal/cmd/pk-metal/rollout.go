@@ -15,7 +15,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
-	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
 )
 
 func init() {
@@ -388,13 +387,13 @@ func resumeRollout(ctx context.Context, cl client.Client, name string, w io.Writ
 	if ro.Status.PlanHash == "" {
 		return fmt.Errorf("rollout %s has no plan", name)
 	}
-	user, err := requester(ctx, cl)
+	user, err := whoAmI(ctx, cl)
 	if err != nil {
 		return err
 	}
-	if err := mergePatch(ctx, cl, ro, mergeSpec{UID: ro.UID, Spec: map[string]any{"paused": nil},
-		Annotations: map[string]any{osv1alpha1.AnnotationRolloutResume: ro.Status.PlanHash,
-			metalv1alpha1.AnnotationRequestedBy: user}}); err != nil {
+	set := requestedBy(user, "")
+	set[osv1alpha1.AnnotationRolloutResume] = ro.Status.PlanHash
+	if err := mergePatch(ctx, cl, ro, mergeSpec{UID: ro.UID, Annotations: set, Spec: map[string]any{"paused": nil}}); err != nil {
 		return fmt.Errorf("resume rollout %s: %w", name, err)
 	}
 	fmt.Fprintf(w, "resumed rollout %s; the next node starts once the cluster is healthy\n", name)
@@ -406,12 +405,12 @@ func pauseRollout(ctx context.Context, cl client.Client, name string, w io.Write
 	if err != nil {
 		return err
 	}
-	user, err := requester(ctx, cl)
+	user, err := whoAmI(ctx, cl)
 	if err != nil {
 		return err
 	}
 	if err := mergePatch(ctx, cl, ro, mergeSpec{UID: ro.UID, Spec: map[string]any{"paused": true},
-		Annotations: map[string]any{metalv1alpha1.AnnotationRequestedBy: user}}); err != nil {
+		Annotations: requestedBy(user, "")}); err != nil {
 		return fmt.Errorf("pause rollout %s: %w", name, err)
 	}
 	fmt.Fprintf(w, "paused rollout %s; a node that runs now finishes, no further node starts. Go on with: pk-metal rollout resume %s\n",
@@ -433,12 +432,12 @@ func abortRollout(ctx context.Context, cl client.Client, name string, p prompt) 
 		"aborted"); err != nil {
 		return err
 	}
-	user, err := requester(ctx, cl)
+	user, err := whoAmI(ctx, cl)
 	if err != nil {
 		return err
 	}
 	if err := mergePatch(ctx, cl, ro, mergeSpec{UID: ro.UID, Spec: map[string]any{"abort": true},
-		Annotations: map[string]any{metalv1alpha1.AnnotationRequestedBy: user}}); err != nil {
+		Annotations: requestedBy(user, "")}); err != nil {
 		return fmt.Errorf("abort rollout %s: %w", name, err)
 	}
 	fmt.Fprintf(w, "aborted rollout %s. Delete it when you want the operator to propose the change again\n", name)

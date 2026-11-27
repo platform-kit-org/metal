@@ -12,7 +12,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
-	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
 	"github.com/dennisklein/platform-kit/metal/internal/talos/render"
 )
 
@@ -113,14 +112,14 @@ func upgrade(ctx context.Context, cl client.Client, what, name, version string, 
 		if err := upgradeCheck(c, what, version); err != nil {
 			return fmt.Errorf("nothing changed: %w", err)
 		}
-		user, err := requester(ctx, cl)
+		user, err := whoAmI(ctx, cl)
 		if err != nil {
 			return fmt.Errorf("nothing changed: %w", err)
 		}
 		// resourceVersion: refuse when someone changed the cluster since it
 		// was read and checked.
 		if err := mergePatch(ctx, cl, c, mergeSpec{UID: c.UID, ResourceVersion: c.ResourceVersion,
-			Annotations: map[string]any{metalv1alpha1.AnnotationRequestedBy: user},
+			Annotations: requestedBy(user, ""),
 			Spec:        map[string]any{field: version}}); err != nil {
 			return fmt.Errorf("set %s of cluster %s: %w", field, name, err)
 		}

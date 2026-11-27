@@ -116,12 +116,13 @@ func wipe(ctx context.Context, cl client.Client, name, version string, w io.Writ
 		}
 		version = cluster.Spec.TalosVersion
 	}
-	user, err := requester(ctx, cl)
+	user, err := whoAmI(ctx, cl)
 	if err != nil {
 		return err
 	}
-	if err := mergePatch(ctx, cl, host, mergeSpec{Annotations: map[string]any{
-		metalv1alpha1.AnnotationWipe: version, metalv1alpha1.AnnotationRequestedBy: user}}); err != nil {
+	set := requestedBy(user, "")
+	set[metalv1alpha1.AnnotationWipe] = version
+	if err := mergePatch(ctx, cl, host, mergeSpec{Annotations: set}); err != nil {
 		return fmt.Errorf("update host %s: %w", name, err)
 	}
 	fmt.Fprintf(w, "host %s: wipe asked for (it may still hold node %s).\n", name, mark)
@@ -183,16 +184,12 @@ func reinstall(ctx context.Context, cl client.Client, namespace, ref, ack string
 	if h == nil {
 		return fmt.Errorf("claim %s records no install to replace; a claim that never handed off installs on its own", cref)
 	}
-	set := map[string]any{metalv1alpha1.AnnotationReinstall: h.At.UTC().Format(time.RFC3339)}
-	if ack, err = namedLift(ctx, cl, ack); err != nil {
+	user, err := whoAmI(ctx, cl)
+	if err != nil {
 		return err
 	}
-	if ack != "" {
-		set[metalv1alpha1.AnnotationAckEtcdRisk] = ack
-	}
-	if set[metalv1alpha1.AnnotationRequestedBy], err = requester(ctx, cl); err != nil {
-		return err
-	}
+	set := requestedBy(user, ack)
+	set[metalv1alpha1.AnnotationReinstall] = h.At.UTC().Format(time.RFC3339)
 	if err := mergePatch(ctx, cl, c, mergeSpec{Annotations: set}); err != nil {
 		return fmt.Errorf("update claim %s: %w", cref, err)
 	}
@@ -270,23 +267,13 @@ func replace(ctx context.Context, cl client.Client, namespace, ref, hostName, ac
 	if system != "" {
 		spec["systemRef"] = map[string]any{"name": system}
 	}
-	if ack, err = namedLift(ctx, cl, ack); err != nil {
-		return err
-	}
-	user, err := requester(ctx, cl)
+	user, err := whoAmI(ctx, cl)
 	if err != nil {
 		return err
 	}
-	annotations := map[string]any{metalv1alpha1.AnnotationRequestedBy: user}
-	if ack != "" {
-		annotations[metalv1alpha1.AnnotationAckEtcdRisk] = ack
-	}
-	if err := mergePatch(ctx, cl, c, mergeSpec{Annotations: annotations, Spec: spec}); err != nil {
+	old := hostOf(c)
+	if err := mergePatch(ctx, cl, c, mergeSpec{Annotations: requestedBy(user, ack), Spec: spec}); err != nil {
 		return fmt.Errorf("update claim %s: %w", cref, err)
-	}
-	old := "(none)"
-	if c.Status.HostRef != nil {
-		old = c.Status.HostRef.Name
 	}
 	fmt.Fprintf(w, "claim %s now selects host %s (asset %s); it ran on host %s.\n", cref, hostName, asset, old)
 	fmt.Fprintln(w, "The operator first releases the old machine (its node leaves the cluster; a machine that does not answer is powered off and marked for a wipe),")
@@ -523,11 +510,7 @@ func (p *scalePlan) apply(ctx context.Context, cl client.Client, ack string, w i
 	if p.evenStep && strings.TrimSpace(ack) == "" {
 		return fmt.Errorf("the plan passes through an even number of control planes; give --ack-etcd-risk \"<reason>\" to accept it")
 	}
-	ack, err := namedLift(ctx, cl, ack)
-	if err != nil {
-		return err
-	}
-	user, err := requester(ctx, cl)
+	user, err := whoAmI(ctx, cl)
 	if err != nil {
 		return err
 	}
@@ -541,11 +524,7 @@ func (p *scalePlan) apply(ctx context.Context, cl client.Client, ack string, w i
 	for _, c := range p.remove {
 		// The release is the caller's request: the name goes on the claim
 		// before the delete (the requested-by policy).
-		set := map[string]any{metalv1alpha1.AnnotationRequestedBy: user}
-		if ack != "" {
-			set[metalv1alpha1.AnnotationAckEtcdRisk] = ack
-		}
-		if err := mergePatch(ctx, cl, c, mergeSpec{Annotations: set}); err != nil {
+		if err := mergePatch(ctx, cl, c, mergeSpec{Annotations: requestedBy(user, ack)}); err != nil {
 			return fmt.Errorf("name the request on claim %s/%s: %w", c.Namespace, c.Name, err)
 		}
 		if err := cl.Delete(ctx, c); client.IgnoreNotFound(err) != nil {

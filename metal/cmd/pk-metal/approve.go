@@ -179,10 +179,13 @@ func isTerminal(f *os.File) bool {
 	return err == nil && fi.Mode()&os.ModeCharDevice != 0
 }
 
+// whoAmI is the caller's username, as the API server says it
+// (SelfSubjectReview), so that each record names who the cluster says the
+// caller is.
 func whoAmI(ctx context.Context, cl client.Client) (string, error) {
 	ssr := &authenticationv1.SelfSubjectReview{}
 	if err := cl.Create(ctx, ssr); err != nil {
-		return "", fmt.Errorf("cannot ask the cluster who you are: %w", err)
+		return "", fmt.Errorf("cannot ask the cluster who you are (pk-metal records your name on each change): %w", err)
 	}
 	if ssr.Status.UserInfo.Username == "" {
 		return "", fmt.Errorf("the cluster did not say who you are; check your kubeconfig user")

@@ -162,12 +162,35 @@ func (b *EtcdBackups) secretData(ctx context.Context, name string) (map[string][
 	return s.Data, nil
 }
 
-func recipients(p *osv1alpha1.EtcdBackupPolicy) ([]age.Recipient, error) {
-	rs, err := etcdbackup.ParseRecipients(p.Spec.Encryption.AgeRecipients)
-	if err != nil {
-		return nil, &sinkError{osv1alpha1.ReasonRecipientsInvalid, err.Error()}
+// backupTarget is what a snapshot of a policy goes to.
+type backupTarget struct {
+	sink       etcdbackup.Sink
+	prefix     string
+	recipients []age.Recipient
+	cluster    *osv1alpha1.TalosCluster
+}
+
+// target checks, in order, what the snapshots of a policy need: the sink,
+// the recipients and the TalosCluster. The policy's Ready condition and each
+// snapshot use it, so the two agree. A *sinkError says what is wrong; the
+// fields read before it stay set.
+func (b *EtcdBackups) target(ctx context.Context, p *osv1alpha1.EtcdBackupPolicy) (backupTarget, error) {
+	var t backupTarget
+	var err error
+	if t.sink, t.prefix, err = b.sink(ctx, p); err != nil {
+		return t, err
 	}
-	return rs, nil
+	if t.recipients, err = etcdbackup.ParseRecipients(p.Spec.Encryption.AgeRecipients); err != nil {
+		return t, &sinkError{osv1alpha1.ReasonRecipientsInvalid, err.Error()}
+	}
+	cluster := &osv1alpha1.TalosCluster{}
+	if err := b.Get(ctx, types.NamespacedName{Name: p.Spec.ClusterRef.Name}, cluster); apierrors.IsNotFound(err) {
+		return t, &sinkError{osv1alpha1.ReasonClusterNotFound, "TalosCluster " + p.Spec.ClusterRef.Name + " not found"}
+	} else if err != nil {
+		return t, err
+	}
+	t.cluster = cluster
+	return t, nil
 }
 
 // snapshotState reads a snapshot record for retention and summaries.
@@ -237,18 +260,8 @@ func (r *EtcdBackupPolicyReconciler) reconcile(ctx context.Context, p *osv1alpha
 
 	// Ready: can snapshots be taken at all?
 	ready := true
-	sink, _, err := r.sink(ctx, p)
-	if err == nil {
-		_, err = recipients(p)
-	}
-	if err == nil {
-		cluster := &osv1alpha1.TalosCluster{}
-		if gerr := r.Get(ctx, types.NamespacedName{Name: p.Spec.ClusterRef.Name}, cluster); apierrors.IsNotFound(gerr) {
-			err = &sinkError{osv1alpha1.ReasonClusterNotFound, "TalosCluster " + p.Spec.ClusterRef.Name + " not found"}
-		} else if gerr != nil {
-			return ctrl.Result{}, gerr
-		}
-	}
+	target, err := r.target(ctx, p)
+	sink := target.sink
 	if se := (*sinkError)(nil); errors.As(err, &se) {
 		ready = false
 		set(osv1alpha1.ConditionReady, metav1.ConditionFalse, se.reason, se.msg)
@@ -462,24 +475,13 @@ func (r *EtcdSnapshotReconciler) take(ctx context.Context, s *osv1alpha1.EtcdSna
 		return ctrl.Result{}, err
 	}
 	st.ClusterName = p.Spec.ClusterRef.Name
-	sink, prefix, err := r.sink(ctx, p)
+	target, err := r.target(ctx, p)
 	if se := (*sinkError)(nil); errors.As(err, &se) {
 		return fail(se.msg)
 	} else if err != nil {
 		return ctrl.Result{}, err
 	}
-	rcpt, err := recipients(p)
-	if err != nil {
-		return fail(err.Error())
-	}
-
-	cluster := &osv1alpha1.TalosCluster{}
-	if err := r.Get(ctx, types.NamespacedName{Name: p.Spec.ClusterRef.Name}, cluster); err != nil {
-		if apierrors.IsNotFound(err) {
-			return fail("TalosCluster " + p.Spec.ClusterRef.Name + " not found")
-		}
-		return ctrl.Result{}, err
-	}
+	sink, cluster := target.sink, target.cluster
 	bundle, err := loadBundle(ctx, r.Client, r.Namespace, cluster)
 	if unavailable := (*bundleUnavailable)(nil); errors.As(err, &unavailable) {
 		return fail(unavailable.msg)
@@ -521,7 +523,7 @@ func (r *EtcdSnapshotReconciler) take(ctx context.Context, s *osv1alpha1.EtcdSna
 	}
 
 	// Record the start before streaming: the crash rail above reads it.
-	key := prefix + s.Name + ".db.age"
+	key := target.prefix + s.Name + ".db.age"
 	st.TakenAt = &metav1.Time{Time: r.now()}
 	st.TakenFrom, st.MemberID = src.node, strconv.FormatUint(src.status.MemberID, 16)
 	st.Key, st.Location = key, sink.URL(key)
@@ -537,7 +539,7 @@ func (r *EtcdSnapshotReconciler) take(ctx context.Context, s *osv1alpha1.EtcdSna
 	var stored etcdbackup.Stored
 	err = talos.With(sctx, r.Dial, talos.Target{Endpoint: src.endpoint, Talosconfig: backup}, func(c talos.Client) error {
 		var serr error
-		stored, serr = etcdbackup.Store(sctx, sink, key, rcpt, c.EtcdSnapshot)
+		stored, serr = etcdbackup.Store(sctx, sink, key, target.recipients, c.EtcdSnapshot)
 		return serr
 	})
 	if err != nil {

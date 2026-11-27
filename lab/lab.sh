@@ -1065,9 +1065,10 @@ wrote $lab_dir/workload.kubeconfig and $lab_dir/talosconfig
 EOF
 }
 
-# One line that says where the lab stands; wait() prints it when it changes.
+# One line that says where the lab stands, with the Ready nodes of the cluster
+# behind kube_file; the waits print it when it changes.
 progress() {
-  local lab_dir=$1
+  local kube_file=$1
   local hosts operations held nodes="-"
   hosts=$(kubectl get hosts --output json | jq -r '
     [.items[] | .status.phase // "Unknown"] | group_by(.) | map("\(length) \(.[0])") | join(", ")')
@@ -1079,16 +1080,11 @@ progress() {
   # above stand still without saying why. The hold reason says it.
   held=$(kubectl get hostclaims --all-namespaces --output json | jq -r '
     [.items[] | .status.blockedOn // empty] | group_by(.) | map("\(length) \(.[0])") | join(", ")')
-  if [[ -s $lab_dir/workload.kubeconfig ]]; then
-    nodes=$(kubectl --kubeconfig "$lab_dir/workload.kubeconfig" --request-timeout=5s get nodes --output json 2>/dev/null | jq -r '
+  if [[ -s $kube_file ]]; then
+    nodes=$(kubectl --kubeconfig "$kube_file" --request-timeout=5s get nodes --output json 2>/dev/null | jq -r '
       [.items[] | select(any(.status.conditions[]?; .type == "Ready" and .status == "True"))] | length') || nodes="-"
   fi
   echo "hosts: ${hosts:-none}; operations: ${operations:-none}; claims held: ${held:-none}; workload nodes Ready: $nodes"
-}
-
-converged() {
-  local lab_dir=$1 want=$2
-  cluster_converged "$want" "$lab_dir/workload.kubeconfig" "$want"
 }
 
 # Succeeds when the operator reports hosts Provisioned machines and the
@@ -1127,22 +1123,21 @@ failed_operations() {
 }
 
 # The unattended run: stands in for the person by approving whatever is
-# proposed, and holds until the lab has done what it is for.
+# proposed, and holds until the operator reports hosts Provisioned machines and
+# the TalosCluster has nodes Ready nodes. wait runs it for the first cluster,
+# pivot for the second; each fetches the cluster's files to the names given.
 wait_converged() {
-  local root=$1 lab_dir=$2 gen=$3 timeout=$4
-  local want cluster_name line failed last="" deadline=$((SECONDS + timeout))
-  require_cluster "$lab_dir"
-  want=$(lab_value "$gen" NODES)
-  cluster_name=$(lab_value "$gen" TALOS_CLUSTER)
-  step "waiting up to ${timeout}s for $want Provisioned hosts and $want Ready nodes (from $(date '+%F %T %Z'))"
+  local root=$1 cluster_name=$2 kube_file=$3 talos_file=$4 hosts=$5 nodes=$6 timeout=$7
+  local line failed last="" deadline=$((SECONDS + timeout))
+  step "waiting up to ${timeout}s for $hosts Provisioned hosts and $nodes Ready nodes in $cluster_name (from $(date '+%F %T %Z'))"
   while true; do
     approve_pending "$root" >/dev/null || true
-    kubeconfig_fetch "$cluster_name" "$lab_dir/workload.kubeconfig" "$lab_dir/talosconfig" || true
-    if converged "$lab_dir" "$want"; then
-      echo "converged after $((SECONDS - (deadline - timeout)))s: $(progress "$lab_dir")" >&2
+    kubeconfig_fetch "$cluster_name" "$kube_file" "$talos_file" || true
+    if cluster_converged "$hosts" "$kube_file" "$nodes"; then
+      echo "converged after $((SECONDS - (deadline - timeout)))s: $(progress "$kube_file")" >&2
       return 0
     fi
-    line=$(progress "$lab_dir" 2>/dev/null || echo "the lab cluster does not answer")
+    line=$(progress "$kube_file" 2>/dev/null || echo "the lab cluster does not answer")
     if [[ $line != "$last" ]]; then
       echo "  [$(date '+%F %T %Z')] $line" >&2
       last=$line
@@ -1152,9 +1147,9 @@ wait_converged() {
 $failed
   Look at it: mise run lab:status; collect the evidence: mise run lab:collect;
   retry it: metal/bin/pk-metal --kubeconfig $KUBECONFIG retry <namespace>/<operation> (named above)"
-    (( SECONDS < deadline )) || die "the lab did not converge within ${timeout}s. Last state: $line
+    (( SECONDS < deadline )) || die "TalosCluster $cluster_name did not converge within ${timeout}s. Last state: $line
   Look at it: mise run lab:status; collect the evidence: mise run lab:collect;
-  or wait longer: PK_LAB_WAIT_TIMEOUT=3600 mise run lab:wait"
+  or wait longer: run the task again with PK_LAB_WAIT_TIMEOUT=3600"
     sleep 15
   done
 }
@@ -1387,7 +1382,7 @@ $members"
       echo "  done after $((SECONDS - (deadline - timeout)))s: $have etcd voter(s), $ready Ready node(s)" >&2
       return 0
     fi
-    line="etcd: $have voter(s), $learners learner(s); nodes: $ready of $total Ready; $(progress "$lab_dir" 2>/dev/null || echo "the lab cluster does not answer")"
+    line="etcd: $have voter(s), $learners learner(s); nodes: $ready of $total Ready; $(progress "$lab_dir/workload.kubeconfig" 2>/dev/null || echo "the lab cluster does not answer")"
     if [[ $line != "$last" ]]; then
       echo "  [$(date '+%F %T %Z')] $line" >&2
       last=$line
@@ -1607,7 +1602,7 @@ $("$root/metal/bin/pk-metal" rollout show "$name")
       # miss one 5s request, or a host its phase, for a moment.
       look_until=$((SECONDS + 120))
       count=$(kubectl get talosnodes --output json | jq '.items | length')
-      until converged "$lab_dir" "$count"; do
+      until cluster_converged "$count" "$lab_dir/workload.kubeconfig" "$count"; do
         (( SECONDS < look_until )) || die "rollout $name paused after its first node, but not every workload node is Ready:
 $(kubectl --kubeconfig "$lab_dir/workload.kubeconfig" get nodes 2>&1)
 $(kubectl get hosts 2>&1)"
@@ -1898,7 +1893,7 @@ image_push() {
 # cluster is left to do.
 pivot() {
   local root=$1 lab_dir=$2 gen=$3 cluster=$4 timeout=$5
-  local first second registry ref media_node want_hosts want_nodes line failed last="" deadline=$((SECONDS + timeout))
+  local first second registry ref media_node want_hosts want_nodes deadline=$((SECONDS + timeout))
   require_cluster "$lab_dir"
   [[ -n $(lab_value_or "$gen" WORKLOAD_CLUSTER "") ]] || die "the lab has no second cluster to install after the move.
   Bring it up with one: mise run lab:down && PK_LAB_WORKLOAD=1cp+0w mise run lab:up && mise run lab:wait"
@@ -1953,26 +1948,9 @@ pivot() {
   admin_apply "$gen/workload/"
   want_hosts=$(($(lab_value "$gen" NODES) + $(lab_value "$gen" WORKLOAD_NODES)))
   want_nodes=$(lab_value "$gen" WORKLOAD_NODES)
-  while true; do
-    approve_pending "$root" >/dev/null || true
-    kubeconfig_fetch "$second" "$lab_dir/second.kubeconfig" "$lab_dir/second.talosconfig" || true
-    if cluster_converged "$want_hosts" "$lab_dir/second.kubeconfig" "$want_nodes"; then
-      echo "converged after $((SECONDS - (deadline - timeout)))s: $want_hosts Provisioned hosts, $want_nodes Ready nodes in $second" >&2
-      break
-    fi
-    line=$(progress "$lab_dir" 2>/dev/null || echo "the first cluster does not answer")
-    if [[ $line != "$last" ]]; then
-      echo "  [$(date '+%F %T %Z')] $line" >&2
-      last=$line
-    fi
-    failed=$(failed_operations 2>/dev/null || true)
-    [[ -z $failed ]] || die "something failed on the operator's new cluster and waits for a person:
-$failed
-  Look at it: mise run lab:status; collect the evidence: mise run lab:collect"
-    (( SECONDS < deadline )) || die "TalosCluster $second did not come up within ${timeout}s. Last state: $line
-  Look at it: mise run lab:status; collect the evidence: mise run lab:collect"
-    sleep 15
-  done
+  # What is left of the time the round got: the move above used some of it.
+  wait_converged "$root" "$second" "$lab_dir/second.kubeconfig" "$lab_dir/second.talosconfig" \
+    "$want_hosts" "$want_nodes" $((deadline - SECONDS))
   cat >&2 <<EOF
 
 The operator runs on TalosCluster $first and installed $second from there.
@@ -2309,7 +2287,7 @@ reset() {
 }
 
 main() {
-  local verb=${1:-}
+  local verb=${1:-} nodes
   [[ -z ${PK_LAB_TALOS:-} ]] || SPEC=$(spec_at_talos "$TARGET_SPEC" "$PK_LAB_TALOS" "$LAB_DIR")
   case "$verb" in
     doctor) doctor "$ROOT" "$LAB_DIR" "$SPEC" "$SIZE" "$WORKLOAD" "$MIN_FREE_GIB" "$KIND_CONFIG" ;;
@@ -2356,7 +2334,10 @@ main() {
       ;;
     wait)
       require_rendered "$ROOT" "$SPEC" "$SIZE" "$WORKLOAD" "$GEN"
-      wait_converged "$ROOT" "$LAB_DIR" "$GEN" "$WAIT_TIMEOUT"
+      require_cluster "$LAB_DIR"
+      nodes=$(lab_value "$GEN" NODES)
+      wait_converged "$ROOT" "$(lab_value "$GEN" TALOS_CLUSTER)" "$LAB_DIR/workload.kubeconfig" "$LAB_DIR/talosconfig" \
+        "$nodes" "$nodes" "$WAIT_TIMEOUT"
       ;;
     release)
       (( $# == 2 )) || die "name one claim, e.g.: mise run lab:release default/node-3"

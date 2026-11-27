@@ -7,26 +7,10 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	authenticationv1 "k8s.io/api/authentication/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
-
-// fakeClientAs is a fake API that answers a SelfSubjectReview with user, as
-// the API server answers it for the caller's credential.
-func fakeClientAs(user string, objs ...client.Object) client.Client {
-	return fake.NewClientBuilder().WithScheme(newScheme()).WithObjects(objs...).
-		WithInterceptorFuncs(interceptor.Funcs{
-			Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
-				if ssr, ok := obj.(*authenticationv1.SelfSubjectReview); ok {
-					ssr.Status.UserInfo.Username = user
-					return nil
-				}
-				return c.Create(ctx, obj, opts...)
-			},
-		}).Build()
-}
 
 func TestNamedLift(t *testing.T) {
 	ctx := context.Background()

@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"os"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -82,5 +83,35 @@ func TestSignalContext(t *testing.T) {
 	case <-ctx.Done():
 	case <-time.After(5 * time.Second):
 		t.Fatal("SIGINT did not cancel the context")
+	}
+}
+
+// Each verb that drives a machine or a cluster refuses a missing argument,
+// says what is missing, and names the help that shows the rest.
+func TestVerbsNameWhatIsMissing(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"boot"}, "--config, --node and one BMC URL are required"},
+		{[]string{"boot", "--config=c.yaml", "--node=n"}, "--config, --node and one BMC URL are required"},
+		{[]string{"bootstrap"}, "--dir and --secrets are required"},
+		{[]string{"bootstrap", "--dir=d", "--secrets=s", "--endpoint=192.0.2.1"}, "--endpoint needs --node"},
+		{[]string{"render"}, "--dir and --secrets are required"},
+		{[]string{"render", "--dir=d", "--secrets=s", "extra"}, "render takes no other arguments"},
+		{[]string{"render", "--dir=d", "--secrets=s", "--credentials-ttl=721h"}, "--credentials-ttl must be more than 0 and at most 720h"},
+		{[]string{"render", "--dir=d", "--secrets=s", "--credentials-ttl=0s"}, "--credentials-ttl must be more than 0 and at most 720h"},
+		{[]string{"relay", "extra"}, "relay takes no arguments"},
+		// An argument reaches the verb as it is: with its space, and empty.
+		{[]string{"completion", "korn shell"}, `unknown shell "korn shell"`},
+		{[]string{"render", "--dir=d", "--secrets=s", ""}, "render takes no other arguments"},
+	} {
+		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
+			code, stderr := runCLI(t, tc.args...)
+			assert.Equal(t, 1, code, stderr)
+			assert.Contains(t, stderr, tc.want)
+			assert.Contains(t, stderr, "usage: pk-metal "+tc.args[0])
+			assert.Contains(t, stderr, "run: pk-metal help "+tc.args[0])
+		})
 	}
 }

@@ -245,7 +245,7 @@ func TestOnCallRole(t *testing.T) {
 		{"patch", "metal.platform-kit.org", "hosts", true, "pk-metal wipe, the disk-not-wiped mark"},
 		{"patch", "metal.platform-kit.org", "assets", true, "correct the ledger facts"},
 		{"patch", "os.platform-kit.org", "talosclusters", true, "remove restore-pending"},
-		{"delete", "os.platform-kit.org", "talosrollouts", true, "stop a rollout for good"},
+		{"delete", "os.platform-kit.org", "talosrollouts", true, "ask for a new proposal after a failed or aborted rollout"},
 		{"list", "metal.platform-kit.org", "managementendpoints", true, "describe"},
 		{"list", "os.platform-kit.org", "etcdsnapshots", true, "backup-failing"},
 		{"list", "", "events", true, "describe"},

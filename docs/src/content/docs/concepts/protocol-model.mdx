@@ -58,6 +58,7 @@ Two model tests check the protocol across many orders of events.
 5. A power action on a control plane of the operator cluster starts only with `metal.platform-kit.org/allow-self-disruption`.
 
 The model calls the same helper functions as the controllers. Only the control flow is written again in the test.
+`TestModelMirrorsTheCode` keeps a hash of each function whose control flow the model writes again. A change of the code in one of them fails the test, so that a person brings the model in line before the hash changes. A change of a comment does not count.
 
 ## Known limit
 

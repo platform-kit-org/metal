@@ -95,7 +95,7 @@ This stage is a short form of [](howto:install-operator). That page explains eac
 
 <Steps>
 
-1. Copy `lab/kind.yaml` to `kind.yaml`. Set `listenAddress` to the address of your workstation on the BMC network.
+1. Copy `lab/kind.yaml` to `kind.yaml`. Set `name` to `bootstrap`, so that the lab tasks do not use the cluster. Set `listenAddress` to the address of your workstation on the BMC network.
 
 2. Make the kind cluster.
 
@@ -112,7 +112,7 @@ This stage is a short form of [](howto:install-operator). That page explains eac
 4. Load the image into kind. Use your image reference.
 
    ```sh
-   kind load docker-image pk-metal:4f0c2d1a9b3e --name pk-metal
+   kind load docker-image pk-metal:4f0c2d1a9b3e --name bootstrap
    ```
 
 5. Copy the sample overlay.

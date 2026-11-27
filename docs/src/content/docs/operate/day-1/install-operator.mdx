@@ -67,11 +67,11 @@ Use one of the two paths.
 
 <Steps>
 
-3. **kind on a workstation.** Copy `lab/kind.yaml` to `kind.yaml`. Set `listenAddress` to the address of the workstation on the BMC network. Keep the cluster name and the node image.
+3. **kind on a workstation.** Copy `lab/kind.yaml` to `kind.yaml`. Set `name` to `bootstrap`, so that the lab tasks do not use the cluster. Set `listenAddress` to the address of the workstation on the BMC network. Keep the node image.
 
    ```sh
    kind create cluster --config kind.yaml
-   kind load docker-image pk-metal:4f0c2d1a9b3e --name pk-metal
+   kind load docker-image pk-metal:4f0c2d1a9b3e --name bootstrap
    ```
 
    The file publishes port 30443 of the workstation. The BMCs get boot media from that port.

@@ -1,7 +1,8 @@
 version: 2
 updates:
+  # The workflows, and the composite actions that they call.
   - package-ecosystem: github-actions
-    directory: /
+    directories: ["/", "/.github/actions/*"]
     schedule:
       interval: weekly
   # One pull request a week for the Go module. The k8s.io modules and

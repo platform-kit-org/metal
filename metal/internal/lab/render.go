@@ -2,6 +2,7 @@ package lab
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"net/netip"
 	"os"
@@ -10,6 +11,8 @@ import (
 	"text/template"
 
 	"go.yaml.in/yaml/v4"
+
+	"github.com/dennisklein/platform-kit/metal/internal/machine/qemu"
 )
 
 // Node is one machine of the lab with everything derived for it.
@@ -142,11 +145,14 @@ type clusterData struct {
 // Files are rendered file contents by path relative to the output directory.
 type Files map[string][]byte
 
-// Render produces every file of the lab from a valid spec. source names the
-// spec in the generated headers.
+// Render produces every file of the lab from a valid, resolved spec. source
+// names the spec in the generated headers.
 func Render(s *Spec, source string) (Files, error) {
 	if err := s.Validate(); err != nil {
 		return nil, err
+	}
+	if s.Arch == "" || s.Accel == "" {
+		return nil, errors.New("the spec's arch and accel are not resolved: call Resolve first")
 	}
 	patches, err := renderPatches(s.Patches)
 	if err != nil {
@@ -188,6 +194,9 @@ func Render(s *Spec, source string) (Files, error) {
 		Gateway    netip.Addr
 		PrefixBits int
 		Patches    string
+		Arch       string
+		Accel      string
+		Console    string
 		Username   string
 		Password   string
 		DiskGiB    int
@@ -201,6 +210,9 @@ func Render(s *Spec, source string) (Files, error) {
 		Gateway:     labGateway,
 		PrefixBits:  labPrefix.Bits(),
 		Patches:     patches,
+		Arch:        s.Arch,
+		Accel:       s.Accel,
+		Console:     qemu.Console(s.Arch),
 		Username:    bmcUsername,
 		Password:    bmcPassword,
 		DiskGiB:     diskGiB,
@@ -322,7 +334,7 @@ machines:
       bmcMAC: "{{.BMCMAC}}"
       nicMACs: ["{{.NICMAC}}"]
     backend: qemu
-    qemu: { tap: {{.Tap}}, memoryMiB: {{.MemoryMiB}}, cpus: {{.CPUs}}, diskGiB: {{$.DiskGiB}}, diskSerial: {{.DiskSerial}} }
+    qemu: { tap: {{.Tap}}, memoryMiB: {{.MemoryMiB}}, cpus: {{.CPUs}}, diskGiB: {{$.DiskGiB}}, diskSerial: {{.DiskSerial}}, arch: {{$.Arch}}, accel: {{$.Accel}} }
 {{- end}}
 `
 
@@ -420,9 +432,10 @@ spec:
   schematic:
     customization:
       extraKernelArgs:
-        # The simulated BMC records the machine's serial console; without this
-        # the boot is invisible in .lab/state/<machine>/console.log.
-        - console=ttyS0
+        # The simulated BMC records the machine's serial console ({{.Console}} on
+        # an {{.Arch}} machine); without this the boot is invisible in
+        # .lab/state/<machine>/console.log.
+        - console={{.Console}}
 {{- if .Patches}}
   # Talos machine configuration documents from the spec, merged into every
   # node's configuration. The operator adds nothing here on its own.
@@ -506,10 +519,14 @@ const ledgerTemplate = `# Generated from {{.Source}}. Do not edit.
 // What lab/lab.sh needs to know, as KEY=value lines. The values are names and
 // numbers the spec validates, so a reader may split on the first '='.
 //
-// NODES counts the first cluster's machines, which lab:wait waits for. With
+// ARCH and ACCEL are the machines' architecture and accelerator, resolved
+// against the workstation. NODES counts the first cluster's machines, which
+// lab:wait waits for. With
 // a workload section, the WORKLOAD_ keys describe the second cluster, and
 // MEMORY_MIB covers the machines of both.
 const envTemplate = `TALOS_CLUSTER={{.Cluster.Name}}
+ARCH={{.Arch}}
+ACCEL={{.Accel}}
 BUNDLE_SECRET={{.BundleSecret}}
 CONTROL_PLANES={{len .ControlPlanes}}
 WORKERS={{len .Workers}}

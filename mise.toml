@@ -5,9 +5,10 @@
 # Pinning policy: the minor is pinned, the patch floats. Versions that must match a
 # running system (Talos, Kubernetes) are noted next to their pin.
 #
-# Not managed here (system packages): docker, qemu-system-x86_64, OVMF, iproute2,
-# iptables. The virtual lab checks for them in `mise run lab:doctor`. A Java
-# runtime (11 or later) runs the TLA+ model checker (`mise run spec`).
+# Not managed here (system packages): docker, qemu-system-x86_64 or
+# qemu-system-aarch64, OVMF or AAVMF, iproute2, iptables. The virtual lab checks
+# for them in `mise run lab:doctor`. A Java runtime (11 or later) runs the TLA+
+# model checker (`mise run spec`).
 
 [tools]
 go = "1.26"

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"log"
 	"net/http"
 	"os"
@@ -14,9 +15,14 @@ import (
 )
 
 // guardTimeout maps the --hang-timeout flag onto the fleet option: on the
-// command line 0 means never, in the option it means the default.
-func guardTimeout(flag time.Duration) time.Duration {
-	if flag <= 0 {
+// command line 0 means never, in the option it means the default. A flag that
+// is not given leaves the default to the driver, which waits longer for a
+// machine under tcg.
+func guardTimeout(flag time.Duration, given bool) time.Duration {
+	switch {
+	case !given:
+		return 0
+	case flag <= 0:
 		return -1
 	}
 	return flag
@@ -37,8 +43,11 @@ func simFleetCmd(args []string) {
 	stateListen := fs.String("state-listen", defaultStateListen,
 		"address of the read-only state endpoint (plain HTTP, GET "+fleet.StatePath+`; "" serves none); keep it on loopback`)
 	hangTimeout := fs.Duration("hang-timeout", qemu.DefaultHangTimeout,
-		"power-cycle a VM (up to three times per power-on) when its console shows only firmware screen control for this long after a power-on (0: never)")
+		"power-cycle a VM (up to three times per power-on) when its console shows only firmware screen control for this long after a power-on (0: never; not given: "+
+			qemu.DefaultHangTimeout.String()+" under kvm, "+qemu.DefaultHangTimeoutTCG.String()+" under tcg)")
 	parseFlags(fs, args)
+	hangGiven := false
+	fs.Visit(func(f *flag.Flag) { hangGiven = hangGiven || f.Name == "hang-timeout" })
 	if *config == "" {
 		badUsage(fs, "--config is required")
 	}
@@ -51,7 +60,7 @@ func simFleetCmd(args []string) {
 	defer stop()
 	f, err := fleet.Start(ctx, cfg, fleet.Options{
 		StateListen: *stateListen,
-		HangTimeout: guardTimeout(*hangTimeout),
+		HangTimeout: guardTimeout(*hangTimeout, hangGiven),
 		Wrap: func(machine string, h http.Handler) http.Handler {
 			return logRequests(h, "sim["+machine+"]", *verbose)
 		},

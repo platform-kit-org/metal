@@ -109,7 +109,8 @@ func main() {
 	// inside a rendered config have to name the same one, or a node installs
 	// from somewhere nobody registered a schematic with.
 	factory := render.NewFactory(c.imageFactory)
-	log.Info("image factory", "host", c.imageFactory)
+	factory.Arch = c.machineArch
+	log.Info("image factory", "host", c.imageFactory, "machineArch", c.machineArch)
 
 	tlsDefault := c.endpointTLS()
 
@@ -236,7 +237,7 @@ func main() {
 		Media:                  media,
 		MediaStore:             store,
 		Imager: &controller.Imager{Repository: c.imagerRepo, Digests: c.imagerPins, StoreClaim: c.storeClaim,
-			HelperImage: helper},
+			HelperImage: helper, Arch: c.machineArch},
 		Factory:          factory,
 		TalosDial:        machineapi.Dial,
 		EtcdBackupDir:    c.backupDir,
@@ -378,6 +379,7 @@ type config struct {
 	bmcInsecure   bool
 	poll          time.Duration
 	imageFactory  string
+	machineArch   string
 	registryCA    string
 	metricsAddr   string
 	metricsSecure bool
@@ -414,6 +416,9 @@ func parseFlags(args []string, output io.Writer) (*config, error) {
 		"Secret (key ca.crt) with the CA that signed your BMCs' HTTPS certificates; empty pins the key each BMC presents at the first contact and refuses any other until a person approves it")
 	fs.StringVar(&c.imageFactory, "image-factory", render.PublicFactory,
 		"host of the Talos image factory that builds and serves install images; a self-hosted factory works the same way")
+	fs.StringVar(&c.machineArch, "machine-arch", render.ArchAMD64,
+		"CPU architecture of the machines this operator installs, "+strings.Join(render.Arches(), " or ")+
+			": the image factory's boot media and the imager's installers are built for it; one operator installs one architecture")
 	fs.StringVar(&c.registryCA, "registry-ca", "",
 		"PEM file with the CA of the registry that serves firmware images; empty trusts the system CAs")
 	fs.BoolVar(&c.bmcInsecure, "bmc-insecure", false,
@@ -464,6 +469,9 @@ func parseFlags(args []string, output io.Writer) (*config, error) {
 	}
 	if c.ledgerPath == "" {
 		return nil, errors.New("--ledger is required: the path of the ledger file, e.g. --ledger=/etc/pk-metal/ledger.yaml")
+	}
+	if !slices.Contains(render.Arches(), c.machineArch) {
+		return nil, fmt.Errorf("--machine-arch must be one of %s, got %q", strings.Join(render.Arches(), ", "), c.machineArch)
 	}
 	// The release operation carries it in seconds, and its schema allows an hour.
 	if c.shutdown < time.Second || c.shutdown > time.Hour {

@@ -110,6 +110,10 @@ func TestApproveRollout(t *testing.T) {
 		done := planned()
 		done.Spec.Approval = osv1alpha1.RolloutApproval{ApprovedBy: "bob", PlanHash: planHash}
 		assert.ErrorContains(t, approvableRollout(done), "already approved by bob")
+		moved := planned()
+		moved.Status.Conditions = append(moved.Status.Conditions, metav1.Condition{Type: osv1alpha1.ConditionComplete,
+			Status: metav1.ConditionFalse, Reason: osv1alpha1.ReasonPlanChanged, Message: "the plan changed before approval"})
+		assert.ErrorContains(t, approvableRollout(moved), "has ended (PlanChanged: the plan changed before approval)")
 	})
 	t.Run("no terminal and no --yes", func(t *testing.T) {
 		cl := fakeClient(planned())

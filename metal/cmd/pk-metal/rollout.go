@@ -260,9 +260,12 @@ type rolloutApproval struct {
 // approvableRollout refuses a rollout that nobody can approve now. Whether
 // the proposer may approve it is the site's setting (selfApproval).
 func approvableRollout(ro *osv1alpha1.TalosRollout) error {
+	st := metrics.RolloutStateOf(ro)
 	switch {
 	case ro.Spec.Approval.ApprovedBy != "":
 		return fmt.Errorf("rollout %s is already approved by %s (an approval cannot be changed)", ro.Name, ro.Spec.Approval.ApprovedBy)
+	case st.Ended:
+		return fmt.Errorf("rollout %s has ended (%s: %s); there is nothing to approve", ro.Name, st.Reason, st.Message)
 	case ro.Spec.Abort:
 		return fmt.Errorf("rollout %s was aborted; there is nothing to approve", ro.Name)
 	case ro.Status.PlanHash == "" || len(ro.Status.Plan) == 0:

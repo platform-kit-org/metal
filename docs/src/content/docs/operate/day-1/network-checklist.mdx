@@ -29,7 +29,7 @@ Open every network path that the install needs, before you enroll the first mach
 ## The paths
 
 <Figure
-  title="Network paths: the operator calls the BMCs and the Talos API; the BMCs fetch media from the operator; the nodes pull images."
+  title="Network paths: the operator calls the BMCs, the Talos API and the Kubernetes API; the BMCs fetch media from the operator; the nodes pull images."
   caption="Arrows point from the side that opens the connection."
   width={760}
   height={250}
@@ -41,12 +41,12 @@ Open every network path that the install needs, before you enroll the first mach
   <Box x={26} y={60} w={190} h={50} label="Operator" sub="manager pod" variant="accent" />
   <Box x={26} y={160} w={190} h={50} label="Media service" sub="NodePort 30443" />
   <Box x={282} y={60} w={190} h={50} label="BMC" sub="Redfish, TCP 443" />
-  <Box x={282} y={160} w={190} h={50} label="Node" sub="Talos API, TCP 50000" />
+  <Box x={282} y={160} w={190} h={50} label="Node" sub="Talos 50000, Kubernetes 6443" />
   <Box x={538} y={60} w={196} h={50} label="Image factory" sub="factory.talos.dev" />
   <Box x={538} y={160} w={196} h={50} label="Registries, DNS, NTP" sub="ghcr.io, registry.k8s.io" />
   <Edge points={[[216, 76], [282, 76]]} label="1" at={[249, 70]} />
   <Edge points={[[282, 100], [216, 176]]} label="2" at={[262, 140]} />
-  <Edge points={[[216, 100], [282, 184]]} label="3" at={[232, 156]} />
+  <Edge points={[[216, 100], [282, 184]]} label="3, 6" at={[232, 156]} />
   <Edge points={[[472, 185], [538, 185]]} label="5" at={[505, 179]} />
   <Edge points={[[121, 60], [121, 30], [636, 30], [636, 60]]} variant="muted" label="4" at={[380, 24]} />
 </Figure>
@@ -62,6 +62,7 @@ Check each row with your network team. The number is the arrow in the figure.
 | 3 | Management cluster nodes | Each installed node | TCP 50000 | The operator checks that the node came up and reads its state. |
 | 4 | Management cluster nodes | The image factory | TCP 443 | The operator registers the image [](term:schematic) and downloads the installer ISO. |
 | 5 | Each node | DNS, NTP, the image factory registry, `ghcr.io`, `registry.k8s.io` | TCP 443, UDP 53, UDP 123 | Talos pulls its installer image and the Kubernetes images. |
+| 6 | Management cluster nodes | `spec.endpoint` of each [](kind:TalosCluster), usually the VIP | TCP 6443 (the port in the endpoint) | The operator checks that the Kubernetes API answers. It cordons and drains nodes. |
 
 Also do these steps:
 
@@ -70,6 +71,7 @@ Also do these steps:
 3. Write the static node addresses, the gateway and the VIP in your notes. You need them in the [](kind:TalosNode) and [](kind:TalosCluster) objects.
 4. If your BMCs use one virtual media slot, let the management cluster pull `ghcr.io/siderolabs/imager`.
 5. Make sure that each machine agrees with [](ref:hardware): UEFI boot mode, and a BMC license for virtual media.
+6. Let the admin workstation reach the nodes on TCP 50000 and the VIP on TCP 6443. `talosctl` and `kubectl` use these paths.
 
 The NetworkPolicy `pk-metal-manager` lets only the BMC network open row 2. Set the BMC network in your overlay. See [](ref:media-store#network-policy).
 
@@ -104,6 +106,7 @@ Thus a BMC network needs no route to the internet and no DNS server.
 | `insertMedia` fails, and the BMC log shows a connection error | The BMC cannot reach the media service. Check row 2 and the NetworkPolicy. |
 | The install is not proposed, and the factory BootAsset is not `Ready` | The manager cannot download the installer. Check row 4. |
 | The node boots but does not check in | [](rb:node-not-ready) |
+| The TalosCluster shows `AVAILABLE` `False`, reason `KubernetesUnreachable` | The operator cannot reach the Kubernetes API of the cluster. Check row 6. |
 
 ## Related
 

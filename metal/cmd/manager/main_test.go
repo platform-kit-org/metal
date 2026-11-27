@@ -2,8 +2,12 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"encoding/json"
 	"errors"
 	"flag"
+	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,6 +19,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/klog/v2"
 	"sigs.k8s.io/yaml"
 
 	"github.com/dennisklein/platform-kit/metal/internal/controller"
@@ -43,6 +48,34 @@ func TestParseFlagsDefaults(t *testing.T) {
 	assert.Empty(t, c.mediaStore, "no media store unless one is mounted")
 	assert.Equal(t, controller.DefaultImagerRepository, c.imagerRepo)
 	assert.Contains(t, c.imagerPins, "v1.14.6", "the release the operator renders for is pinned")
+}
+
+// Each line on the standard error of the manager is one JSON object, also a
+// line of client-go (klog) and of net/http (the standard log package). Each ts
+// has the layout of the audit lines, and an error line has one stacktrace key.
+func TestEveryLogLineIsOneJSONObject(t *testing.T) {
+	var out bytes.Buffer
+	defaultSlog := slog.Default()
+	logger := setLoggers(&out)
+	t.Cleanup(func() {
+		klog.ClearLogger()
+		log.SetOutput(os.Stderr)
+		log.SetFlags(log.LstdFlags)
+		slog.SetDefault(defaultSlog)
+	})
+
+	klog.FromContext(context.Background()).Info("Attempting to acquire leader lease")
+	log.Print("http: TLS handshake error from 192.0.2.1:4242: EOF")
+	logger.Error(errors.New("boom"), "Observed a panic", "stacktrace", "goroutine 1 [running]")
+
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	require.Len(t, lines, 3, out.String())
+	for _, line := range lines {
+		var m map[string]any
+		require.NoError(t, json.Unmarshal([]byte(line), &m), line)
+		assert.Regexp(t, `^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d+`, m["ts"], line)
+	}
+	assert.Equal(t, 1, strings.Count(lines[2], `"stacktrace"`), lines[2])
 }
 
 func TestImagerDigestFlagAddsAPin(t *testing.T) {

@@ -15,6 +15,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"maps"
 	"net/http"
 	"os"
@@ -23,12 +24,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-logr/logr"
+	"go.uber.org/zap/zapcore"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/util/cert"
+	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -90,8 +94,7 @@ func main() {
 		return
 	}
 
-	ctrl.SetLogger(zap.New())
-	log := ctrl.Log.WithName("manager")
+	log := setLoggers(os.Stderr).WithName("manager")
 
 	led, err := ledger.Load(c.ledgerPath)
 	if err != nil {
@@ -278,6 +281,19 @@ func main() {
 		log.Error(err, "manager exited")
 		os.Exit(1)
 	}
+}
+
+// setLoggers sends controller-runtime, client-go (klog) and the standard log
+// package (net/http) to one JSON logger on w, so that each line is one JSON
+// object with the ts layout of the audit lines. Only a panic gets the stack of
+// zap: the "Observed a panic" line carries its stack in its own key.
+func setLoggers(w io.Writer) logr.Logger {
+	logger := zap.New(zap.WriteTo(w), zap.StacktraceLevel(zapcore.PanicLevel),
+		func(o *zap.Options) { o.TimeEncoder = zapcore.RFC3339NanoTimeEncoder })
+	ctrl.SetLogger(logger)
+	klog.SetLogger(logger)
+	slog.SetDefault(slog.New(logr.ToSlogHandler(logger)))
+	return logger
 }
 
 // ownImage reads the manager's own Pod (POD_NAMESPACE and POD_NAME, from the

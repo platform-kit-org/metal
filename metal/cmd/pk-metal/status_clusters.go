@@ -173,40 +173,29 @@ func cmpJoin(a1, a2, b1, b2 string) int {
 	return strings.Compare(a2, b2)
 }
 
-// renderClusters prints the CLUSTER and NODE tables, or nothing when there
-// is no cluster and no node (a rack without the OS kinds in use).
-func renderClusters(rep statusReport, section func(string, [][]string, []string)) {
-	if len(rep.Clusters) > 0 {
-		var rows [][]string
-		var notes []string
-		for _, c := range rep.Clusters {
-			running := strings.Join(c.TalosVersionsRunning, ",")
-			bootstrapped := "-"
-			if c.BootstrappedAt != "" {
-				bootstrapped = c.BootstrappedAt
-			}
-			rows = append(rows, []string{c.Name,
-				orDash(c.TalosVersion) + " / " + orDash(running),
-				orDash(c.KubernetesVersion) + " / " + orDash(c.KubernetesVersionRunning),
-				fmt.Sprintf("%d/%d", c.ReadyControlPlanes, c.ControlPlanes),
-				fmt.Sprintf("%d/%d", c.ReadyWorkers, c.Workers),
-				orDash(c.Etcd), bootstrapped, orDash(c.Backup), orDash(c.Available)})
-			if c.NeedsAttention {
-				notes = append(notes, note(c.Name, c.Message, "needs attention"))
-			}
+// clusterTables are the CLUSTER and NODE tables; each is empty when there is
+// no cluster or no node (a rack without the OS kinds in use).
+func clusterTables(rep statusReport) []table {
+	clusters := table{header: "CLUSTER\tTALOS WANT/RUN\tK8S WANT/RUN\tCP\tWORKERS\tETCD\tBOOTSTRAPPED\tBACKUP\tAVAILABLE"}
+	for _, c := range rep.Clusters {
+		running := strings.Join(c.TalosVersionsRunning, ",")
+		bootstrapped := "-"
+		if c.BootstrappedAt != "" {
+			bootstrapped = c.BootstrappedAt
 		}
-		section("CLUSTER\tTALOS WANT/RUN\tK8S WANT/RUN\tCP\tWORKERS\tETCD\tBOOTSTRAPPED\tBACKUP\tAVAILABLE", rows, notes)
+		clusters.row(c.Name,
+			orDash(c.TalosVersion)+" / "+orDash(running),
+			orDash(c.KubernetesVersion)+" / "+orDash(c.KubernetesVersionRunning),
+			fmt.Sprintf("%d/%d", c.ReadyControlPlanes, c.ControlPlanes),
+			fmt.Sprintf("%d/%d", c.ReadyWorkers, c.Workers),
+			orDash(c.Etcd), bootstrapped, orDash(c.Backup), orDash(c.Available))
+		clusters.noteIf(c.NeedsAttention, c.Name, c.Message, "needs attention")
 	}
-	if len(rep.Nodes) > 0 {
-		var rows [][]string
-		var notes []string
-		for _, n := range rep.Nodes {
-			rows = append(rows, []string{n.Name, orDash(n.Cluster), orDash(n.Role), orDash(n.Host), orDash(n.Address),
-				orDash(n.Version), orDash(n.Stage), orDash(n.Ready)})
-			if n.NeedsAttention {
-				notes = append(notes, note(n.Name, n.Message, "not Ready"))
-			}
-		}
-		section("NODE\tCLUSTER\tROLE\tHOST\tADDRESS\tVERSION\tSTAGE\tREADY", rows, notes)
+	nodes := table{header: "NODE\tCLUSTER\tROLE\tHOST\tADDRESS\tVERSION\tSTAGE\tREADY"}
+	for _, n := range rep.Nodes {
+		nodes.row(n.Name, orDash(n.Cluster), orDash(n.Role), orDash(n.Host), orDash(n.Address),
+			orDash(n.Version), orDash(n.Stage), orDash(n.Ready))
+		nodes.noteIf(n.NeedsAttention, n.Name, n.Message, "not Ready")
 	}
+	return []table{clusters, nodes}
 }

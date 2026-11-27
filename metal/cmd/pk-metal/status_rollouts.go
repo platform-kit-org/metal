@@ -57,21 +57,16 @@ func (r rolloutStatus) history() bool {
 	return r.State == osv1alpha1.ReasonRolloutSucceeded || r.State == osv1alpha1.ReasonNothingToDo
 }
 
-// renderRollouts prints the rollouts that are not history.
-func renderRollouts(rep statusReport, section func(string, [][]string, []string)) {
-	var rows [][]string
-	var notes []string
+// rolloutTable is the ROLLOUT table: the rollouts that are not history.
+func rolloutTable(rep statusReport) table {
+	t := table{header: "ROLLOUT\tCLUSTER\tKIND\tNODES\tSTATE\tAPPROVED"}
 	for _, r := range rep.Rollouts {
 		if r.history() {
 			continue
 		}
-		rows = append(rows, []string{r.Name, orDash(r.Cluster), orDash(r.Kind),
-			fmt.Sprintf("%d/%d", r.NodesDone, r.NodesTotal), orDash(r.State), orDash(r.ApprovedBy)})
-		if r.NeedsAttention {
-			notes = append(notes, note(r.Name, r.Message, r.State))
-		}
+		t.row(r.Name, orDash(r.Cluster), orDash(r.Kind), fmt.Sprintf("%d/%d", r.NodesDone, r.NodesTotal),
+			orDash(r.State), orDash(r.ApprovedBy))
+		t.noteIf(r.NeedsAttention, r.Name, r.Message, r.State)
 	}
-	if len(rows) > 0 {
-		section("ROLLOUT\tCLUSTER\tKIND\tNODES\tSTATE\tAPPROVED", rows, notes)
-	}
+	return t
 }

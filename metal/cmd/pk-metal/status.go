@@ -404,23 +404,7 @@ func addMachines(rep *statusReport, in topInput) {
 // every row that needs a person.
 func renderReport(rep statusReport) string {
 	var sb strings.Builder
-	section := func(header string, rows [][]string, notes []string) {
-		if sb.Len() > 0 {
-			sb.WriteString("\n")
-		}
-		w := tabwriter.NewWriter(&sb, 2, 0, 2, ' ', 0)
-		fmt.Fprintln(w, header)
-		for _, r := range rows {
-			fmt.Fprintln(w, strings.Join(r, "\t"))
-		}
-		_ = w.Flush()
-		for _, n := range notes {
-			fmt.Fprintf(&sb, "  %s\n", n)
-		}
-	}
-
-	var rows [][]string
-	var notes []string
+	hosts := table{header: "HOST\tASSET\tVENDOR\tPHASE\tCLAIM\tNODE\tPATHS\tBLOCKED"}
 	for _, h := range rep.Hosts {
 		node := "-"
 		if h.Node != nil {
@@ -429,48 +413,42 @@ func renderReport(rep statusReport) string {
 				node += " (" + h.Node.Address + ")"
 			}
 		}
-		rows = append(rows, []string{h.Name, orDash(h.Asset), orDash(h.Vendor), orDash(h.Phase), orDash(h.Claim), node,
-			fmt.Sprintf("%d/%d", h.PathsUp, h.PathsTotal), h.BlockedOn})
-		if h.NeedsAttention {
-			notes = append(notes, note(h.Name, h.Message, h.BlockedOn))
-		}
+		hosts.row(h.Name, orDash(h.Asset), orDash(h.Vendor), orDash(h.Phase), orDash(h.Claim), node,
+			fmt.Sprintf("%d/%d", h.PathsUp, h.PathsTotal), h.BlockedOn)
+		hosts.noteIf(h.NeedsAttention, h.Name, h.Message, h.BlockedOn)
 	}
-	section("HOST\tASSET\tVENDOR\tPHASE\tCLAIM\tNODE\tPATHS\tBLOCKED", rows, notes)
+	hosts.write(&sb, true)
 
 	// Succeeded operations are history, not state of the rack; failures stay
 	// visible until someone retries them.
-	rows, notes = nil, nil
+	ops := table{header: "OPERATION\tHOST\tPHASE\tAPPROVED\tBLOCKED"}
 	for _, op := range rep.Operations {
 		if op.Phase == string(metalv1alpha1.OperationSucceeded) {
 			continue
 		}
 		ref := nsName(op.Namespace, op.Name)
-		rows = append(rows, []string{ref, op.Host, orDash(op.Phase), orDash(op.ApprovedBy), op.BlockedOn})
+		ops.row(ref, op.Host, orDash(op.Phase), orDash(op.ApprovedBy), op.BlockedOn)
 		switch {
 		case op.Phase == string(metalv1alpha1.OperationFailed):
-			notes = append(notes, note(ref, op.Message, "failed")+"; to try again: pk-metal retry "+ref)
+			ops.notes = append(ops.notes, note(ref, op.Message, "failed")+"; to try again: pk-metal retry "+ref)
 		case op.Phase == string(metalv1alpha1.OperationAborted):
-			notes = append(notes, note(ref, op.Message, "aborted")+"; to run it again: pk-metal retry "+ref)
+			ops.notes = append(ops.notes, note(ref, op.Message, "aborted")+"; to run it again: pk-metal retry "+ref)
 		case op.Phase == string(metalv1alpha1.OperationAwaitingApproval) || (op.ApprovedBy == "" && op.BlockedOn == metalv1alpha1.ReasonAwaitingApproval):
-			notes = append(notes, ref+": waits for approval; see the plan and approve: pk-metal approve "+ref)
-		case op.NeedsAttention:
-			notes = append(notes, note(ref, op.Message, op.BlockedOn))
+			ops.notes = append(ops.notes, ref+": waits for approval; see the plan and approve: pk-metal approve "+ref)
+		default:
+			ops.noteIf(op.NeedsAttention, ref, op.Message, op.BlockedOn)
 		}
 	}
-	if len(rows) > 0 {
-		section("OPERATION\tHOST\tPHASE\tAPPROVED\tBLOCKED", rows, notes)
-	}
+	ops.write(&sb, false)
 
-	rows, notes = nil, nil
+	eps := table{header: "ENDPOINT\tASSET\tVENDOR\tPHASE\tADDRESS\tBLOCKED"}
 	for _, ep := range rep.Endpoints {
-		rows = append(rows, []string{ep.Name, orDash(ep.Asset), orDash(ep.Vendor), orDash(ep.Phase), ep.Address, ep.BlockedOn})
-		if ep.NeedsAttention {
-			notes = append(notes, note(ep.Name, ep.Message, ep.Phase))
-		}
+		eps.row(ep.Name, orDash(ep.Asset), orDash(ep.Vendor), orDash(ep.Phase), ep.Address, ep.BlockedOn)
+		eps.noteIf(ep.NeedsAttention, ep.Name, ep.Message, ep.Phase)
 	}
-	section("ENDPOINT\tASSET\tVENDOR\tPHASE\tADDRESS\tBLOCKED", rows, notes)
+	eps.write(&sb, true)
 
-	rows, notes = nil, nil
+	claims := table{header: "CLAIM\tASSET\tPHASE\tBLOCKED"}
 	for _, c := range rep.Claims {
 		if c.Phase == string(metalv1alpha1.ClaimBound) {
 			continue
@@ -480,17 +458,52 @@ func renderReport(rep statusReport) string {
 		if c.OnHold {
 			blocked = strings.TrimSpace(blocked + " (on hold)")
 		}
-		rows = append(rows, []string{ref, c.Asset, orDash(c.Phase), blocked})
-		if c.NeedsAttention {
-			notes = append(notes, note(ref, c.Message, c.BlockedOn))
-		}
+		claims.row(ref, c.Asset, orDash(c.Phase), blocked)
+		claims.noteIf(c.NeedsAttention, ref, c.Message, c.BlockedOn)
 	}
-	if len(rows) > 0 {
-		section("CLAIM\tASSET\tPHASE\tBLOCKED", rows, notes)
+	claims.write(&sb, false)
+	for _, t := range clusterTables(rep) {
+		t.write(&sb, false)
 	}
-	renderClusters(rep, section)
-	renderRollouts(rep, section)
+	rolloutTable(rep).write(&sb, false)
 	return sb.String()
+}
+
+// table is one table of the report: its header, its rows, and under it a
+// line for each row that needs a person.
+type table struct {
+	header string
+	rows   [][]string
+	notes  []string
+}
+
+func (t *table) row(cells ...string) { t.rows = append(t.rows, cells) }
+
+// noteIf adds the line of a row that needs a person.
+func (t *table) noteIf(yes bool, name, message, fallback string) {
+	if yes {
+		t.notes = append(t.notes, note(name, message, fallback))
+	}
+}
+
+// write prints the table below what sb holds. A table without rows prints
+// nothing, unless always is set.
+func (t table) write(sb *strings.Builder, always bool) {
+	if len(t.rows) == 0 && !always {
+		return
+	}
+	if sb.Len() > 0 {
+		sb.WriteString("\n")
+	}
+	w := tabwriter.NewWriter(sb, 2, 0, 2, ' ', 0)
+	fmt.Fprintln(w, t.header)
+	for _, r := range t.rows {
+		fmt.Fprintln(w, strings.Join(r, "\t"))
+	}
+	_ = w.Flush()
+	for _, n := range t.notes {
+		fmt.Fprintf(sb, "  %s\n", n)
+	}
 }
 
 // note is the "why" line under a table: the controller's sentence, or the bare

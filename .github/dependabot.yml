@@ -4,3 +4,29 @@ updates:
     directory: /
     schedule:
       interval: weekly
+  # One pull request a week for the Go module. The k8s.io modules and
+  # controller-runtime follow the Kubernetes release of mise.toml, and the
+  # Talos machinery follows the Talos release: a minor update of these is a
+  # change of the supported versions, made by hand.
+  - package-ecosystem: gomod
+    directory: /metal
+    schedule:
+      interval: weekly
+    groups:
+      go:
+        patterns: ["*"]
+    ignore:
+      - dependency-name: "k8s.io/*"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "sigs.k8s.io/controller-runtime"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "github.com/siderolabs/talos/pkg/machinery"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+  # One pull request a week for the documentation site.
+  - package-ecosystem: npm
+    directory: /docs
+    schedule:
+      interval: weekly
+    groups:
+      docs:
+        patterns: ["*"]

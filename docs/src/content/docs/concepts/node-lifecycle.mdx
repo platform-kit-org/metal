@@ -16,12 +16,12 @@ import Box from '../../../components/diagram/Box.astro';
 import Edge from '../../../components/diagram/Edge.astro';
 
 A [](kind:TalosNode) is a member of its cluster while a claim gives it a machine.
-For etcd, the operator does not trust these counts. Before a control plane joins or leaves, it reads the member list from etcd.
+For etcd, the operator does not trust the TalosNode count. Before a control plane joins or leaves, it reads the member list from etcd.
 
 <Figure title="A TalosNode is written, then a claim gives it a machine, it boots and joins etcd as a learner, is promoted to voter, and later leaves etcd and is reset when the claim or the TalosNode is deleted." caption="The life of a control plane. Joins and leaves are one at a time." width={720} height={170} wide>
   <Box x={5} y={30} w={130} h={54} label="Written" sub="unassignedNodes" />
   <Box x={150} y={30} w={130} h={54} label="Claimed" sub="member" />
-  <Box x={295} y={30} w={130} h={54} label="Learner" sub="EtcdJoinWaiting" variant="warn" />
+  <Box x={295} y={30} w={130} h={54} label="Learner" sub="joins etcd" variant="warn" />
   <Box x={440} y={30} w={130} h={54} label="Voter" sub="Ready" variant="ok" />
   <Box x={585} y={30} w={130} h={54} label="Left, reset" sub="RemovalBlocked" />
   <Edge points={[[135, 57], [150, 57]]} />
@@ -37,7 +37,7 @@ For etcd, the operator does not trust these counts. Before a control plane joins
   <dt>Member</dt>
   <dd>A TalosNode that a claim gave a machine. A TalosNode that waits for a machine is in `status.unassignedNodes` and does not lower `Available`.</dd>
   <dt>Join serialization</dt>
-  <dd>A control plane boot waits with `EtcdJoinWaiting` while another control plane boots or leaves. It also waits while a member is not healthy, a member is a learner, or etcd has a member with the same name.</dd>
+  <dd>A control plane boot waits with `EtcdJoinWaiting` while another control plane boots or leaves. It also waits while an etcd member is not healthy, an etcd member is a learner, or etcd has a member with the same name.</dd>
   <dt>Leave verdict</dt>
   <dd>A control plane leaves only if what stays is safe: not empty, a healthy majority, an odd count. The leader leaves last.</dd>
   <dt>ack-etcd-risk</dt>

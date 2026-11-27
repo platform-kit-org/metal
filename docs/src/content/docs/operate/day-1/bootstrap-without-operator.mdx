@@ -71,29 +71,23 @@ The usual way is different. Start kind on a workstation, install the operator th
    read -rs PK_METAL_BMC_PASSWORD && export PK_METAL_BMC_PASSWORD
    ```
 
-4. Mount the installer ISO on the first slot of the BMC. Use the web console of the BMC, and the URL from step 1.
+4. Mount the installer ISO on the CD slot of the BMC. Use the web console of the BMC, and the URL from step 1.
    The BMC must reach the Image Factory. If it cannot, download the ISO and serve it from a host that the BMC can reach.
 
-5. Find the other slot. Note its id.
+5. Boot the first machine into its config. `--listen` is an address on your workstation that the BMC can reach.
 
    ```sh
-   pk-metal check https://192.0.2.21
-   ```
-
-6. Boot the first machine into its config. `--media` is the slot from step 5. `--listen` is an address on your workstation that the BMC can reach.
-
-   ```sh
-   pk-metal boot --config ~/prod-clusterconfig/cp-1.yaml --node cp-1 --media 2 --listen 192.0.2.5:8443 https://192.0.2.21
+   pk-metal boot --config ~/prod-clusterconfig/cp-1.yaml --node cp-1 --listen 192.0.2.5:8443 https://192.0.2.21
    ```
 
    The command shows its steps. Without `--yes`, it refuses to reset a machine that is on.
    The machine starts the installer, which installs Talos with the config to the disk.
 
-7. Examine the console of the machine. It must start the installer and not an operating system that is on the disk.
+6. Examine the console of the machine. It must start the installer and not an operating system that is on the disk.
 
-8. Do step 3 to step 7 for each other machine.
+7. Do step 3 to step 6 for each other machine.
 
-9. Start the cluster. The command bootstraps etcd one time and waits until each node is `Ready`.
+8. Start the cluster. The command bootstraps etcd one time and waits until each node is `Ready`.
 
    ```sh
    pk-metal bootstrap --dir manifests --secrets secrets.yaml
@@ -134,7 +128,6 @@ Each node is `Ready`.
 | `boot` times out and the image was not read | The BMC cannot reach `--listen`. Use `--relay`, or open the port. |
 | The machine starts in Talos maintenance mode and waits | The installer has no `talos.config=metal-iso`. Do step 1 again. |
 | The machine starts the old system from its disk | The boot override did not start the installer. Mount the installer on the slot that the machine starts first. |
-| `boot` ejected the installer | `boot` used the installer slot. Give the other slot with `--media`. |
 | `bootstrap` waits for a node | Read the serial console of the node. See [](rb:node-not-ready). |
 | `bootstrap` reports data in etcd | A member has old etcd data. See [](rb:bootstrap-refused). |
 

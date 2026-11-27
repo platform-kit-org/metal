@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"slices"
 	"strings"
@@ -148,6 +150,27 @@ func TestLadderStopsWhenTheRelayIsTaken(t *testing.T) {
 	}
 }
 
+// TestLadderKeepsTheInstaller: without MediaID, the ladder mounts the config
+// on the slot after the boot slot, as the operator does, and leaves the
+// installer on the boot slot. The generic BMC lists its USB slot first and
+// its CD slot second.
+func TestLadderKeepsTheInstaller(t *testing.T) {
+	installer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.ServeContent(w, r, "installer.iso", time.Time{}, strings.NewReader("installer"))
+	}))
+	defer installer.Close()
+	ctx := context.Background()
+	st := simState(t, "generic") // the machine is off
+	require.NoError(t, st.InsertMedia(ctx, "2", installer.URL+"/installer.iso", nil))
+
+	res, err := boot.Run(ctx, boot.Options{
+		Client: st, NodeName: "w", Config: config, TTL: time.Minute, Listen: "127.0.0.1:0", Logf: t.Logf,
+	})
+	require.NoError(t, err)
+	assert.True(t, res.ReadComplete, "the machine read the config from the USB slot")
+	assert.Equal(t, []byte("installer"), st.BootImage("2"), "the installer stays on the CD slot")
+}
+
 // TestLadderVmmDialect runs the Huawei shape: single CD slot, credentials as
 // URL userinfo, no UsbCd target.
 func TestLadderVmmDialect(t *testing.T) {
@@ -195,9 +218,9 @@ func TestLadderHold(t *testing.T) {
 	want, err := asset.BuildConfigISO(config)
 	require.NoError(t, err)
 	require.Eventually(t, func() bool {
-		return len(st.BootImage("VirtualMedia1")) > 0
+		return len(st.BootImage("VirtualMedia2")) > 0
 	}, 10*time.Second, 50*time.Millisecond, "the boot pull lands while holding")
-	assert.Equal(t, want, st.BootImage("VirtualMedia1"), "the sim booted the exact packed ISO")
+	assert.Equal(t, want, st.BootImage("VirtualMedia2"), "the sim booted the exact packed ISO")
 
 	media, err := st.Media(context.Background())
 	require.NoError(t, err)

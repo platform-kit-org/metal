@@ -59,6 +59,7 @@ Nothing on a machine changes until a person approves that plan.
 </dl>
 
 If the cluster already asks for the version, the command changes nothing and shows the rollout.
+If that rollout failed or a person aborted it, the command gives code 1 and tells you to delete the rollout. The operator then proposes a new one.
 With `--wait 0`, the command does not wait for the rollout.
 
 ## Examples

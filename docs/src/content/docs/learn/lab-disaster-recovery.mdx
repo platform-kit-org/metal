@@ -116,7 +116,7 @@ It wipes the etcd data of each control plane. You lose all changes after the sna
 | `etcd backup volume` | The manager gets a volume for snapshots. | [](ctrl:manager) |
 | `EtcdBackupPolicy lab-dr, a snapshot, and markers around it` | The task makes an age key and a policy. It writes `dr-before`, takes a snapshot, and writes `dr-after`. | [](cli:backup) |
 | `losing etcd` | `talosctl reset` wipes `EPHEMERAL` on the control plane. The TalosCluster reports `EtcdDataLost`. | [](kind:TalosCluster) |
-| `restoring <snapshot>` | The user `lab-restorer` proposes the restore. The admin approves it. The task uploads the snapshot. | [](cli:restore) |
+| `restoring <snapshot>` | The user `lab-restorer` proposes the restore. The admin approves it. The task uploads the snapshot. The plan names the snapshot time. At a site, read it before you approve. | [](cli:restore) |
 | `waiting for <operation> and for etcd` | The operation with [](act:EtcdRecover) runs. etcd starts from the snapshot. | [](kind:HostOperation) |
 
 <Checkpoint>

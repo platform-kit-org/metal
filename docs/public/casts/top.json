@@ -7,7 +7,7 @@
    "hold": 4,
    "caption": "node-1 is a Ready node. node-2 installs. The install of node-3 waits for approval.",
    "lines": [
-    "[[b|pk-metal top]]   TalosNodes Ready 1/3   Kubernetes nodes Ready 1/1   [[err|needs a person: 1]]",
+    "[[b|pk-metal top]]   TalosNodes Ready 1/3   [[err|needs a person: 1]]",
     "cluster lab: [[ok|● Bootstrapped]]  [[err|✗ Available]] [[warn|(NodesNotReady)]]  control planes 1/1, workers 0/2",
     "[[dim|fleet http://127.0.0.1:8440/state]]",
     "[[dim|╭──────────────────────────────────────────────╮]][[dim|╭──────────────────────────────────────────────╮]]",
@@ -47,7 +47,7 @@
    "hold": 5,
    "caption": "Press a. The view shows the plan of the operation, and it asks before it approves.",
    "lines": [
-    "[[b|pk-metal top]]   TalosNodes Ready 1/3   Kubernetes nodes Ready 1/1   [[err|needs a person: 1]]",
+    "[[b|pk-metal top]]   TalosNodes Ready 1/3   [[err|needs a person: 1]]",
     "cluster lab: [[ok|●]] [[ok|Bootstrapped]]  [[err|✗]] [[err|Available]] [[warn|(NodesNotReady)]]  control planes 1/1, workers 0/2",
     "[[dim|fleet http://127.0.0.1:8440/state]]",
     "[[dim|┌────────────────────────────────────────────────────────────────────────────────────────────┐]]",
@@ -80,7 +80,7 @@
    "hold": 4,
    "caption": "After the approval, the operator boots node-3 from virtual media and waits for the check-in.",
    "lines": [
-    "[[b|pk-metal top]]   TalosNodes Ready 2/3   Kubernetes nodes Ready 2/2   [[ok|needs a person: 0]]",
+    "[[b|pk-metal top]]   TalosNodes Ready 2/3   [[ok|needs a person: 0]]",
     "cluster lab: [[ok|● Bootstrapped]]  [[err|✗ Available]] [[warn|(NodesNotReady)]]  control planes 1/1, workers 1/2",
     "[[dim|fleet http://127.0.0.1:8440/state]]",
     "[[dim|╭──────────────────────────────────────────────╮]][[dim|╭──────────────────────────────────────────────╮]]",
@@ -121,7 +121,7 @@
    "hold": 5,
    "caption": "All machines are Provisioned. All nodes are Ready. Nothing waits for a person.",
    "lines": [
-    "[[b|pk-metal top]]   TalosNodes Ready 3/3   Kubernetes nodes Ready 3/3   [[ok|needs a person: 0]]",
+    "[[b|pk-metal top]]   TalosNodes Ready 3/3   [[ok|needs a person: 0]]",
     "cluster lab: [[ok|● Bootstrapped]]  [[ok|● Available]]  control planes 1/1, workers 2/2",
     "[[dim|fleet http://127.0.0.1:8440/state]]",
     "[[dim|╭──────────────────────────────────────────────╮]][[dim|╭──────────────────────────────────────────────╮]]",
@@ -147,7 +147,7 @@
     "│ [[dim|claim   ]]default/node-3                                                                       │",
     "│ [[dim|op      ]]-                                                                                    │",
     "│ [[dim|node    ]]node-3 10.77.0.13                                                                    │",
-    "│ [[dim|        ]][[ok|● Talos ready]]  [[ok|● kubelet Ready]]                                                       │",
+    "│ [[dim|        ]][[ok|● Talos ready]]                                                                        │",
     "│ [[dim|console ]].lab/state/node-3/console.log                                                        │",
     "│ [[dim|│ ]][talos] boot sequence: done: 41.3s                                                         │",
     "│ [[dim|│ ]][talos] task startAllServices (1/1): done                                                  │",

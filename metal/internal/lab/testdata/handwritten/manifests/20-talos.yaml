@@ -17,9 +17,10 @@
 # %include part of a kickstart); each TalosNode holds what is per machine
 # (address, install disk, role). The operator renders one Talos machine
 # configuration per node from the two. Change a value here and apply it again
-# (mise run lab:apply); the operator renders anew. A machine that is already
-# installed does not pick the change up by itself: push it with talosctl
-# (talosctl -n <address> patch machineconfig --patch @change.yaml).
+# (mise run lab:apply); the operator renders anew. A change reaches a machine
+# that is installed through a rollout: the operator proposes it, and a person
+# approves it (pk-metal rollout list). Do not patch a machine with talosctl:
+# the operator sees the drift, and its next Config rollout undoes the patch.
 apiVersion: os.platform-kit.org/v1alpha1
 kind: TalosCluster
 metadata:

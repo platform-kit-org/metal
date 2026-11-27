@@ -24,7 +24,7 @@ Install Talos on each machine and make the cluster `Available`.
 
 - Each machine has a [](kind:Host) in the phase `Available`. See [](howto:enroll-hosts).
 - Each node has a [](kind:TalosNode) with `Rendered=True`. See [](howto:define-a-cluster).
-- You are a member of the admin group (`pk-metal:admins` by default). Only this group can set `spec.os` on a claim. Cluster admin is not enough. See [The admin group and the approvers](howto:install-operator#the-admin-group-and-the-approvers).
+- You are a member of the admin group (`pk-metal:admins` by default). Only this group can set `spec.os` on a claim. Cluster admin is not enough. See [Get into the admin group](ref:rbac#get-into-the-admin-group).
 - For a BMC with one usable media slot, the overlay has the media store. See [One-slot BMCs](howto:install-operator#one-slot-bmcs).
 - A person who can approve is available. The ClusterRole `pk-metal-approver` gives this permission.
 

@@ -71,33 +71,22 @@ The key `selfApproval` in the ConfigMap `hostoperation-approval` tells if a pers
 
 ## Steps
 
+[](howto:install-operator) puts your groups into `bindings.yaml` and the first value of `selfApproval` into `approval.yaml`. These steps change the value after the install.
+
+After the first apply, only a member of the admin group can change or delete the ConfigMap. The `settings-guard` policy refuses each other person, also the cluster admin who applies the overlay. The operator writes a `settings.changed` line in the [](ref:audit-trail) for each change.
+
 <Steps>
 
-1. Bind the approvers. In `bindings.yaml`, replace `example:platform-approvers` with your group.
-
-2. Bind the persons on call. In `bindings.yaml`, replace `example:platform-oncall` with your group.
-
-3. Set `selfApproval` in `approval.yaml`.
-
-   ```yaml title="approval.yaml"
-   apiVersion: v1
-   kind: ConfigMap
-   metadata:
-     name: hostoperation-approval
-     namespace: pk-metal
-   data:
-     selfApproval: Forbidden
-   ```
-
-4. Apply the overlay.
+1. Ask a member of the admin group to set the value.
 
    ```sh
-   kubectl apply --server-side -k .
+   kubectl -n pk-metal patch configmap hostoperation-approval --type merge \
+     -p '{"data":{"selfApproval":"Forbidden"}}'
    ```
 
-   After the first install, only a member of the admin group can change or delete the ConfigMap. The `settings-guard` policy refuses each other person. The operator writes a `settings.changed` line in the [](ref:audit-trail) for each change.
+2. Put the same value in `approval.yaml`. Then the next apply of the overlay does not change the ConfigMap, and `settings-guard` does not refuse it.
 
-5. Read the setting back.
+3. Read the setting back.
 
    ```sh
    kubectl -n pk-metal get configmap hostoperation-approval -o jsonpath='{.data.selfApproval}{"\n"}'
@@ -105,10 +94,18 @@ The key `selfApproval` in the ConfigMap `hostoperation-approval` tells if a pers
 
    The API server uses the new value after a few seconds.
 
-6. Ask each approver to examine their rights.
+4. Ask each approver to examine their rights.
 
    ```sh
    kubectl auth can-i patch hostoperations -n pk-metal
+   ```
+
+   The output is `yes`.
+
+5. Ask each person on call to examine their rights. The runbooks read the manager log.
+
+   ```sh
+   kubectl auth can-i get pods --subresource=log -n pk-metal
    ```
 
    The output is `yes`.
@@ -117,10 +114,8 @@ The key `selfApproval` in the ConfigMap `hostoperation-approval` tells if a pers
 
 ## Who asked for a change
 
-The operator proposes most changes itself, as the result of an edit. For example, a new `talosVersion` on a [](kind:TalosCluster) becomes a rollout, and a `metal.platform-kit.org/wipe` mark on a Host becomes a wipe operation. The proposal names the operator as its proposer. So the person who made the edit must also be on the record.
+The operator proposes most changes itself, as the result of an edit. For example, a new `talosVersion` on a [](kind:TalosCluster) becomes a rollout, and a `metal.platform-kit.org/wipe` mark on a Host becomes a wipe operation. The proposal names the operator as its proposer. So the person who made the edit must also be on the record. Each such edit names its user in the annotation `metal.platform-kit.org/requested-by`. The policy [`requested-by`](ref:admission-policies#requested-by) has the rules, and [`requested-by-stamp`](ref:admission-policies#requested-by-stamp) writes the annotation for you on Kubernetes 1.36 or later.
 
-- Each request that makes the operator propose work names its user in the annotation `metal.platform-kit.org/requested-by`. If `selfApproval` is `Forbidden`, the `requested-by` policy refuses a request that does not name its user.
-- On Kubernetes 1.36 or later, the API server sets the annotation for you. The kustomize component `config/name-stamp` installs the policy [`requested-by-stamp`](ref:admission-policies#requested-by-stamp), which writes the username of the request. This applies to `kubectl`, to a GitOps controller, and to the pk-metal commands. The sample site overlay and the lab install it.
 - On an older release, set the annotation in the same request. The pk-metal commands do this for you, for example [](cli:upgrade), [](cli:wipe), and `pk-metal rollout pause`.
 - A delete of such an object needs the annotation before the delete. The API server cannot stamp a delete. The pk-metal commands set it first, for example [](cli:scale) and [](cli:replace). With `kubectl`, set it first:
 
@@ -130,16 +125,12 @@ The operator proposes most changes itself, as the result of an edit. For example
   kubectl delete talosnode node-2
   ```
 
-- You can set the annotation to your own username only. You cannot remove it. To make a change of another person your own, set your own username.
-- The operator copies the names from the objects behind a proposal into `spec.requestedBy` of the operation or rollout. This field cannot change after the create.
+- To make a change of another person your own, set your own username.
+- The operator copies the names from the objects behind a proposal into `spec.requestedBy` of the operation or rollout.
 - An install applies the config of the node. So the install also names the last editor of the [](kind:TalosCluster). It also names the last editor of each patch ConfigMap of the node. A rollout names the same persons.
 - A BIOS or firmware change names the last editor of each profile that it applies. A profile can select the Host by a label of the [](kind:HostClaim). Then the change also names the last editor of the claim. A label that a person puts on the Host directly names nobody.
 - A rollout that the operator proposed ends with `PlanChanged` if a person who is not in its `spec.requestedBy` changes what it applies. The operator then proposes it again, with the new names.
-- A Talos config patch in a ConfigMap must have the label `os.platform-kit.org/patch: "true"`. The operator reads no ConfigMap without it. So the policy `requested-by-patches` can find the patches and ask for a name.
-
-<Callout type="caution">
-A GitOps controller applies the manifests as its own service account. So `metal.platform-kit.org/requested-by` names that service account, for example `system:serviceaccount:flux-system:kustomize-controller`, and `spec.requestedBy` names it too, not the person who wrote the commit. `Forbidden` does not stop that person from approving the result. Make the review of the commit the second person, or approve only commits that another person wrote. See [](concept:gitops).
-</Callout>
+- A GitOps controller is the requester of what it applies, not the person who wrote the commit. See [The requester in git](concept:gitops#the-requester-in-git).
 
 ## Guard-lift annotations
 

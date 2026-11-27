@@ -74,11 +74,11 @@ The API server compares the name with the login. See [](concept:approval).
 
 ## The requester in git
 
-Each request that makes the operator propose work names its user in the annotation `metal.platform-kit.org/requested-by`. The kinds are TalosCluster, TalosNode, HostClaim, BiosProfile, FirmwareProfile, and ConfigMaps with the label `os.platform-kit.org/patch`. See [](howto:approval-permissions#who-asked-for-a-change).
+Each request that makes the operator propose work names its user in the annotation `metal.platform-kit.org/requested-by`. The policy [`requested-by`](ref:admission-policies#requested-by) lists the kinds and the requests. See [](howto:approval-permissions#who-asked-for-a-change).
 
 - The site can install [`requested-by-stamp`](ref:admission-policies#requested-by-stamp) (Kubernetes 1.36 or later). Then the API server writes the username of the service account of the tool at each create and each change of the spec. Thus the manifests do not need the annotation. On an older release, put the annotation in each manifest, for example `metal.platform-kit.org/requested-by: system:serviceaccount:flux-system:kustomize-controller`.
 - A prune is a delete. The API server cannot stamp a delete, so under `selfApproval: Forbidden` the object must name the service account already. It does if the tool made the last change of its spec. If a person changed the object since, for example with a pk-metal command, the annotation names that person. Then the API server refuses the prune. That person deletes the object.
-- `spec.requestedBy` of the proposal names the service account, not the person who wrote the commit. Under `selfApproval: Forbidden`, the author of the commit can approve the result. The review of the commit must be the second person.
+- `spec.requestedBy` of the proposal names the service account, not the person who wrote the commit. Under `selfApproval: Forbidden`, the author of the commit can approve the result. Make the review of the commit the second person, or approve only commits that another person wrote.
 
 ## The identity that applies
 

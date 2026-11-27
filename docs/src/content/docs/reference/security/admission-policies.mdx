@@ -23,7 +23,6 @@ sources:
 import Figure from '../../../../components/diagram/Figure.astro';
 import Box from '../../../../components/diagram/Box.astro';
 import Edge from '../../../../components/diagram/Edge.astro';
-import Callout from '../../../../components/Callout.astro';
 
 RBAC says who may create or patch an object. It cannot see the name that a person writes into a field.
 Ten [ValidatingAdmissionPolicies](term:vap) close that gap. They are [CEL](term:cel) in the API server: no webhook, no certificate, no pod.
@@ -152,11 +151,7 @@ A claim that names a [](kind:TalosNode) makes the operator mount the config of t
 
 - A value that did not change passes. So the finalizers of the operator and edits to other fields need no admin.
 - Each refusal says who you are, your groups, and where group membership comes from.
-
-<Callout type="caution">
-Cluster admin (`system:masters`) is not enough. The policy asks for the group `pk-metal:admins` by name.
-A ClusterRoleBinding does not make you a member of a group. Your credential does. See [Get into the admin group](ref:rbac#get-into-the-admin-group).
-</Callout>
+- Cluster admin is not a member of the admin group. See [Get into the admin group](ref:rbac#get-into-the-admin-group).
 
 ## `etcdbackuppolicy-guard`
 

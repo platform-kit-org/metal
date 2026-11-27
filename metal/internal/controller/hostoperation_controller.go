@@ -69,11 +69,6 @@ const (
 	// guard: what it waits for (another control plane coming back, etcd's
 	// majority) is observed on other objects, which do not wake it.
 	selfRecheck = 30 * time.Second
-	// defaultWorkers is how many passes run at once, each on another host
-	// and another BMC (see passLocks). One firmware flash holds its pass
-	// for up to flashTimeout; a single worker would hold every other
-	// host's install, release and power-off behind it.
-	defaultWorkers = 4
 )
 
 // HostOperationReconciler runs approved disruptive one-shots — the model's ONE
@@ -738,8 +733,15 @@ func (r *HostOperationReconciler) workers() int {
 	if r.Workers > 0 {
 		return r.Workers
 	}
-	return defaultWorkers
+	return DefaultOperationWorkers
 }
+
+// DefaultOperationWorkers is how many passes run at once, each on another
+// host and another BMC (see passLocks). One firmware flash holds its pass
+// for up to flashTimeout; a single worker would hold every other host's
+// install, release and power-off behind it. A large fleet raises it with
+// the manager's --operation-workers.
+const DefaultOperationWorkers = 4
 
 // awaitingApprovalMessage says who may let the operation run and how; for an
 // operation serving a claim, also how to say no.

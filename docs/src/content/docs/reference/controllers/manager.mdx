@@ -87,6 +87,7 @@ The controllers reconcile the [kinds](kind:index) of the API group. [](ctrl:inde
 | `--etcd-backup-claim` | `pk-metal-etcd-backups` | The claim that `pvc://` locations name. |
 | `--checkin-timeout` | `30m` | How long an install waits for the machine to answer. |
 | `--release-shutdown-timeout` | `5m` | How long a release lets the OS shut down before it forces the machine off. From 1 s to 1 h. |
+| `--operation-workers` | `4` | How many operations the manager works on at the same time, each on a different host. From 1 to 64. A firmware flash keeps one for up to 15 minutes, and keeps its image in memory. If you set more, give the manager more memory. |
 | `--node-name` | `$NODE_NAME` | The Kubernetes node of the pod. With it, the self guard works. See [](ctrl:protection). |
 | `--metrics-bind-address` | `0` (off) | Address of `/metrics`. |
 | `--health-probe-bind-address` | `0` (off) | Address of `/healthz` and `/readyz`. |

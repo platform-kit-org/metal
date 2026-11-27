@@ -91,7 +91,7 @@ It reads the objects that you write and changes the machines through their BMCs.
 
 | Limit | Value | Can you change it |
 | --- | --- | --- |
-| Operations that the manager works on at the same moment | 4. A long step, for example a firmware flash, holds one of the four. | No flag |
+| Operations that the manager works on at the same moment | 4. A long step, for example a firmware flash, holds one of the four. | `--operation-workers`, from 1 to 64 |
 | Rollouts on one cluster | One at a time | No |
 | Control planes in a rollout | One at a time, and only while etcd is healthy | No |
 | Workers in a rollout | `spec.maxUnavailableWorkers`, default 1 | Yes, on the [](kind:TalosRollout) |

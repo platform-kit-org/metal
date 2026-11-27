@@ -95,6 +95,9 @@ type Options struct {
 	RegistryClient *http.Client
 	Media          *asset.Service
 	WaitInterval   time.Duration
+	// OperationWorkers is how many operations run at once; zero is
+	// DefaultOperationWorkers.
+	OperationWorkers int
 	// GuardInterval paces the next look at an operation the self or
 	// cluster guard holds; zero is 30s.
 	GuardInterval time.Duration
@@ -235,7 +238,7 @@ func (o Options) reconciler(mgr ctrl.Manager, l Lane) (string, reconciler) {
 		return "hostoperation", &HostOperationReconciler{
 			Client: c, CredentialsNamespace: o.CredentialsNamespace,
 			RegistryClient: o.RegistryClient, Media: o.Media, Store: o.MediaStore,
-			Recorder: recorder(), WaitInterval: o.WaitInterval, Self: self,
+			Recorder: recorder(), WaitInterval: o.WaitInterval, Self: self, Workers: o.OperationWorkers,
 			TalosDial: o.TalosDial, GuardInterval: o.GuardInterval, Audit: o.Audit,
 			Operator: o.Proposer,
 			// The cluster guard holds for every Talos cluster, wherever the

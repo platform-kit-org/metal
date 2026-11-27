@@ -1,6 +1,6 @@
 ---
 title: Kinds
-description: All 17 kinds of pk-metal, with their group, their scope, who writes them and which controller reconciles them.
+description: All kinds of pk-metal, with their group, their scope, who writes them and which controller reconciles them.
 type: kind
 eyebrow: Reference · API
 xref: { cat: kind, id: index }
@@ -15,7 +15,7 @@ sources:
 import Callout from '../../../../components/Callout.astro';
 import KindMap from '../../../../components/catalog/KindMap.astro';
 
-A kind is a type of object in the Kubernetes API. pk-metal has 17 kinds in two groups.
+A kind is a type of object in the Kubernetes API. pk-metal has kinds in two groups.
 You write some kinds to tell the operator what you want. The operator writes the others to tell you what it found.
 
 ## How the kinds connect
@@ -72,7 +72,7 @@ These kinds describe Talos Linux on the machines. The version is `v1alpha1`. All
 </dl>
 
 <Callout type="note">
-All kinds have the category `metal`. The command `kubectl get metal` lists the objects of all 17 kinds.
+All kinds have the category `metal`. The command `kubectl get metal` lists the objects of all kinds.
 The kinds of `os.platform-kit.org` also have the category `os`.
 </Callout>
 

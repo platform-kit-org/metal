@@ -25,8 +25,6 @@ It lists the actions in order. A person approves it, then the operator runs it a
 ## At a glance
 
 <dl class="pk-glance">
-  <dt>Group and version</dt>
-  <dd>`metal.platform-kit.org/v1alpha1`</dd>
   <dt>Scope</dt>
   <dd>Namespaced. The operator makes its operations in the `pk-metal` namespace.</dd>
   <dt>Written by</dt>
@@ -35,8 +33,6 @@ It lists the actions in order. A person approves it, then the operator runs it a
   <dd>[](ctrl:hostoperation), the only writer to a BMC.</dd>
   <dt>Acts on</dt>
   <dd>One [](kind:Host), through [`spec.hostRef`](kind:HostOperation#spec.hostRef). The Talos actions also name its [](kind:TalosNode).</dd>
-  <dt>Phases</dt>
-  <dd>Proposed, AwaitingApproval, Running, Succeeded, Failed, Aborted.</dd>
   <dt>Frozen after creation</dt>
   <dd>`hostRef`, `actions`, `proposedBy`, `rolloutRef` and `approval.required`.</dd>
   <dt>Source</dt>

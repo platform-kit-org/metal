@@ -23,8 +23,6 @@ You write it. Keep claims in git, so that a person examines each change.
 ## At a glance
 
 <dl class="pk-glance">
-  <dt>Group and version</dt>
-  <dd>`metal.platform-kit.org/v1alpha1`</dd>
   <dt>Scope</dt>
   <dd>Namespace. Claims are usually in `default`.</dd>
   <dt>Written by</dt>
@@ -33,8 +31,6 @@ You write it. Keep claims in git, so that a person examines each change.
   <dd>[](ctrl:hostclaim)</dd>
   <dt>Binds</dt>
   <dd>One [](kind:Host). Only one claim can hold a Host.</dd>
-  <dt>Phases</dt>
-  <dd>Pending, Bound, Ambiguous.</dd>
   <dt>Finalizer</dt>
   <dd>`metal.platform-kit.org/release` keeps a deleted claim until the operator frees the machine.</dd>
   <dt>Source</dt>

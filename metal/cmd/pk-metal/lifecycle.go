@@ -94,8 +94,8 @@ func wipeCmd(args []string) {
 // wipe marks a not-wiped host for a wipe.
 func wipe(ctx context.Context, cl client.Client, name, version string, w io.Writer) error {
 	host := &metalv1alpha1.Host{}
-	if err := cl.Get(ctx, client.ObjectKey{Name: name}, host); err != nil {
-		return fmt.Errorf("host %s: %w", name, err)
+	if err := getCluster(ctx, cl, "Host", host, name, listHosts); err != nil {
+		return err
 	}
 	mark, ok := host.Annotations[metalv1alpha1.AnnotationDiskNotWiped]
 	if !ok {
@@ -238,8 +238,8 @@ func replace(ctx context.Context, cl client.Client, namespace string, nsGiven bo
 	}
 	cref := c.Namespace + "/" + c.Name
 	host := &metalv1alpha1.Host{}
-	if err := cl.Get(ctx, client.ObjectKey{Name: hostName}, host); err != nil {
-		return fmt.Errorf("host %s: %w", hostName, err)
+	if err := getCluster(ctx, cl, "Host", host, hostName, listHosts); err != nil {
+		return err
 	}
 	if why := freeHost(host); why != "" {
 		return fmt.Errorf("host %s cannot take the node: %s", hostName, why)
@@ -314,8 +314,8 @@ type scaleAdd struct {
 
 // planScale reads the cluster and pairs nodes with hosts.
 func planScale(ctx context.Context, cl client.Client, cluster string, wantCP, wantW int, namespace string) (*scalePlan, error) {
-	if err := cl.Get(ctx, client.ObjectKey{Name: cluster}, &osv1alpha1.TalosCluster{}); err != nil {
-		return nil, fmt.Errorf("cluster %s: %w", cluster, err)
+	if err := getCluster(ctx, cl, "TalosCluster", &osv1alpha1.TalosCluster{}, cluster, listClusters); err != nil {
+		return nil, err
 	}
 	if wantCP == 0 {
 		return nil, fmt.Errorf("a cluster needs at least one control plane; to remove the cluster, delete its claims and its TalosCluster")

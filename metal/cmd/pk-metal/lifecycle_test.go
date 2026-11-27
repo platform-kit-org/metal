@@ -138,6 +138,21 @@ func TestReinstallBindsTheRequestToTheInstall(t *testing.T) {
 	assert.Equal(t, "alice", got.Annotations[metalv1alpha1.AnnotationRequestedBy], "the request names who asked for it")
 }
 
+func TestGetCluster(t *testing.T) {
+	ctx := context.Background()
+	cl := fakeClient(&osv1alpha1.TalosCluster{ObjectMeta: metav1.ObjectMeta{Name: "lab"}})
+	require.NoError(t, getCluster(ctx, cl, "TalosCluster", &osv1alpha1.TalosCluster{}, "lab", listClusters))
+	assert.EqualError(t, getCluster(ctx, cl, "TalosCluster", &osv1alpha1.TalosCluster{}, "lbe", listClusters),
+		"no TalosCluster lbe; kubectl get talosclusters lists them")
+	broken := fake.NewClientBuilder().WithScheme(newScheme()).WithInterceptorFuncs(interceptor.Funcs{
+		Get: func(context.Context, client.WithWatch, client.ObjectKey, client.Object, ...client.GetOption) error {
+			return errors.New("connection refused")
+		},
+	}).Build()
+	assert.EqualError(t, getCluster(ctx, broken, "TalosCluster", &osv1alpha1.TalosCluster{}, "lab", listClusters),
+		"read TalosCluster lab: connection refused")
+}
+
 func TestFindClaim(t *testing.T) {
 	ctx := context.Background()
 	c := &metalv1alpha1.HostClaim{ObjectMeta: metav1.ObjectMeta{Namespace: "staging", Name: "w-1"}}
@@ -165,6 +180,8 @@ func TestWipeAndReplace(t *testing.T) {
 	cl := fakeClientAs("alice", scaleFleet()...)
 	var out bytes.Buffer
 	assert.ErrorContains(t, wipe(ctx, cl, "h-8", "", &out), "not marked")
+	assert.ErrorContains(t, wipe(ctx, cl, "asset-h-7", "", &out), "no Host asset-h-7; a Host has the name of its serial",
+		"a wrong name says which name the verb wants")
 	require.NoError(t, wipe(ctx, cl, "h-7", "", &out))
 	h := &metalv1alpha1.Host{}
 	require.NoError(t, cl.Get(ctx, client.ObjectKey{Name: "h-7"}, h))

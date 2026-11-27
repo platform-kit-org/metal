@@ -126,6 +126,25 @@ func getNamed(ctx context.Context, cl client.Client, kind string, obj client.Obj
 	return notFoundHint(ctx, cl, kind, list, namespace, name)
 }
 
+// getCluster reads one cluster-scoped object by the name a person gave. When
+// there is none, it says where to find the names: list is that clause.
+func getCluster(ctx context.Context, cl client.Client, kind string, obj client.Object, name, list string) error {
+	err := cl.Get(ctx, client.ObjectKey{Name: name}, obj)
+	switch {
+	case apierrors.IsNotFound(err):
+		return fmt.Errorf("no %s %s; %s", kind, name, list)
+	case err != nil:
+		return fmt.Errorf("read %s %s: %w", kind, name, err)
+	}
+	return nil
+}
+
+// The list clauses of getCluster for the kinds that more than one verb reads.
+const (
+	listHosts    = "a Host has the name of its serial in lower case, and pk-metal status lists them"
+	listClusters = "kubectl get talosclusters lists them"
+)
+
 func notFoundHint(ctx context.Context, cl client.Client, kind string, list client.ObjectList, namespace, name string) error {
 	msg := fmt.Sprintf("no %s %s in namespace %s", kind, name, namespace)
 	if err := cl.List(ctx, list); err != nil {

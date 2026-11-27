@@ -349,8 +349,8 @@ func openSnapshot(ctx context.Context, cl client.Client, s *osv1alpha1.EtcdSnaps
 
 func getSnapshot(ctx context.Context, cl client.Client, name string) (*osv1alpha1.EtcdSnapshot, error) {
 	s := &osv1alpha1.EtcdSnapshot{}
-	if err := cl.Get(ctx, client.ObjectKey{Name: name}, s); err != nil {
-		return nil, fmt.Errorf("EtcdSnapshot %s: %w", name, err)
+	if err := getCluster(ctx, cl, "EtcdSnapshot", s, name, "pk-metal backup list lists them"); err != nil {
+		return nil, err
 	}
 	return s, nil
 }

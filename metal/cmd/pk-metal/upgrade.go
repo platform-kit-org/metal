@@ -94,8 +94,8 @@ func upgradeCheck(c *osv1alpha1.TalosCluster, what, version string) error {
 
 func upgrade(ctx context.Context, cl client.Client, what, name, version string, wait, poll time.Duration, w io.Writer) error {
 	c := &osv1alpha1.TalosCluster{}
-	if err := cl.Get(ctx, client.ObjectKey{Name: name}, c); err != nil {
-		return fmt.Errorf("read cluster %s: %w", name, err)
+	if err := getCluster(ctx, cl, "TalosCluster", c, name, listClusters); err != nil {
+		return err
 	}
 	field, current, kind := "talosVersion", c.Spec.TalosVersion, osv1alpha1.RolloutTalosUpgrade
 	if what == "kubernetes" {

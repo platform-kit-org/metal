@@ -7,7 +7,6 @@ import (
 	"os"
 	"time"
 
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -114,10 +113,7 @@ func rebootPlan(node string, role osv1alpha1.NodeRole, o rebootOptions) []metalv
 // node, waiting for a person's approval.
 func proposeReboot(ctx context.Context, cl client.Client, o rebootOptions, w io.Writer) (*metalv1alpha1.HostOperation, error) {
 	node := &osv1alpha1.TalosNode{}
-	if err := cl.Get(ctx, client.ObjectKey{Name: o.Node}, node); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil, fmt.Errorf("no TalosNode %s (kubectl get talosnodes lists them)", o.Node)
-		}
+	if err := getCluster(ctx, cl, "TalosNode", node, o.Node, "kubectl get talosnodes lists them"); err != nil {
 		return nil, err
 	}
 	hosts := &metalv1alpha1.HostList{}

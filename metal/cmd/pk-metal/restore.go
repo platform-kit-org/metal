@@ -149,8 +149,8 @@ func talosconfigFor(ctx context.Context, cl client.Client, cluster, file string)
 		return os.ReadFile(file)
 	}
 	c := &osv1alpha1.TalosCluster{}
-	if err := cl.Get(ctx, client.ObjectKey{Name: cluster}, c); err != nil {
-		return nil, fmt.Errorf("TalosCluster %s: %w", cluster, err)
+	if err := getCluster(ctx, cl, "TalosCluster", c, cluster, listClusters); err != nil {
+		return nil, err
 	}
 	ref := c.Status.TalosconfigSecretRef
 	if ref == nil {
@@ -242,8 +242,8 @@ type restorePlan struct {
 
 func planRestore(ctx context.Context, cl client.Client, dial talos.Dialer, tc []byte, in restoreInput) (*restorePlan, error) {
 	cluster := &osv1alpha1.TalosCluster{}
-	if err := cl.Get(ctx, client.ObjectKey{Name: in.Cluster}, cluster); err != nil {
-		return nil, fmt.Errorf("TalosCluster %s: %w", in.Cluster, err)
+	if err := getCluster(ctx, cl, "TalosCluster", cluster, in.Cluster, listClusters); err != nil {
+		return nil, err
 	}
 	nodes := &osv1alpha1.TalosNodeList{}
 	if err := cl.List(ctx, nodes); err != nil {

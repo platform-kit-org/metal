@@ -37,6 +37,7 @@ import (
 
 	gf "github.com/stmcginnis/gofish"
 	"github.com/stmcginnis/gofish/schemas"
+	"k8s.io/utils/ptr"
 
 	"github.com/dennisklein/platform-kit/metal/internal/bmc"
 	"github.com/dennisklein/platform-kit/metal/internal/poll"
@@ -968,7 +969,7 @@ func adapterPortMACs(a *schemas.NetworkAdapter) []string {
 	if fns, err := a.NetworkDeviceFunctions(); err == nil {
 		slices.SortFunc(fns, func(x, y *schemas.NetworkDeviceFunction) int { return compareIDs(x.ID, y.ID) })
 		for _, fn := range fns {
-			if mac := cmpOr(fn.Ethernet.MACAddress, fn.Ethernet.PermanentMACAddress); mac != "" {
+			if mac := cmp.Or(fn.Ethernet.MACAddress, fn.Ethernet.PermanentMACAddress); mac != "" {
 				macs = append(macs, strings.ToLower(mac))
 			}
 		}
@@ -1003,9 +1004,9 @@ func (c *client) Systems(ctx context.Context) ([]bmc.System, error) {
 			Model:         s.Model,
 			PowerState:    bmc.PowerState(s.PowerState),
 			LastResetTime: parseResetTime(s.LastResetTime),
-			MemoryGiB:     int(derefF(s.MemorySummary.TotalSystemMemoryGiB)),
+			MemoryGiB:     int(ptr.Deref(s.MemorySummary.TotalSystemMemoryGiB, 0)),
 			CPUModel:      s.ProcessorSummary.Model,
-			CPUCount:      int(derefU(s.ProcessorSummary.Count)),
+			CPUCount:      int(ptr.Deref(s.ProcessorSummary.Count, 0)),
 			BootProgress:  string(s.BootProgress.LastState),
 			BootOverride: bmc.BootOverride{
 				Target:  string(s.Boot.BootSourceOverrideTarget),
@@ -1048,7 +1049,7 @@ func (c *client) sweepDrives(s *schemas.ComputerSystem) []bmc.Drive {
 		out = append(out, bmc.Drive{
 			Model:       d.Model,
 			Serial:      d.SerialNumber,
-			CapacityGiB: derefI(d.CapacityBytes) >> 30,
+			CapacityGiB: ptr.Deref(d.CapacityBytes, 0) >> 30,
 			MediaType:   string(d.MediaType),
 			Protocol:    string(d.Protocol),
 		})
@@ -1179,7 +1180,7 @@ func (c *client) SetBootOverride(ctx context.Context, systemID string, o bmc.Boo
 	}
 	boot := map[string]any{
 		"BootSourceOverrideTarget":  o.Target,
-		"BootSourceOverrideEnabled": cmpOr(o.Enabled, bmc.OverrideOnce),
+		"BootSourceOverrideEnabled": cmp.Or(o.Enabled, bmc.OverrideOnce),
 	}
 	if o.Mode != "" {
 		boot["BootSourceOverrideMode"] = o.Mode
@@ -1238,32 +1239,4 @@ func compareIDs(a, b string) int {
 		return an - bn
 	}
 	return strings.Compare(a, b)
-}
-
-func cmpOr(a, b string) string {
-	if a != "" {
-		return a
-	}
-	return b
-}
-
-func derefF(p *float64) float64 {
-	if p == nil {
-		return 0
-	}
-	return *p
-}
-
-func derefU(p *uint) uint {
-	if p == nil {
-		return 0
-	}
-	return *p
-}
-
-func derefI(p *int) int {
-	if p == nil {
-		return 0
-	}
-	return *p
 }

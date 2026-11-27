@@ -310,7 +310,12 @@ func (r *EndpointConvergenceReconciler) credentials(ctx context.Context, ep *met
 	sec := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
 		Name: managedCredsName(ep.Name), Namespace: r.CredentialsNamespace,
 	}}
-	err := r.Get(ctx, client.ObjectKeyFromObject(sec), sec)
+	// Read from the API server, not the cache. A cache that has not yet
+	// seen the last promotion shows the password the manager no longer
+	// takes: the pass would count a failed login, then set that old
+	// password again through the factory session as a repair, and the
+	// stored one would stop working.
+	err := r.reader().Get(ctx, client.ObjectKeyFromObject(sec), sec)
 	if err != nil && !apierrors.IsNotFound(err) {
 		return "", "", "", err
 	}

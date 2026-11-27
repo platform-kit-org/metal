@@ -213,16 +213,22 @@ func (r *EndpointConvergenceReconciler) ensureIdentityInFlight(ctx context.Conte
 	sec := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
 		Name: identitySecretName(ep.Name), Namespace: r.CredentialsNamespace,
 	}}
-	err := r.Get(ctx, client.ObjectKeyFromObject(sec), sec)
+	// Read from the API server, not the cache. A csr-native manager keeps
+	// only the key of the last request it made: a cache that has not yet
+	// seen the Secret of the request made a moment ago would have the
+	// manager make another one, and the certificate issued for the stored
+	// request would then not match the key the manager holds.
+	err := r.reader().Get(ctx, client.ObjectKeyFromObject(sec), sec)
 	if err != nil && !apierrors.IsNotFound(err) {
 		return nil, nil, err
 	}
-	if err == nil && sec.Annotations[planHashAnnotation] == hash {
+	exists := err == nil
+	if exists && sec.Annotations[planHashAnnotation] == hash {
 		return sec, sec.Data["csr.pem"], nil
 	}
 	// Desired state moved (or first pass): withdraw the stale request and
 	// start fresh.
-	if err == nil {
+	if exists {
 		if stale := sec.Annotations[crNameAnnotation]; stale != "" {
 			if err := r.deleteCertificateRequest(ctx, stale); err != nil {
 				return nil, nil, err
@@ -268,18 +274,24 @@ func (r *EndpointConvergenceReconciler) ensureIdentityInFlight(ctx context.Conte
 	}
 	data["csr.pem"] = csrPEM
 
-	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, sec, func() error {
-		if err := controllerutil.SetControllerReference(ep, sec, r.Scheme()); err != nil {
-			return err
-		}
-		if sec.Annotations == nil {
-			sec.Annotations = map[string]string{}
-		}
-		sec.Annotations[planHashAnnotation] = hash
-		delete(sec.Annotations, crNameAnnotation)
-		sec.Data = data
-		return nil
-	}); err != nil {
+	if err := controllerutil.SetControllerReference(ep, sec, r.Scheme()); err != nil {
+		return nil, nil, err
+	}
+	if sec.Annotations == nil {
+		sec.Annotations = map[string]string{}
+	}
+	sec.Annotations[planHashAnnotation] = hash
+	delete(sec.Annotations, crNameAnnotation)
+	sec.Data = data
+	// An update of the object read above, not a create-or-update through
+	// the cache: a Secret that changed since that read fails this pass, and
+	// the next one starts from what is stored.
+	if exists {
+		err = r.Update(ctx, sec)
+	} else {
+		err = r.Create(ctx, sec)
+	}
+	if err != nil {
 		return nil, nil, fmt.Errorf("in-flight identity %s: %w", sec.Name, err)
 	}
 	return sec, csrPEM, nil

@@ -49,6 +49,12 @@ type TalosNodeMemberReconciler struct {
 	OperationsNamespace string
 	// Audit writes the audit trail; nil writes none.
 	Audit *audit.Logger
+	// APIReader reads the claims and operations straight from the API
+	// server before the finalizer goes: that release cannot be taken back,
+	// and a cache that has not yet seen a claim record its install of the
+	// node, or an operation on it, would let the node go while its machine
+	// runs it. Defaults to the manager's API reader in SetupWithManager.
+	APIReader client.Reader
 }
 
 // +kubebuilder:rbac:groups=os.platform-kit.org,resources=talosnodes,verbs=get;list;watch;update
@@ -104,8 +110,12 @@ func (r *TalosNodeMemberReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 // blocked says what the deletion of node still waits for, "" for nothing.
 func (r *TalosNodeMemberReconciler) blocked(ctx context.Context, node *osv1alpha1.TalosNode) (string, string, error) {
+	reader := client.Reader(r.Client)
+	if r.APIReader != nil {
+		reader = r.APIReader
+	}
 	claims := &metalv1alpha1.HostClaimList{}
-	if err := r.List(ctx, claims); err != nil {
+	if err := reader.List(ctx, claims); err != nil {
 		return "", "", err
 	}
 	for _, c := range claims.Items {
@@ -116,7 +126,7 @@ func (r *TalosNodeMemberReconciler) blocked(ctx context.Context, node *osv1alpha
 		}
 	}
 	ops := &metalv1alpha1.HostOperationList{}
-	if err := r.List(ctx, ops, client.InNamespace(r.OperationsNamespace)); err != nil {
+	if err := reader.List(ctx, ops, client.InNamespace(r.OperationsNamespace)); err != nil {
 		return "", "", err
 	}
 	for i := range ops.Items {
@@ -162,6 +172,9 @@ func (r *TalosNodeMemberReconciler) blocked(ctx context.Context, node *osv1alpha
 }
 
 func (r *TalosNodeMemberReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if r.APIReader == nil {
+		r.APIReader = mgr.GetAPIReader()
+	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&osv1alpha1.TalosNode{}).
 		Watches(&metalv1alpha1.HostClaim{}, handler.EnqueueRequestsFromMapFunc(nodesOfClaim)).

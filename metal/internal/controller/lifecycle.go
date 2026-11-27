@@ -311,7 +311,7 @@ func (r *HostClaimReconciler) removalOp(ctx context.Context, claim *metalv1alpha
 		annotations = map[string]string{metalv1alpha1.AnnotationDiskNotWiped: node.Spec.ClusterRef.Name + "/" + node.Name}
 	}
 	return &metalv1alpha1.HostOperation{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: r.OperationsNamespace, Labels: labels, Annotations: annotations},
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: r.CredentialsNamespace, Labels: labels, Annotations: annotations},
 		Spec: metalv1alpha1.HostOperationSpec{
 			HostRef:    metalv1alpha1.Reference{Name: host.Name},
 			ProposedBy: r.Proposer,

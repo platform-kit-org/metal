@@ -185,7 +185,6 @@ func TestE2EKind(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, controller.SetupAll(mgr, controller.Options{
 		CredentialsNamespace: ns,
-		OperationsNamespace:  ns,
 		Proposer:             "pk-metal-e2e",
 		EventSource:          "pk-metal-e2e",
 		// The audit trail goes to the test's output beside the log.

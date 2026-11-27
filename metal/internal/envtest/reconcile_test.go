@@ -101,7 +101,6 @@ func TestReconcile(t *testing.T) {
 	mgr := st.newManager(t)
 	require.NoError(t, controller.SetupAll(mgr, controller.Options{
 		CredentialsNamespace: "default",
-		OperationsNamespace:  "default",
 		Proposer:             operator,
 		Ledger:               led,
 		TLS:                  &metalv1alpha1.EndpointTLS{CASecretRef: &corev1.LocalObjectReference{Name: "bmc-ca"}},

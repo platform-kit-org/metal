@@ -143,7 +143,7 @@ func TestMemberFinalizerReadsTheClaimsFromTheAPIServer(t *testing.T) {
 	api := fake.NewClientBuilder().WithScheme(s).WithObjects(node, installed).WithStatusSubresource(node, installed).Build()
 
 	r := &TalosNodeMemberReconciler{Client: staleClaims{Client: api, old: []metalv1alpha1.HostClaim{*claim}},
-		APIReader: api, OperationsNamespace: "pk-metal"}
+		APIReader: api, CredentialsNamespace: "pk-metal"}
 	reason, _, err := r.blocked(t.Context(), node)
 	require.NoError(t, err)
 	assert.Equal(t, osv1alpha1.ReasonMachineAssigned, reason, "the claim's record of the install holds the node")
@@ -177,7 +177,7 @@ func TestMemberFinalizerReadsTheClusterFromTheAPIServer(t *testing.T) {
 	node := &osv1alpha1.TalosNode{}
 	require.NoError(t, lab.r.Get(t.Context(), client.ObjectKey{Name: "cp-2"}, node))
 	r := &TalosNodeMemberReconciler{Client: staleBootstrap{lab.r.Client}, APIReader: lab.r.Client,
-		Dial: lab.fleet.Dialer(), CredentialsNamespace: "pk-metal", OperationsNamespace: "pk-metal"}
+		Dial: lab.fleet.Dialer(), CredentialsNamespace: "pk-metal"}
 
 	reason, _, err := r.blocked(t.Context(), node)
 	require.NoError(t, err)

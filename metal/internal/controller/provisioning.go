@@ -659,7 +659,7 @@ func (r *HostClaimReconciler) provisionOp(claim *metalv1alpha1.HostClaim, hostNa
 	required := !approvalWaived(claim)
 	return &metalv1alpha1.HostOperation{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: name, Namespace: r.OperationsNamespace,
+			Name: name, Namespace: r.CredentialsNamespace,
 			Labels:      claimLabels(claim, purposeProvision),
 			Annotations: map[string]string{annotationConfigDigest: plan.ConfigDigest},
 		},
@@ -694,7 +694,7 @@ func claimLabels(claim *metalv1alpha1.HostClaim, purpose string) map[string]stri
 // claimOps lists the operator's operations serving this claim for one purpose.
 func (r *HostClaimReconciler) claimOps(ctx context.Context, claim *metalv1alpha1.HostClaim, purpose string) ([]metalv1alpha1.HostOperation, error) {
 	ops := &metalv1alpha1.HostOperationList{}
-	if err := r.List(ctx, ops, client.InNamespace(r.OperationsNamespace), client.MatchingLabels{
+	if err := r.List(ctx, ops, client.InNamespace(r.CredentialsNamespace), client.MatchingLabels{
 		labelClaimUID: string(claim.UID), labelPurpose: purpose,
 	}); err != nil {
 		return nil, err
@@ -1229,7 +1229,7 @@ func bootRan(ops []metalv1alpha1.HostOperation, hostName string) bool {
 //pk:uncached
 func (r *HostClaimReconciler) bootRanUncached(ctx context.Context, claim *metalv1alpha1.HostClaim, hostName string) (bool, error) {
 	ops := &metalv1alpha1.HostOperationList{}
-	if err := r.reader().List(ctx, ops, client.InNamespace(r.OperationsNamespace), client.MatchingLabels{
+	if err := r.reader().List(ctx, ops, client.InNamespace(r.CredentialsNamespace), client.MatchingLabels{
 		labelClaimUID: string(claim.UID), labelPurpose: purposeProvision,
 	}); err != nil {
 		return false, err
@@ -1346,7 +1346,7 @@ func (r *HostClaimReconciler) releaseOp(ctx context.Context, claim *metalv1alpha
 	}
 	return &metalv1alpha1.HostOperation{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: name, Namespace: r.OperationsNamespace,
+			Name: name, Namespace: r.CredentialsNamespace,
 			Labels: labels, Annotations: annotations,
 		},
 		Spec: metalv1alpha1.HostOperationSpec{

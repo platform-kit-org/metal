@@ -168,7 +168,6 @@ func TestProvisioning(t *testing.T) {
 	require.NoError(t, controller.SetupAll(mgr, controller.Options{
 		CredentialsNamespace: "default",
 		TalosDial:            fleet.Dialer(),
-		OperationsNamespace:  "default",
 		Proposer:             operator,
 		Ledger:               led,
 		TLS:                  &metalv1alpha1.EndpointTLS{InsecureSkipVerify: true},

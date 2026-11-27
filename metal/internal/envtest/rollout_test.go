@@ -153,7 +153,6 @@ func TestRollout(t *testing.T) {
 	mgr := st.newManager(t)
 	require.NoError(t, controller.SetupAll(mgr, controller.Options{
 		CredentialsNamespace: "default",
-		OperationsNamespace:  "default",
 		Proposer:             operator,
 		Factory:              render.NewFactory("factory.test"),
 		ResolveImage:         pinImage,
@@ -381,7 +380,7 @@ func TestRollout(t *testing.T) {
 	st.run(t, "the executor refuses an operation the rollout does not cover", func(t *testing.T) {
 		exec := st.newManager(t)
 		require.NoError(t, controller.SetupAll(exec, controller.Options{
-			CredentialsNamespace: "default", OperationsNamespace: "default", Proposer: operator,
+			CredentialsNamespace: "default", Proposer: operator,
 			WaitInterval: 100 * time.Millisecond,
 		}, controller.LaneHostOperation))
 		runManager(t, ctx, exec)

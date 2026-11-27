@@ -217,7 +217,6 @@ func main() {
 	// cluster whose bundle is missing holds its nodes at SecretsUnavailable.
 	if err := controller.SetupAll(mgr, controller.Options{
 		CredentialsNamespace: c.credsNS,
-		OperationsNamespace:  c.credsNS,
 		Proposer:             proposer,
 		// The audit trail goes to standard error beside the other log
 		// lines; each line carries "logger":"audit" for routing, and the

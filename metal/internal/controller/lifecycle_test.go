@@ -172,7 +172,7 @@ func newLifecycleLab(t *testing.T, cps, workers []string, extra ...client.Object
 		WithStatusSubresource(&metalv1alpha1.HostOperation{}, &metalv1alpha1.HostClaim{}, &osv1alpha1.TalosNode{}).
 		WithObjects(append(objs, extra...)...).Build()
 	lab.r = &HostClaimReconciler{
-		Client: cl, OperationsNamespace: "pk-metal", Proposer: "operator",
+		Client: cl, Proposer: "operator",
 		Dial: lab.fleet.Dialer(), CredentialsNamespace: "pk-metal",
 		SupportsAction: func(string) bool { return true },
 	}
@@ -350,7 +350,7 @@ func TestDeletedTalosNodeIsRemovedWhileTheClaimKeepsTheMachine(t *testing.T) {
 	assert.Equal(t, metalv1alpha1.ReasonRemovingNode, provisionedCond(t, claim).Reason)
 
 	// The finalizer waits for the claim's record of the install.
-	fin := &TalosNodeMemberReconciler{Client: lab.r.Client, Dial: lab.fleet.Dialer(), CredentialsNamespace: "pk-metal", OperationsNamespace: "pk-metal"}
+	fin := &TalosNodeMemberReconciler{Client: lab.r.Client, Dial: lab.fleet.Dialer(), CredentialsNamespace: "pk-metal"}
 	reason, msg, err := fin.blocked(t.Context(), node)
 	require.NoError(t, err)
 	assert.Equal(t, osv1alpha1.ReasonMachineAssigned, reason, msg)
@@ -376,7 +376,7 @@ func TestFinalizerWaitsForTheEtcdMember(t *testing.T) {
 	lab := newLifecycleLab(t, []string{"cp-1", "cp-2"}, nil)
 	node := &osv1alpha1.TalosNode{}
 	require.NoError(t, lab.r.Get(t.Context(), client.ObjectKey{Name: "cp-2"}, node))
-	fin := &TalosNodeMemberReconciler{Client: lab.r.Client, Dial: lab.fleet.Dialer(), CredentialsNamespace: "pk-metal", OperationsNamespace: "pk-metal"}
+	fin := &TalosNodeMemberReconciler{Client: lab.r.Client, Dial: lab.fleet.Dialer(), CredentialsNamespace: "pk-metal"}
 
 	_, err := fin.Reconcile(t.Context(), ctrl.Request{NamespacedName: client.ObjectKey{Name: "cp-2"}})
 	require.NoError(t, err)
@@ -502,7 +502,7 @@ func TestWipeIsProposedOnRequestAndClearsTheMark(t *testing.T) {
 	cl := fake.NewClientBuilder().WithScheme(testScheme(t)).
 		WithStatusSubresource(&metalv1alpha1.HostOperation{}, &osv1alpha1.BootAsset{}).
 		WithObjects(host, ep).Build()
-	w := &hostWipeReconciler{&HostClaimReconciler{Client: cl, OperationsNamespace: "pk-metal", Proposer: "operator"}}
+	w := &hostWipeReconciler{&HostClaimReconciler{Client: cl, CredentialsNamespace: "pk-metal", Proposer: "operator"}}
 	req := ctrl.Request{NamespacedName: client.ObjectKey{Name: "host-a"}}
 
 	_, err := w.Reconcile(t.Context(), req)

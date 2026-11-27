@@ -58,11 +58,9 @@ type ImageResolver func(ctx context.Context, ref string) (string, error)
 type TalosRolloutReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
-	// Namespace is the operator's: config Secrets and credentials live
-	// there.
+	// Namespace is the operator's: config Secrets, credentials and the
+	// rollout's HostOperations live there.
 	Namespace string
-	// OperationsNamespace receives the rollout's HostOperations.
-	OperationsNamespace string
 	// Proposer is the operator's own username, stamped as proposedBy.
 	Proposer string
 	// Factory names installer images; ResolveImage pins them by digest.
@@ -173,7 +171,7 @@ func (r *TalosRolloutReconciler) expire(ctx context.Context, ro *osv1alpha1.Talo
 		return ctrl.Result{RequeueAfter: min(wait, settingsRecheck)}, nil
 	}
 	ops := &metalv1alpha1.HostOperationList{}
-	if err := r.List(ctx, ops, client.InNamespace(r.OperationsNamespace),
+	if err := r.List(ctx, ops, client.InNamespace(r.Namespace),
 		client.MatchingLabels{osv1alpha1.LabelRollout: ro.Name}); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -508,7 +506,7 @@ func (r *TalosRolloutReconciler) startStep(ctx context.Context, ro *osv1alpha1.T
 	}
 	op := &metalv1alpha1.HostOperation{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: rolloutOpName(ro, step), Namespace: r.OperationsNamespace,
+			Name: rolloutOpName(ro, step), Namespace: r.Namespace,
 			Labels: map[string]string{osv1alpha1.LabelRollout: ro.Name},
 		},
 		Spec: metalv1alpha1.HostOperationSpec{
@@ -547,7 +545,7 @@ func (r *TalosRolloutReconciler) observeStep(ctx context.Context, ro *osv1alpha1
 	}
 	ns, name, _ := strings.Cut(st.Operation, "/")
 	if name == "" {
-		ns, name = r.OperationsNamespace, rolloutOpName(ro, step)
+		ns, name = r.Namespace, rolloutOpName(ro, step)
 		st.Operation = ns + "/" + name
 	}
 	op := &metalv1alpha1.HostOperation{}

@@ -66,8 +66,6 @@ type Options struct {
 	// Secrets are read from it, and rendered configs, artifacts and cluster
 	// credentials are written to it.
 	CredentialsNamespace string
-	// OperationsNamespace is where HostOperations are proposed.
-	OperationsNamespace string
 	// Proposer is the operator's own username, stamped as proposedBy.
 	Proposer string
 	// EventSource names the event recorder; empty uses "pk-metal".
@@ -220,11 +218,11 @@ func (o Options) reconciler(mgr ctrl.Manager, l Lane) (string, reconciler) {
 		return "host", &HostReconciler{Client: c}
 	case LaneHostClaim:
 		claims := &HostClaimReconciler{
-			Client: c, OperationsNamespace: o.OperationsNamespace, Proposer: o.Proposer, Audit: o.Audit,
+			Client: c, CredentialsNamespace: o.CredentialsNamespace, Proposer: o.Proposer, Audit: o.Audit,
 			CheckInTimeoutSeconds:  int32(o.CheckInTimeout.Seconds()),
 			ReleaseShutdownTimeout: o.ReleaseShutdownTimeout,
 			Self:                   self,
-			Dial:                   o.TalosDial, CredentialsNamespace: o.CredentialsNamespace,
+			Dial:                   o.TalosDial,
 		}
 		// Wipes of released machines share the claims' configuration.
 		return "hostclaim", reconcilers{claims, &hostWipeReconciler{claims}}
@@ -243,8 +241,7 @@ func (o Options) reconciler(mgr ctrl.Manager, l Lane) (string, reconciler) {
 		}
 	case LaneConvergence:
 		return "convergence", &ConvergenceReconciler{
-			Client: c, CredentialsNamespace: o.CredentialsNamespace,
-			OperationsNamespace: o.OperationsNamespace, Proposer: o.Proposer,
+			Client: c, CredentialsNamespace: o.CredentialsNamespace, Proposer: o.Proposer,
 			PollInterval: o.PollInterval, Self: self, Audit: o.Audit,
 		}
 	case LaneEndpointConvergence:
@@ -259,8 +256,7 @@ func (o Options) reconciler(mgr ctrl.Manager, l Lane) (string, reconciler) {
 			Factory: o.Factory, Dial: o.TalosDial,
 			CheckInterval: o.CheckInterval, ReadyInterval: o.ReadyInterval, DriftInterval: o.DriftInterval,
 		}, &TalosNodeMemberReconciler{
-			Client: c, Dial: o.TalosDial, CredentialsNamespace: o.CredentialsNamespace,
-			OperationsNamespace: o.OperationsNamespace, Audit: o.Audit,
+			Client: c, Dial: o.TalosDial, CredentialsNamespace: o.CredentialsNamespace, Audit: o.Audit,
 		}}
 	case LaneTalosCluster:
 		return "taloscluster", &TalosClusterReconciler{
@@ -277,8 +273,7 @@ func (o Options) reconciler(mgr ctrl.Manager, l Lane) (string, reconciler) {
 	case LaneTalosRollout:
 		return "talosrollout", rolloutLane{
 			run: &TalosRolloutReconciler{
-				Client: c, Scheme: scheme, Namespace: o.CredentialsNamespace,
-				OperationsNamespace: o.OperationsNamespace, Proposer: o.Proposer,
+				Client: c, Scheme: scheme, Namespace: o.CredentialsNamespace, Proposer: o.Proposer,
 				Factory: o.Factory, ResolveImage: o.ResolveImage, Dial: o.TalosDial,
 				Workload: o.Workload, GateInterval: o.GateInterval, Audit: o.Audit,
 			},

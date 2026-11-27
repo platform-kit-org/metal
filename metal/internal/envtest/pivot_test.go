@@ -177,7 +177,6 @@ func TestPivot(t *testing.T) {
 	managerOptions := func(media *asset.Service, nodeName string) controller.Options {
 		return controller.Options{
 			CredentialsNamespace: ns,
-			OperationsNamespace:  ns,
 			Proposer:             operator,
 			Ledger:               led,
 			TLS:                  &metalv1alpha1.EndpointTLS{InsecureSkipVerify: true},

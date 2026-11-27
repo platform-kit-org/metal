@@ -687,7 +687,7 @@ func TestRetriedBootKeepsItsRecord(t *testing.T) {
 	// The claim is deleted before the new boot starts.
 	require.NoError(t, r.Delete(ctx, claim))
 	require.NoError(t, r.Get(ctx, client.ObjectKeyFromObject(claim), claim))
-	cr := &HostClaimReconciler{Client: r.Client, OperationsNamespace: "pk-metal", Proposer: "operator"}
+	cr := &HostClaimReconciler{Client: r.Client, CredentialsNamespace: "pk-metal", Proposer: "operator"}
 	_, err := cr.finishRelease(ctx, claim)
 	require.NoError(t, err)
 

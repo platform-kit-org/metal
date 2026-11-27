@@ -51,10 +51,9 @@ type ConvergenceReconciler struct {
 	client.Client
 	// Audit writes the audit trail; nil writes none.
 	Audit *audit.Logger
-	// CredentialsNamespace is where credential and CA Secrets live.
+	// CredentialsNamespace is the operator's namespace: its Secrets and the
+	// HostOperations it proposes.
 	CredentialsNamespace string
-	// OperationsNamespace is where proposals are created (the operator's own).
-	OperationsNamespace string
 	// Proposer is the operator's own username, stamped as proposedBy.
 	Proposer string
 	// PollInterval is the BIOS re-observation cadence.
@@ -528,7 +527,7 @@ func (r *ConvergenceReconciler) proposal(hostName, domain, hash, reason string, 
 	return &metalv1alpha1.HostOperation{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      fmt.Sprintf("%s-%s-%s", hostName, domain, hash8(hash)),
-			Namespace: r.OperationsNamespace,
+			Namespace: r.CredentialsNamespace,
 		},
 		Spec: metalv1alpha1.HostOperationSpec{
 			HostRef:                 metalv1alpha1.Reference{Name: hostName},

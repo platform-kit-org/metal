@@ -54,7 +54,7 @@ func TestDecideShape(t *testing.T) {
 // mount, (override,) power cycle, wait for the check-in, eject. The model's
 // step 0 ("the media are mounted") covers one medium as well as two.
 func TestEveryPlanShapeMountsPowersWaitsEjects(t *testing.T) {
-	r := &HostClaimReconciler{OperationsNamespace: "pk-metal"}
+	r := &HostClaimReconciler{CredentialsNamespace: "pk-metal"}
 	node := &osv1alpha1.TalosNode{ObjectMeta: metav1.ObjectMeta{Name: "node"}}
 	config := &osv1alpha1.BootAsset{ObjectMeta: metav1.ObjectMeta{Name: "node-config"}}
 	installer := &osv1alpha1.BootAsset{ObjectMeta: metav1.ObjectMeta{Name: "installer"}}

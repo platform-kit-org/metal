@@ -61,7 +61,7 @@ func (r *hostWipeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, client.IgnoreNotFound(r.Update(ctx, host))
 	}
 	ops := &metalv1alpha1.HostOperationList{}
-	if err := r.List(ctx, ops, client.InNamespace(r.OperationsNamespace), client.MatchingLabels{
+	if err := r.List(ctx, ops, client.InNamespace(r.CredentialsNamespace), client.MatchingLabels{
 		labelPurpose: purposeWipe, labelWipeHost: host.Name,
 	}); err != nil {
 		return ctrl.Result{}, err
@@ -113,7 +113,7 @@ func (r *hostWipeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		logf.FromContext(ctx).Info("wipe not proposed", "host", host.Name, "why", err.Error())
 		return ctrl.Result{}, nil
 	}
-	op := wipeOp(r.OperationsNamespace, r.Proposer, host.Name, name, asset, shape, target)
+	op := wipeOp(r.CredentialsNamespace, r.Proposer, host.Name, name, asset, shape, target)
 	// The wipe mark asked for it (pk-metal wipe names its caller).
 	op.Spec.RequestedBy = metalv1alpha1.RequestedBy(host.Annotations)
 	if err := r.Create(ctx, op); err != nil && !apierrors.IsAlreadyExists(err) {

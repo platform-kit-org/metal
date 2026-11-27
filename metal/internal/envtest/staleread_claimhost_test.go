@@ -37,7 +37,7 @@ func TestStaleReadClaimHost(t *testing.T) {
 	hostR := &controller.HostReconciler{Client: w.mgr.GetClient()}
 	claimR := &controller.HostClaimReconciler{
 		Client: w.mgr.GetClient(), APIReader: cl,
-		OperationsNamespace: "default", Proposer: "pk-metal-test",
+		CredentialsNamespace: "default", Proposer: "pk-metal-test",
 	}
 	require.NoError(t, hostR.SetupWithManager(w.mgr))
 	require.NoError(t, claimR.SetupWithManager(w.mgr))

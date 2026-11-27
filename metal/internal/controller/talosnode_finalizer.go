@@ -43,10 +43,9 @@ type TalosNodeMemberReconciler struct {
 	client.Client
 	// Dial reads etcd membership; nil skips the etcd check.
 	Dial talos.Dialer
-	// CredentialsNamespace holds the clusters' secrets bundles.
+	// CredentialsNamespace is the operator's namespace: its Secrets and the
+	// HostOperations it proposes.
 	CredentialsNamespace string
-	// OperationsNamespace holds the operations.
-	OperationsNamespace string
 	// Audit writes the audit trail; nil writes none.
 	Audit *audit.Logger
 	// APIReader reads the claims and operations straight from the API
@@ -130,7 +129,7 @@ func (r *TalosNodeMemberReconciler) blocked(ctx context.Context, node *osv1alpha
 		}
 	}
 	ops := &metalv1alpha1.HostOperationList{}
-	if err := reader.List(ctx, ops, client.InNamespace(r.OperationsNamespace)); err != nil {
+	if err := reader.List(ctx, ops, client.InNamespace(r.CredentialsNamespace)); err != nil {
 		return "", "", err
 	}
 	for i := range ops.Items {

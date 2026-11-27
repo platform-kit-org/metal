@@ -13,7 +13,7 @@ The Go module is in `metal/`. Run tasks from the repository root.
 | --- | --- |
 | `mise run test` | Each change to Go code. Minutes. |
 | `go test -run <Name> ./internal/<pkg>/` in `metal/` | While you work on one test. |
-| `mise run envtest` | A change to a controller, a CRD, RBAC or an admission policy. About 5 minutes; run one test with `go test -run`. |
+| `mise run envtest` | A change to a controller, a CRD, RBAC or an admission policy. About 5 minutes; run one test with `mise run envtest -run <Name>`. A plain `go test` skips these tests and prints `ok`. |
 | `mise run lint` | Before each commit: golangci-lint (also gofmt and goimports), the typed checks, shellcheck, govulncheck. |
 | `mise run spec` | After a change to a TLA+ specification in `metal/spec`, or to a Go function that one names. Needs a Java runtime. |
 | `mise run generate`, then `mise run generate:check` | After a change to API types, kubebuilder markers, `pk-metal` commands or the glossary. |

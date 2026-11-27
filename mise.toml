@@ -87,10 +87,11 @@ dir = "metal"
 run = "hack/tlc.sh"
 
 [tasks.envtest]
-description = "Controller tests against a real kube-apiserver and etcd"
+description = "Controller tests against a real kube-apiserver and etcd; extra go test flags pass through (-run TestRBAC)"
 dir = "metal"
 # The suite skips when KUBEBUILDER_ASSETS is unset, and a skip reports ok. Resolve the
 # path first and refuse an empty answer, so a failed download cannot read as a pass.
+# mise appends the arguments of the task to the last line.
 run = '''
 assets=$(go tool setup-envtest use 1.36 --bin-dir "$PWD/bin/envtest" -p path)
 [ -n "$assets" ] || { echo "envtest: no control-plane binaries resolved for k8s 1.36" >&2; exit 1; }

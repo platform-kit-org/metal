@@ -168,7 +168,7 @@ The next [`up`](#up) installs each machine again.
   <dt>Safety</dt>
   <dd>It deletes the directory only if it is in `.lab/`, or if it has the mark file that the lab wrote.</dd>
   <dt>Also deletes</dt>
-  <dd>The mark file `.lab/pivoted`, because no disk holds a moved operator after the wipe.</dd>
+  <dd>The mark file `.lab/pivoted`, because no disk holds a moved operator after the wipe. The files `.lab/workload.kubeconfig` and `.lab/talosconfig`, and the same files of the second cluster, because no cluster answers them after the wipe. [`kubeconfig`](#kubeconfig) gets them again.</dd>
 </dl>
 
 <Callout type="warning">

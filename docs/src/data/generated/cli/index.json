@@ -19,6 +19,11 @@
       "changes": false
     },
     {
+      "name": "version",
+      "summary": "print the version of this program",
+      "changes": false
+    },
+    {
       "name": "render",
       "summary": "write Talos machine configs, talosconfig and kubeconfig from files",
       "changes": false
@@ -36,11 +41,6 @@
     {
       "name": "completion",
       "summary": "print the shell completion script for bash, zsh or fish",
-      "changes": false
-    },
-    {
-      "name": "version",
-      "summary": "print the version of this program",
       "changes": false
     },
     {
@@ -64,11 +64,6 @@
       "changes": true
     },
     {
-      "name": "reboot",
-      "summary": "propose a clean reboot of a Talos node: drain, reboot, uncordon",
-      "changes": true
-    },
-    {
       "name": "hold",
       "summary": "stop new operations for a claim; nothing on the machine changes",
       "changes": true
@@ -79,18 +74,38 @@
       "changes": true
     },
     {
-      "name": "backup",
-      "summary": "take, list, download or decrypt etcd snapshots",
+      "name": "rollout",
+      "summary": "list, show, approve, resume, pause or abort cluster rollouts",
       "changes": true
     },
     {
-      "name": "restore",
-      "summary": "plan the restore of a cluster's etcd; upload a snapshot for it",
+      "name": "boot",
+      "summary": "mount a config ISO through a BMC and REBOOT the machine into it",
       "changes": true
     },
     {
-      "name": "wipe",
-      "summary": "ask for a wipe of a released machine (the operator proposes it)",
+      "name": "bootstrap",
+      "summary": "start a new Talos cluster on booted machines, without the operator",
+      "changes": true
+    },
+    {
+      "name": "pivot",
+      "summary": "move the operator and its objects to another cluster",
+      "changes": true
+    },
+    {
+      "name": "reboot",
+      "summary": "propose a clean reboot of a Talos node: drain, reboot, uncordon",
+      "changes": true
+    },
+    {
+      "name": "upgrade",
+      "summary": "set the Talos or Kubernetes version of a cluster; show the rollout",
+      "changes": true
+    },
+    {
+      "name": "scale",
+      "summary": "show the machines a cluster gains or gives back; --apply does it",
       "changes": true
     },
     {
@@ -104,33 +119,18 @@
       "changes": true
     },
     {
-      "name": "scale",
-      "summary": "show the machines a cluster gains or gives back; --apply does it",
+      "name": "wipe",
+      "summary": "ask for a wipe of a released machine (the operator proposes it)",
       "changes": true
     },
     {
-      "name": "rollout",
-      "summary": "list, show, approve, resume, pause or abort cluster rollouts",
+      "name": "backup",
+      "summary": "take, list, download or decrypt etcd snapshots",
       "changes": true
     },
     {
-      "name": "upgrade",
-      "summary": "set the Talos or Kubernetes version of a cluster; show the rollout",
-      "changes": true
-    },
-    {
-      "name": "pivot",
-      "summary": "move the operator and its objects to another cluster",
-      "changes": true
-    },
-    {
-      "name": "boot",
-      "summary": "mount a config ISO through a BMC and REBOOT the machine into it",
-      "changes": true
-    },
-    {
-      "name": "bootstrap",
-      "summary": "start a new Talos cluster on booted machines, without the operator",
+      "name": "restore",
+      "summary": "plan the restore of a cluster's etcd; upload a snapshot for it",
       "changes": true
     }
   ],

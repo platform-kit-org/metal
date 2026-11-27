@@ -58,9 +58,11 @@ type SettingsReconciler struct {
 	Client client.Client
 	// Reader reads the admission policies from the API server: the
 	// operator reads them only here, so they are not cached.
-	Reader    client.Reader
-	Namespace string
-	Audit     *audit.Logger
+	Reader client.Reader
+	// CredentialsNamespace is the operator's namespace. It also holds the
+	// site-settings ConfigMap.
+	CredentialsNamespace string
+	Audit                *audit.Logger
 
 	mu       sync.Mutex
 	read     bool
@@ -91,7 +93,7 @@ func (r *SettingsReconciler) observeSettings(cm *corev1.ConfigMap, exists bool) 
 			}
 		}
 	}
-	o := audit.Object{Kind: audit.KindConfigMap, Namespace: r.Namespace, Name: siteSettingsConfigMap, UID: cm.UID}
+	o := audit.Object{Kind: audit.KindConfigMap, Namespace: r.CredentialsNamespace, Name: siteSettingsConfigMap, UID: cm.UID}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	switch {
@@ -216,7 +218,7 @@ func (r *SettingsReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return err
 	}
 	only := predicate.NewPredicateFuncs(func(o client.Object) bool {
-		return o.GetNamespace() == r.Namespace && o.GetName() == siteSettingsConfigMap
+		return o.GetNamespace() == r.CredentialsNamespace && o.GetName() == siteSettingsConfigMap
 	})
 	return ctrl.NewControllerManagedBy(mgr).
 		Named("settings").

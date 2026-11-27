@@ -49,7 +49,7 @@ func TestRolloutEndsWhenItsRequestersMove(t *testing.T) {
 		Spec: osv1alpha1.TalosRolloutSpec{ClusterRef: osv1alpha1.Reference{Name: "c"}, Kind: osv1alpha1.RolloutConfig,
 			ProposedBy: "operator", RequestedBy: []string{"alice"}}}
 	cl := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(cluster).Build()
-	r := &TalosRolloutReconciler{Client: cl, Namespace: "pk-metal", Proposer: "operator"}
+	r := &TalosRolloutReconciler{Client: cl, CredentialsNamespace: "pk-metal", Proposer: "operator"}
 
 	stop, err := r.requestersMoved(t.Context(), ro)
 	require.NoError(t, err)

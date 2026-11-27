@@ -57,8 +57,9 @@ type KubernetesProber func(ctx context.Context, kubeconfig []byte) (string, erro
 type TalosClusterReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
-	// Namespace receives the credential Secrets (the operator's namespace).
-	Namespace string
+	// CredentialsNamespace receives the credential Secrets (the operator's
+	// namespace).
+	CredentialsNamespace string
 	// Dial opens machine-API connections; nil disables bootstrapping and the
 	// etcd observation (credentials and counts are still maintained).
 	Dial talos.Dialer
@@ -168,7 +169,7 @@ func (r *TalosClusterReconciler) reconcile(ctx context.Context, cluster *osv1alp
 	if err := r.guardBundle(ctx, cluster); err != nil {
 		return ctrl.Result{}, err
 	}
-	bundle, err := loadBundle(ctx, r.Client, r.Namespace, cluster)
+	bundle, err := loadBundle(ctx, r.Client, r.CredentialsNamespace, cluster)
 	if unavailable := (*bundleUnavailable)(nil); errors.As(err, &unavailable) {
 		set(osv1alpha1.ConditionBootstrapped, metav1.ConditionUnknown, osv1alpha1.ReasonSecretsUnavailable, unavailable.msg)
 		set(osv1alpha1.ConditionAvailable, metav1.ConditionUnknown, osv1alpha1.ReasonSecretsUnavailable, unavailable.msg)
@@ -330,7 +331,7 @@ func (r *TalosClusterReconciler) publish(ctx context.Context, cluster *osv1alpha
 
 func (r *TalosClusterReconciler) credential(ctx context.Context, cluster *osv1alpha1.TalosCluster, name, key string,
 	current func([]byte) bool, mint func() ([]byte, error)) ([]byte, *osv1alpha1.SecretReference, error) {
-	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: r.Namespace, Name: name}}
+	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: r.CredentialsNamespace, Name: name}}
 	var data []byte
 	op, err := controllerutil.CreateOrUpdate(ctx, r.Client, secret, func() error {
 		data = secret.Data[key]

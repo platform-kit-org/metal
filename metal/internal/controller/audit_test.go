@@ -443,7 +443,7 @@ func TestRolloutRetention(t *testing.T) {
 				WithStatusSubresource(&osv1alpha1.TalosRollout{}).
 				WithObjects(ro, op, settings(tc.retention)).Build()
 			var b bytes.Buffer
-			r := &TalosRolloutReconciler{Client: cl, Namespace: "pk-metal", Audit: audit.New(&b, testOperator)}
+			r := &TalosRolloutReconciler{Client: cl, CredentialsNamespace: "pk-metal", Audit: audit.New(&b, testOperator)}
 			_, err := r.Reconcile(t.Context(), ctrl.Request{NamespacedName: client.ObjectKeyFromObject(ro)})
 			require.NoError(t, err)
 			err = cl.Get(t.Context(), client.ObjectKeyFromObject(ro), &osv1alpha1.TalosRollout{})

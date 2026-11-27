@@ -34,9 +34,9 @@ type RolloutProposer struct {
 	client.Client
 	// Proposer is the operator's own username, stamped as proposedBy.
 	Proposer string
-	// Namespace is the operator's: the only one it reads patch ConfigMaps
-	// from.
-	Namespace string
+	// CredentialsNamespace is the operator's namespace. It also holds the
+	// patch ConfigMaps, and the proposer reads them from no other.
+	CredentialsNamespace string
 	// APIReader lists the rollouts straight from the API server before a
 	// proposal. Defaults to the manager's API reader in SetupWithManager.
 	APIReader client.Reader
@@ -91,7 +91,7 @@ func (r *RolloutProposer) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		return ctrl.Result{}, nil
 	}
 	ro.Spec.ProposedBy = r.Proposer
-	if ro.Spec.RequestedBy, err = clusterRequesters(ctx, r.Client, r.Namespace, cluster, members); err != nil {
+	if ro.Spec.RequestedBy, err = clusterRequesters(ctx, r.Client, r.CredentialsNamespace, cluster, members); err != nil {
 		return ctrl.Result{}, err
 	}
 	base := ro.Name

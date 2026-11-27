@@ -32,7 +32,7 @@ func TestSettingsChangesAreAudited(t *testing.T) {
 	}
 	cl := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(cm).Build()
 	var buf bytes.Buffer
-	r := &SettingsReconciler{Client: cl, Namespace: "pk-metal", Audit: audit.New(&buf, testOperator)}
+	r := &SettingsReconciler{Client: cl, CredentialsNamespace: "pk-metal", Audit: audit.New(&buf, testOperator)}
 	req := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cm)}
 	reconcile := func() {
 		t.Helper()

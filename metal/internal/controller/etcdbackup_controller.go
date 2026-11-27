@@ -62,9 +62,9 @@ const (
 // EtcdBackups is what both backup reconcilers need.
 type EtcdBackups struct {
 	client.Client
-	// Namespace is the operator's: the secrets bundles and the S3
-	// credentials Secrets are read there.
-	Namespace string
+	// CredentialsNamespace is the operator's: the secrets bundles and the
+	// S3 credentials Secrets are read there.
+	CredentialsNamespace string
 	// Dial reaches the control planes' Talos API.
 	Dial talos.Dialer
 	// Dir is where the manager's backup volume is mounted; empty when none
@@ -171,10 +171,10 @@ func (b *EtcdBackups) sink(ctx context.Context, p *osv1alpha1.EtcdBackupPolicy) 
 
 func (b *EtcdBackups) secretData(ctx context.Context, name string) (map[string][]byte, error) {
 	s := &corev1.Secret{}
-	if err := b.Get(ctx, types.NamespacedName{Namespace: b.Namespace, Name: name}, s); err != nil {
+	if err := b.Get(ctx, types.NamespacedName{Namespace: b.CredentialsNamespace, Name: name}, s); err != nil {
 		if apierrors.IsNotFound(err) {
 			return nil, &sinkError{osv1alpha1.ReasonSinkUnavailable,
-				fmt.Sprintf("Secret %s/%s not found (sink Secrets live in the operator's namespace)", b.Namespace, name)}
+				fmt.Sprintf("Secret %s/%s not found (sink Secrets live in the operator's namespace)", b.CredentialsNamespace, name)}
 		}
 		return nil, err
 	}
@@ -500,7 +500,7 @@ func (r *EtcdSnapshotReconciler) take(ctx context.Context, s *osv1alpha1.EtcdSna
 		}
 		return ctrl.Result{}, err
 	}
-	bundle, err := loadBundle(ctx, r.Client, r.Namespace, cluster)
+	bundle, err := loadBundle(ctx, r.Client, r.CredentialsNamespace, cluster)
 	if unavailable := (*bundleUnavailable)(nil); errors.As(err, &unavailable) {
 		return fail(unavailable.msg)
 	} else if err != nil {

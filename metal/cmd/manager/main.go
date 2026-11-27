@@ -411,7 +411,7 @@ func parseFlags(args []string, output io.Writer) (*config, error) {
 	fs.StringVar(&c.ledgerPath, "ledger", "",
 		"path to the ledger file (required): YAML that maps each BMC MAC address to the BMC's https URL; entries that do not parse are logged and skipped")
 	fs.StringVar(&c.credsNS, "credentials-namespace", "pk-metal",
-		"namespace for the operator's Secrets: BMC logins and CAs are read from it, and node configs and cluster credentials are written to it")
+		"namespace for the operator's Secrets and ConfigMaps: BMC logins, CAs, site settings and config patches are read from it, and node configs and cluster credentials are written to it")
 	fs.StringVar(&c.caSecret, "bmc-ca-secret", "",
 		"Secret (key ca.crt) with the CA that signed your BMCs' HTTPS certificates; empty pins the key each BMC presents at the first contact and refuses any other until a person approves it")
 	fs.StringVar(&c.imageFactory, "image-factory", render.PublicFactory,

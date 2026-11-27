@@ -44,8 +44,9 @@ const (
 type BootAssetReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
-	// Namespace receives the artifact Secrets (the operator's namespace).
-	Namespace string
+	// CredentialsNamespace receives the artifact Secrets (the operator's
+	// namespace).
+	CredentialsNamespace string
 	// Factory serves the images the factory strategy addresses, and is told
 	// about the schematics addressing them. The embeddedInstaller strategy
 	// asks it which images the official extensions are.
@@ -233,7 +234,7 @@ func (r *BootAssetReconciler) build(ctx context.Context, ba *osv1alpha1.BootAsse
 	configDigest := digest.FromBytes(machineConfig).String()
 
 	artifact := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
-		Namespace: r.Namespace, Name: "bootasset-" + ba.Name,
+		Namespace: r.CredentialsNamespace, Name: "bootasset-" + ba.Name,
 	}}
 	var iso []byte
 	if err := r.Get(ctx, client.ObjectKeyFromObject(artifact), artifact); err == nil &&

@@ -62,13 +62,13 @@ type SelfGuard struct {
 	// means unknown: the guard then allows everything.
 	NodeName string
 	// Dial reaches the Talos API of the other control planes, to ask each
-	// whether it runs and is ready now (see controlPlaneUp). Namespace is
-	// where the cluster's secrets bundle lives, from which the client
-	// certificate for that question is minted. A nil Dial falls back on the
-	// TalosNodes' Ready conditions, which can be minutes old: a test seam,
-	// the manager always wires it.
-	Dial      talos.Dialer
-	Namespace string
+	// whether it runs and is ready now (see controlPlaneUp).
+	// CredentialsNamespace is where the cluster's secrets bundle lives, from
+	// which the client certificate for that question is minted. A nil Dial
+	// falls back on the TalosNodes' Ready conditions, which can be minutes
+	// old: a test seam, the manager always wires it.
+	Dial                 talos.Dialer
+	CredentialsNamespace string
 }
 
 // probeTimeout bounds the question to one control plane. A node that does
@@ -395,7 +395,7 @@ func (g *SelfGuard) handedOff(ctx context.Context, host *metalv1alpha1.Host) (bo
 // probeTimeout) counts as down, so what is not known never adds to the
 // majority. Each node is asked at most once per verdict.
 func (g *SelfGuard) controlPlaneUp(ctx context.Context, cluster *osv1alpha1.TalosCluster) func(*osv1alpha1.TalosNode) bool {
-	bundle, bundleErr := loadBundle(ctx, g.Reader, g.Namespace, cluster)
+	bundle, bundleErr := loadBundle(ctx, g.Reader, g.CredentialsNamespace, cluster)
 	asked := map[string]bool{}
 	return func(n *osv1alpha1.TalosNode) bool {
 		if up, ok := asked[n.Name]; ok {

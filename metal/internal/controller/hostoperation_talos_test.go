@@ -131,7 +131,7 @@ func newTalosLab(t *testing.T, objs ...client.Object) *talosLab {
 		Workload: func(context.Context, []byte) (client.Client, error) {
 			return lab.kube, nil
 		},
-		Guard: &ClusterGuard{Reader: cl, Dial: fleet.Dialer(), Namespace: "pk-metal"},
+		Guard: &ClusterGuard{Reader: cl, Dial: fleet.Dialer(), CredentialsNamespace: "pk-metal"},
 	}
 	return lab
 }

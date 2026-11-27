@@ -63,8 +63,9 @@ var AllLanes = []Lane{
 // reconciler's own default.
 type Options struct {
 	// CredentialsNamespace is the operator's namespace: credential and CA
-	// Secrets are read from it, and rendered configs, artifacts and cluster
-	// credentials are written to it.
+	// Secrets, the site settings and config patches are read from it, and
+	// rendered configs, artifacts, cluster credentials and proposed
+	// HostOperations are written to it.
 	CredentialsNamespace string
 	// Proposer is the operator's own username, stamped as proposedBy.
 	Proposer string
@@ -198,7 +199,8 @@ func (o Options) reconciler(mgr ctrl.Manager, l Lane) (string, reconciler) {
 	c, scheme := mgr.GetClient(), mgr.GetScheme()
 	var self *SelfGuard
 	if o.NodeName != "" {
-		self = &SelfGuard{Reader: mgr.GetAPIReader(), NodeName: o.NodeName, Dial: o.TalosDial, Namespace: o.CredentialsNamespace}
+		self = &SelfGuard{Reader: mgr.GetAPIReader(), NodeName: o.NodeName, Dial: o.TalosDial,
+			CredentialsNamespace: o.CredentialsNamespace}
 	}
 	recorder := func() events.EventRecorder {
 		return mgr.GetEventRecorder(cmp.Or(o.EventSource, "pk-metal"))
@@ -237,7 +239,7 @@ func (o Options) reconciler(mgr ctrl.Manager, l Lane) (string, reconciler) {
 			Operator: o.Proposer,
 			// The cluster guard holds for every Talos cluster, wherever the
 			// operator runs; SelfGuard adds the rules for its own.
-			Guard: &ClusterGuard{Reader: mgr.GetAPIReader(), Dial: o.TalosDial, Namespace: o.CredentialsNamespace},
+			Guard: &ClusterGuard{Reader: mgr.GetAPIReader(), Dial: o.TalosDial, CredentialsNamespace: o.CredentialsNamespace},
 		}
 	case LaneConvergence:
 		return "convergence", &ConvergenceReconciler{
@@ -252,7 +254,7 @@ func (o Options) reconciler(mgr ctrl.Manager, l Lane) (string, reconciler) {
 		// The member finalizer rides with the node lane: every setup that
 		// renders nodes also holds their deletion until they left.
 		return "talosnode", reconcilers{&TalosNodeReconciler{
-			Client: c, Scheme: scheme, Namespace: o.CredentialsNamespace,
+			Client: c, Scheme: scheme, CredentialsNamespace: o.CredentialsNamespace,
 			Factory: o.Factory, Dial: o.TalosDial,
 			CheckInterval: o.CheckInterval, ReadyInterval: o.ReadyInterval, DriftInterval: o.DriftInterval,
 		}, &TalosNodeMemberReconciler{
@@ -260,33 +262,33 @@ func (o Options) reconciler(mgr ctrl.Manager, l Lane) (string, reconciler) {
 		}}
 	case LaneTalosCluster:
 		return "taloscluster", &TalosClusterReconciler{
-			Client: c, Scheme: scheme, Namespace: o.CredentialsNamespace,
+			Client: c, Scheme: scheme, CredentialsNamespace: o.CredentialsNamespace,
 			Dial: o.TalosDial, ProbeKubernetes: o.ProbeKubernetes,
 			CheckInterval: o.CheckInterval, ReadyInterval: o.ReadyInterval,
 		}
 	case LaneEtcdBackup:
 		return "etcd backup", &EtcdBackups{
-			Client: c, Namespace: o.CredentialsNamespace, Dial: o.TalosDial,
+			Client: c, CredentialsNamespace: o.CredentialsNamespace, Dial: o.TalosDial,
 			Dir: o.EtcdBackupDir, VolumeName: o.EtcdBackupVolume, Self: self,
 			RetryInterval: o.CheckInterval,
 		}
 	case LaneTalosRollout:
 		return "talosrollout", rolloutLane{
 			run: &TalosRolloutReconciler{
-				Client: c, Scheme: scheme, Namespace: o.CredentialsNamespace, Proposer: o.Proposer,
+				Client: c, Scheme: scheme, CredentialsNamespace: o.CredentialsNamespace, Proposer: o.Proposer,
 				Factory: o.Factory, ResolveImage: o.ResolveImage, Dial: o.TalosDial,
 				Workload: o.Workload, GateInterval: o.GateInterval, Audit: o.Audit,
 			},
-			propose: &RolloutProposer{Client: c, Proposer: o.Proposer, Namespace: o.CredentialsNamespace},
+			propose: &RolloutProposer{Client: c, Proposer: o.Proposer, CredentialsNamespace: o.CredentialsNamespace},
 		}
 	case LaneMaintenanceWindow:
 		return "maintenancewindow", &MaintenanceWindowReconciler{Client: c}
 	case LaneSettings:
 		return "settings", &SettingsReconciler{Client: c, Reader: mgr.GetAPIReader(),
-			Namespace: o.CredentialsNamespace, Audit: o.Audit}
+			CredentialsNamespace: o.CredentialsNamespace, Audit: o.Audit}
 	default: // LaneBootAsset; SetupAll has checked the range
 		return "bootasset", &BootAssetReconciler{
-			Client: c, Scheme: scheme, Namespace: o.CredentialsNamespace, Factory: o.Factory,
+			Client: c, Scheme: scheme, CredentialsNamespace: o.CredentialsNamespace, Factory: o.Factory,
 			Store: o.MediaStore, Imager: o.Imager,
 		}
 	}

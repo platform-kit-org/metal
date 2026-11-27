@@ -120,7 +120,7 @@ func (r *BootAssetReconciler) embed(ctx context.Context, ba *osv1alpha1.BootAsse
 
 	if !have {
 		job := &batchv1.Job{}
-		err := r.Get(ctx, client.ObjectKey{Namespace: r.Namespace, Name: jobName}, job)
+		err := r.Get(ctx, client.ObjectKey{Namespace: r.CredentialsNamespace, Name: jobName}, job)
 		switch {
 		case apierrors.IsNotFound(err):
 			return r.startBuild(ctx, ba, node, jobName, in, gone)
@@ -132,16 +132,16 @@ func (r *BootAssetReconciler) embed(ctx context.Context, ba *osv1alpha1.BootAsse
 		case !done:
 			r.hold(ba, osv1alpha1.ReasonBuilding, fmt.Sprintf(
 				"%simager Job %s/%s is building the installer for render %s. Its log: kubectl -n %s logs job/%s",
-				gone, r.Namespace, jobName, short(in.ConfigDigest), r.Namespace, jobName))
+				gone, r.CredentialsNamespace, jobName, short(in.ConfigDigest), r.CredentialsNamespace, jobName))
 			return nil
 		case !ok:
 			r.hold(ba, osv1alpha1.ReasonBuildFailed, fmt.Sprintf(
 				"imager Job %s/%s failed: %s. Its log: kubectl -n %s logs job/%s. To build again: kubectl -n %s delete job %s",
-				r.Namespace, jobName, msg, r.Namespace, jobName, r.Namespace, jobName))
+				r.CredentialsNamespace, jobName, msg, r.CredentialsNamespace, jobName, r.CredentialsNamespace, jobName))
 			return nil
 		}
 		if sum, size, err = r.Store.Import(jobName, ba.Name, key); err != nil {
-			r.hold(ba, osv1alpha1.ReasonBuildFailed, fmt.Sprintf("import the output of imager Job %s/%s: %v", r.Namespace, jobName, err))
+			r.hold(ba, osv1alpha1.ReasonBuildFailed, fmt.Sprintf("import the output of imager Job %s/%s: %v", r.CredentialsNamespace, jobName, err))
 			return nil
 		}
 		logf.FromContext(ctx).Info("imported embedded installer", "bootAsset", ba.Name, "job", jobName, "key", key)
@@ -168,7 +168,7 @@ func (r *BootAssetReconciler) startBuild(ctx context.Context, ba *osv1alpha1.Boo
 	if err := r.Store.PrepareBuild(jobName); err != nil {
 		return fmt.Errorf("prepare build %s: %w", jobName, err)
 	}
-	job := r.Imager.imagerJob(ba, r.Namespace, jobName, node.Status.ConfigSecretRef.Name, in)
+	job := r.Imager.imagerJob(ba, r.CredentialsNamespace, jobName, node.Status.ConfigSecretRef.Name, in)
 	if err := controllerutil.SetControllerReference(ba, job, r.Scheme); err != nil {
 		return err
 	}
@@ -176,7 +176,7 @@ func (r *BootAssetReconciler) startBuild(ctx context.Context, ba *osv1alpha1.Boo
 		return fmt.Errorf("create imager Job %s: %w", jobName, err)
 	}
 	logf.FromContext(ctx).Info("started imager Job", "bootAsset", ba.Name, "job", jobName, "image", in.Image)
-	r.hold(ba, osv1alpha1.ReasonBuilding, fmt.Sprintf("%sstarted imager Job %s/%s", why, r.Namespace, jobName))
+	r.hold(ba, osv1alpha1.ReasonBuilding, fmt.Sprintf("%sstarted imager Job %s/%s", why, r.CredentialsNamespace, jobName))
 	return nil
 }
 
@@ -185,7 +185,7 @@ func (r *BootAssetReconciler) startBuild(ctx context.Context, ba *osv1alpha1.Boo
 // artifact nobody asks for any more; a finished one has done its work.
 func (r *BootAssetReconciler) deleteStaleBuilds(ctx context.Context, ba *osv1alpha1.BootAsset, keep string) error {
 	jobs := &batchv1.JobList{}
-	if err := r.List(ctx, jobs, client.InNamespace(r.Namespace), client.MatchingLabels{labelBootAssetUID: string(ba.UID)}); err != nil {
+	if err := r.List(ctx, jobs, client.InNamespace(r.CredentialsNamespace), client.MatchingLabels{labelBootAssetUID: string(ba.UID)}); err != nil {
 		return err
 	}
 	for i := range jobs.Items {
@@ -229,7 +229,7 @@ func (r *BootAssetReconciler) sweepStore(ctx context.Context) error {
 		keepAsset[urlStoreName(client.ObjectKeyFromObject(&op))] = true
 	}
 	jobs := &batchv1.JobList{}
-	if err := r.List(ctx, jobs, client.InNamespace(r.Namespace), client.HasLabels{labelBootAssetUID}); err != nil {
+	if err := r.List(ctx, jobs, client.InNamespace(r.CredentialsNamespace), client.HasLabels{labelBootAssetUID}); err != nil {
 		return err
 	}
 	keepBuild := map[string]bool{}

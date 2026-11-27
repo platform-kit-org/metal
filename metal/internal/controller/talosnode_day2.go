@@ -68,7 +68,7 @@ func configSecretNameFor(node, d string) string {
 func (r *TalosNodeReconciler) writeConfigSecret(ctx context.Context, node *osv1alpha1.TalosNode,
 	sum digest.Digest, machineConfig []byte) (*corev1.Secret, error) {
 	secret := &corev1.Secret{}
-	key := client.ObjectKey{Namespace: r.Namespace, Name: configSecretName(node.Name, sum)}
+	key := client.ObjectKey{Namespace: r.CredentialsNamespace, Name: configSecretName(node.Name, sum)}
 	err := r.Get(ctx, key, secret)
 	if err == nil {
 		if !bytes.Equal(secret.Data[asset.ConfigFilename], machineConfig) {
@@ -147,13 +147,13 @@ func (r *TalosNodeReconciler) collectConfigSecrets(ctx context.Context, node *os
 	}
 
 	secrets := &corev1.SecretList{}
-	if err := r.List(ctx, secrets, client.InNamespace(r.Namespace), client.MatchingLabels{labelConfigNode: node.Name}); err != nil {
+	if err := r.List(ctx, secrets, client.InNamespace(r.CredentialsNamespace), client.MatchingLabels{labelConfigNode: node.Name}); err != nil {
 		return err
 	}
 	candidates := secrets.Items
 	// The single, rewritten Secret of earlier operator versions.
 	legacy := &corev1.Secret{}
-	if err := r.Get(ctx, client.ObjectKey{Namespace: r.Namespace, Name: "machineconfig-" + node.Name}, legacy); err == nil {
+	if err := r.Get(ctx, client.ObjectKey{Namespace: r.CredentialsNamespace, Name: "machineconfig-" + node.Name}, legacy); err == nil {
 		candidates = append(candidates, *legacy)
 	} else if client.IgnoreNotFound(err) != nil {
 		return err

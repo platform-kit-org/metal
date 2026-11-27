@@ -68,7 +68,7 @@ func (r *TalosClusterReconciler) publishReader(ctx context.Context, cluster *osv
 	name := cluster.Name + "-talosconfig-reader"
 	if c := cluster.Spec.Credentials; c == nil || !c.ReaderTalosconfig {
 		cluster.Status.ReaderTalosconfigSecretRef = nil
-		err := r.Delete(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: r.Namespace, Name: name}})
+		err := r.Delete(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: r.CredentialsNamespace, Name: name}})
 		return time.Time{}, client.IgnoreNotFound(err)
 	}
 	data, ref, err := r.credential(ctx, cluster, name, TalosconfigKey,

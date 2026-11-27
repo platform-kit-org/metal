@@ -108,6 +108,7 @@ Some checks read from the API server and not from the cache of the manager, beca
 | A rollout step, a rollout proposal | The rollouts of the cluster | Each pass |
 | The guard of the operator's own cluster | The Host, the TalosNodes and the Kubernetes node of the manager. For the node of the manager and the control planes of its cluster, also all Hosts and all operations. | Before each reboot and each power-off |
 | The release of a claim | All Hosts | Each pass of a claim that you deleted |
+| The protection of an endpoint | All Hosts | Before the finalizer comes off the endpoint |
 
 ### What is tested
 

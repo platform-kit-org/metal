@@ -81,7 +81,7 @@ Without protection, a clean-up of an Asset could delete a machine in production 
 1. Read the Host.
 2. Add the finalizer if `spec.claimRef` is set. Remove it if not.
 3. Go through each endpoint in `status.managedBy`.
-4. Add the finalizer to the endpoint if it fronts any claimed Host. Remove it if not.
+4. Add the finalizer to the endpoint if it fronts any claimed Host. Remove it if not. Before it removes the finalizer, the controller reads the Hosts again from the API server. The cache can be late with a new claim, and a deleting endpoint goes when the finalizer comes off.
 5. If the endpoint has a deletion timestamp and a claimed Host, set `DeletionHeld` to True. The message names the claim to delete.
 
 Each finalizer change is a merge patch with an optimistic lock, so that the controller never drops a finalizer that somebody else added.
@@ -150,6 +150,7 @@ The [](ctrl:host) sets `DeletionHeld` on the Host itself.
 
 ## Tests
 
+- [protection_test.go](/repo/metal/internal/controller/protection_test.go)
 - [selfprotect_test.go](/repo/metal/internal/controller/selfprotect_test.go)
 - [clusterguard_test.go](/repo/metal/internal/controller/clusterguard_test.go)
 - [identity_guard_test.go](/repo/metal/internal/controller/identity_guard_test.go)

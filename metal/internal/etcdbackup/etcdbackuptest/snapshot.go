@@ -1,8 +1,8 @@
 // Package etcdbackuptest builds etcd snapshots for tests: the smallest bbolt
 // file bbolt itself would create (two meta pages, an empty freelist, an empty
-// root leaf), followed by the sha256 trailer etcd's Snapshot RPC appends. The
-// fake Talos client streams one, so envtest exercises the same verification
-// a real snapshot passes.
+// root leaf), followed by the sha256 trailer etcd's Snapshot RPC appends.
+// Tests give one to the fake Talos client (Machine.SetSnapshot), so envtest
+// exercises the same verification a real snapshot passes.
 package etcdbackuptest
 
 import (

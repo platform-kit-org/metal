@@ -14,7 +14,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -27,45 +26,15 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	fakeclient "sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/yaml"
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
 	"github.com/dennisklein/platform-kit/metal/internal/controller"
-	"github.com/dennisklein/platform-kit/metal/internal/k8supgrade"
 	"github.com/dennisklein/platform-kit/metal/internal/talos/fake"
 	"github.com/dennisklein/platform-kit/metal/internal/talos/render"
 )
-
-// stubWorkload stands in for the workload cluster's Kubernetes API.
-type stubWorkload struct {
-	mu       sync.Mutex
-	notReady map[string]bool
-	proxy    []string
-}
-
-func (w *stubWorkload) setReady(node string, ready bool) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	w.notReady[node] = !ready
-}
-
-func (w *stubWorkload) NodesReady(context.Context) (map[string]bool, error) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	out := map[string]bool{}
-	for _, n := range []string{"cp-1", "cp-2", "w-1", "w-2"} {
-		out[n] = !w.notReady[n]
-	}
-	return out, nil
-}
-
-func (w *stubWorkload) SyncKubeProxy(_ context.Context, image string) (bool, string, error) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	w.proxy = append(w.proxy, image)
-	return true, "kube-proxy: done", nil
-}
 
 // installRolloutPolicy loads the committed rollout approval policy; its
 // params are the ones installApprovalPolicy created.
@@ -106,7 +75,22 @@ func TestRollout(t *testing.T) {
 	}
 	machinesByName["cp-1"].JoinEtcd(etcd, false)
 	machinesByName["cp-2"].JoinEtcd(etcd, false)
-	workload := &stubWorkload{notReady: map[string]bool{}}
+	// The workload cluster's Kubernetes API: its four Nodes, Ready until
+	// setReady says otherwise. It runs no kube-proxy DaemonSet.
+	workload := fakeclient.NewClientBuilder().Build()
+	for name := range addrs {
+		require.NoError(t, workload.Create(ctx, &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: name},
+			Status: corev1.NodeStatus{Conditions: []corev1.NodeCondition{{Type: corev1.NodeReady, Status: corev1.ConditionTrue}}}}))
+	}
+	setReady := func(name string, ready bool) {
+		n := &corev1.Node{}
+		require.NoError(t, workload.Get(ctx, client.ObjectKey{Name: name}, n))
+		n.Status.Conditions[0].Status = corev1.ConditionFalse
+		if ready {
+			n.Status.Conditions[0].Status = corev1.ConditionTrue
+		}
+		require.NoError(t, workload.Status().Update(ctx, n))
+	}
 
 	bundle, err := os.ReadFile(filepath.Join("..", "talos", "render", "testdata", "secrets.yaml"))
 	require.NoError(t, err)
@@ -158,7 +142,7 @@ func TestRollout(t *testing.T) {
 		Factory:              render.NewFactory("factory.test"),
 		ResolveImage:         pinImage,
 		TalosDial:            fleet.Dialer(),
-		Workload:             func([]byte) (k8supgrade.Workload, error) { return workload, nil },
+		Workload:             func(context.Context, []byte) (client.Client, error) { return workload, nil },
 		GateInterval:         100 * time.Millisecond,
 	}, controller.LaneTalosRollout))
 	runManager(t, ctx, mgr)
@@ -273,7 +257,7 @@ func TestRollout(t *testing.T) {
 	})
 
 	st.run(t, "a resume waits on the live health gate, then the next control plane goes", func(t *testing.T) {
-		workload.setReady("w-2", false)
+		setReady("w-2", false)
 		ro := getRollout(upgrade)
 		ro.Annotations = map[string]string{osv1alpha1.AnnotationRolloutResume: ro.Status.PlanHash}
 		require.NoError(t, bobCl.Update(ctx, ro))
@@ -283,7 +267,7 @@ func TestRollout(t *testing.T) {
 		}, waitFor, tick, "a node that is not Ready, read now, holds the next step")
 		assert.Equal(t, []string{"cp-2"}, nodesWithOps(upgrade))
 
-		workload.setReady("w-2", true)
+		setReady("w-2", true)
 		require.Eventually(t, func() bool { return opFor(upgrade, "cp-1") != nil }, waitFor, tick)
 		cur := getRollout(upgrade)
 		st.settle(t, ctx, cur, 3)

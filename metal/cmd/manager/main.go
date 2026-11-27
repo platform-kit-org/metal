@@ -41,7 +41,6 @@ import (
 	"github.com/dennisklein/platform-kit/metal/internal/asset"
 	"github.com/dennisklein/platform-kit/metal/internal/audit"
 	"github.com/dennisklein/platform-kit/metal/internal/controller"
-	"github.com/dennisklein/platform-kit/metal/internal/k8supgrade"
 	"github.com/dennisklein/platform-kit/metal/internal/ledger"
 	"github.com/dennisklein/platform-kit/metal/internal/metrics"
 	"github.com/dennisklein/platform-kit/metal/internal/oci"
@@ -249,7 +248,6 @@ func main() {
 		ResolveImage: func(ctx context.Context, ref string) (string, error) {
 			return oci.Resolve(ctx, &http.Client{Timeout: 30 * time.Second}, ref)
 		},
-		Workload: k8supgrade.Dial,
 	}, controller.AllLanes...); err != nil {
 		log.Error(err, "setup reconcilers")
 		os.Exit(1)

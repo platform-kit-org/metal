@@ -68,9 +68,9 @@ type TalosRolloutReconciler struct {
 	ResolveImage ImageResolver
 	// Dial reaches the machines for the etcd gate and the leader.
 	Dial talos.Dialer
-	// Workload reaches the cluster's Kubernetes API (k8supgrade.Dial in
-	// production).
-	Workload k8supgrade.Dialer
+	// Workload opens a client for the cluster's Kubernetes API from its
+	// admin kubeconfig; nil builds one with clientcmd. A test seam.
+	Workload func(ctx context.Context, kubeconfig []byte) (client.Client, error)
 	// GateInterval paces re-checks while a gate holds or a step runs.
 	GateInterval time.Duration
 	// Audit writes the audit trail; nil writes none.
@@ -599,12 +599,12 @@ func (r *TalosRolloutReconciler) liveOperation(ctx context.Context, key client.O
 // observeKubeProxy moves the kube-proxy DaemonSet and reads its rollout.
 func (r *TalosRolloutReconciler) observeKubeProxy(ctx context.Context, ro *osv1alpha1.TalosRollout, cluster *osv1alpha1.TalosCluster, i int) error {
 	st := &ro.Status.Steps[i]
-	w, msg, err := r.workload(ctx, cluster)
-	if err != nil || w == nil {
+	kube, msg, err := workloadClient(ctx, r.Client, r.Namespace, cluster, r.Workload)
+	if err != nil || kube == nil {
 		st.Message = msg
 		return err
 	}
-	done, msg, err := w.SyncKubeProxy(ctx, ro.Status.Plan[i].Image)
+	done, msg, err := k8supgrade.SyncKubeProxy(ctx, kube, ro.Status.Plan[i].Image)
 	if err != nil {
 		st.Message = err.Error()
 		return nil
@@ -614,30 +614,6 @@ func (r *TalosRolloutReconciler) observeKubeProxy(ctx context.Context, ro *osv1a
 		st.State, st.FinishedAt = osv1alpha1.RolloutNodeSucceeded, ptr.To(metav1.Now())
 	}
 	return nil
-}
-
-// workload opens the cluster's Kubernetes API with the published admin
-// kubeconfig. It returns a nil Workload and why when it cannot yet.
-func (r *TalosRolloutReconciler) workload(ctx context.Context, cluster *osv1alpha1.TalosCluster) (k8supgrade.Workload, string, error) {
-	if r.Workload == nil {
-		return nil, "no Kubernetes client configured", nil
-	}
-	ref := cluster.Status.KubeconfigSecretRef
-	if ref == nil {
-		return nil, "the cluster has no published kubeconfig yet", nil
-	}
-	s := &corev1.Secret{}
-	if err := r.Get(ctx, types.NamespacedName{Namespace: ref.Namespace, Name: ref.Name}, s); err != nil {
-		if client.IgnoreNotFound(err) != nil {
-			return nil, "", err
-		}
-		return nil, "kubeconfig Secret " + ref.Namespace + "/" + ref.Name + " not found", nil
-	}
-	w, err := r.Workload(s.Data[KubeconfigKey])
-	if err != nil {
-		return nil, "open the cluster's Kubernetes API: " + err.Error(), nil
-	}
-	return w, "", nil
 }
 
 // otherHolder names the approved, unfinished rollout of ro's cluster that
@@ -732,11 +708,11 @@ func (r *TalosRolloutReconciler) healthGate(ctx context.Context, ro *osv1alpha1.
 		return why, err
 	}
 
-	w, why, err := r.workload(ctx, cluster)
-	if err != nil || w == nil {
+	kube, why, err := workloadClient(ctx, r.Client, r.Namespace, cluster, r.Workload)
+	if err != nil || kube == nil {
 		return why, err
 	}
-	ready, err := w.NodesReady(ctx)
+	ready, err := k8supgrade.NodesReady(ctx, kube)
 	if err != nil {
 		return "the Kubernetes API does not answer: " + err.Error(), nil
 	}

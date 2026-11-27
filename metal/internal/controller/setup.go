@@ -2,6 +2,7 @@ package controller
 
 import (
 	"cmp"
+	"context"
 	"fmt"
 	"net/http"
 	"time"
@@ -16,7 +17,6 @@ import (
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
 	"github.com/dennisklein/platform-kit/metal/internal/asset"
 	"github.com/dennisklein/platform-kit/metal/internal/audit"
-	"github.com/dennisklein/platform-kit/metal/internal/k8supgrade"
 	"github.com/dennisklein/platform-kit/metal/internal/ledger"
 	"github.com/dennisklein/platform-kit/metal/internal/talos"
 	"github.com/dennisklein/platform-kit/metal/internal/talos/render"
@@ -122,10 +122,13 @@ type Options struct {
 	EtcdBackupDir    string
 	EtcdBackupVolume string
 
-	// ResolveImage, Workload and GateInterval configure the rollout lane;
-	// DriftInterval paces the TalosNode lane's dry-run drift check.
+	// ResolveImage and GateInterval configure the rollout lane;
+	// DriftInterval paces the TalosNode lane's dry-run drift check. Workload
+	// opens a client for a workload cluster's Kubernetes API, for the
+	// rollout and HostOperation lanes; nil builds one with clientcmd. A test
+	// seam.
 	ResolveImage  ImageResolver
-	Workload      k8supgrade.Dialer
+	Workload      func(ctx context.Context, kubeconfig []byte) (client.Client, error)
 	GateInterval  time.Duration
 	DriftInterval time.Duration
 
@@ -240,7 +243,7 @@ func (o Options) reconciler(mgr ctrl.Manager, l Lane) (string, reconciler) {
 			RegistryClient: o.RegistryClient, Media: o.Media, Store: o.MediaStore,
 			Recorder: recorder(), WaitInterval: o.WaitInterval, Self: self, Workers: o.OperationWorkers,
 			TalosDial: o.TalosDial, GuardInterval: o.GuardInterval, Audit: o.Audit,
-			Operator: o.Proposer,
+			Operator: o.Proposer, Workload: o.Workload,
 			// The cluster guard holds for every Talos cluster, wherever the
 			// operator runs; SelfGuard adds the rules for its own.
 			Guard: &ClusterGuard{Reader: mgr.GetAPIReader(), Dial: o.TalosDial, Namespace: o.CredentialsNamespace},

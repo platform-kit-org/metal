@@ -122,32 +122,44 @@ func nodeEndpoint(n *osv1alpha1.TalosNode) string {
 }
 
 // workloadClient opens a client for the cluster's Kubernetes API from the
-// admin kubeconfig the TalosCluster reconciler publishes.
+// admin kubeconfig the TalosCluster reconciler publishes. It is the one way
+// to the workload API: the executor's Kubernetes steps and the rollout's
+// health gate and kube-proxy step use it. It returns why not when there is
+// no kubeconfig to open yet, or it does not open; an error only when the
+// read of its Secret fails. A nil build builds the production client.
 func workloadClient(ctx context.Context, c client.Reader, namespace string, cluster *osv1alpha1.TalosCluster,
-	build func(context.Context, []byte) (client.Client, error)) (client.Client, error) {
+	build func(context.Context, []byte) (client.Client, error)) (client.Client, string, error) {
 	ref := cluster.Status.KubeconfigSecretRef
 	if ref == nil {
-		return nil, fmt.Errorf("cluster %s has no published kubeconfig yet (status.kubeconfigSecretRef)", cluster.Name)
+		return nil, fmt.Sprintf("cluster %s has no published kubeconfig yet (status.kubeconfigSecretRef)", cluster.Name), nil
 	}
 	if ref.Namespace != namespace {
-		return nil, fmt.Errorf("kubeconfig Secret %s/%s is outside the operator's namespace %s", ref.Namespace, ref.Name, namespace)
+		return nil, fmt.Sprintf("kubeconfig Secret %s/%s is outside the operator's namespace %s", ref.Namespace, ref.Name, namespace), nil
 	}
 	sec := &corev1.Secret{}
 	if err := c.Get(ctx, client.ObjectKey{Namespace: ref.Namespace, Name: ref.Name}, sec); err != nil {
-		return nil, fmt.Errorf("kubeconfig of cluster %s: %w", cluster.Name, err)
+		if client.IgnoreNotFound(err) != nil {
+			return nil, "", fmt.Errorf("kubeconfig of cluster %s: %w", cluster.Name, err)
+		}
+		return nil, fmt.Sprintf("kubeconfig Secret %s/%s of cluster %s not found", ref.Namespace, ref.Name, cluster.Name), nil
 	}
 	kubeconfig := sec.Data[KubeconfigKey]
 	if len(kubeconfig) == 0 {
-		return nil, fmt.Errorf("kubeconfig Secret %s/%s carries no %s", ref.Namespace, ref.Name, KubeconfigKey)
+		return nil, fmt.Sprintf("kubeconfig Secret %s/%s carries no %s", ref.Namespace, ref.Name, KubeconfigKey), nil
 	}
 	if build == nil {
 		build = buildWorkloadClient
 	}
-	return build(ctx, kubeconfig)
+	kube, err := build(ctx, kubeconfig)
+	if err != nil {
+		return nil, fmt.Sprintf("open the Kubernetes API of cluster %s: %v", cluster.Name, err), nil
+	}
+	return kube, "", nil
 }
 
 // buildWorkloadClient is an uncached client for a workload cluster, which
-// knows the core and policy kinds a drain needs.
+// knows the core, apps and policy kinds that a drain and a kube-proxy step
+// need.
 func buildWorkloadClient(_ context.Context, kubeconfig []byte) (client.Client, error) {
 	cfg, err := clientcmd.RESTConfigFromKubeConfig(kubeconfig)
 	if err != nil {

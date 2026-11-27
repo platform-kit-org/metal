@@ -5,7 +5,7 @@
   "commands": [
     {
       "name": "status",
-      "summary": "show machines, BMCs, claims and operations, with the reason when something is stuck (reads only)",
+      "summary": "show machines, BMCs, claims, operations, clusters, nodes and rollouts, with the reason when something is stuck (reads only)",
       "changes": false
     },
     {

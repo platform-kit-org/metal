@@ -48,26 +48,8 @@ Tables:
 Under each table, every blocked or failed row gets a line that says why, in
 the operator's own words, and what to run next when there is a command for it.
 
--o json prints the same facts as one JSON object, for scripts:
-  {"version": 1, "needsAttention": bool,
-   "hosts":      [{"name", "asset", "vendor", "phase", "claim",
-                   "node": {"name", "address"} or null,
-                   "pathsUp", "pathsTotal", "blockedOn", "message", "needsAttention"}],
-   "operations": [{"namespace", "name", "host", "phase", "approvedBy",
-                   "blockedOn", "message", "needsAttention"}],
-   "endpoints":  [{"name", "asset", "vendor", "phase", "address",
-                   "blockedOn", "message", "needsAttention"}],
-   "claims":     [{"namespace", "name", "asset", "host", "phase",
-                   "blockedOn", "message", "onHold", "needsAttention"}],
-   "clusters":   [{"name", "talosVersion", "talosVersionsRunning",
-                   "kubernetesVersion", "kubernetesVersionRunning",
-                   "controlPlanes", "readyControlPlanes", "workers",
-                   "readyWorkers", "available", "etcd", "bootstrappedAt",
-                   "backup", "backupMessage", "message", "needsAttention"}],
-   "nodes":      [{"name", "cluster", "role", "host", "address", "version",
-                   "stage", "ready", "message", "needsAttention"}],
-   "rollouts":   [{"name", "cluster", "kind", "nodesDone", "nodesTotal",
-                   "state", "approvedBy", "message", "needsAttention"}]}
+-o json prints the same facts as one JSON object, for scripts. The reference
+page of pk-metal status lists the keys of each row.
   Every key is always present; a missing value is "" (or null for node).
   "operations", "claims" and "rollouts" list all of them, also succeeded and
   bound ones.

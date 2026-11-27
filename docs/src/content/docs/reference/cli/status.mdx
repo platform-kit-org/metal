@@ -1,6 +1,6 @@
 ---
 title: pk-metal status
-description: Shows the machines, the BMCs, the claims, the operations and the clusters, with the reason for each block.
+description: Shows the machines, the BMCs, the claims, the operations, the clusters and the rollouts, with the reason for each block.
 type: cli
 eyebrow: Command · pk-metal
 xref: { cat: cli, id: status }
@@ -8,6 +8,7 @@ sidebar: { label: status }
 sources:
   - /repo/metal/cmd/pk-metal/status.go
   - /repo/metal/cmd/pk-metal/status_clusters.go
+  - /repo/metal/cmd/pk-metal/status_rollouts.go
 ---
 
 import Callout from '../../../../components/Callout.astro';
@@ -49,8 +50,9 @@ The command takes no arguments.
 | `CLAIM` | Each [](kind:HostClaim) that has no machine | Asset, phase, block. A hold shows as `(on hold)`. |
 | `CLUSTER` | Each [](kind:TalosCluster) | Talos and Kubernetes versions (spec and nodes), ready nodes, etcd, backup, API |
 | `NODE` | Each [](kind:TalosNode) | Cluster, role, host, address, version, boot stage, readiness |
+| `ROLLOUT` | Each [](kind:TalosRollout) that did not succeed | Cluster, kind, nodes done of the plan, state, approver |
 
-The command shows `OPERATION` and `CLAIM` only when they have rows.
+The command shows `OPERATION`, `CLAIM`, `CLUSTER`, `NODE` and `ROLLOUT` only when they have rows.
 A failed operation stays in the table until you run [](cli:retry).
 
 ### Rows that need a person
@@ -68,6 +70,8 @@ A failed operation stays in the table until you run [](cli:retry).
   <dd>The cluster is bootstrapped and its etcd or its Kubernetes API is not healthy. Or the backup is not current.</dd>
   <dt>Node</dt>
   <dd>The cluster is bootstrapped, the node reported a version, and the node is not Ready.</dd>
+  <dt>Rollout</dt>
+  <dd>The rollout waits for approval, cannot make a plan, has a changed plan, stopped after the first node, failed, or a person aborted it.</dd>
 </dl>
 
 Two blocks of an operation need no person: `OperationQueued` and `OutsideMaintenanceWindow`. The operator continues by itself.
@@ -81,7 +85,7 @@ text={`
     $ pk-metal status
     HOST               ASSET     VENDOR  PHASE        CLAIM         NODE              PATHS  BLOCKED
     simhw2288v5000397  asset-07  Huawei  Provisioned  default/cp-1  cp-1 (10.0.0.11)  1/1
-    simhw2288v5000398  asset-08  Huawei  Assigned     default/cp-2  cp-2 (10.0.0.12)  1/1    Approval(provision-simhw2288v5000398-5e6f7a8b)
+    simhw2288v5000398  asset-08  Huawei  Assigned     default/cp-2  cp-2 (10.0.0.12)  1/1    Approval(Provisioning)
     simhw2288v5000399  asset-09  Huawei  Available    -             -                 1/1
       simhw2288v5000398: operation provision-simhw2288v5000398-5e6f7a8b waits for approval
 
@@ -131,9 +135,10 @@ watch -n 10 pk-metal status
 | `claims` | `namespace`, `name`, `asset`, `host`, `phase`, `blockedOn`, `message`, `onHold`, `needsAttention` |
 | `clusters` | `name`, `talosVersion`, `talosVersionsRunning`, `kubernetesVersion`, `kubernetesVersionRunning`, `controlPlanes`, `readyControlPlanes`, `workers`, `readyWorkers`, `available`, `etcd`, `bootstrappedAt`, `backup`, `backupMessage`, `message`, `needsAttention` |
 | `nodes` | `name`, `cluster`, `role`, `host`, `address`, `version`, `stage`, `ready`, `message`, `needsAttention` |
+| `rollouts` | `name`, `cluster`, `kind`, `nodesDone`, `nodesTotal`, `state`, `approvedBy`, `message`, `needsAttention` |
 
 Each key is always there. An empty value is `""`.
-The lists `operations` and `claims` hold all objects, also the operations that succeeded and the claims that are bound.
+The lists `operations`, `claims` and `rollouts` hold all objects, also the operations and rollouts that succeeded and the claims that are bound.
 
 ## Objects
 

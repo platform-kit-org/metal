@@ -34,6 +34,23 @@ func selectorMatches(sel metav1.LabelSelector, lbls map[string]string) (bool, er
 	return s.Matches(labels.Set(lbls)), nil
 }
 
+// selected keeps the profiles whose selector matches the labels. of gives
+// the name and the selector of a profile.
+func selected[P any](profiles []P, lbls map[string]string, of func(*P) (string, metav1.LabelSelector)) ([]P, error) {
+	var out []P
+	for i := range profiles {
+		name, sel := of(&profiles[i])
+		ok, err := selectorMatches(sel, lbls)
+		if err != nil {
+			return nil, fmt.Errorf("profile %s: %w", name, err)
+		}
+		if ok {
+			out = append(out, profiles[i])
+		}
+	}
+	return out, nil
+}
+
 // layered is one profile's value for one key, for mergeLayered.
 type layered[V any] struct {
 	key, profile string

@@ -648,17 +648,9 @@ func (r *EndpointConvergenceReconciler) matchedEndpointProfiles(ctx context.Cont
 	if err := r.List(ctx, list); err != nil {
 		return nil, err
 	}
-	var matched []metalv1alpha1.EndpointProfile
-	for _, p := range list.Items {
-		ok, err := selectorMatches(p.Spec.Match, ep.Labels)
-		if err != nil {
-			return nil, fmt.Errorf("profile %s: %w", p.Name, err)
-		}
-		if ok {
-			matched = append(matched, p)
-		}
-	}
-	return matched, nil
+	return selected(list.Items, ep.Labels, func(p *metalv1alpha1.EndpointProfile) (string, metav1.LabelSelector) {
+		return p.Name, p.Spec.Match
+	})
 }
 
 // endpointDesired is the merged endpoint configuration — one winner per

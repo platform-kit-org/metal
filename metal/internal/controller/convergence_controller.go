@@ -155,25 +155,17 @@ func (r *ConvergenceReconciler) matchedProfiles(ctx context.Context, host *metal
 	if err := r.List(ctx, fw); err != nil {
 		return nil, nil, err
 	}
-	var matchedBios []metalv1alpha1.BiosProfile
-	for _, p := range bios.Items {
-		ok, err := selectorMatches(p.Spec.Match, host.Labels)
-		if err != nil {
-			return nil, nil, fmt.Errorf("profile %s: %w", p.Name, err)
-		}
-		if ok {
-			matchedBios = append(matchedBios, p)
-		}
+	matchedBios, err := selected(bios.Items, host.Labels, func(p *metalv1alpha1.BiosProfile) (string, metav1.LabelSelector) {
+		return p.Name, p.Spec.Match
+	})
+	if err != nil {
+		return nil, nil, err
 	}
-	var matchedFw []metalv1alpha1.FirmwareProfile
-	for _, p := range fw.Items {
-		ok, err := selectorMatches(p.Spec.Match, host.Labels)
-		if err != nil {
-			return nil, nil, fmt.Errorf("profile %s: %w", p.Name, err)
-		}
-		if ok {
-			matchedFw = append(matchedFw, p)
-		}
+	matchedFw, err := selected(fw.Items, host.Labels, func(p *metalv1alpha1.FirmwareProfile) (string, metav1.LabelSelector) {
+		return p.Name, p.Spec.Match
+	})
+	if err != nil {
+		return nil, nil, err
 	}
 	return matchedBios, matchedFw, nil
 }

@@ -156,8 +156,7 @@ func run(c *config, log logr.Logger) error {
 	var media *asset.Service
 	var mediaCertReloader *asset.Reloading
 	if c.mediaURL != "" {
-		certs, err := mediaCertificates(direct, c.credsNS, c.mediaCert,
-			func(format string, args ...any) { log.Info(fmt.Sprintf(format, args...), "secret", c.mediaCert) })
+		certs, err := mediaCertificates(direct, c.credsNS, c.mediaCert, log.WithValues("secret", c.mediaCert))
 		if err != nil {
 			return fmt.Errorf("load the media certificate: %w", err)
 		}
@@ -327,7 +326,7 @@ const mediaCertReload = time.Minute
 // replaced before it expires. A named Secret is never swapped for a
 // self-signed certificate: while it cannot be read or does not parse, the last
 // good certificate stays in service.
-func mediaCertificates(cl client.Reader, namespace, name string, logf func(string, ...any)) (asset.CertSource, error) {
+func mediaCertificates(cl client.Reader, namespace, name string, log logr.Logger) (asset.CertSource, error) {
 	if name == "" {
 		return asset.NewSelfSigned()
 	}
@@ -335,7 +334,7 @@ func mediaCertificates(cl client.Reader, namespace, name string, logf func(strin
 	if err != nil {
 		return nil, err
 	}
-	r.Logf = logf
+	r.Log = log
 	return r, nil
 }
 

@@ -4,10 +4,14 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"slices"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/go-logr/logr/funcr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -55,6 +59,16 @@ func TestReloadingKeepsTheLastGoodCertificate(t *testing.T) {
 
 	r, err := NewReloading(t.Context(), load, 5*time.Millisecond)
 	require.NoError(t, err)
+	var mu sync.Mutex
+	var lines []string
+	r.Log = funcr.NewJSON(func(line string) { mu.Lock(); defer mu.Unlock(); lines = append(lines, line) }, funcr.Options{})
+	logged := func(msg, detail string) bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return slices.ContainsFunc(lines, func(l string) bool {
+			return strings.Contains(l, `"msg":"`+msg+`"`) && strings.Contains(l, detail)
+		})
+	}
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	go func() { _ = r.Start(ctx) }()
@@ -71,11 +85,15 @@ func TestReloadingKeepsTheLastGoodCertificate(t *testing.T) {
 	fail.Store(true)
 	time.Sleep(30 * time.Millisecond)
 	assert.Equal(t, a.Leaf.SerialNumber.String(), serial(), "a failed load keeps the certificate in service")
+	assert.True(t, logged("media certificate not reloaded; the one in service stays", `"error":"secret pk-metal/media-tls: not found"`),
+		"a failed load is an error line with a fixed message")
 
 	next.Store(b)
 	fail.Store(false)
 	assert.Eventually(t, func() bool { return serial() == b.Leaf.SerialNumber.String() },
 		2*time.Second, 5*time.Millisecond, "a renewed Secret is served without a restart")
+	assert.Eventually(t, func() bool { return logged("media certificate reloaded", b.Leaf.SerialNumber.String()) },
+		2*time.Second, 5*time.Millisecond)
 }
 
 func TestServiceServesTheCurrentCertificate(t *testing.T) {

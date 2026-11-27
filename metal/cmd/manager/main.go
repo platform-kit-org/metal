@@ -153,11 +153,10 @@ func main() {
 			log.Error(err, "media certificate")
 			os.Exit(1)
 		}
-		if media, err = asset.NewService(c.mediaListen, c.mediaURL, tls.Certificate{}); err != nil {
+		if media, err = asset.NewService(c.mediaListen, c.mediaURL, certs); err != nil {
 			log.Error(err, "media service")
 			os.Exit(1)
 		}
-		media.Certs = certs
 		mediaCertReloader, _ = certs.(*asset.Reloading)
 		log.Info("media service", "listen", c.mediaListen, "url", c.mediaURL, "certSecret", c.mediaCert)
 	}

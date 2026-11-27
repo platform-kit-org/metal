@@ -334,40 +334,24 @@ func approveRollout(ctx context.Context, cl client.Client, a rolloutApproval) er
 		return err
 	}
 	// The approval lands on exactly the rollout whose plan was shown, with
-	// or without the question: the uid and resourceVersion make the API
-	// server refuse it (409 Conflict) when the rollout was made again under
-	// the same name or changed in any way since it was read, and the plan
-	// hash in the approval makes the operator refuse to run another plan
-	// (PlanChanged). The operator writes the rollout's status often, so a
-	// conflict reads it again and approves only if it is the same rollout,
-	// still approvable, with the same plan. --yes skips the question only.
+	// or without the question, and the plan hash in it makes the operator
+	// refuse to run another plan (PlanChanged). --yes skips the question
+	// only.
 	changed := fmt.Errorf("rollout %s changed since its plan was shown; nothing changed. "+
 		"Look at the plan as it is now and approve again", ro.Name)
-	shownUID, shownPlan := ro.UID, ro.Status.PlanHash
-	reread := !a.Yes // the answer took a while
-	for attempt := 0; ; attempt++ {
-		if reread {
-			now, err := getRollout(ctx, cl, a.Name)
-			if err != nil {
-				return err
-			}
-			if now.UID != shownUID || now.Status.PlanHash != shownPlan || approvableRollout(now) != nil {
-				return changed
-			}
-			ro = now
+	read := func() (client.Object, error) {
+		now, err := getRollout(ctx, cl, a.Name)
+		if err != nil {
+			return nil, err
 		}
-		err := mergePatch(ctx, cl, ro, mergeSpec{UID: ro.UID, ResourceVersion: ro.ResourceVersion,
-			Spec: map[string]any{"approval": map[string]any{"approvedBy": a.User, "planHash": ro.Status.PlanHash}}})
-		if err == nil {
-			break
+		if now.UID != ro.UID || now.Status.PlanHash != ro.Status.PlanHash {
+			return nil, changed
 		}
-		if !apierrors.IsConflict(err) {
-			return approvalRefused("rollout "+ro.Name, err)
-		}
-		if attempt+1 >= patchAttempts {
-			return changed
-		}
-		reread = true
+		return now, approvableRollout(now)
+	}
+	approval := map[string]any{"approval": map[string]any{"approvedBy": a.User, "planHash": ro.Status.PlanHash}}
+	if err := approveAsShown(ctx, cl, ro, !a.Yes, read, approval, "rollout "+ro.Name, changed); err != nil {
+		return err
 	}
 	fmt.Fprintf(a.Out, "approved rollout %s (plan %s) as %s; the first node starts now and the rollout pauses after it. "+
 		"Follow it with: pk-metal rollout show %s\n", ro.Name, shortDigest(ro.Status.PlanHash), a.User, ro.Name)

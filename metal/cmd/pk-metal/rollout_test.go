@@ -184,7 +184,7 @@ func TestApproveRolloutWhatWasShown(t *testing.T) {
 			require.NoError(t, inner.Update(ctx, now))
 		}}
 		err := approveRollout(ctx, cl, rolloutApproval{Name: name, User: "alice", Yes: true, Out: &bytes.Buffer{}})
-		require.ErrorContains(t, err, "changed since its plan was shown")
+		require.ErrorContains(t, err, "was aborted; there is nothing to approve")
 		assert.Empty(t, approvedBy(t, inner))
 	})
 

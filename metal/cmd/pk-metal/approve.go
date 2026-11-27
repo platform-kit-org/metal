@@ -270,9 +270,39 @@ func (p prompt) confirm(ctx context.Context, question, done string) error {
 }
 
 // patchAttempts bounds how often an approval is sent again after the
-// operation changed under it in a way that does not touch the plan (the
+// object changed under it in a way that does not touch the plan (the
 // operator writing its status).
 const patchAttempts = 3
+
+// approveAsShown sets the approval spec on exactly the object that was
+// shown: the uid and resourceVersion make the API server refuse the patch
+// (409 Conflict) when the object was made again under the same name or
+// changed in any way since it was read. The operator writes status often, so
+// after a conflict, and first when the answer took a while (reread), it
+// reads the object again with read. read returns changed, or the reason the
+// object cannot be approved now, unless it is the same object with the same
+// plan.
+func approveAsShown(ctx context.Context, cl client.Client, obj client.Object, reread bool,
+	read func() (client.Object, error), approval map[string]any, what string, changed error) error {
+	for attempt := 0; ; attempt++ {
+		if reread {
+			var err error
+			if obj, err = read(); err != nil {
+				return err
+			}
+		}
+		err := mergePatch(ctx, cl, obj, mergeSpec{UID: obj.GetUID(), ResourceVersion: obj.GetResourceVersion(), Spec: approval})
+		switch {
+		case err == nil:
+			return nil
+		case !apierrors.IsConflict(err):
+			return approvalRefused(what, err)
+		case attempt+1 >= patchAttempts:
+			return changed
+		}
+		reread = true
+	}
+}
 
 func approve(ctx context.Context, cl client.Client, a approval) error {
 	op, plan, err := approvalPlan(ctx, cl, a.Namespace, a.Name, a.User)
@@ -293,41 +323,23 @@ func approve(ctx context.Context, cl client.Client, a approval) error {
 		fmt.Fprint(a.Out, "\n"+readSelfApproval(ctx, cl).note("operation", role))
 	}
 
-	shown := op.UID
 	p := prompt{Yes: a.Yes, Interactive: a.Interactive, In: a.In, Out: a.Out, Window: a.Window}
 	if err := p.confirm(ctx, "\nApprove as "+a.User+"?", "approved"); err != nil {
 		return err
 	}
-	// The person took a while to answer. Whatever they agreed to was read
-	// before that, so it is read again and must still be the same operation
-	// with the same plan.
-	reread := !a.Yes
-
-	for attempt := 0; ; attempt++ {
-		if reread {
-			now, nowPlan, err := approvalPlan(ctx, cl, a.Namespace, a.Name, a.User)
-			if err != nil {
-				return err
-			}
-			if now.UID != shown || nowPlan != plan {
-				return changed
-			}
-			op = now
+	read := func() (client.Object, error) {
+		now, nowPlan, err := approvalPlan(ctx, cl, a.Namespace, a.Name, a.User)
+		if err != nil {
+			return nil, err
 		}
-		err := mergePatch(ctx, cl, op, mergeSpec{UID: op.UID, ResourceVersion: op.ResourceVersion,
-			Spec: map[string]any{"approval": map[string]any{"approvedBy": a.User}}})
-		if err == nil {
-			break
+		if now.UID != op.UID || nowPlan != plan {
+			return nil, changed
 		}
-		if !apierrors.IsConflict(err) || attempt+1 >= patchAttempts {
-			if apierrors.IsConflict(err) {
-				return changed
-			}
-			return approvalRefused("operation "+ref, err)
-		}
-		// The operation changed after it was read; read it again, and
-		// approve it only if the plan is still the one shown.
-		reread = true
+		return now, nil
+	}
+	approval := map[string]any{"approval": map[string]any{"approvedBy": a.User}}
+	if err := approveAsShown(ctx, cl, op, !a.Yes, read, approval, "operation "+ref, changed); err != nil {
+		return err
 	}
 	fmt.Fprintf(a.Out, "approved %s as %s; the operator starts it now. Follow it with: pk-metal status\n", ref, a.User)
 	return nil

@@ -10,7 +10,8 @@
 #     in the name of another person, and the record names the wrong person.
 #     cluster-admin has all three;
 #   - the status of the kinds: the operator writes it, and it says what the
-#     operator found;
+#     operator found. A member can still get a token of the operator with
+#     create on Secrets in pk-metal: see the threat model of the docs site;
 #   - Secrets outside the operator's namespace;
 #   - CRDs, admission policies and the manager's Deployment. Installing and
 #     upgrading the operator, and pk-metal pivot, are cluster-admin work.

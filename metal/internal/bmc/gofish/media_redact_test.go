@@ -3,14 +3,12 @@ package gofish_test
 import (
 	"context"
 	"net"
-	"net/http/httptest"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/dennisklein/platform-kit/metal/internal/bmc"
-	gofishclient "github.com/dennisklein/platform-kit/metal/internal/bmc/gofish"
 	"github.com/dennisklein/platform-kit/metal/internal/bmc/sim"
 )
 
@@ -35,16 +33,7 @@ func TestInsertMediaErrorIsMasked(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			f, err := sim.LoadFixture(name)
 			require.NoError(t, err)
-			srv := httptest.NewServer(sim.NewServer(sim.NewState(f)))
-			defer srv.Close()
-			cfg := gofishclient.Config{Endpoint: srv.URL}
-			if len(f.Accounts) > 0 {
-				cfg.Username, cfg.Password = f.Accounts[0].Username, f.Accounts[0].Password
-			}
-			c, err := gofishclient.Connect(context.Background(), cfg)
-			require.NoError(t, err)
-			defer c.Close()
-
+			c := connect(t, serve(t, f).URL, f)
 			media, err := c.Media(context.Background())
 			require.NoError(t, err)
 			caps, err := c.Capabilities(context.Background())

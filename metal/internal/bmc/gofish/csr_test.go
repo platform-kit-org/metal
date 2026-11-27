@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/x509"
 	"encoding/pem"
-	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -12,7 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/dennisklein/platform-kit/metal/internal/bmc"
-	gofishclient "github.com/dennisklein/platform-kit/metal/internal/bmc/gofish"
 	"github.com/dennisklein/platform-kit/metal/internal/bmc/sim"
 	"github.com/dennisklein/platform-kit/metal/internal/testpki"
 )
@@ -26,11 +24,7 @@ func TestSlowCSRIsNotTheStaleOne(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, f.Identity.CSRNative)
 	f.Identity.CSRDelay = 300 * time.Millisecond
-	srv := httptest.NewServer(sim.NewServer(sim.NewState(f)))
-	defer srv.Close()
-	c, err := gofishclient.Connect(context.Background(), gofishclient.Config{Endpoint: srv.URL})
-	require.NoError(t, err)
-	defer c.Close()
+	c := connect(t, serve(t, f).URL, f)
 
 	subject := bmc.CSRSubject{CommonName: "bmc.example.internal", Country: "XX"}
 	ctx := context.Background()

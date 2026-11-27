@@ -11,7 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/dennisklein/platform-kit/metal/internal/bmc"
-	gofishclient "github.com/dennisklein/platform-kit/metal/internal/bmc/gofish"
 	"github.com/dennisklein/platform-kit/metal/internal/bmc/sim"
 )
 
@@ -66,14 +65,7 @@ func TestObservationPassReadsEachResourceOnce(t *testing.T) {
 			f, err := sim.LoadFixture(name)
 			require.NoError(t, err)
 			srv, counts := countingSim(t, f)
-			cfg := gofishclient.Config{Endpoint: srv.URL}
-			if len(f.Accounts) > 0 {
-				cfg.Username, cfg.Password = f.Accounts[0].Username, f.Accounts[0].Password
-			}
-			c, err := gofishclient.Connect(context.Background(), cfg)
-			require.NoError(t, err)
-			defer c.Close()
-			observationPass(t, c)
+			observationPass(t, connect(t, srv.URL, f))
 			seen := counts()
 			total := 0
 			for _, v := range seen {

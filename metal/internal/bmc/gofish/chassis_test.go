@@ -74,11 +74,7 @@ func TestChassisIsTheOneTheSystemLinks(t *testing.T) {
 // that does.
 func TestBrokenChassisMemberIsSkipped(t *testing.T) {
 	srv, f := twoChassisSim(t, true)
-	c, err := gofishclient.Connect(context.Background(), gofishclient.Config{
-		Endpoint: srv.URL, Username: f.Accounts[0].Username, Password: f.Accounts[0].Password,
-	})
-	require.NoError(t, err)
-	defer c.Close()
+	c := connect(t, srv.URL, f)
 	ch, err := c.Chassis(context.Background())
 	require.NoError(t, err)
 	assert.Equal(t, f.Chassis.BoardSerial, ch.BoardSerial)
@@ -98,16 +94,7 @@ func TestDrivesWithoutSerialAreKept(t *testing.T) {
 			d := f.Systems[0].Drives[0]
 			d.Serial = ""
 			f.Systems[0].Drives = append(f.Systems[0].Drives[:0], d, d, d)
-			srv := httptest.NewServer(sim.NewServer(sim.NewState(f)))
-			defer srv.Close()
-			cfg := gofishclient.Config{Endpoint: srv.URL}
-			if len(f.Accounts) > 0 {
-				cfg.Username, cfg.Password = f.Accounts[0].Username, f.Accounts[0].Password
-			}
-			c, err := gofishclient.Connect(context.Background(), cfg)
-			require.NoError(t, err)
-			defer c.Close()
-			systems, err := c.Systems(context.Background())
+			systems, err := connect(t, serve(t, f).URL, f).Systems(context.Background())
 			require.NoError(t, err)
 			assert.Len(t, systems[0].Drives, 3)
 		})

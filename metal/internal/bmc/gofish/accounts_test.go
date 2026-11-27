@@ -32,14 +32,8 @@ func TestEnsureAccountSkipsAReservedSlot(t *testing.T) {
 	require.NoError(t, err)
 	f.Accounts[0].ID = "2"
 	f.ReservedAccountSlots = []string{"1"}
-	srv := httptest.NewServer(sim.NewServer(sim.NewState(f)))
-	defer srv.Close()
-
-	c, err := gofishclient.Connect(context.Background(), gofishclient.Config{
-		Endpoint: srv.URL, Username: f.Accounts[0].Username, Password: f.Accounts[0].Password,
-	})
-	require.NoError(t, err)
-	defer c.Close()
+	srv := serve(t, f)
+	c := connect(t, srv.URL, f)
 	require.NoError(t, c.EnsureAccount(context.Background(), "pk-metal", "managed-pass-1"))
 	require.NoError(t, connectAs(t, srv.URL, "pk-metal", "managed-pass-1"))
 }
@@ -52,14 +46,8 @@ func TestEnsureAccountUnlocks(t *testing.T) {
 	f.LockoutThreshold = 3
 	st := sim.NewState(f)
 	srv := httptest.NewServer(sim.NewServer(st))
-	defer srv.Close()
-	admin := f.Accounts[0]
-
-	c, err := gofishclient.Connect(context.Background(), gofishclient.Config{
-		Endpoint: srv.URL, Username: admin.Username, Password: admin.Password,
-	})
-	require.NoError(t, err)
-	defer c.Close()
+	t.Cleanup(srv.Close)
+	c := connect(t, srv.URL, f)
 	require.NoError(t, c.EnsureAccount(context.Background(), "pk-metal", "old-pass-1"))
 	for range 3 {
 		require.Error(t, connectAs(t, srv.URL, "pk-metal", "wrong-pass"))
@@ -83,14 +71,9 @@ func TestDisableAccountOverHTTP(t *testing.T) {
 			f.AccountSlots = slots
 			st := sim.NewState(f)
 			srv := httptest.NewServer(sim.NewServer(st))
-			defer srv.Close()
+			t.Cleanup(srv.Close)
 			admin := f.Accounts[0]
-
-			c, err := gofishclient.Connect(context.Background(), gofishclient.Config{
-				Endpoint: srv.URL, Username: admin.Username, Password: admin.Password,
-			})
-			require.NoError(t, err)
-			defer c.Close()
+			c := connect(t, srv.URL, f)
 			require.NoError(t, c.EnsureAccount(context.Background(), "pk-old", "old-pass-1"))
 			require.NoError(t, connectAs(t, srv.URL, "pk-old", "old-pass-1"))
 

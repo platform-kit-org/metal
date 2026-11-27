@@ -208,25 +208,11 @@ func disruptionVerdict(in disruptionInput) string {
 		return ""
 	}
 
-	// One control plane at a time: another one in a power action now is
-	// already one fewer etcd member.
-	for i := range in.hosts {
-		h := &in.hosts[i]
-		if h.Name == in.host.Name || h.Spec.OS == nil {
-			continue
-		}
-		other := findNode(in.nodes, h.Spec.OS.NodeRef.Name)
-		if other == nil || other.Spec.ClusterRef.Name != own || other.Spec.Role != osv1alpha1.RoleControlPlane {
-			continue
-		}
-		for j := range in.ops {
-			op := &in.ops[j]
-			if op.Spec.HostRef.Name == h.Name && opStarted(op) && !op.Finished() && disrupts(op) {
-				return fmt.Sprintf("%s. It is allowed by annotation, but operation %s/%s is taking down control plane %s right now; "+
-					"control planes of the operator's own cluster go one at a time. This step starts when that one has finished",
-					what, op.Namespace, op.Name, h.Name)
-			}
-		}
+	// One control plane at a time.
+	if op, _ := controlPlaneGoingDown(in.hosts, in.ops, in.nodes, own, in.host.Name); op != nil {
+		return fmt.Sprintf("%s. It is allowed by annotation, but operation %s/%s is taking down control plane %s right now; "+
+			"control planes of the operator's own cluster go one at a time. This step starts when that one has finished",
+			what, op.Namespace, op.Name, op.Spec.HostRef.Name)
 	}
 
 	// etcd's majority, counted over the other control planes that answer

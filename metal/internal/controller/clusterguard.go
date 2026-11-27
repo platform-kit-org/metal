@@ -81,7 +81,7 @@ func (g *ClusterGuard) Check(ctx context.Context, host *metalv1alpha1.Host, op *
 	if err != nil {
 		return "", err
 	}
-	if other, err := g.otherControlPlaneDown(ctx, host, op, nodes); err != nil || other != "" {
+	if other, err := g.otherControlPlaneDown(ctx, host, cluster.Name, nodes); err != nil || other != "" {
 		if other != "" {
 			return fmt.Sprintf("%s, and %s; control planes are taken down one at a time", what, other), nil
 		}
@@ -97,11 +97,11 @@ func (g *ClusterGuard) Check(ctx context.Context, host *metalv1alpha1.Host, op *
 		"control plane): " + liftHint("hostoperation", op.Namespace, op.Name, metalv1alpha1.AnnotationOverrideClusterGuard)
 
 	// Etcd health is a read: os:reader serves it.
+	var rep *etcdReport
 	acc, err := newTalosAccessAs(ctx, g.Reader, g.Namespace, g.Dial, cluster, role.Reader)
-	if err != nil {
-		return fmt.Sprintf("%s, and etcd cannot be asked whether it keeps its majority without it: %v.%s", what, err, override), nil
+	if err == nil {
+		rep, err = acc.etcdHealth(ctx, controlPlanes(nodes, node.Name), nodes)
 	}
-	rep, err := acc.etcdHealth(ctx, controlPlanes(nodes, node.Name), nodes)
 	if err != nil {
 		return fmt.Sprintf("%s, and etcd cannot be asked whether it keeps its majority without it: %v.%s", what, err, override), nil
 	}
@@ -145,7 +145,7 @@ func leavesFirst(op *metalv1alpha1.HostOperation, node string) bool {
 // otherControlPlaneDown names another operation that is taking down a
 // control plane of the cluster right now, or "".
 func (g *ClusterGuard) otherControlPlaneDown(ctx context.Context, host *metalv1alpha1.Host,
-	op *metalv1alpha1.HostOperation, nodes []osv1alpha1.TalosNode) (string, error) {
+	cluster string, nodes []osv1alpha1.TalosNode) (string, error) {
 	hosts := &metalv1alpha1.HostList{}
 	if err := g.Reader.List(ctx, hosts); err != nil {
 		return "", err
@@ -154,21 +154,34 @@ func (g *ClusterGuard) otherControlPlaneDown(ctx context.Context, host *metalv1a
 	if err := g.Reader.List(ctx, ops); err != nil {
 		return "", err
 	}
-	for i := range hosts.Items {
-		h := &hosts.Items[i]
-		if h.Name == host.Name || h.Spec.OS == nil {
+	if o, node := controlPlaneGoingDown(hosts.Items, ops.Items, nodes, cluster, host.Name); o != nil {
+		return fmt.Sprintf("operation %s/%s is taking down control plane %s (host %s) right now",
+			o.Namespace, o.Name, node, o.Spec.HostRef.Name), nil
+	}
+	return "", nil
+}
+
+// controlPlaneGoingDown finds an operation that takes down a control plane
+// of cluster right now, on a host other than skipHost: it started, has not
+// finished, and disrupts the node. It returns the operation and the node's
+// name, or nil. Both guards hold a control plane while another one goes
+// down: that one is already one fewer etcd member.
+func controlPlaneGoingDown(hosts []metalv1alpha1.Host, ops []metalv1alpha1.HostOperation,
+	nodes []osv1alpha1.TalosNode, cluster, skipHost string) (*metalv1alpha1.HostOperation, string) {
+	for i := range hosts {
+		h := &hosts[i]
+		if h.Name == skipHost || h.Spec.OS == nil {
 			continue
 		}
-		other := findNode(nodes, h.Spec.OS.NodeRef.Name)
-		if other == nil || other.Spec.Role != osv1alpha1.RoleControlPlane {
+		n := findNode(nodes, h.Spec.OS.NodeRef.Name)
+		if n == nil || n.Spec.ClusterRef.Name != cluster || n.Spec.Role != osv1alpha1.RoleControlPlane {
 			continue
 		}
-		for j := range ops.Items {
-			o := &ops.Items[j]
-			if o.UID != op.UID && o.Spec.HostRef.Name == h.Name && opStarted(o) && !o.Finished() && disrupts(o) {
-				return fmt.Sprintf("operation %s/%s is taking down control plane %s (host %s) right now", o.Namespace, o.Name, other.Name, h.Name), nil
+		for j := range ops {
+			if o := &ops[j]; o.Spec.HostRef.Name == h.Name && opStarted(o) && !o.Finished() && disrupts(o) {
+				return o, n.Name
 			}
 		}
 	}
-	return "", nil
+	return nil, ""
 }

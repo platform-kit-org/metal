@@ -203,6 +203,10 @@ func TestDisruptionVerdict(t *testing.T) {
 				ops: []metalv1alpha1.HostOperation{running("h-3", "bios-h-3")}},
 			want: []string{"pk-metal/bios-h-3 is taking down control plane h-3", "one at a time"},
 		},
+		"a control plane, allowed, while a control plane of another cluster is cycled": {
+			in: disruptionInput{host: ptr.To(allowed(runsNodeHost("h-2", "cp-2"))), self: onCP1, nodes: settled, cluster: cluster(3, 3),
+				hosts: append(slices.Clone(hosts), runsNodeHost("h-6", "o-1")), ops: []metalv1alpha1.HostOperation{running("h-6", "bios-h-6")}},
+		},
 		"a control plane, allowed, its cluster unknown": {
 			in:   disruptionInput{host: ptr.To(allowed(runsNodeHost("h-2", "cp-2"))), self: onCP1, nodes: nodes, hosts: hosts},
 			want: []string{"TalosCluster mgmt is not found"},

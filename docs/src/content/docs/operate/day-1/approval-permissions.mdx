@@ -40,7 +40,7 @@ Give each person the rights for their work. Choose if a person can approve a cha
 | Proposer | Proposes an operation or a rollout: [](cli:reboot), `pk-metal restore plan --propose`, or a [](kind:TalosRollout) of kind `Reboot`. | `create` on `hostoperations` or `talosrollouts`. `pk-metal-admin` has it. For proposers outside the admin group, write a ClusterRole. |
 | Approver | Approves with [](cli:approve) and [](cli:rollout). Also aborts, pauses, resumes, and lifts guards. | The ClusterRole `pk-metal-approver`. `bindings.yaml` binds it to a group. |
 | Admin group | Names the TalosNode of a claim. Sets automatic approval. Moves a claim to a different machine. Changes backup recipients and EndpointProfiles. Creates operations that need no approval. | The group in the ConfigMap key `adminGroup`, default `pk-metal:admins`. The membership comes from the login, not from a binding. |
-| On call | Follows the [runbooks](rb:index): reads each kind, deletes failed operations, holds claims. It cannot approve. | The ClusterRole `pk-metal-oncall`. Bind it in your overlay. |
+| On call | Follows the [runbooks](rb:index): reads each kind, deletes failed operations, holds claims. It cannot approve. | The ClusterRole and the Role `pk-metal-oncall`. `bindings.yaml` binds both to a group. |
 | GitOps service account | Applies the kinds that you keep in git. | Its own binding. Never give it `pk-metal-approver`. See [](concept:gitops). |
 
 A person can have more than one role. A person on call usually also has `pk-metal-approver`.
@@ -75,23 +75,7 @@ The key `selfApproval` in the ConfigMap `hostoperation-approval` tells if a pers
 
 1. Bind the approvers. In `bindings.yaml`, replace `example:platform-approvers` with your group.
 
-2. Bind the persons on call. Add this binding to `bindings.yaml`, with your group:
-
-   ```yaml
-   ---
-   apiVersion: rbac.authorization.k8s.io/v1
-   kind: ClusterRoleBinding
-   metadata:
-     name: pk-metal-oncall
-   roleRef:
-     apiGroup: rbac.authorization.k8s.io
-     kind: ClusterRole
-     name: pk-metal-oncall
-   subjects:
-     - apiGroup: rbac.authorization.k8s.io
-       kind: Group
-       name: example:platform-oncall
-   ```
+2. Bind the persons on call. In `bindings.yaml`, replace `example:platform-oncall` with your group.
 
 3. Set `selfApproval` in `approval.yaml`.
 

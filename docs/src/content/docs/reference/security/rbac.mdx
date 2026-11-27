@@ -61,7 +61,7 @@ Kubernetes RBAC does the split. The [admission policies](ref:admission-policies)
   <dt>`pk-metal-approver` (ClusterRole)</dt>
   <dd>Read and patch operations and rollouts. Read what the plan of [](cli:approve) names: Hosts, BMC endpoints, boot assets, clusters and nodes. Nothing binds it by default. A patch can also set annotations on an operation: abort, retry, and the guard overrides `metal.platform-kit.org/ignore-window` and `metal.platform-kit.org/override-cluster-guard`. So an approver can also lift these guards. The [`guard-lift`](ref:admission-policies#guard-lift) policy makes the value name the approver.</dd>
   <dt>`pk-metal-oncall` (ClusterRole and Role)</dt>
-  <dd>What the [runbooks](rb:index) do. The ClusterRole reads each pk-metal kind, the events and the admission policies. It deletes operations and rollouts, and patches claims, Hosts, Assets and clusters. The Role in `pk-metal` reads the pods, the log and the Deployment of the manager, and the imager Jobs. It has no `patch` on operations or rollouts, so it cannot approve. It holds no Secret. Nothing binds it by default. Bind both: a ClusterRoleBinding and a RoleBinding in `pk-metal`.</dd>
+  <dd>What the [runbooks](rb:index) do. The ClusterRole reads each pk-metal kind, the events and the admission policies. It deletes operations and rollouts, and patches claims, Hosts, Assets and clusters. The Role in `pk-metal` reads the pods, the log and the Deployment of the manager, and the imager Jobs. It has no `patch` on operations or rollouts, so it cannot approve. It holds no Secret. The sample site overlay binds both to a group: a ClusterRoleBinding, and a RoleBinding in `pk-metal`.</dd>
   <dt>`pk-metal-backup` (ClusterRole)</dt>
   <dd>Read backup policies and snapshots, and ask for a snapshot now. It holds no Secret and cannot decrypt a backup. Nothing binds it by default.</dd>
 </dl>
@@ -115,7 +115,7 @@ Each controller page shows the rules that its markers ask for. See [](ctrl:index
 | `pk-metal-manager` | ClusterRoleBinding | ClusterRole `pk-metal-manager` | ServiceAccount `pk-metal/pk-metal-manager` |
 | `pk-metal-manager` | RoleBinding in `pk-metal` | Role `pk-metal-manager` | ServiceAccount `pk-metal/pk-metal-manager` |
 
-You bind the admin, approver, backup and on-call roles yourself. The sample site overlay binds `pk-metal-admin` to `pk-metal:admins`, with a ClusterRoleBinding and a RoleBinding in `pk-metal`. Do not bind `cluster-admin` to the admin group: it can impersonate each user. An install from an older sample has the ClusterRoleBinding `pk-metal-admins` to `cluster-admin`. Delete it after you apply the new sample. Bind the roles to a group, not to single users:
+You bind the admin, approver, backup and on-call roles yourself. The sample site overlay binds `pk-metal-admin` to `pk-metal:admins`, `pk-metal-approver` to an example group, and `pk-metal-oncall` to an example group. The admin and on-call roles each get a ClusterRoleBinding and a RoleBinding in `pk-metal`. Do not bind `cluster-admin` to the admin group: it can impersonate each user. Bind the roles to a group, not to single users:
 
 ```yaml
 apiVersion: rbac.authorization.k8s.io/v1

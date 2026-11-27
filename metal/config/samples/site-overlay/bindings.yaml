@@ -58,3 +58,33 @@ subjects:
   - apiGroup: rbac.authorization.k8s.io
     kind: Group
     name: example:platform-approvers
+---
+# The persons on call: what the runbooks do. The ClusterRole reads and fixes
+# the pk-metal kinds; the Role reads the manager's pod, log and Deployment in
+# pk-metal, the first step of several runbooks. Bind both.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: pk-metal-oncall
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: pk-metal-oncall
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: example:platform-oncall
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: pk-metal-oncall
+  namespace: pk-metal
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: pk-metal-oncall
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: example:platform-oncall

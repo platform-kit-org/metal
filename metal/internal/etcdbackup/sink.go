@@ -17,15 +17,7 @@ import (
 	"context"
 	"errors"
 	"io"
-	"time"
 )
-
-// Object is one stored object as a sink lists it.
-type Object struct {
-	Key     string
-	Size    int64
-	ModTime time.Time
-}
 
 // ErrNotFound is what Open returns for a key the sink does not hold.
 var ErrNotFound = errors.New("no such object in the backup sink")
@@ -40,8 +32,6 @@ type Sink interface {
 	Open(ctx context.Context, key string) (io.ReadCloser, error)
 	// Delete removes an object; a missing object is success.
 	Delete(ctx context.Context, key string) error
-	// List lists the objects under a key prefix.
-	List(ctx context.Context, prefix string) ([]Object, error)
 	// URL names where key lives, for status and for people
 	// (s3://bucket/key, pvc://claim/key).
 	URL(key string) string

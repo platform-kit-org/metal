@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"strings"
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
@@ -120,20 +119,6 @@ func (s *S3Sink) Delete(ctx context.Context, key string) error {
 		return fmt.Errorf("delete %s: %w", s.URL(key), err)
 	}
 	return nil
-}
-
-func (s *S3Sink) List(ctx context.Context, prefix string) ([]Object, error) {
-	var out []Object
-	for o := range s.client.ListObjects(ctx, s.bucket, minio.ListObjectsOptions{Prefix: prefix, Recursive: true}) {
-		if o.Err != nil {
-			return nil, fmt.Errorf("list s3://%s/%s: %w", s.bucket, prefix, o.Err)
-		}
-		if strings.HasSuffix(o.Key, "/") {
-			continue
-		}
-		out = append(out, Object{Key: o.Key, Size: o.Size, ModTime: o.LastModified})
-	}
-	return out, nil
 }
 
 func (s *S3Sink) URL(key string) string { return "s3://" + s.bucket + "/" + key }

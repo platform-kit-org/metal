@@ -2,20 +2,18 @@ package etcdbackup
 
 import (
 	"bytes"
-	"encoding/xml"
 	"fmt"
 	"io"
 	"net/http"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
 
-// fakeS3 is the slice of the S3 API minio-go uses for a streamed upload, a
-// download and a listing, held in memory. It checks no signatures: what is
-// under test is the sink's use of the client, not S3.
+// fakeS3 is the slice of the S3 API minio-go uses for a streamed upload and
+// a download, held in memory. It checks no signatures: what is under test is
+// the sink's use of the client, not S3.
 type fakeS3 struct {
 	mu      sync.Mutex
 	objects map[string][]byte         // bucket/key
@@ -44,34 +42,6 @@ func (f *fakeS3) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	body, _ := io.ReadAll(r.Body)
 
 	switch {
-	case r.Method == http.MethodGet && key == "" && q.Get("list-type") == "2":
-		type content struct {
-			Key          string
-			Size         int64
-			LastModified string
-			ETag         string
-		}
-		res := struct {
-			XMLName     xml.Name `xml:"ListBucketResult"`
-			Name        string
-			Prefix      string
-			IsTruncated bool
-			Contents    []content
-		}{Name: bucket, Prefix: q.Get("prefix")}
-		for _, k := range slices.Sorted(func(yield func(string) bool) {
-			for k := range f.objects {
-				if !yield(k) {
-					return
-				}
-			}
-		}) {
-			b, rest, _ := strings.Cut(k, "/")
-			if b == bucket && strings.HasPrefix(rest, res.Prefix) {
-				res.Contents = append(res.Contents, content{Key: rest, Size: int64(len(f.objects[k])),
-					LastModified: time.Now().UTC().Format(time.RFC3339), ETag: `"x"`})
-			}
-		}
-		_ = xml.NewEncoder(w).Encode(res)
 	case r.Method == http.MethodPost && q.Has("uploads"):
 		id := strconv.Itoa(len(f.uploads) + 1)
 		f.uploads[id] = map[int][]byte{}

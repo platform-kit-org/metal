@@ -171,24 +171,12 @@ func sinkContract(t *testing.T, s Sink) {
 	n, err := s.Put(ctx, "lab/one.db.age", bytes.NewReader(data))
 	require.NoError(t, err)
 	assert.Equal(t, int64(len(data)), n)
-	_, err = s.Put(ctx, "lab/two.db.age", strings.NewReader("2"))
-	require.NoError(t, err)
-	_, err = s.Put(ctx, "other/three.db.age", strings.NewReader("3"))
-	require.NoError(t, err)
 
 	size, sum, err := ReadBack(ctx, s, "lab/one.db.age")
 	require.NoError(t, err)
 	want := sha256.Sum256(data)
 	assert.Equal(t, int64(len(data)), size)
 	assert.Equal(t, hex.EncodeToString(want[:]), sum)
-
-	objs, err := s.List(ctx, "lab/")
-	require.NoError(t, err)
-	var keys []string
-	for _, o := range objs {
-		keys = append(keys, o.Key)
-	}
-	assert.ElementsMatch(t, []string{"lab/one.db.age", "lab/two.db.age"}, keys)
 
 	require.NoError(t, s.Delete(ctx, "lab/one.db.age"))
 	require.NoError(t, s.Delete(ctx, "lab/one.db.age"), "deleting what is gone is success")
@@ -297,9 +285,9 @@ func TestStoreStreamsEncryptedVerifiedSnapshots(t *testing.T) {
 	fs := FileSink{Root: t.TempDir(), Name: "b"}
 	_, err = Store(context.Background(), fs, "lab/broken.db.age", recipients, broken)
 	require.ErrorContains(t, err, "connection reset")
-	objs, err := fs.List(context.Background(), "")
+	left, err := os.ReadDir(filepath.Join(fs.Root, "lab"))
 	require.NoError(t, err)
-	assert.Empty(t, objs)
+	assert.Empty(t, left, "not even a partial file")
 
 	_, err = Store(context.Background(), s3, "lab/broken.db.age", recipients, broken)
 	require.Error(t, err)

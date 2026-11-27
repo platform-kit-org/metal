@@ -37,6 +37,11 @@ import (
 // filters the cache and the API server.
 const opHostIndex = "spec.hostRef.name"
 
+// opHostRef is the value of opHostIndex for an operation: its Host's name.
+func opHostRef(o client.Object) []string {
+	return []string{o.(*metalv1alpha1.HostOperation).Spec.HostRef.Name}
+}
+
 // executeTimeout bounds one whole executor pass — dial, every step (a Huawei
 // VmmControl insert polls its task monitor), and the closing observation.
 // Steps that wait on the world (power transitions, a check-in) do not block a
@@ -1249,10 +1254,7 @@ func (r *HostOperationReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		r.APIReader = mgr.GetAPIReader()
 	}
 	if err := mgr.GetFieldIndexer().IndexField(context.Background(),
-		&metalv1alpha1.HostOperation{}, opHostIndex,
-		func(o client.Object) []string {
-			return []string{o.(*metalv1alpha1.HostOperation).Spec.HostRef.Name}
-		}); err != nil {
+		&metalv1alpha1.HostOperation{}, opHostIndex, opHostRef); err != nil {
 		return err
 	}
 	return ctrl.NewControllerManagedBy(mgr).

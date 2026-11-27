@@ -99,6 +99,16 @@ func testScheme(t *testing.T) *runtime.Scheme {
 	return s
 }
 
+// opStore is the fake API of an executor: objs, and the status subresource
+// and the host index that the API server and the manager give operations.
+func opStore(t *testing.T, objs ...client.Object) client.WithWatch {
+	t.Helper()
+	return fake.NewClientBuilder().WithScheme(testScheme(t)).
+		WithStatusSubresource(&metalv1alpha1.HostOperation{}).
+		WithIndex(&metalv1alpha1.HostOperation{}, opHostIndex, opHostRef).
+		WithObjects(objs...).Build()
+}
+
 // executorFor builds an executor over a fake API and the named sim fixture.
 func executorFor(t *testing.T, fixture string, objs ...client.Object) (*HostOperationReconciler, *sim.State, *recordingClient) {
 	t.Helper()
@@ -107,14 +117,8 @@ func executorFor(t *testing.T, fixture string, objs ...client.Object) (*HostOper
 	st := sim.NewState(f)
 	rec := &recordingClient{Client: st}
 	host := &metalv1alpha1.Host{ObjectMeta: metav1.ObjectMeta{Name: "host-a"}}
-	cl := fake.NewClientBuilder().WithScheme(testScheme(t)).
-		WithStatusSubresource(&metalv1alpha1.HostOperation{}).
-		WithIndex(&metalv1alpha1.HostOperation{}, opHostIndex, func(o client.Object) []string {
-			return []string{o.(*metalv1alpha1.HostOperation).Spec.HostRef.Name}
-		}).
-		WithObjects(append(objs, host)...).Build()
 	r := &HostOperationReconciler{
-		Client:   cl,
+		Client:   opStore(t, append(objs, host)...),
 		Recorder: events.NewFakeRecorder(100),
 		Connect: func(context.Context, *metalv1alpha1.Host) (bmc.Client, string, string, string, error) {
 			return rec, f.Systems[0].ID, "", "", nil
@@ -136,17 +140,36 @@ func preClearedOp(actions ...metalv1alpha1.HostOperationAction) *metalv1alpha1.H
 	}
 }
 
+// getOp reads the operation pk-metal/name.
+func getOp(t *testing.T, r *HostOperationReconciler, name string) *metalv1alpha1.HostOperation {
+	t.Helper()
+	op := &metalv1alpha1.HostOperation{}
+	require.NoError(t, r.Get(t.Context(), client.ObjectKey{Namespace: "pk-metal", Name: name}, op))
+	return op
+}
+
+func opCond(t *testing.T, r *HostOperationReconciler, name, typ string) *metav1.Condition {
+	t.Helper()
+	c := meta.FindStatusCondition(getOp(t, r, name).Status.Conditions, typ)
+	require.NotNil(t, c, "%s has no %s condition", name, typ)
+	return c
+}
+
+// reconcileOp runs one executor pass of the operation pk-metal/name.
+func reconcileOp(t *testing.T, r *HostOperationReconciler, name string) {
+	t.Helper()
+	_, err := r.Reconcile(t.Context(), ctrl.Request{NamespacedName: client.ObjectKey{Namespace: "pk-metal", Name: name}})
+	require.NoError(t, err)
+}
+
 // runOp reconciles until the operation finishes (or the budget runs out) and
 // returns its final state.
 func runOp(t *testing.T, r *HostOperationReconciler) *metalv1alpha1.HostOperation {
 	t.Helper()
-	key := client.ObjectKey{Namespace: "pk-metal", Name: "op"}
-	op := &metalv1alpha1.HostOperation{}
+	var op *metalv1alpha1.HostOperation
 	for range 10 {
-		_, err := r.Reconcile(t.Context(), ctrl.Request{NamespacedName: key})
-		require.NoError(t, err)
-		require.NoError(t, r.Get(t.Context(), key, op))
-		if op.Finished() {
+		reconcileOp(t, r, "op")
+		if op = getOp(t, r, "op"); op.Finished() {
 			return op
 		}
 	}

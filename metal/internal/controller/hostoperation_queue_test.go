@@ -11,8 +11,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
-	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
 	"github.com/dennisklein/platform-kit/metal/internal/bmc"
@@ -27,26 +25,6 @@ func opNamed(name string, created time.Time, actions ...metalv1alpha1.HostOperat
 	// apart by UID.
 	op.UID = types.UID("uid-" + name)
 	return op
-}
-
-func getOp(t *testing.T, r *HostOperationReconciler, name string) *metalv1alpha1.HostOperation {
-	t.Helper()
-	op := &metalv1alpha1.HostOperation{}
-	require.NoError(t, r.Get(t.Context(), client.ObjectKey{Namespace: "pk-metal", Name: name}, op))
-	return op
-}
-
-func opCond(t *testing.T, r *HostOperationReconciler, name, typ string) *metav1.Condition {
-	t.Helper()
-	c := meta.FindStatusCondition(getOp(t, r, name).Status.Conditions, typ)
-	require.NotNil(t, c, "%s has no %s condition", name, typ)
-	return c
-}
-
-func reconcileOp(t *testing.T, r *HostOperationReconciler, name string) {
-	t.Helper()
-	_, err := r.Reconcile(t.Context(), ctrl.Request{NamespacedName: client.ObjectKey{Namespace: "pk-metal", Name: name}})
-	require.NoError(t, err)
 }
 
 func TestStartedOperationIsNotPreemptedByAnOlderOneApprovedLater(t *testing.T) {

@@ -23,7 +23,6 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/events"
 	"k8s.io/utils/ptr"
-	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
@@ -120,12 +119,7 @@ func newTalosLab(t *testing.T, objs ...client.Object) *talosLab {
 			return []string{o.(*corev1.Pod).Spec.NodeName}
 		}).Build()
 
-	cl := fake.NewClientBuilder().WithScheme(testScheme(t)).
-		WithStatusSubresource(&metalv1alpha1.HostOperation{}).
-		WithIndex(&metalv1alpha1.HostOperation{}, opHostIndex, func(o client.Object) []string {
-			return []string{o.(*metalv1alpha1.HostOperation).Spec.HostRef.Name}
-		}).
-		WithObjects(objs...).Build()
+	cl := opStore(t, objs...)
 	lab.r = &HostOperationReconciler{
 		Client: cl, CredentialsNamespace: "pk-metal",
 		Recorder: events.NewFakeRecorder(100),
@@ -164,12 +158,8 @@ func rebootPlan(node string) []metalv1alpha1.HostOperationAction {
 // pass reconciles the operation once and returns it.
 func (l *talosLab) pass(t *testing.T) *metalv1alpha1.HostOperation {
 	t.Helper()
-	key := client.ObjectKey{Namespace: "pk-metal", Name: "op"}
-	_, err := l.r.Reconcile(t.Context(), ctrl.Request{NamespacedName: key})
-	require.NoError(t, err)
-	op := &metalv1alpha1.HostOperation{}
-	require.NoError(t, l.r.Get(t.Context(), key, op))
-	return op
+	reconcileOp(t, l.r, "op")
+	return getOp(t, l.r, "op")
 }
 
 func executed(op *metalv1alpha1.HostOperation) metav1.Condition {

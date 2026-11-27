@@ -29,7 +29,6 @@ import (
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
@@ -465,12 +464,7 @@ func runExecutorCase(t *testing.T, seed uint64, image func(string) string, image
 	}
 	node := &osv1alpha1.TalosNode{ObjectMeta: metav1.ObjectMeta{Name: "node-a"}}
 	host := &metalv1alpha1.Host{ObjectMeta: metav1.ObjectMeta{Name: "host-a"}}
-	store := fake.NewClientBuilder().WithScheme(testScheme(t)).
-		WithStatusSubresource(&metalv1alpha1.HostOperation{}).
-		WithIndex(&metalv1alpha1.HostOperation{}, opHostIndex, func(o client.Object) []string {
-			return []string{o.(*metalv1alpha1.HostOperation).Spec.HostRef.Name}
-		}).
-		WithObjects(op, node, host, artifact, config, site).Build()
+	store := opStore(t, op, node, host, artifact, config, site)
 	key := client.ObjectKeyFromObject(op)
 	c.deleteOp = func() {
 		c.deletedAt = c.applied

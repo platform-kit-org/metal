@@ -12,7 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
@@ -95,11 +94,8 @@ func newRecoverWorld(t *testing.T, bootstrapped bool) *recoverWorld {
 // pass runs one reconcile and returns the operation and its Executed condition.
 func (w *recoverWorld) pass(t *testing.T) (*metalv1alpha1.HostOperation, *metav1.Condition) {
 	t.Helper()
-	key := client.ObjectKey{Namespace: "pk-metal", Name: "op"}
-	_, err := w.r.Reconcile(t.Context(), ctrl.Request{NamespacedName: key})
-	require.NoError(t, err)
-	op := &metalv1alpha1.HostOperation{}
-	require.NoError(t, w.r.Get(t.Context(), key, op))
+	reconcileOp(t, w.r, "op")
+	op := getOp(t, w.r, "op")
 	return op, meta.FindStatusCondition(op.Status.Conditions, metalv1alpha1.ConditionExecuted)
 }
 

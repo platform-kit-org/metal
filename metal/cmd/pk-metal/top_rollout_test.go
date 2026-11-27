@@ -11,6 +11,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
+	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
 )
 
 // The header shows a rollout that has not succeeded, and one that waits for
@@ -42,6 +43,28 @@ func TestTopShowsWhyARunningOperationWaits(t *testing.T) {
 	assert.Equal(t, msg, buildTop(in).Tiles[1].Op.Message)
 	m, _ := feed(t, newTopModel(nil, &fakeActions{}, nil, 0), tea.WindowSizeMsg{Width: 100, Height: 50}, topDataMsg(in), key("tab"))
 	assert.Contains(t, screen(m), "BMC unavailable, retrying")
+}
+
+// An aborted operation shows on its tile, as a failed one does, and r
+// retries it: pk-metal retry takes both.
+func TestTopShowsAnAbortedOperation(t *testing.T) {
+	in := labRack()
+	in.Fleet, in.Hosts, in.Ops = nil, in.Hosts[3:], in.Ops[3:]
+	in.Ops[0].Status.Phase = metalv1alpha1.OperationAborted
+	in.Ops[0].Status.Conditions = []metav1.Condition{{Type: metalv1alpha1.ConditionExecuted, Status: metav1.ConditionFalse,
+		Reason: metalv1alpha1.ReasonAborted, Message: "aborted by bob"}}
+	d := buildTop(in)
+	require.Len(t, d.Tiles, 1)
+	require.NotNil(t, d.Tiles[0].Op)
+	assert.Equal(t, "3/9 insertMedia aborted", d.Tiles[0].Op.Step)
+	assert.Equal(t, 1, d.Attention)
+
+	act := &fakeActions{}
+	m, _ := feed(t, newTopModel(nil, act, nil, 0), tea.WindowSizeMsg{Width: 100}, topDataMsg(in))
+	_, cmd := feed(t, m, key("r"))
+	require.NotNil(t, cmd, "r retries an aborted operation")
+	cmd()
+	assert.Equal(t, []string{"pk-metal/bios-real1-9f8e7d6c"}, act.retried)
 }
 
 // hangingActions never answers until its context ends.

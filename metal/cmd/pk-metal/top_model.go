@@ -298,7 +298,7 @@ func (m topModel) key(k string) (tea.Model, tea.Cmd) {
 		})
 	case "r":
 		if t.Op == nil || !t.Op.Failed {
-			m.setStatus(t.Title+": no failed operation to retry", false)
+			m.setStatus(t.Title+": no failed or aborted operation to retry", false)
 			return m, nil
 		}
 		ns, name := t.Op.Namespace, t.Op.Name

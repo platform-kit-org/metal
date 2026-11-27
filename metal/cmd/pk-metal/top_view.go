@@ -174,7 +174,7 @@ type opLine struct {
 	Step            string // "5/9 setBootOverride"
 	Approval        string
 	Waits           bool // waits for a person's approval
-	Failed          bool
+	Failed          bool // failed or aborted: pk-metal retry runs it again
 	Message         string
 }
 
@@ -419,7 +419,8 @@ func shortPath(p string) string {
 }
 
 // currentOp is the operation to show for a host: the oldest unfinished one,
-// else the newest one if it failed. Succeeded ones are history.
+// else the newest one if it failed or was aborted. Succeeded ones are
+// history.
 func currentOp(ops []metalv1alpha1.HostOperation, host string) *opLine {
 	var mine []metalv1alpha1.HostOperation
 	for _, op := range ops {
@@ -440,7 +441,11 @@ func currentOp(ops []metalv1alpha1.HostOperation, host string) *opLine {
 			break
 		}
 	}
-	if pick == nil && len(mine) > 0 && opPhase(&mine[len(mine)-1]) == metalv1alpha1.OperationFailed {
+	ended := func(op *metalv1alpha1.HostOperation) bool {
+		p := opPhase(op)
+		return p == metalv1alpha1.OperationFailed || p == metalv1alpha1.OperationAborted
+	}
+	if pick == nil && len(mine) > 0 && ended(&mine[len(mine)-1]) {
 		pick = &mine[len(mine)-1]
 	}
 	if pick == nil {
@@ -448,11 +453,11 @@ func currentOp(ops []metalv1alpha1.HostOperation, host string) *opLine {
 	}
 	op := pick
 	l := &opLine{Namespace: op.Namespace, Name: op.Name, Phase: orDash(string(opPhase(op))),
-		Waits: waitsForApproval(op), Failed: opPhase(op) == metalv1alpha1.OperationFailed}
+		Waits: waitsForApproval(op), Failed: ended(op)}
 	done, total := len(op.Status.Steps), len(op.Spec.Actions)
 	switch {
 	case l.Failed && done > 0:
-		l.Step = fmt.Sprintf("%d/%d %s failed", done, total, op.Status.Steps[done-1].Action)
+		l.Step = fmt.Sprintf("%d/%d %s %s", done, total, op.Status.Steps[done-1].Action, strings.ToLower(string(opPhase(op))))
 	case done < total:
 		l.Step = fmt.Sprintf("%d/%d %s", done+1, total, actionKey(op.Spec.Actions[done]))
 	default:

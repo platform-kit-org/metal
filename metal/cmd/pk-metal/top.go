@@ -60,7 +60,7 @@ keys:
   a            show the plan of the operation that waits for approval, as
                pk-metal approve does, and approve it on y
   h            hold the claim, or remove the hold
-  r            retry the failed operation (pk-metal retry)
+  r            retry the failed or aborted operation (pk-metal retry)
   q            quit
 
 examples:

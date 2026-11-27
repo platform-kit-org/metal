@@ -143,15 +143,12 @@ func guardOverride(op *metalv1alpha1.HostOperation, key string) (string, bool) {
 	return why, why != ""
 }
 
-// windowExempt reports why an operation is not held by any window, or "".
-func windowExempt(op *metalv1alpha1.HostOperation) string {
-	if why, ok := guardOverride(op, metalv1alpha1.AnnotationIgnoreWindow); ok {
-		return "annotated " + metalv1alpha1.AnnotationIgnoreWindow + ": " + why
-	}
-	if op.Spec.Reason == reasonProvisioning {
-		return "a new install disturbs no running workload"
-	}
-	return ""
+// windowExempt reports that no window holds op: a person lifted the windows
+// for it with a reason, or it is a new install, which disturbs no running
+// workload.
+func windowExempt(op *metalv1alpha1.HostOperation) bool {
+	_, lifted := guardOverride(op, metalv1alpha1.AnnotationIgnoreWindow)
+	return lifted || op.Spec.Reason == reasonProvisioning
 }
 
 // windowVerdict is what the gate decided for one operation.
@@ -166,7 +163,7 @@ type windowVerdict struct {
 // an operation on this host start at now?
 func decideWindow(windows []metalv1alpha1.MaintenanceWindow, op *metalv1alpha1.HostOperation,
 	host *metalv1alpha1.Host, cluster string, now time.Time) windowVerdict {
-	if windowExempt(op) != "" {
+	if windowExempt(op) {
 		return windowVerdict{}
 	}
 	var covering, broken []string
@@ -236,7 +233,7 @@ func hostCluster(ctx context.Context, c client.Reader, host *metalv1alpha1.Host)
 // result brings it back when the next window opens.
 func (r *HostOperationReconciler) holdForWindow(ctx context.Context, op *metalv1alpha1.HostOperation, host *metalv1alpha1.Host,
 	setCond func(string, metav1.ConditionStatus, string, string), flush func() error) (ctrl.Result, bool, error) {
-	if windowExempt(op) != "" {
+	if windowExempt(op) {
 		return ctrl.Result{}, false, nil
 	}
 	windows := &metalv1alpha1.MaintenanceWindowList{}

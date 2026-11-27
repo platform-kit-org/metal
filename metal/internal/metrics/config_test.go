@@ -11,6 +11,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	// The controller package registers the reconcile and worker series of
+	// controller-runtime.
+	_ "sigs.k8s.io/controller-runtime/pkg/controller"
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/yaml"
 )
 
@@ -90,6 +94,23 @@ func seriesNames(t *testing.T) []string {
 	return names
 }
 
+// servedByControllerRuntime reports whether controller-runtime registers a
+// series of this name in the registry that the manager serves. A name that
+// it does not register can be registered here a second time.
+func servedByControllerRuntime(name string) bool {
+	probe := prometheus.NewGauge(prometheus.GaugeOpts{Name: name, Help: "probe"})
+	if err := ctrlmetrics.Registry.Register(probe); err != nil {
+		return true
+	}
+	ctrlmetrics.Registry.Unregister(probe)
+	return false
+}
+
+func TestServedByControllerRuntime(t *testing.T) {
+	assert.True(t, servedByControllerRuntime("controller_runtime_reconcile_total"))
+	assert.False(t, servedByControllerRuntime("controller_runtime_no_such_series"))
+}
+
 func TestAlertRulesNameServedSeriesAndRunbooks(t *testing.T) {
 	served := seriesNames(t)
 	docs := filepath.Join("..", "..", "..", "docs", "src", "content", "docs", "operate", "runbooks")
@@ -105,6 +126,9 @@ func TestAlertRulesNameServedSeriesAndRunbooks(t *testing.T) {
 
 		for _, name := range regexp.MustCompile(`pk_metal_[a-z_]+`).FindAllString(r.Expr, -1) {
 			assert.True(t, slices.Contains(served, name), "%s reads %s, which the operator does not serve", r.Alert, name)
+		}
+		for _, name := range regexp.MustCompile(`controller_runtime_[a-z_]+`).FindAllString(r.Expr, -1) {
+			assert.True(t, servedByControllerRuntime(name), "%s reads %s, which controller-runtime does not serve", r.Alert, name)
 		}
 
 		url := r.Annotations["runbook_url"]

@@ -1,0 +1,82 @@
+---
+title: Controller failing
+description: Most passes of one controller fail, or a controller panicked. Read the error in the manager log and correct what the API server refuses.
+type: runbook
+xref: { cat: rb, id: reconcile-failing }
+sources:
+  - /repo/metal/config/prometheus/rules.yaml
+  - /repo/metal/cmd/manager/main.go
+---
+
+import { Steps } from '@astrojs/starlight/components';
+import Callout from '../../../../components/Callout.astro';
+
+## Symptoms
+
+<dl>
+  <dt>Alert</dt>
+  <dd>`PkMetalReconcileFailing`: more than half of the passes of one controller fail, for 30 minutes.</dd>
+  <dd>`PkMetalReconcilePanicked`: a controller panicked in the last hour.</dd>
+  <dt>Metric</dt>
+  <dd>`controller_runtime_reconcile_total{result="error"}` and `controller_runtime_reconcile_panics_total` of controller-runtime, for each controller.</dd>
+  <dt>Objects</dt>
+  <dd>The objects of that controller do not change. Their conditions can show an old state.</dd>
+</dl>
+
+## Impact
+
+The controller does not do its work. For example, if `hostoperation` fails, approved operations do not start. No other alert tells you this.
+A BMC or a node that does not answer does not cause these alerts. The controllers write that into a condition.
+
+## Diagnose
+
+<Steps>
+
+1. Read the errors of the controller. Use the controller name from the alert.
+
+   ```sh
+   kubectl -n pk-metal logs deploy/pk-metal-manager --since=1h \
+     | grep 'Reconciler error' | grep '"controller":"hostoperation"'
+   ```
+
+2. For a panic, read the stack.
+
+   ```sh
+   kubectl -n pk-metal logs deploy/pk-metal-manager --since=1h | grep -A40 'Observed a panic'
+   ```
+
+3. Find the cause in the table.
+
+   | Error | Cause | What to do |
+   | --- | --- | --- |
+   | `forbidden: User "system:serviceaccount:pk-metal:pk-metal-manager"` | The RBAC of the manager is older than the manager | Apply the overlay of the commit that runs. See [](howto:upgrade-operator). |
+   | `field label not supported`, `unknown field` | The CRDs are older than the manager, or Kubernetes is older than 1.32 | Apply the CRDs of the commit that runs. See [](ref:versions). |
+   | `no matches for kind` | A CRD is missing | Apply the overlay again. |
+   | `the object has been modified` | Two writers changed one object at the same time | Nothing. The next pass reads the object again. If it stays, see below. |
+   | `panic:` | A bug in the operator | Collect the diagnostics and open an issue with the stack. |
+
+</Steps>
+
+## Fix
+
+Correct the cause from the table. The controller tries each object again with a growing delay, up to about 17 minutes. To try at once, restart the manager:
+
+```sh
+kubectl -n pk-metal rollout restart deployment/pk-metal-manager
+```
+
+<Callout type="caution">
+A restart ends the media grants of downloads that run. The manager mounts the medium again. See [](howto:upgrade-operator).
+</Callout>
+
+## Verify
+
+The alert resolves. `kubectl -n pk-metal logs deploy/pk-metal-manager --since=10m | grep -c 'Reconciler error'` gets smaller.
+
+## If this does not work
+
+Follow [](howto:collect-diagnostics), and open an issue with the log.
+
+## Related
+
+- [](ctrl:manager), [](ref:rbac), [](howto:upgrade-operator)

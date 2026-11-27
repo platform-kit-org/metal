@@ -1,0 +1,65 @@
+---
+title: Operation workers busy
+description: Each HostOperation worker of the manager has been busy for an hour. Approved operations of other hosts wait. Wait for a planned change, or give the manager more workers.
+type: runbook
+xref: { cat: rb, id: workers-busy }
+sources:
+  - /repo/metal/config/prometheus/rules.yaml
+  - /repo/metal/cmd/manager/main.go
+  - /repo/metal/internal/controller/hostoperation_controller.go
+---
+
+import { Steps } from '@astrojs/starlight/components';
+
+## Symptoms
+
+<dl>
+  <dt>Alert</dt>
+  <dd>`PkMetalOperationWorkersBusy`: each operation worker has been busy for an hour.</dd>
+  <dt>Metric</dt>
+  <dd>`controller_runtime_active_workers{controller="hostoperation"}` is equal to `controller_runtime_max_concurrent_reconciles`.</dd>
+  <dt>Objects</dt>
+  <dd>Approved operations do not start, and no `BLOCKED` reason holds them.</dd>
+</dl>
+
+## Impact
+
+The manager works on a fixed number of operations at the same time, 4 by default. Each one is on a different host. A firmware flash keeps its worker for up to 15 minutes. Other operations wait for a free worker: installs, releases, power actions.
+Nothing fails. The operations start later.
+
+## Diagnose
+
+<Steps>
+
+1. Find the operations that run.
+
+   ```sh
+   kubectl get hostoperations -A | grep Running
+   ```
+
+2. Find if a planned change of many hosts runs, for example a [](kind:FirmwareProfile) or a rollout.
+
+</Steps>
+
+## Fix
+
+- For a planned change of many hosts, wait. The alert resolves when the change has finished.
+- If this happens often, give the manager more workers with `--operation-workers`, from 1 to 64. Each flash keeps its firmware image in memory. Raise the memory limit of the manager with the workers.
+
+   ```yaml
+   # kustomization.yaml of your overlay
+   patches:
+     - target: { kind: Deployment, name: pk-metal-manager }
+       patch: |
+         - op: add
+           path: /spec/template/spec/containers/0/args/-
+           value: --operation-workers=8
+   ```
+
+## Verify
+
+`controller_runtime_active_workers{controller="hostoperation"}` is less than `controller_runtime_max_concurrent_reconciles` again.
+
+## Related
+
+- [](ctrl:manager), [Scale and sizing](concept:architecture#scale-and-sizing)

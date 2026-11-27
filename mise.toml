@@ -261,9 +261,10 @@ depends = ["build"]
 run = '''
 lab=${PK_LAB_DIR:-.lab}
 [ -s "$lab/kubeconfig" ] || { echo "lab:top: $lab/kubeconfig is missing. Bring the lab up: mise run lab:up" >&2; exit 1; }
-set -- --kubeconfig "$lab/kubeconfig" top --fleet http://127.0.0.1:8440/state
-[ -s "$lab/workload.kubeconfig" ] && set -- "$@" --workload-kubeconfig "$lab/workload.kubeconfig"
-exec metal/bin/pk-metal "$@"
+if [ -s "$lab/workload.kubeconfig" ]; then
+  exec metal/bin/pk-metal --kubeconfig "$lab/kubeconfig" top --fleet http://127.0.0.1:8440/state --workload-kubeconfig "$lab/workload.kubeconfig"
+fi
+exec metal/bin/pk-metal --kubeconfig "$lab/kubeconfig" top --fleet http://127.0.0.1:8440/state
 '''
 
 [tasks."lab:radar"]

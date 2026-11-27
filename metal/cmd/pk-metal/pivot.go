@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/GSI-HPC/go-clikit/cobratree"
+	"github.com/spf13/cobra"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 
@@ -17,9 +19,13 @@ import (
 	"github.com/dennisklein/platform-kit/metal/internal/pivot"
 )
 
-func init() {
-	verbHelp["pivot"] = `
-pivot moves the pk-metal operator from the cluster it runs in now (the
+func pivotCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:         "pivot --to <kubeconfig> [--to-context name] [--yes] [flags]",
+		Short:       "move the operator and its objects from this cluster to another one, for example from kind onto the Talos cluster it built",
+		GroupID:     groupChanges,
+		Annotations: needsCluster(),
+		Long: `pivot moves the pk-metal operator from the cluster it runs in now (the
 current kubeconfig context, or --kubeconfig and --context) to another
 cluster (--to). It is meant for this case: the operator ran in a bootstrap
 cluster (kind) and installed a Talos cluster; now the operator moves onto that
@@ -50,15 +56,11 @@ emptyDir, which starts empty and is lost on every restart, and it builds no
 installer for a one-slot BMC until the claim exists.
 
 Run pivot again after a failure: it continues where it stopped. To move back,
-run pivot from the new cluster with --to naming the old one.
-
-examples:
-  pk-metal pivot --to mgmt.kubeconfig
-  pk-metal --context kind-pk-metal pivot --to mgmt.kubeconfig --to-context admin@mgmt --yes`
-}
-
-func pivotCmd(args []string) {
-	fs := newFlags("pivot")
+run pivot from the new cluster with --to naming the old one.`,
+		Example: `  pk-metal pivot --to mgmt.kubeconfig
+  pk-metal --context kind-pk-metal pivot --to mgmt.kubeconfig --to-context admin@mgmt --yes`,
+	}
+	fs := cmd.Flags()
 	to := fs.String("to", "", "kubeconfig file of the cluster to move to (required)")
 	toContext := fs.String("to-context", "", "context in the --to kubeconfig (default: its current context)")
 	image := fs.String("image", "", "manager image on the new cluster (default: the image the operator runs now)")
@@ -69,65 +71,67 @@ func pivotCmd(args []string) {
 	settle := fs.Duration("settle", 90*time.Second, "how long to watch the new operator for operations it must not propose")
 	timeout := fs.Duration("timeout", 5*time.Minute, "how long to wait for each step")
 	yes := fs.Bool("yes", false, "move without asking (for scripts); the checks are still printed")
-	addGlobalFlags(fs)
-	parseFlags(fs, args)
-	if fs.NArg() != 0 {
-		badUsage(fs, "pivot takes no arguments")
-	}
-	if *to == "" {
-		badUsage(fs, "--to is required: the kubeconfig of the cluster to move to")
-	}
-	claims := pivot.ClaimsMode(*mediaStore)
-	if claims != pivot.ClaimsCopy && claims != pivot.ClaimsEphemeral {
-		badUsage(fs, fmt.Sprintf("--media-store is copy or ephemeral, not %q", *mediaStore))
-	}
+	cmd.RunE = func(_ *cobra.Command, args []string) error {
+		if len(args) != 0 {
+			return cobratree.Usagef("pivot takes no arguments")
+		}
+		if *to == "" {
+			return cobratree.Usagef("--to is required: the kubeconfig of the cluster to move to")
+		}
+		claims := pivot.ClaimsMode(*mediaStore)
+		if claims != pivot.ClaimsCopy && claims != pivot.ClaimsEphemeral {
+			return cobratree.Usagef("--media-store is copy or ephemeral, not %q", *mediaStore)
+		}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer stop()
-	scheme := newScheme()
-	srcCfg, srcName, err := namedRestConfig(global.kubeconfig, global.context)
-	if err != nil {
-		die(err)
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer stop()
+		scheme := newScheme()
+		srcCfg, srcName, err := namedRestConfig(global.kubeconfig, global.context)
+		if err != nil {
+			die(err)
+		}
+		dstCfg, dstName, err := namedRestConfig(*to, *toContext)
+		if err != nil {
+			die(err)
+		}
+		source, err := pivot.NewCluster(srcName, srcCfg, scheme)
+		if err != nil {
+			die(err)
+		}
+		target, err := pivot.NewCluster(dstName, dstCfg, scheme)
+		if err != nil {
+			die(err)
+		}
+		// The move sets approvals and guard lifts again on the target and prunes
+		// what an earlier run left there: its audit lines (replayed, deleted)
+		// go to standard error and name the user who runs it. Keep them.
+		mover, err := whoAmI(ctx, target.Client)
+		if err != nil {
+			die(fmt.Errorf("the move's audit lines must name you: %w", err))
+		}
+		m, err := pivot.New(ctx, source, target, pivot.Options{
+			Image: *image, MediaURL: *mediaURL, Claims: claims, ForceWaiting: *forceWaiting,
+			Settle: *settle, Timeout: *timeout, Log: prefixed{os.Stdout},
+			Audit: audit.New(os.Stderr, mover),
+		})
+		if err != nil {
+			die(err)
+		}
+		plan, err := m.Preflight(ctx)
+		if err != nil {
+			die(err)
+		}
+		if err := confirmPivot(os.Stdout, os.Stdin, plan, srcName, dstName, *yes, isTerminal(os.Stdin)); err != nil {
+			die(err)
+		}
+		rep, err := m.Run(ctx)
+		if err != nil {
+			die(err)
+		}
+		fmt.Print(pivotDone(rep, srcName, dstName, *to))
+		return nil
 	}
-	dstCfg, dstName, err := namedRestConfig(*to, *toContext)
-	if err != nil {
-		die(err)
-	}
-	source, err := pivot.NewCluster(srcName, srcCfg, scheme)
-	if err != nil {
-		die(err)
-	}
-	target, err := pivot.NewCluster(dstName, dstCfg, scheme)
-	if err != nil {
-		die(err)
-	}
-	// The move sets approvals and guard lifts again on the target and prunes
-	// what an earlier run left there: its audit lines (replayed, deleted)
-	// go to standard error and name the user who runs it. Keep them.
-	mover, err := whoAmI(ctx, target.Client)
-	if err != nil {
-		die(fmt.Errorf("the move's audit lines must name you: %w", err))
-	}
-	m, err := pivot.New(ctx, source, target, pivot.Options{
-		Image: *image, MediaURL: *mediaURL, Claims: claims, ForceWaiting: *forceWaiting,
-		Settle: *settle, Timeout: *timeout, Log: prefixed{os.Stdout},
-		Audit: audit.New(os.Stderr, mover),
-	})
-	if err != nil {
-		die(err)
-	}
-	plan, err := m.Preflight(ctx)
-	if err != nil {
-		die(err)
-	}
-	if err := confirmPivot(os.Stdout, os.Stdin, plan, srcName, dstName, *yes, isTerminal(os.Stdin)); err != nil {
-		die(err)
-	}
-	rep, err := m.Run(ctx)
-	if err != nil {
-		die(err)
-	}
-	fmt.Print(pivotDone(rep, srcName, dstName, *to))
+	return cmd
 }
 
 // confirmPivot prints the plan and asks; a resumed move only verifies and

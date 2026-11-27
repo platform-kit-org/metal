@@ -15,8 +15,10 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/GSI-HPC/go-clikit/cobratree"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/go-logr/logr"
+	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -34,9 +36,13 @@ import (
 	"github.com/dennisklein/platform-kit/metal/internal/bmc/sim/fleet"
 )
 
-func init() {
-	verbHelp["top"] = `
-A live view of every machine, updated as the cluster changes. One small tile
+func topCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:         "top [--fleet url] [--workload-kubeconfig file]",
+		Short:       "live view of every machine: BMC, phase, operation, node; keys approve, hold and retry like the commands below",
+		GroupID:     groupChanges,
+		Annotations: needsCluster(),
+		Long: `A live view of every machine, updated as the cluster changes. One small tile
 per machine shows where it is on its way from BMC to node, the Host phase and
 what blocks it, and the operation that runs or else its node. The operation
 shows as its step, for example "5/9 setBootOverride". Below the tiles, a panel as wide as the
@@ -63,51 +69,49 @@ keys:
                pk-metal approve does, and approve it on y
   h            hold the claim, or remove the hold
   r            retry the failed operation (pk-metal retry)
-  q            quit
-
-examples:
-  pk-metal top
-  pk-metal --kubeconfig .lab/kubeconfig top --fleet http://127.0.0.1:8440/state`
-}
-
-func topCmd(args []string) {
-	fs := newFlags("top")
+  q            quit`,
+		Example: `  pk-metal top
+  pk-metal --kubeconfig .lab/kubeconfig top --fleet http://127.0.0.1:8440/state`,
+	}
+	fs := cmd.Flags()
 	fleetURL := fs.String("fleet", "", "the simulator's state endpoint, for example http://127.0.0.1:8440/state (default: none, real hardware)")
 	workload := fs.String("workload-kubeconfig", "", "kubeconfig of the workload cluster, to show its Nodes' Ready condition (default: none)")
 	every := fs.Duration("interval", 2*time.Second, "how often the fleet and the console logs are read again; cluster objects update as they change")
-	addGlobalFlags(fs)
-	parseFlags(fs, args)
-	if fs.NArg() != 0 {
-		badUsage(fs, "top takes no arguments")
-	}
-	if !isTerminal(os.Stdin) || !isTerminal(os.Stdout) {
-		dief("top needs a terminal; in a script use: pk-metal status")
-	}
-	stateURL, err := fleetStateURL(*fleetURL)
-	if err != nil {
-		badUsage(fs, err.Error())
-	}
+	cmd.RunE = func(_ *cobra.Command, args []string) error {
+		if len(args) != 0 {
+			return cobratree.Usagef("top takes no arguments")
+		}
+		if !isTerminal(os.Stdin) || !isTerminal(os.Stdout) {
+			dief("top needs a terminal; in a script use: pk-metal status")
+		}
+		stateURL, err := fleetStateURL(*fleetURL)
+		if err != nil {
+			return cobratree.Usage(err)
+		}
 
-	silenceLogs()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	cfg, err := restConfig()
-	if err != nil {
-		die(err)
+		silenceLogs()
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		cfg, err := restConfig()
+		if err != nil {
+			die(err)
+		}
+		cl, err := newClient()
+		if err != nil {
+			die(err)
+		}
+		changes := make(chan struct{}, 1)
+		src, err := newWatchSource(ctx, cfg, *workload, stateURL, changes)
+		if err != nil {
+			die(err)
+		}
+		m := newTopModel(src, clusterActions{cl: cl}, changes, *every)
+		if _, err := tea.NewProgram(m).Run(); err != nil {
+			die(err)
+		}
+		return nil
 	}
-	cl, err := newClient()
-	if err != nil {
-		die(err)
-	}
-	changes := make(chan struct{}, 1)
-	src, err := newWatchSource(ctx, cfg, *workload, stateURL, changes)
-	if err != nil {
-		die(err)
-	}
-	m := newTopModel(src, clusterActions{cl: cl}, changes, *every)
-	if _, err := tea.NewProgram(m).Run(); err != nil {
-		die(err)
-	}
+	return cmd
 }
 
 // silenceLogs stops client-go (klog) and controller-runtime from writing to

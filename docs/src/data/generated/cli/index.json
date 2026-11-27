@@ -1,7 +1,4 @@
 {
-  "program": "pk-metal",
-  "description": "manage bare-metal machines through their BMCs (Redfish) and the pk-metal operator that runs in a Kubernetes cluster.",
-  "usage": "pk-metal [--kubeconfig file] [--context name] <command> [flags] [arguments]",
   "commands": [
     {
       "name": "status",
@@ -31,11 +28,6 @@
     {
       "name": "sim",
       "summary": "run simulated BMCs for tests: serve one, or a fleet with a virtual machine behind each",
-      "changes": false
-    },
-    {
-      "name": "completion",
-      "summary": "print the shell completion script: TAB then completes commands, flags, and the names of objects in the cluster",
       "changes": false
     },
     {
@@ -132,22 +124,11 @@
       "name": "bootstrap",
       "summary": "start a new Talos cluster on booted machines and wait until every node is ready, without the operator",
       "changes": true
-    }
-  ],
-  "globalFlags": [
-    {
-      "name": "kubeconfig",
-      "type": "file",
-      "default": "",
-      "usage": "kubeconfig file (default: $KUBECONFIG, then ~/.kube/config)",
-      "global": true
     },
     {
-      "name": "context",
-      "type": "name",
-      "default": "",
-      "usage": "kubeconfig context (default: the current context)",
-      "global": true
+      "name": "completion",
+      "summary": "print the shell completion script: TAB then completes commands, flags, and the names of objects in the cluster",
+      "changes": false
     }
   ],
   "exitStatus": [

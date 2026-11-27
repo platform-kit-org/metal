@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"maps"
@@ -15,6 +14,8 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/GSI-HPC/go-clikit/cobratree"
+	"github.com/spf13/cobra"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
@@ -25,9 +26,17 @@ import (
 	"github.com/dennisklein/platform-kit/metal/internal/phase"
 )
 
-func init() {
-	verbHelp["approve"] = `
-The operator never acts on a machine before a person approves the plan.
+// approveCmd stamps spec.approval.approvedBy with the caller's own cluster
+// username — the only value admission accepts (approve as yourself,
+// write-once). Who YOU are is asked of the apiserver (SelfSubjectReview), not
+// guessed from the environment.
+func approveCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:         "approve [-n namespace] [--yes] [<operation> | <namespace>/<operation> ...]",
+		Short:       "show what a proposed operation will do to a machine, then let it run; several names: one plan and one answer each; without a name, list the operations that wait for approval",
+		GroupID:     groupChanges,
+		Annotations: needsCluster(),
+		Long: `The operator never acts on a machine before a person approves the plan.
 approve prints the plan first: the machine, its BMC, each step in order, the
 media it mounts, the boot target, and for an OS install the node, its address
 and the disk that will be overwritten. Then it asks "Approve? [y/N]".
@@ -52,54 +61,47 @@ The plan also lists the guards that annotations lift for the operation
 reason each one gives. Read them before you answer.
 
 Without a terminal (in a script or a pipe), approve does not ask: it refuses
-unless you give --yes.
-
-examples:
-  pk-metal approve                                  list what waits for approval
+unless you give --yes.`,
+		Example: `  pk-metal approve                                  list what waits for approval
   pk-metal approve pk-metal/provision-node1-1a2b3c4d
   pk-metal approve pk-metal/reboot-w-1-x7k2p pk-metal/reboot-w-2-q9r4s
-  pk-metal approve --yes provision-node1-1a2b3c4d   approve in a script`
-}
-
-// approveCmd stamps spec.approval.approvedBy with the caller's own cluster
-// username — the only value admission accepts (approve as yourself,
-// write-once). Who YOU are is asked of the apiserver (SelfSubjectReview), not
-// guessed from the environment.
-func approveCmd(args []string) {
-	fs := newFlags("approve")
-	ns := fs.String("n", operatorNamespace, "namespace of the operation")
-	yes := fs.Bool("yes", false, "approve without asking (for scripts); the plan is still printed")
-	addGlobalFlags(fs)
-	parseFlags(fs, args)
-	refs, err := approveRefs(fs.Args(), *ns, flagGiven(fs, "n"))
-	if err != nil {
-		badUsage(fs, err.Error())
+  pk-metal approve --yes provision-node1-1a2b3c4d   approve in a script`,
 	}
-	cl, err := newClient()
-	if err != nil {
-		die(err)
-	}
-	ctx, stop := signalContext()
-	defer stop()
-
-	if len(refs) == 0 {
-		if err := listPending(ctx, cl, os.Stdout, time.Now()); err != nil {
+	ns := cmd.Flags().StringP("namespace", "n", operatorNamespace, "namespace of the operation")
+	yes := cmd.Flags().Bool("yes", false, "approve without asking (for scripts); the plan is still printed")
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		refs, err := approveRefs(args, *ns, cmd.Flags().Changed("namespace"))
+		if err != nil {
+			return cobratree.Usage(err)
+		}
+		cl, err := newClient()
+		if err != nil {
 			die(err)
 		}
-		return
+		ctx, stop := signalContext()
+		defer stop()
+
+		if len(refs) == 0 {
+			if err := listPending(ctx, cl, os.Stdout, time.Now()); err != nil {
+				die(err)
+			}
+			return nil
+		}
+		user, err := whoAmI(ctx, cl)
+		if err != nil {
+			die(err)
+		}
+		// One reader for all the questions: each answer is one line, and a line
+		// meant for the next operation must not be read with this one.
+		in := oneByteAtATime{os.Stdin}
+		if err := approveAll(ctx, cl, refs, approval{
+			User: user, Yes: *yes, In: in, Interactive: isTerminal(os.Stdin), Out: os.Stdout,
+		}); err != nil {
+			die(err)
+		}
+		return nil
 	}
-	user, err := whoAmI(ctx, cl)
-	if err != nil {
-		die(err)
-	}
-	// One reader for all the questions: each answer is one line, and a line
-	// meant for the next operation must not be read with this one.
-	in := oneByteAtATime{os.Stdin}
-	if err := approveAll(ctx, cl, refs, approval{
-		User: user, Yes: *yes, In: in, Interactive: isTerminal(os.Stdin), Out: os.Stdout,
-	}); err != nil {
-		die(err)
-	}
+	return cmd
 }
 
 // approveRefs reads the operations the command line names, in order, each
@@ -164,13 +166,6 @@ func (o oneByteAtATime) Read(p []byte) (int, error) {
 		p = p[:1]
 	}
 	return o.r.Read(p)
-}
-
-// flagGiven reports whether the flag was set on the command line.
-func flagGiven(fs *flag.FlagSet, name string) bool {
-	given := false
-	fs.Visit(func(f *flag.Flag) { given = given || f.Name == name })
-	return given
 }
 
 // isTerminal: stdin is a character device, so a person can answer a prompt.

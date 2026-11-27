@@ -3,28 +3,22 @@
 // Each row has an anchor: `[](cli:approve#--yes)` links to the row `--yes`, and
 // `[](cli:backup#now.--wait)` to the flag `--wait` of the subcommand `now`.
 // The text of a flag is the help text of pk-metal, as the program prints it.
-import { command, flagId, flagText, flagValue, handFlags, type Flag } from './data';
+import { command, flagId, flagText, flagValue, type Flag } from './data';
 
 interface Props {
   cmd: string;
   sub?: string;
-  /** Flags to leave out, for a subcommand that parses a flag and does not use it. */
-  omit?: string[];
 }
-const { cmd, sub, omit = [] } = Astro.props;
+const { cmd, sub } = Astro.props;
 const c = command(cmd);
 const base = import.meta.env.BASE_URL.replace(/\/$/, '');
 
-let all: Flag[];
-if (handFlags[`${cmd} ${sub}`]) all = handFlags[`${cmd} ${sub}`];
-else if (sub) {
+let rows: Flag[];
+if (sub) {
   const s = c.subcommands.find((x) => x.name === sub);
   if (!s) throw new Error(`cli: pk-metal ${cmd} has no subcommand "${sub}"`);
-  all = s.flags;
-} else all = c.flags;
-
-const rows = all.filter((f) => !f.global && !omit.includes(f.name));
-const globals = all.some((f) => f.global) || c.needsCluster;
+  rows = s.flags;
+} else rows = c.flags;
 
 function describe(f: Flag) {
   const required = /\(required[;)]/.test(f.usage);
@@ -68,7 +62,7 @@ function fallback(f: Flag) {
   </div>
 )}
 {rows.length === 0 && <p class="pk-cli-noflags">This {sub ? 'subcommand' : 'command'} has no flags of its own.</p>}
-{globals && (
+{c.needsCluster && (
   <p class="pk-cli-globals">
     This {sub ? 'subcommand' : 'command'} also accepts the{' '}
     <a class="x" data-cat="cli" href={`${base}/reference/cli/global-flags/`}>global flags</a>{' '}

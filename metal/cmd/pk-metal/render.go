@@ -8,7 +8,9 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/GSI-HPC/go-clikit/cobratree"
 	"github.com/siderolabs/talos/pkg/machinery/config/generate/secrets"
+	"github.com/spf13/cobra"
 
 	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
 	"github.com/dennisklein/platform-kit/metal/internal/talos/render"
@@ -19,8 +21,13 @@ import (
 // files (ConfigMaps for patches included), no API server involved. The secrets
 // bundle is read from a file or stdin, so a sealed bundle can be decrypted
 // straight into it without plaintext touching disk.
-func renderCmd(args []string) {
-	fs := newFlags("render")
+func renderCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:     "render --dir <manifests> --secrets <secrets.yaml|-> [flags]",
+		Short:   "write Talos machine configs, talosconfig and kubeconfig from TalosCluster and TalosNode files (touches no machine)",
+		GroupID: groupReads,
+	}
+	fs := cmd.Flags()
 	dir := fs.String("dir", "", "directory with TalosCluster/TalosNode (and patch ConfigMap) manifests (required)")
 	secretsFile := fs.String("secrets", "", "secrets bundle from `talosctl gen secrets`, or - for stdin (required)")
 	out := fs.String("out", "clusterconfig", "output directory: <node>.yaml per node, talosconfig, kubeconfig")
@@ -29,36 +36,39 @@ func renderCmd(args []string) {
 	credsTTL := fs.Duration("credentials-ttl", 24*time.Hour,
 		"lifetime of the admin talosconfig and kubeconfig (at most 720h); they cannot be revoked short of a CA rotation")
 	noCreds := fs.Bool("no-credentials", false, "write the node configs only, no admin talosconfig or kubeconfig")
-	parseFlags(fs, args)
-	if fs.NArg() != 0 || *dir == "" || *secretsFile == "" {
-		badUsage(fs, "--dir and --secrets are required, and render takes no other arguments")
-	}
-	if !*noCreds && (*credsTTL <= 0 || *credsTTL > render.MaxCredentialTTL) {
-		badUsage(fs, fmt.Sprintf("--credentials-ttl must be more than 0 and at most %s", render.MaxCredentialTTL))
-	}
+	cmd.RunE = func(_ *cobra.Command, args []string) error {
+		if len(args) != 0 || *dir == "" || *secretsFile == "" {
+			return cobratree.Usagef("--dir and --secrets are required, and render takes no other arguments")
+		}
+		if !*noCreds && (*credsTTL <= 0 || *credsTTL > render.MaxCredentialTTL) {
+			return cobratree.Usagef("--credentials-ttl must be more than 0 and at most %s", render.MaxCredentialTTL)
+		}
 
-	m, bundle := loadInputs(*dir, *secretsFile)
-	configs, err := renderAll(context.Background(), m, bundle, render.NewFactory(*factoryHost), *register)
-	if err != nil {
-		die(err)
-	}
-	files := map[string][]byte{}
-	for name, cfg := range configs {
-		files[name+".yaml"] = cfg
-	}
-	what := fmt.Sprintf("%d node configs", len(configs))
-	if !*noCreds {
-		tc, kc, err := adminCredentials(m, bundle, *credsTTL)
+		m, bundle := loadInputs(*dir, *secretsFile)
+		configs, err := renderAll(context.Background(), m, bundle, render.NewFactory(*factoryHost), *register)
 		if err != nil {
 			die(err)
 		}
-		files["talosconfig"], files["kubeconfig"] = tc, kc
-		what += fmt.Sprintf(", talosconfig and kubeconfig (valid %s)", *credsTTL)
+		files := map[string][]byte{}
+		for name, cfg := range configs {
+			files[name+".yaml"] = cfg
+		}
+		what := fmt.Sprintf("%d node configs", len(configs))
+		if !*noCreds {
+			tc, kc, err := adminCredentials(m, bundle, *credsTTL)
+			if err != nil {
+				die(err)
+			}
+			files["talosconfig"], files["kubeconfig"] = tc, kc
+			what += fmt.Sprintf(", talosconfig and kubeconfig (valid %s)", *credsTTL)
+		}
+		if err := writeSecretFiles(*out, files); err != nil {
+			die(err)
+		}
+		fmt.Printf("rendered %s for %s into %s\n", what, m.Cluster.Name, *out)
+		return nil
 	}
-	if err := writeSecretFiles(*out, files); err != nil {
-		die(err)
-	}
-	fmt.Printf("rendered %s for %s into %s\n", what, m.Cluster.Name, *out)
+	return cmd
 }
 
 // adminCredentials mints the cluster's admin talosconfig (for the control

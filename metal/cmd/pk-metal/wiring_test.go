@@ -1,49 +1,17 @@
 package main
 
 import (
-	"bytes"
-	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/GSI-HPC/go-clikit/cobratree/cobratreetest"
 	"github.com/siderolabs/talos/pkg/machinery/config/configloader"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"k8s.io/client-go/tools/clientcmd"
 )
-
-// runAsCLI is set in the child process that runCLI starts: the verbs exit
-// the process on bad usage, so the test runs them in one of their own.
-const runAsCLI = "PK_METAL_TEST_RUN_CLI"
-
-func TestMain(m *testing.M) {
-	if args, ok := os.LookupEnv(runAsCLI); ok {
-		os.Args = append([]string{"pk-metal"}, strings.Fields(args)...)
-		main()
-		os.Exit(0)
-	}
-	os.Exit(m.Run())
-}
-
-// runCLI runs pk-metal with args in a child process and returns its exit
-// code and stderr.
-func runCLI(t *testing.T, args ...string) (int, string) {
-	t.Helper()
-	cmd := exec.Command(os.Args[0], "-test.run=^$")
-	cmd.Env = append(os.Environ(), runAsCLI+"="+strings.Join(args, " "))
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	err := cmd.Run()
-	var exit *exec.ExitError
-	if errors.As(err, &exit) {
-		return exit.ExitCode(), stderr.String()
-	}
-	require.NoError(t, err)
-	return 0, stderr.String()
-}
 
 // Each verb that drives a machine or a cluster refuses a missing argument,
 // says what is missing, and names the help that shows the rest.
@@ -61,11 +29,10 @@ func TestVerbsNameWhatIsMissing(t *testing.T) {
 		{[]string{"relay", "extra"}, "relay takes no arguments"},
 	} {
 		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
-			code, stderr := runCLI(t, tc.args...)
+			code, stderr := runTree(t, tc.args...)
 			assert.Equal(t, 1, code, stderr)
 			assert.Contains(t, stderr, tc.want)
-			assert.Contains(t, stderr, "usage: pk-metal "+tc.args[0])
-			assert.Contains(t, stderr, "run: pk-metal help "+tc.args[0])
+			assert.Contains(t, stderr, "run: pk-metal "+tc.args[0]+" --help")
 		})
 	}
 }
@@ -81,7 +48,8 @@ func TestRenderWritesLoadableConfigs(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "out")
 
 	// No --register: the schematic ids are computed offline.
-	renderCmd([]string{"--dir", in, "--secrets", secrets, "--out", out})
+	_, _, err = cobratreetest.Run(t, newRoot(noCluster), "render", "--dir", in, "--secrets", secrets, "--out", out)
+	require.NoError(t, err)
 
 	nodes, err := filepath.Glob(filepath.Join(out, "node-*.yaml"))
 	require.NoError(t, err)

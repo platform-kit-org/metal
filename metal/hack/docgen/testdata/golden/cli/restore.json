@@ -1,0 +1,91 @@
+{
+  "name": "restore",
+  "summary": "say what is wrong with a cluster's etcd and propose the operations that restore it; upload an approved snapshot",
+  "synopsis": "plan <cluster> [--snapshot name] [--node name] [--propose] | upload <operation> --identity <file> [--from-file <file.age>]",
+  "changes": true,
+  "needsCluster": true,
+  "description": "restore looks at a cluster's etcd on every control plane and says what is\nwrong and what would fix it. It changes nothing on a machine itself: with\n--propose it creates the operations of the plan, and each waits for another\nperson's approval like any other.\n\nThe talosconfig is read from the cluster's published Secret\n(<cluster>-talosconfig in pk-metal) unless --talosconfig names a file.\n\nhttps://metal.platform-kit.org/operate/day-2/restore-etcd/ walks through each case.",
+  "examples": [
+    "pk-metal restore plan lab",
+    "pk-metal restore plan lab --snapshot lab-daily-20261124-060000 --propose",
+    "pk-metal approve pk-metal/lab-etcd-recover-node-1          (a person; see selfApproval)",
+    "pk-metal restore upload pk-metal/lab-etcd-recover-node-1 --identity ~/.config/age/keys.txt"
+  ],
+  "exitStatus": [],
+  "flags": [
+    {
+      "name": "talosconfig",
+      "type": "string",
+      "default": "",
+      "usage": "talosconfig file (default: the cluster's published Secret)",
+      "persistent": true
+    }
+  ],
+  "subcommands": [
+    {
+      "name": "plan",
+      "summary": "say what is wrong with the cluster's etcd and what would fix it; --propose creates the operations",
+      "synopsis": "plan <cluster> [--snapshot name] [--node name] [--propose]",
+      "description": "One member lost (its etcd does not run or reports errors while the\nothers keep their majority): remove that member, wipe the node's etcd\ndata (EPHEMERAL) and let it join again.\nMajority or everything lost (no control plane lists etcd members):\nwipe the etcd data of the members that still run a stuck etcd, then\nrestore one control plane from a snapshot (etcdRecover); the others\njoin it. The newest verified snapshot is used unless --snapshot names\none.",
+      "flags": [
+        {
+          "name": "node",
+          "type": "string",
+          "default": "",
+          "usage": "control plane to restore on (default: the first by name that answers)"
+        },
+        {
+          "name": "propose",
+          "type": "bool",
+          "default": "false",
+          "usage": "create the plan's operations (each waits for approval)"
+        },
+        {
+          "name": "snapshot",
+          "type": "string",
+          "default": "",
+          "usage": "EtcdSnapshot to restore (default: the cluster's newest verified one)"
+        },
+        {
+          "name": "talosconfig",
+          "type": "string",
+          "default": "",
+          "usage": "talosconfig file (default: the cluster's published Secret)"
+        }
+      ]
+    },
+    {
+      "name": "upload",
+      "summary": "stream the snapshot of an approved etcdRecover operation to its node",
+      "synopsis": "upload <operation> --identity <file> [--from-file <file.age>]",
+      "description": "For an approved etcdRecover operation: decrypt the snapshot on this\nmachine with your age identity, check it against the snapshot record,\nand stream it to the node over the Talos API with your talosconfig.\nThe operator then starts etcd from it.",
+      "flags": [
+        {
+          "name": "from-file",
+          "type": "string",
+          "default": "",
+          "usage": "the encrypted snapshot as a file (needed for a pvc sink)"
+        },
+        {
+          "name": "identity",
+          "type": "string",
+          "default": "",
+          "usage": "age identity file (required)"
+        },
+        {
+          "name": "namespace",
+          "shorthand": "n",
+          "type": "string",
+          "default": "pk-metal",
+          "usage": "namespace of the operation"
+        },
+        {
+          "name": "talosconfig",
+          "type": "string",
+          "default": "",
+          "usage": "talosconfig file (default: the cluster's published Secret)"
+        }
+      ]
+    }
+  ]
+}

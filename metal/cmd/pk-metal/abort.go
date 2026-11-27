@@ -7,14 +7,20 @@ import (
 	"os"
 	"strings"
 
+	"github.com/GSI-HPC/go-clikit/cobratree"
+	"github.com/spf13/cobra"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
 )
 
-func init() {
-	verbHelp["abort"] = `
-abort asks the operator to stop an operation. An operation that has not
+func abortCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:         "abort [-n namespace] [--reason text] <operation> | <namespace>/<operation>",
+		Short:       "stop an operation before its next step and undo what it left behind (media, boot override, cordon)",
+		GroupID:     groupChanges,
+		Annotations: needsCluster(),
+		Long: `abort asks the operator to stop an operation. An operation that has not
 started ends at once; nothing was done to the machine. A running one stops
 before its next step. A step that already acted on the machine is finished
 first: a reboot that was asked for is waited out, a power cycle that saw
@@ -31,38 +37,35 @@ etcd member that left. The operation ends as Aborted and its last step says
 what was undone. Deleting an operation also stops it, but undoes nothing.
 
 The reason is required. It is stored on the operation with your user name,
-as "<username>: <reason>"; admission accepts no other form.
-
-examples:
-  pk-metal abort --reason "wrong node" pk-metal/reboot-node-2-x7k2p`
-}
-
-func abortCmd(args []string) {
-	fs := newFlags("abort")
-	ns := fs.String("n", operatorNamespace, "namespace of the operation")
-	reason := fs.String("reason", "", "why, for the people who read the operation later (required)")
-	addGlobalFlags(fs)
-	parseFlags(fs, args)
-	if fs.NArg() != 1 {
-		badUsage(fs, "give exactly one operation")
+as "<username>: <reason>"; admission accepts no other form.`,
+		Example: `  pk-metal abort --reason "wrong node" pk-metal/reboot-node-2-x7k2p`,
 	}
-	namespace, name, err := splitRef(fs.Arg(0), *ns, flagGiven(fs, "n"))
-	if err != nil {
-		badUsage(fs, err.Error())
+	ns := cmd.Flags().StringP("namespace", "n", operatorNamespace, "namespace of the operation")
+	reason := cmd.Flags().String("reason", "", "why, for the people who read the operation later (required)")
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		if len(args) != 1 {
+			return cobratree.Usagef("give exactly one operation")
+		}
+		namespace, name, err := splitRef(args[0], *ns, cmd.Flags().Changed("namespace"))
+		if err != nil {
+			return cobratree.Usage(err)
+		}
+		cl, err := newClient()
+		if err != nil {
+			die(err)
+		}
+		ctx, stop := signalContext()
+		defer stop()
+		user, err := whoAmI(ctx, cl)
+		if err != nil {
+			die(err)
+		}
+		if err := abort(ctx, cl, namespace, name, user, *reason, os.Stdout); err != nil {
+			die(err)
+		}
+		return nil
 	}
-	cl, err := newClient()
-	if err != nil {
-		die(err)
-	}
-	ctx, stop := signalContext()
-	defer stop()
-	user, err := whoAmI(ctx, cl)
-	if err != nil {
-		die(err)
-	}
-	if err := abort(ctx, cl, namespace, name, user, *reason, os.Stdout); err != nil {
-		die(err)
-	}
+	return cmd
 }
 
 // abort marks the operation for abort and says what happens next.

@@ -38,6 +38,10 @@ require (
 	// authenticates every 64 KiB chunk, so a damaged backup fails while it is read instead
 	// of restoring garbage. It is the tool SOPS users already hold keys for.
 	filippo.io/age v1.3.1
+	// pk-metal's command tree. go-clikit makes a cobra tree strict about its command line
+	// (an unknown command or flag is an error, with a hint) and checks the command lines of
+	// the pages against the tree; it links one more module, mousetrap (Windows only).
+	github.com/GSI-HPC/go-clikit v0.11.0
 	// Already linked through machinery, whose compatibility package parses versions with it;
 	// orders Talos versions for the per-node render contract the same way that package does.
 	github.com/blang/semver/v4 v4.0.0
@@ -62,6 +66,10 @@ require (
 	github.com/siderolabs/crypto v0.6.5
 	github.com/siderolabs/image-factory v1.4.0
 	github.com/siderolabs/talos/pkg/machinery v1.14.6
+	// Already linked through controller-gen and image-factory; kubectl's command and flag
+	// library, so that pk-metal's commands and flags read as kubectl's do.
+	github.com/spf13/cobra v1.10.2
+	github.com/spf13/pflag v1.0.10
 	github.com/stmcginnis/gofish v0.23.0
 	github.com/stretchr/testify v1.12.1
 	go.yaml.in/yaml/v4 v4.0.0-rc.6
@@ -176,8 +184,6 @@ require (
 	github.com/siderolabs/net v0.4.0 // indirect
 	github.com/siderolabs/protoenc v0.2.4 // indirect
 	github.com/spf13/afero v1.15.0 // indirect
-	github.com/spf13/cobra v1.10.2 // indirect
-	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/tinylib/msgp v1.6.1 // indirect
 	github.com/vishvananda/netns v0.0.5 // indirect
 	github.com/x448/float16 v0.8.4 // indirect

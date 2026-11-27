@@ -161,6 +161,31 @@ func leadingComment(part string) string {
 	return joinWrapped(lines)
 }
 
+// joinWrapped turns hard-wrapped lines into paragraphs separated by one blank line.
+func joinWrapped(lines []string) string {
+	var paras []string
+	cur := ""
+	for _, l := range lines {
+		t := strings.TrimSpace(l)
+		if t == "" {
+			if cur != "" {
+				paras = append(paras, cur)
+				cur = ""
+			}
+			continue
+		}
+		if cur == "" {
+			cur = t
+		} else {
+			cur += " " + t
+		}
+	}
+	if cur != "" {
+		paras = append(paras, cur)
+	}
+	return strings.Join(paras, "\n\n")
+}
+
 var markerLine = regexp.MustCompile(`^\s*//\s*\+kubebuilder:rbac:(.+)$`)
 
 // readMarkers collects the +kubebuilder:rbac markers in the non-test Go files

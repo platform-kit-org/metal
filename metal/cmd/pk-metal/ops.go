@@ -3,22 +3,27 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"io"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/GSI-HPC/go-clikit/cobratree"
+	"github.com/spf13/cobra"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
 )
 
-func init() {
-	verbHelp["retry"] = `
-A failed operation stays in the cluster, so that you can read why it failed
+func retryCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:         "retry [-n namespace] <operation> | <namespace>/<operation>",
+		Short:       "delete a failed or aborted operation, so that the operator proposes it again (it then waits for approval again); a BIOS or firmware proposal is marked for retry instead",
+		GroupID:     groupChanges,
+		Annotations: needsCluster(),
+		Long: `A failed operation stays in the cluster, so that you can read why it failed
 (pk-metal status shows the reason). The operator does not try again while it
 is there. retry deletes it; the operator then proposes the same plan again,
 and the new operation waits for approval like the first one. A BIOS or
@@ -30,41 +35,29 @@ person made (pk-metal reboot, pk-metal restore) or a step of a rollout, retry
 deletes it and names the command that makes it again.
 
 To stop the operator from proposing it again instead, hold the claim:
-  pk-metal hold default/<claim>`
-	verbHelp["hold"] = `
-A hold tells the operator to propose no new operation for the claim (no
-install, no reinstall, no BIOS or firmware change). It changes nothing on the
-machine, and operations that already exist are not changed: approve or delete
-those yourself. The reason is stored on the claim, so that others can see why.
-
-Claims usually live in namespace default, so that is the default here.
-
-examples:
-  pk-metal hold --reason "disk swap, ticket 123" default/node-1
-  pk-metal unhold default/node-1`
-}
-
-func retryCmd(args []string) {
-	fs := newFlags("retry")
-	ns := fs.String("n", operatorNamespace, "namespace of the operation")
-	addGlobalFlags(fs)
-	parseFlags(fs, args)
-	if fs.NArg() != 1 {
-		badUsage(fs, "give exactly one operation")
+  pk-metal hold default/<claim>`,
 	}
-	namespace, name, err := splitRef(fs.Arg(0), *ns, flagGiven(fs, "n"))
-	if err != nil {
-		badUsage(fs, err.Error())
+	ns := cmd.Flags().StringP("namespace", "n", operatorNamespace, "namespace of the operation")
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		if len(args) != 1 {
+			return cobratree.Usagef("give exactly one operation")
+		}
+		namespace, name, err := splitRef(args[0], *ns, cmd.Flags().Changed("namespace"))
+		if err != nil {
+			return cobratree.Usage(err)
+		}
+		cl, err := newClient()
+		if err != nil {
+			die(err)
+		}
+		ctx, stop := signalContext()
+		defer stop()
+		if err := retry(ctx, cl, namespace, name, os.Stdout); err != nil {
+			die(err)
+		}
+		return nil
 	}
-	cl, err := newClient()
-	if err != nil {
-		die(err)
-	}
-	ctx, stop := signalContext()
-	defer stop()
-	if err := retry(ctx, cl, namespace, name, os.Stdout); err != nil {
-		die(err)
-	}
+	return cmd
 }
 
 // convergenceProposal reports an operation the convergence lane proposed for
@@ -190,31 +183,47 @@ func failedStep(op *metalv1alpha1.HostOperation) string {
 	return ""
 }
 
-func holdCmd(args []string) {
-	fs := newFlags("hold")
-	ns := fs.String("n", claimNamespace, "namespace of the claim")
-	reason := fs.String("reason", "", "why, for the people who see the hold (stored on the claim)")
-	addGlobalFlags(fs)
-	parseFlags(fs, args)
-	setHold(fs, ns, *reason, true)
+func holdCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:         "hold [-n namespace] [--reason text] <claim> | <namespace>/<claim>",
+		Short:       "stop the operator from proposing new operations for a claim; nothing on the machine changes",
+		GroupID:     groupChanges,
+		Annotations: needsCluster(),
+		Long: `A hold tells the operator to propose no new operation for the claim (no
+install, no reinstall, no BIOS or firmware change). It changes nothing on the
+machine, and operations that already exist are not changed: approve or delete
+those yourself. The reason is stored on the claim, so that others can see why.
+
+Claims usually live in namespace default, so that is the default here.`,
+		Example: `  pk-metal hold --reason "disk swap, ticket 123" default/node-1
+  pk-metal unhold default/node-1`,
+	}
+	ns := cmd.Flags().StringP("namespace", "n", claimNamespace, "namespace of the claim")
+	reason := cmd.Flags().String("reason", "", "why, for the people who see the hold (stored on the claim)")
+	cmd.RunE = func(cmd *cobra.Command, args []string) error { return setHold(cmd, args, *ns, *reason, true) }
+	return cmd
 }
 
-func unholdCmd(args []string) {
-	fs := newFlags("unhold")
-	ns := fs.String("n", claimNamespace, "namespace of the claim")
-	addGlobalFlags(fs)
-	parseFlags(fs, args)
-	setHold(fs, ns, "", false)
+func unholdCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:         "unhold [-n namespace] <claim> | <namespace>/<claim>",
+		Short:       "remove a hold, so that the operator proposes operations for the claim again",
+		GroupID:     groupChanges,
+		Annotations: needsCluster(),
+	}
+	ns := cmd.Flags().StringP("namespace", "n", claimNamespace, "namespace of the claim")
+	cmd.RunE = func(cmd *cobra.Command, args []string) error { return setHold(cmd, args, *ns, "", false) }
+	return cmd
 }
 
 // setHold runs hold or unhold for the one claim the command line names.
-func setHold(fs *flag.FlagSet, ns *string, reason string, on bool) {
-	if fs.NArg() != 1 {
-		badUsage(fs, "give exactly one claim")
+func setHold(cmd *cobra.Command, args []string, ns, reason string, on bool) error {
+	if len(args) != 1 {
+		return cobratree.Usagef("give exactly one claim")
 	}
-	namespace, name, err := splitRef(fs.Arg(0), *ns, flagGiven(fs, "n"))
+	namespace, name, err := splitRef(args[0], ns, cmd.Flags().Changed("namespace"))
 	if err != nil {
-		badUsage(fs, err.Error())
+		return cobratree.Usage(err)
 	}
 	cl, err := newClient()
 	if err != nil {
@@ -225,6 +234,7 @@ func setHold(fs *flag.FlagSet, ns *string, reason string, on bool) {
 	if err := hold(ctx, cl, namespace, name, reason, on, os.Stdout); err != nil {
 		die(err)
 	}
+	return nil
 }
 
 // hold sets (on) or removes the hold annotation on a claim.

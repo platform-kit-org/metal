@@ -2,74 +2,73 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"syscall"
 	"testing"
 	"time"
 
+	"github.com/GSI-HPC/go-clikit/cobratree/cobratreetest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func TestParseGlobal(t *testing.T) {
-	global.kubeconfig, global.context = "", ""
-	t.Cleanup(func() { global.kubeconfig, global.context = "", "" })
+func noCluster() (client.Client, error) { return nil, errors.New("no cluster in this test") }
 
-	rest, err := parseGlobal([]string{"--kubeconfig", "/tmp/kc", "--context", "lab", "status", "-o", "json"})
-	require.NoError(t, err)
-	assert.Equal(t, []string{"status", "-o", "json"}, rest)
-	assert.Equal(t, "/tmp/kc", global.kubeconfig)
-	assert.Equal(t, "lab", global.context)
-
-	rest, err = parseGlobal([]string{"--help"})
-	require.NoError(t, err)
-	assert.Equal(t, []string{"help"}, rest)
-
-	_, err = parseGlobal([]string{"--bogus"})
-	assert.ErrorContains(t, err, "pk-metal help")
+// runTree runs a command line on a new tree, as main does, and returns the
+// exit status and what the program wrote to stderr. It runs in the test's
+// process: a command line that reaches a command's work can exit it.
+func runTree(t *testing.T, args ...string) (int, string) {
+	t.Helper()
+	root := newRoot(noCluster)
+	var stdout, stderr bytes.Buffer
+	root.SetOut(&stdout)
+	root.SetErr(&stderr)
+	code := run(root, append([]string{}, args...), &stderr)
+	return code, stderr.String()
 }
 
 // TestUsageHasNoInternalJargon keeps the top-level help readable for someone
 // who has not read the design documents.
 func TestUsageHasNoInternalJargon(t *testing.T) {
-	var out bytes.Buffer
-	usage(&out)
+	root := newRoot(noCluster)
+	out, _, err := cobratreetest.Run(t, root, "--help")
+	require.NoError(t, err)
 	for _, word := range []string{"VAP", "ladder", "grant-serve", "L4", "reverse tunnel", "ADR"} {
-		assert.NotContains(t, out.String(), word)
+		assert.NotContains(t, out, word)
 	}
-	for _, c := range commands {
-		assert.Contains(t, out.String(), "  "+c.name+" ", "every command is listed")
+	for _, c := range root.Commands() {
+		if c.IsAvailableCommand() {
+			assert.Contains(t, out, "  "+c.Name()+" ", "every command is listed")
+		}
 	}
-	assert.Contains(t, out.String(), "REBOOT", "the boot line says it reboots the machine")
+	assert.Contains(t, out, "REBOOT", "the boot line says it reboots the machine")
+	assert.Contains(t, out, "exit status:")
 }
 
-// TestParseFlagsAfterArguments: every verb takes its flags before or after
-// its arguments, as the lab and the docs write them. pk-metal scale and
-// replace refused "scale lab --control-planes 1": the flags after the
-// cluster were taken for arguments.
-func TestParseFlagsAfterArguments(t *testing.T) {
-	for _, args := range [][]string{
-		{"lab", "--control-planes", "1", "--workers", "2", "--apply", "--ack-etcd-risk", "lab scale round"},
-		{"--control-planes=1", "lab", "--workers", "2", "--apply", "--ack-etcd-risk", "lab scale round"},
-		{"--control-planes", "1", "--workers", "2", "--apply", "--ack-etcd-risk", "lab scale round", "lab"},
+// A wrong command line exits 1, says what is wrong, and names the help of
+// the command it reached. pflag reads a long flag with one dash as
+// shorthand flags: -yes is -y -e -s.
+func TestWrongCommandLines(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		want string
+		help string
+	}{
+		{[]string{"aprove"}, `unknown command "aprove" for "pk-metal" (did you mean "approve"?)`, "pk-metal"},
+		{[]string{"rollout", "aprove", "x"}, `unknown command "aprove" for "pk-metal rollout"`, "pk-metal rollout"},
+		{[]string{"approve", "--bogus"}, "unknown flag: --bogus", "pk-metal approve"},
+		{[]string{"approve", "-yes", "x"}, "unknown shorthand flag: 'y' in -yes", "pk-metal approve"},
+		{[]string{"status", "-o", "yaml"}, `invalid --output value "yaml": want table or json`, "pk-metal status"},
+		{[]string{"reboot", "--drain-timeout", "x", "n"}, `invalid --drain-timeout value "x"`, "pk-metal reboot"},
+		{[]string{"version", "x"}, `unknown command "x" for "pk-metal version"`, "pk-metal version"},
 	} {
-		fs := newFlags("scale")
-		cps := fs.Int("control-planes", -1, "")
-		workers := fs.Int("workers", -1, "")
-		apply := fs.Bool("apply", false, "")
-		ack := fs.String("ack-etcd-risk", "", "")
-		parseFlags(fs, args)
-		assert.Equal(t, []string{"lab"}, fs.Args(), args)
-		assert.Equal(t, 1, *cps, args)
-		assert.Equal(t, 2, *workers, args)
-		assert.True(t, *apply, args)
-		assert.Equal(t, "lab scale round", *ack, args)
+		code, stderr := runTree(t, tc.args...)
+		assert.Equal(t, 1, code, tc.args)
+		assert.Contains(t, stderr, "pk-metal: "+tc.want, tc.args)
+		assert.Contains(t, stderr, "run: "+tc.help+" --help", tc.args)
 	}
-	fs := newFlags("replace")
-	host := fs.String("host", "", "")
-	parseFlags(fs, []string{"node-2", "--host", "pklab0005", "--", "--not-a-flag"})
-	assert.Equal(t, "pklab0005", *host)
-	assert.Equal(t, []string{"node-2", "--not-a-flag"}, fs.Args(), "after -- everything is an argument")
 }
 
 // TestSignalContext: Ctrl-C (SIGINT) ends a verb's context instead of the

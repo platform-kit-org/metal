@@ -1,33 +1,19 @@
 {
-  "program": "pk-metal",
-  "description": "manage bare-metal machines through their BMCs (Redfish) and the pk-metal operator that runs in a Kubernetes cluster.",
-  "usage": "pk-metal [--kubeconfig file] [--context name] <command> [flags] [arguments]",
   "commands": [
     {
       "name": "status",
-      "summary": "show machines (reads only)",
+      "summary": "show machines, BMCs, claims and operations, with the reason when something is stuck (reads only)",
       "changes": false
     },
     {
-      "name": "rollout",
-      "summary": "see the rollouts, approve one, or abort it",
+      "name": "restore",
+      "summary": "say what is wrong with a cluster's etcd and propose the operations that restore it; upload an approved snapshot",
       "changes": true
-    }
-  ],
-  "globalFlags": [
-    {
-      "name": "kubeconfig",
-      "type": "file",
-      "default": "",
-      "usage": "kubeconfig file (default: $KUBECONFIG, then ~/.kube/config)",
-      "global": true
     },
     {
-      "name": "context",
-      "type": "name",
-      "default": "",
-      "usage": "kubeconfig context (default: the current context)",
-      "global": true
+      "name": "rollout",
+      "summary": "see the rollouts that change a Talos cluster node by node (config, upgrade, reboot), approve one, resume it after its pause, or abort it",
+      "changes": true
     }
   ],
   "exitStatus": [

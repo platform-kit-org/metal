@@ -1,6 +1,6 @@
 ---
 title: pk-metal completion
-description: Prints the script that completes pk-metal commands, flags and object names in bash, zsh or fish.
+description: Prints the script that completes pk-metal commands, flags and object names in bash, zsh, fish or PowerShell.
 type: cli
 eyebrow: Command · pk-metal
 xref: { cat: cli, id: completion }
@@ -25,7 +25,9 @@ When your shell loads the script, the `tab` key completes the commands, the flag
 
 <CliSynopsis cmd="completion" />
 
-The command takes one argument: `bash`, `zsh` or `fish`. It has no flags.
+The command has one subcommand for each shell: `bash`, `zsh`, `fish` and `powershell`.
+Each subcommand has the flag `--no-descriptions`. With it, the script shows the candidates without their help text.
+`pk-metal completion <shell> --help` shows the step for that shell.
 
 ## Install the completion
 
@@ -58,33 +60,48 @@ echo 'source <(pk-metal completion zsh)' >> ~/.zshrc
 pk-metal completion fish > ~/.config/fish/completions/pk-metal.fish
 ```
 
+<dl>
+  <dt>PowerShell</dt>
+  <dd>Add the line to your PowerShell profile. The variable `$PROFILE` contains the path of the profile.</dd>
+</dl>
+
+```powershell
+pk-metal completion powershell | Out-String | Invoke-Expression
+```
+
 <Callout type="note">
-The script runs the program that is on the command line. Thus `metal/bin/pk-metal <tab>` also completes when `pk-metal` is not on the `PATH`.
-After an update of the program, open a new terminal. The bash and zsh scripts then load again.
+After each upgrade of `pk-metal`, do the step for your shell again. The script comes from the version of `pk-metal` that wrote it.
+
+- bash, zsh and PowerShell: open a new terminal. They load a new script in each new terminal.
+- fish: write the file again. fish reads the file that you wrote. Then open a new terminal.
+
+If you keep the bash or zsh script in a file, write that file again too.
 </Callout>
+
+The script runs the program that is on the command line. Thus `metal/bin/pk-metal <tab>` also completes when `pk-metal` is not on the `PATH`.
 
 ## What it completes
 
 | Position | Candidates |
 | --- | --- |
-| Command | The commands of the program, and `help` |
+| Command | The commands of the program, `help` and `completion` |
 | Subcommand | For example `list`, `show` and `approve` after `rollout` |
-| Flag | The flags of the command, with their help text in zsh and fish |
+| Flag | The flags of the command, with their help text |
 | Operation | [](cli:approve): the operations that wait for approval. [](cli:retry): the failed and the aborted operations. [](cli:abort): the operations that did not finish. |
 | Claim, node | [](cli:hold), [](cli:unhold): claims. [](cli:reboot): TalosNodes. [](cli:reinstall), [](cli:replace): claims and TalosNodes. |
 | Host | [](cli:wipe): all Hosts. `--host` of [](cli:replace): the Hosts that are `Available`. |
 | Cluster | [](cli:scale), [](cli:upgrade), [](cli:backup), [](cli:restore): TalosClusters. `backup now` also completes EtcdBackupPolicies. |
 | Snapshot, rollout | EtcdSnapshots and TalosRollouts |
 | BMC address | [](cli:check), [](cli:inventory), [](cli:boot): the addresses of the ManagementEndpoints |
-| Flag value | `-n`: namespaces. `--context`: the contexts of the kubeconfig. Files and directories for the flags that take them. Fixed values, for example `-o table` or `json`. |
+| Flag value | `-n`, `--namespace`: namespaces. `--context`: the contexts of the kubeconfig. Files and directories for the flags that take them. Fixed values, for example `-o table` or `json`. |
 
-For a namespaced object, the program completes the names in the namespace of `-n`, or in the default namespace of the command.
+For a namespaced object, the program completes the names in the namespace of `--namespace`, or in the default namespace of the command.
 Type `<namespace>/` to complete the objects of that namespace in the form `<namespace>/<name>`.
 
 ## What it does
 
-1. The shell calls the program with the words of the command line, each time that you press `tab`.
-2. The program reads the flags of the command from the command itself. A new flag thus completes without a change to the script.
+1. The shell calls the program with the words of the command line, each time that you press `tab`. The program reads them with the hidden command `__complete`.
+2. The program finds the commands and the flags in its own command tree. A new command or flag thus completes without a change to the script.
 3. For an object name, the program reads the objects from the cluster that `--kubeconfig` and `--context` on the same command line select. Without these flags, it uses the same default as the other commands. See [](cli:global-flags).
 4. Each lookup in the cluster stops after 2 seconds. If the cluster does not answer, you get no candidates and no error.
 

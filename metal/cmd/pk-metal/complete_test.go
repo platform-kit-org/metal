@@ -1,16 +1,17 @@
 package main
 
 import (
-	"bytes"
-	"errors"
-	"flag"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/GSI-HPC/go-clikit/cobratree/cobratreetest"
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
+	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -19,42 +20,28 @@ import (
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
 )
 
-// verbPaths are every "verb" and "verb sub" with the flag set it parses.
-func verbPaths(t *testing.T) map[string]*flag.FlagSet {
-	t.Helper()
-	paths := map[string]*flag.FlagSet{}
-	for i := range commands {
-		c := &commands[i]
-		subs := verbSubcommands(c)
-		if subs == nil {
-			paths[c.name] = captureFlags(c.run, nil)
-			continue
-		}
-		for _, sub := range subs {
-			paths[c.name+" "+sub] = captureFlags(c.run, []string{sub})
+// commandPaths are the commands of the tree by their path after the program
+// name ("verb" or "verb sub"); the root is "".
+func commandPaths(root *cobra.Command) map[string]*cobra.Command {
+	paths := map[string]*cobra.Command{}
+	var walk func(c *cobra.Command)
+	walk = func(c *cobra.Command) {
+		paths[strings.TrimPrefix(strings.TrimPrefix(c.CommandPath(), root.Name()), " ")] = c
+		for _, sub := range c.Commands() {
+			walk(sub)
 		}
 	}
+	walk(root)
 	return paths
-}
-
-func TestCaptureFlagsReachesEveryVerb(t *testing.T) {
-	for path, fs := range verbPaths(t) {
-		if fs == nil {
-			t.Errorf("%s: the verb returned before parseFlags, so its flags do not complete", path)
-		}
-	}
 }
 
 // Every flag that takes a value has a decided kind, and every entry of
 // flagKinds names a flag that exists.
 func TestFlagKindsCoverEveryFlag(t *testing.T) {
 	used := map[string]bool{}
-	for path, fs := range verbPaths(t) {
-		if fs == nil {
-			continue
-		}
-		fs.VisitAll(func(f *flag.Flag) {
-			if isBoolFlag(f) {
+	for path, c := range commandPaths(newRoot(noCluster)) {
+		c.LocalFlags().VisitAll(func(f *pflag.Flag) {
+			if f.Value.Type() == "bool" {
 				return
 			}
 			switch {
@@ -63,7 +50,7 @@ func TestFlagKindsCoverEveryFlag(t *testing.T) {
 			case hasKey(flagKinds, f.Name):
 				used[f.Name] = true
 			default:
-				t.Errorf("%s: flag --%s has no entry in flagKinds", path, f.Name)
+				t.Errorf("%q: flag --%s has no entry in flagKinds", path, f.Name)
 			}
 		})
 	}
@@ -77,68 +64,83 @@ func TestFlagKindsCoverEveryFlag(t *testing.T) {
 func hasKey[V any](m map[string]V, k string) bool { _, ok := m[k]; return ok }
 
 func TestArgKindsNameRealPaths(t *testing.T) {
-	paths := verbPaths(t)
+	paths := commandPaths(newRoot(noCluster))
 	for key := range argKinds {
-		if _, ok := paths[key]; !ok && key != "help" {
-			t.Errorf("argKinds[%q] names no command", key)
+		if c, ok := paths[key]; !ok || c.HasSubCommands() {
+			t.Errorf("argKinds[%q] names no command that takes arguments", key)
 		}
 	}
 }
 
-func values(c []candidate) []string {
-	v := make([]string, 0, len(c))
-	for _, x := range c {
-		v = append(v, x.Value)
+// complete runs cobra's hidden __complete command, as the shell scripts do
+// on TAB, and returns the candidates and the directive.
+func complete(t *testing.T, connect func() (client.Client, error), words ...string) ([]string, cobra.ShellCompDirective) {
+	t.Helper()
+	out, _, err := cobratreetest.Run(t, newRoot(connect), append([]string{cobra.ShellCompRequestCmd}, words...)...)
+	require.NoError(t, err)
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	dir, err := strconv.Atoi(strings.TrimPrefix(lines[len(lines)-1], ":"))
+	require.NoError(t, err, out)
+	var values []string
+	for _, l := range lines[:len(lines)-1] {
+		v, _, _ := strings.Cut(l, "\t")
+		values = append(values, v)
 	}
-	return v
+	return values, cobra.ShellCompDirective(dir)
 }
 
-func noCluster() (client.Client, error) { return nil, errors.New("no cluster in this test") }
+const (
+	noFiles = cobra.ShellCompDirectiveNoFileComp
+	files   = cobra.ShellCompDirectiveDefault
+	dirs    = cobra.ShellCompDirectiveFilterDirs
+)
 
 func TestCompleteStatic(t *testing.T) {
 	cases := []struct {
 		words []string
 		want  []string
-		dir   directive
+		dir   cobra.ShellCompDirective
 	}{
-		{[]string{"ro"}, []string{"rollout"}, compNone},
-		{[]string{"he"}, []string{"help"}, compNone},
-		{[]string{"help", "reb"}, []string{"reboot"}, compNone},
-		{[]string{"--"}, []string{"--context", "--kubeconfig"}, compNone},
-		{[]string{"--context", "x", "sta"}, []string{"status"}, compNone},
-		{[]string{"rollout", "p"}, []string{"pause"}, compNone},
-		{[]string{"backup", ""}, []string{"now", "list", "get", "decrypt"}, compNone},
-		{[]string{"sim", ""}, []string{"serve", "fleet"}, compNone},
-		{[]string{"rollout", "approve", "--y"}, []string{"--yes"}, compNone},
-		{[]string{"rollout", "show", "--y"}, nil, compNone},
-		{[]string{"status", "-o", ""}, []string{"table", "json"}, compNone},
-		{[]string{"status", "-o=j"}, []string{"-o=json"}, compNone},
-		{[]string{"reboot", "--mode", "p"}, []string{"powercycle"}, compNone},
-		{[]string{"reboot", "--mode=p"}, []string{"--mode=powercycle"}, compNone},
-		{[]string{"upgrade", ""}, []string{"talos", "kubernetes"}, compNone},
-		{[]string{"completion", ""}, []string{"bash", "zsh", "fish"}, compNone},
-		{[]string{"completion", "bash", ""}, nil, compNone},
-		{[]string{"--kubeconfig", ""}, nil, compFiles},
-		{[]string{"status", "--kubeconfig", ""}, nil, compFiles},
-		{[]string{"render", "--dir", ""}, nil, compDirs},
-		{[]string{"backup", "get", "x", "-o", ""}, nil, compFiles},
-		{[]string{"sim", "serve", "--fixture", "./"}, nil, compFiles},
-		{[]string{"approve", "--", "-"}, nil, compNone}, // after "--" a dash is an argument
-		{[]string{"nosuchverb", ""}, nil, compNone},
-		{[]string{"rollout", "nosuchsub", ""}, nil, compNone},
+		{[]string{"ro"}, []string{"rollout"}, noFiles},
+		{[]string{"he"}, []string{"help"}, noFiles},
+		{[]string{"help", "reb"}, []string{"reboot"}, noFiles},
+		{[]string{"--"}, []string{"--context", "--help", "--kubeconfig"}, noFiles},
+		{[]string{"--context", "x", "sta"}, []string{"status"}, noFiles},
+		{[]string{"rollout", "p"}, []string{"pause"}, noFiles},
+		{[]string{"backup", ""}, []string{"now", "list", "get", "decrypt"}, noFiles},
+		{[]string{"sim", ""}, []string{"serve", "fleet"}, noFiles},
+		{[]string{"rollout", "approve", "--y"}, []string{"--yes"}, noFiles},
+		{[]string{"rollout", "show", "--y"}, nil, noFiles},
+		{[]string{"approve", "-"}, []string{"--context", "--kubeconfig", "--help", "-h", "--namespace", "-n", "--yes"}, noFiles},
+		{[]string{"status", "-o", ""}, []string{"table", "json"}, noFiles},
+		{[]string{"status", "--output=j"}, []string{"json"}, noFiles},
+		{[]string{"reboot", "--mode", "p"}, []string{"powercycle"}, noFiles},
+		{[]string{"reboot", "--mode=p"}, []string{"powercycle"}, noFiles},
+		{[]string{"upgrade", ""}, []string{"talos", "kubernetes"}, noFiles},
+		{[]string{"completion", ""}, []string{"bash", "zsh", "fish", "powershell"}, noFiles},
+		{[]string{"completion", "bash", ""}, nil, noFiles},
+		{[]string{"--kubeconfig", ""}, nil, files},
+		{[]string{"status", "--kubeconfig", ""}, nil, files},
+		{[]string{"render", "--dir", ""}, nil, dirs},
+		{[]string{"render", ""}, nil, noFiles},
+		{[]string{"backup", "get", "x", "--to-file", ""}, nil, files},
+		{[]string{"sim", "serve", "--fixture", "./"}, nil, files},
+		{[]string{"approve", "--", "-"}, nil, noFiles}, // after "--" a dash is an argument
+		{[]string{"nosuchverb", ""}, nil, noFiles},
+		{[]string{"rollout", "nosuchsub", ""}, nil, noFiles},
 	}
 	for _, tc := range cases {
-		got, dir := complete(tc.words, noCluster)
-		if !slices.Equal(values(got), tc.want) || dir != tc.dir {
-			t.Errorf("complete(%q) = %q, %d; want %q, %d", tc.words, values(got), dir, tc.want, tc.dir)
+		got, dir := complete(t, noCluster, tc.words...)
+		if !slices.Equal(got, tc.want) || dir != tc.dir {
+			t.Errorf("complete(%q) = %q, %d; want %q, %d", tc.words, got, dir, tc.want, tc.dir)
 		}
 	}
 }
 
 func TestCompleteFixtures(t *testing.T) {
-	got, _ := complete([]string{"sim", "serve", "--fixture", ""}, noCluster)
-	if !slices.Contains(values(got), "generic") {
-		t.Errorf("fixtures = %q; want generic among them", values(got))
+	got, _ := complete(t, noCluster, "sim", "serve", "--fixture", "")
+	if !slices.Contains(got, "generic") {
+		t.Errorf("fixtures = %q; want generic among them", got)
 	}
 }
 
@@ -180,6 +182,7 @@ func TestCompleteFromCluster(t *testing.T) {
 		{[]string{"approve", ""}, []string{"provision-a"}},
 		{[]string{"approve", "provision-a", ""}, nil},
 		{[]string{"approve", "-n", "lab", ""}, []string{"provision-d"}},
+		{[]string{"approve", "--namespace=lab", ""}, []string{"provision-d"}},
 		{[]string{"approve", "lab/"}, []string{"lab/provision-d"}},
 		{[]string{"approve", "pk-metal/"}, []string{"pk-metal/provision-a"}},
 		{[]string{"abort", ""}, []string{"provision-a", "provision-b"}},
@@ -199,13 +202,12 @@ func TestCompleteFromCluster(t *testing.T) {
 		{[]string{"restore", "plan", "lab", "--snapshot", ""}, []string{"lab-20261126"}},
 		{[]string{"rollout", "approve", ""}, []string{"lab-upgrade-1"}},
 		{[]string{"check", ""}, []string{"https://10.0.0.5"}},
-		{[]string{"-n", ""}, nil}, // not a global flag
-		{[]string{"status", "-n", ""}, nil},
+		{[]string{"status", "-n", ""}, nil}, // status has no -n
 	}
 	for _, tc := range cases {
-		got, dir := complete(tc.words, connect)
-		if !slices.Equal(values(got), tc.want) || dir != compNone {
-			t.Errorf("complete(%q) = %q, %d; want %q", tc.words, values(got), dir, tc.want)
+		got, _ := complete(t, connect, tc.words...)
+		if !slices.Equal(got, tc.want) {
+			t.Errorf("complete(%q) = %q; want %q", tc.words, got, tc.want)
 		}
 	}
 	if connects == 0 {
@@ -215,9 +217,9 @@ func TestCompleteFromCluster(t *testing.T) {
 
 // A cluster that cannot be reached gives no candidates and no error.
 func TestCompleteWithoutCluster(t *testing.T) {
-	got, dir := complete([]string{"approve", ""}, noCluster)
-	if len(got) != 0 || dir != compNone {
-		t.Errorf("complete without a cluster = %q, %d; want nothing", values(got), dir)
+	got, dir := complete(t, noCluster, "approve", "")
+	if len(got) != 0 || dir != noFiles {
+		t.Errorf("complete without a cluster = %q, %d; want nothing", got, dir)
 	}
 }
 
@@ -244,87 +246,12 @@ func TestCompleteContextsFromTheLine(t *testing.T) {
 		{"--kubeconfig=" + file, "status", "--context", ""},
 		{"pivot", "--to", file, "--to-context", ""},
 	} {
-		got, _ := complete(words, noCluster)
-		if !slices.Equal(values(got), []string{"lab", "prod"}) {
-			t.Errorf("complete(%q) = %q; want lab, prod", words, values(got))
+		got, _ := complete(t, noCluster, words...)
+		if !slices.Equal(got, []string{"lab", "prod"}) {
+			t.Errorf("complete(%q) = %q; want lab, prod", words, got)
 		}
 	}
-	if got, _ := complete([]string{"status", "--kubeconfig", file, "--context", "p"}, noCluster); !slices.Equal(values(got), []string{"prod"}) {
-		t.Errorf("prefix p = %q; want prod", values(got))
-	}
-}
-
-func TestWriteCandidates(t *testing.T) {
-	var b bytes.Buffer
-	writeCandidates(&b, []candidate{{Value: "a"}, {Value: "b", Desc: "two\n  lines"}}, compFiles)
-	if want := "a\nb\ttwo lines\n:1\n"; b.String() != want {
-		t.Errorf("output = %q; want %q", b.String(), want)
-	}
-}
-
-// The scripts are valid shell, and the bash one completes through the
-// binary end to end.
-func TestCompletionScripts(t *testing.T) {
-	for shell, check := range map[string][]string{"bash": {"bash", "-n"}, "zsh": {"zsh", "-n"}, "fish": {"fish", "--no-execute"}} {
-		if _, err := exec.LookPath(check[0]); err != nil {
-			t.Logf("%s is not installed; its script is not checked", shell)
-			continue
-		}
-		cmd := exec.Command(check[0], check[1:]...)
-		cmd.Stdin = strings.NewReader(completionScripts[shell])
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Errorf("%s script: %v\n%s", shell, err, out)
-		}
-	}
-}
-
-// buildPkMetal builds the program into a temporary directory once per test.
-func buildPkMetal(t *testing.T) (dir, bin string) {
-	t.Helper()
-	dir = t.TempDir()
-	bin = filepath.Join(dir, "pk-metal")
-	if out, err := exec.Command("go", "build", "-o", bin, ".").CombinedOutput(); err != nil {
-		t.Fatalf("build: %v\n%s", err, out)
-	}
-	return dir, bin
-}
-
-func TestCompletionScriptBash(t *testing.T) {
-	if _, err := exec.LookPath("bash"); err != nil {
-		t.Skip("bash is not installed")
-	}
-	dir, bin := buildPkMetal(t)
-	script := completionScripts["bash"] + `
-COMP_WORDS=(` + bin + ` rollout ap); COMP_CWORD=2; _pk_metal; printf '%s\n' "${COMPREPLY[@]}"
-COMP_WORDS=(` + bin + ` reboot --mode po); COMP_CWORD=3; _pk_metal; printf '%s\n' "${COMPREPLY[@]}"
-`
-	cmd := exec.Command("bash", "--norc", "--noprofile", "-c", script)
-	cmd.Env = append(os.Environ(), "KUBECONFIG="+filepath.Join(dir, "none"))
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("bash: %v\n%s", err, out)
-	}
-	if got, want := string(out), "approve\npowercycle\n"; got != want {
-		t.Errorf("bash completions = %q; want %q", got, want)
-	}
-}
-
-func TestCompletionScriptFish(t *testing.T) {
-	if _, err := exec.LookPath("fish"); err != nil {
-		t.Skip("fish is not installed")
-	}
-	dir, _ := buildPkMetal(t)
-	script := completionScripts["fish"] + `
-complete -C "pk-metal rollout ap"
-complete -C "pk-metal status -o j"
-`
-	cmd := exec.Command("fish", "--no-config", "-c", script)
-	cmd.Env = append(os.Environ(), "PATH="+dir+":"+os.Getenv("PATH"), "KUBECONFIG="+filepath.Join(dir, "none"))
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("fish: %v\n%s", err, out)
-	}
-	if got, want := string(out), "approve\njson\n"; got != want {
-		t.Errorf("fish completions = %q; want %q", got, want)
+	if got, _ := complete(t, noCluster, "status", "--kubeconfig", file, "--context", "p"); !slices.Equal(got, []string{"prod"}) {
+		t.Errorf("prefix p = %q; want prod", got)
 	}
 }

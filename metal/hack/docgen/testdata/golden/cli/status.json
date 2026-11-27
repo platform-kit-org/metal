@@ -1,16 +1,14 @@
 {
   "name": "status",
-  "summary": "show machines (reads only)",
+  "summary": "show machines, BMCs, claims and operations, with the reason when something is stuck (reads only)",
   "synopsis": "[-o table|json]",
-  "usage": [
-    "pk-metal status [-o table|json]"
-  ],
   "changes": false,
   "needsCluster": true,
-  "description": "Tables:\n  HOST       one row per machine",
+  "description": "Tables:\n  HOST       one row per machine: its asset, vendor, phase, the claim that\n             holds it, the Talos node it runs (name and address), how many of\n             its BMC paths answer, and what blocks it\n  OPERATION  each operation that has not succeeded: waiting for approval,\n             running, or failed (failed ones stay until you retry them)\n  ENDPOINT   one row per BMC\n  CLAIM      claims that have no machine yet\n  CLUSTER    one row per TalosCluster: Talos and Kubernetes versions wanted\n             and running, ready control planes and workers, etcd health,\n             when it was bootstrapped, the backup state, and whether its\n             Kubernetes API is available\n  NODE       one row per TalosNode: its cluster, role, the host it runs on,\n             address, Talos version, boot stage and readiness\n  ROLLOUT    each TalosRollout that has not succeeded: its cluster, kind,\n             nodes done of the plan, where it stands (the reason it waits)\n             and who approved it\nUnder each table, every blocked or failed row gets a line that says why, in\nthe operator's own words, and what to run next when there is a command for it.\n\n-o json prints the same facts as one JSON object, for scripts:\n  {\"version\": 1, \"needsAttention\": bool,\n   \"hosts\":      [{\"name\", \"asset\", \"vendor\", \"phase\", \"claim\",\n                   \"node\": {\"name\", \"address\"} or null,\n                   \"pathsUp\", \"pathsTotal\", \"blockedOn\", \"message\", \"needsAttention\"}],\n   \"operations\": [{\"namespace\", \"name\", \"host\", \"phase\", \"approvedBy\",\n                   \"blockedOn\", \"message\", \"needsAttention\"}],\n   \"endpoints\":  [{\"name\", \"asset\", \"vendor\", \"phase\", \"address\",\n                   \"blockedOn\", \"message\", \"needsAttention\"}],\n   \"claims\":     [{\"namespace\", \"name\", \"asset\", \"host\", \"phase\",\n                   \"blockedOn\", \"message\", \"onHold\", \"needsAttention\"}],\n   \"clusters\":   [{\"name\", \"talosVersion\", \"talosVersionsRunning\",\n                   \"kubernetesVersion\", \"kubernetesVersionRunning\",\n                   \"controlPlanes\", \"readyControlPlanes\", \"workers\",\n                   \"readyWorkers\", \"available\", \"etcd\", \"bootstrappedAt\",\n                   \"backup\", \"backupMessage\", \"message\", \"needsAttention\"}],\n   \"nodes\":      [{\"name\", \"cluster\", \"role\", \"host\", \"address\", \"version\",\n                   \"stage\", \"ready\", \"message\", \"needsAttention\"}],\n   \"rollouts\":   [{\"name\", \"cluster\", \"kind\", \"nodesDone\", \"nodesTotal\",\n                   \"state\", \"approvedBy\", \"message\", \"needsAttention\"}]}\n  Every key is always present; a missing value is \"\" (or null for node).\n  \"operations\", \"claims\" and \"rollouts\" list all of them, also succeeded and\n  bound ones.\n  New keys may be added; existing keys keep their meaning while version is 1.",
   "examples": [
     "pk-metal status",
-    "pk-metal status -o json"
+    "watch -n 10 pk-metal status",
+    "pk-metal status -o json | jq '.hosts[] | select(.needsAttention)'"
   ],
   "exitStatus": [
     {
@@ -18,45 +16,21 @@
       "meaning": "nothing needs a person"
     },
     {
+      "code": 1,
+      "meaning": "error: the cluster could not be read"
+    },
+    {
       "code": 2,
-      "meaning": "something is blocked or failed, including operations that wait for approval"
+      "meaning": "something is blocked or failed (a row has needsAttention), including operations that wait for approval, a bootstrapped cluster whose etcd or Kubernetes API is unhealthy or whose backup is stale, a node of a running cluster that is not Ready, and a rollout that waits for approval, cannot plan, pauses after its first node, or failed"
     }
   ],
   "flags": [
     {
-      "name": "context",
-      "type": "string",
-      "default": "",
-      "usage": "kubeconfig context to use (default: the current context)",
-      "global": true
-    },
-    {
-      "name": "kubeconfig",
-      "type": "string",
-      "default": "",
-      "usage": "kubeconfig file",
-      "global": true
-    },
-    {
-      "name": "o",
+      "name": "output",
+      "shorthand": "o",
       "type": "string",
       "default": "table",
-      "usage": "output format: table or json",
-      "global": false
-    },
-    {
-      "name": "secrets",
-      "type": "talosctl gen secrets",
-      "default": "",
-      "usage": "secrets bundle from talosctl gen secrets, or - for stdin",
-      "global": false
-    },
-    {
-      "name": "wait",
-      "type": "bool",
-      "default": "true",
-      "usage": "wait until done",
-      "global": false
+      "usage": "output format: table or json"
     }
   ],
   "subcommands": []

@@ -27,7 +27,7 @@ function forms(s: string): string[] {
   return out;
 }
 
-const hasSubs = c.subcommands.length > 0 || c.name === 'sim';
+const hasSubs = c.subcommands.length > 0;
 const lines = (hasSubs ? forms(c.synopsis) : [c.synopsis]).map((f) => f.replace(/^pk-metal\s+\S+\s*/, ''));
 
 // Tokens: flags, <placeholders>, punctuation and words.

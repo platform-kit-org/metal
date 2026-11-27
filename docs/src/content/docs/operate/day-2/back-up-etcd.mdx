@@ -108,7 +108,7 @@ Keep verified, encrypted etcd snapshots of a cluster away from its machines.
    pk-metal backup now prod-offsite
    ```
 
-7. Decrypt it on your workstation, as a test. Without `-o`, the command writes no plain file.
+7. Decrypt it on your workstation, as a test. Without `--plaintext-file`, the command writes no plain file.
 
    ```sh
    pk-metal backup decrypt prod-offsite-20261124-060000 --identity ~/.config/age/keys.txt

@@ -12,6 +12,8 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/GSI-HPC/go-clikit/cobratree"
+	"github.com/spf13/cobra"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/types"
@@ -21,23 +23,16 @@ import (
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
 )
 
-func init() {
-	verbHelp["rollout"] = `
-A rollout changes the nodes of one Talos cluster one at a time: a config
+func rolloutCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:         "rollout",
+		Short:       "see the rollouts that change a Talos cluster node by node (config, upgrade, reboot), approve one, resume it after its pause, or abort it",
+		GroupID:     groupChanges,
+		Annotations: needsCluster(),
+		Long: `A rollout changes the nodes of one Talos cluster one at a time: a config
 change, a Talos upgrade, a Kubernetes upgrade or a rolling reboot. The
 operator proposes rollouts on its own when the cluster spec and the machines
 disagree; it never starts one. A person approves the plan.
-
-  list                    every rollout, newest last, with its state
-  show <rollout>          the plan: each node in order, what changes on it,
-                          whether it reboots, and how far the rollout got
-  approve [--yes] <r>     show the plan, ask, and approve exactly that plan
-  resume <rollout>        go on after the pause (the first node is done, or
-                          someone paused it)
-  pause <rollout>         stop before the next node; the node that runs now
-                          finishes
-  abort [--yes] <r>       stop for good: no further node starts; the node that
-                          runs now finishes. An abort cannot be taken back
 
 The approval names the plan by its hash. If the plan changes before the
 first node starts (a node was added, the spec changed again), the approval
@@ -45,86 +40,69 @@ no longer covers it: the rollout ends as PlanChanged and the operator
 proposes a fresh one.
 
 After the first node the rollout always pauses, so you can look at that node
-before the rest follow. Control planes go first, one at a time, then workers.
-
-examples:
-  pk-metal rollout list
+before the rest follow. Control planes go first, one at a time, then workers.`,
+		Example: `  pk-metal rollout list
   pk-metal rollout show lab-talosupgrade-1a2b3c4d
   pk-metal rollout approve lab-talosupgrade-1a2b3c4d
-  pk-metal rollout resume lab-talosupgrade-1a2b3c4d`
-}
-
-func rolloutCmd(args []string) {
-	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
-		fs := newFlags("rollout")
-		parseFlags(fs, args)
-		badUsage(fs, "give a subcommand: list, show, approve, resume, pause or abort")
+  pk-metal rollout resume lab-talosupgrade-1a2b3c4d`,
 	}
-	sub, rest := args[0], args[1:]
-	fs := newFlags("rollout " + sub)
+	ctx := context.Background()
+	// sub is a subcommand that takes n arguments and runs with a client.
+	sub := func(use, short string, n int, run func(cl client.Client, args []string) error) *cobra.Command {
+		return &cobra.Command{Use: use, Short: short, RunE: func(c *cobra.Command, args []string) error {
+			if len(args) != n {
+				return cobratree.Usagef("rollout %s takes %d argument(s)", c.Name(), n)
+			}
+			cl, err := newClient()
+			if err != nil {
+				die(err)
+			}
+			if err := run(cl, args); err != nil {
+				die(err)
+			}
+			return nil
+		}}
+	}
 	// Only approve and abort ask, so only they take --yes: on the others it
 	// would be accepted and mean nothing.
-	yes := new(bool)
-	switch sub {
-	case "approve":
-		yes = fs.Bool("yes", false, "do not ask (for scripts); the plan is still printed and still approved only as read")
-	case "abort":
-		yes = fs.Bool("yes", false, "do not ask (for scripts)")
-	}
-	addGlobalFlags(fs)
-	parseFlags(fs, rest)
-	ctx := context.Background()
-	need := func(n int) {
-		if fs.NArg() != n {
-			badUsage(fs, fmt.Sprintf("rollout %s takes %d argument(s)", sub, n))
-		}
-	}
-	var run func(cl client.Client) error
-	switch sub {
-	case "list":
-		need(0)
-		run = func(cl client.Client) error { return listRollouts(ctx, cl, os.Stdout, time.Now()) }
-	case "show":
-		need(1)
-		run = func(cl client.Client) error {
-			ro, err := getRollout(ctx, cl, fs.Arg(0))
-			if err != nil {
-				return err
-			}
-			fmt.Fprint(os.Stdout, renderRollout(ro))
-			return nil
-		}
-	case "approve":
-		need(1)
-		run = func(cl client.Client) error {
+	var approveYes, abortYes *bool
+	approve := sub("approve [--yes] <rollout>", "show the plan, ask, and approve exactly that plan", 1,
+		func(cl client.Client, args []string) error {
 			user, err := whoAmI(ctx, cl)
 			if err != nil {
 				return err
 			}
-			return approveRollout(ctx, cl, rolloutApproval{Name: fs.Arg(0), User: user, Yes: *yes,
+			return approveRollout(ctx, cl, rolloutApproval{Name: args[0], User: user, Yes: *approveYes,
 				In: os.Stdin, Interactive: isTerminal(os.Stdin), Out: os.Stdout})
-		}
-	case "resume":
-		need(1)
-		run = func(cl client.Client) error { return resumeRollout(ctx, cl, fs.Arg(0), os.Stdout) }
-	case "pause":
-		need(1)
-		run = func(cl client.Client) error { return pauseRollout(ctx, cl, fs.Arg(0), os.Stdout) }
-	case "abort":
-		need(1)
-		run = func(cl client.Client) error {
-			return abortRollout(ctx, cl, fs.Arg(0), *yes, os.Stdin, isTerminal(os.Stdin), os.Stdout)
-		}
-	default:
-		badUsage(fs, "unknown subcommand "+sub+": give list, show, approve, resume, pause or abort")
-	}
-	cl, err := newClient()
-	if err != nil {
-		die(err)
-	}
-	if err := run(cl); err != nil {
-		die(err)
-	}
+		})
+	approveYes = approve.Flags().Bool("yes", false, "do not ask (for scripts); the plan is still printed and still approved only as read")
+	abort := sub("abort [--yes] <rollout>",
+		"stop for good: no further node starts; the node that runs now finishes. An abort cannot be taken back", 1,
+		func(cl client.Client, args []string) error {
+			return abortRollout(ctx, cl, args[0], *abortYes, os.Stdin, isTerminal(os.Stdin), os.Stdout)
+		})
+	abortYes = abort.Flags().Bool("yes", false, "do not ask (for scripts)")
+	cmd.AddCommand(
+		sub("list", "every rollout, newest last, with its state", 0, func(cl client.Client, _ []string) error {
+			return listRollouts(ctx, cl, os.Stdout, time.Now())
+		}),
+		sub("show <rollout>", "the plan: each node in order, what changes on it, whether it reboots, and how far the rollout got", 1,
+			func(cl client.Client, args []string) error {
+				ro, err := getRollout(ctx, cl, args[0])
+				if err != nil {
+					return err
+				}
+				fmt.Fprint(os.Stdout, renderRollout(ro))
+				return nil
+			}),
+		approve,
+		sub("resume <rollout>", "go on after the pause (the first node is done, or someone paused it)", 1,
+			func(cl client.Client, args []string) error { return resumeRollout(ctx, cl, args[0], os.Stdout) }),
+		sub("pause <rollout>", "stop before the next node; the node that runs now finishes", 1,
+			func(cl client.Client, args []string) error { return pauseRollout(ctx, cl, args[0], os.Stdout) }),
+		abort,
+	)
+	return cmd
 }
 
 func getRollout(ctx context.Context, cl client.Client, name string) (*osv1alpha1.TalosRollout, error) {

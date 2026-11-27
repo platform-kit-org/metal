@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/GSI-HPC/go-clikit/cobratree/cobratreetest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"k8s.io/client-go/tools/clientcmd"
@@ -22,6 +23,12 @@ func renderInputs(t *testing.T) (dir, secrets string) {
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "talos.yaml"), sample, 0o600))
 	return dir, filepath.Join("..", "..", "internal", "talos", "render", "testdata", "secrets.yaml")
+}
+
+func runRender(t *testing.T, args ...string) {
+	t.Helper()
+	_, _, err := cobratreetest.Run(t, newRoot(noCluster), append([]string{"render"}, args...)...)
+	require.NoError(t, err)
 }
 
 // The admin credentials live as long as --credentials-ttl says, 24h by
@@ -43,18 +50,18 @@ func TestRenderCredentialsTTL(t *testing.T) {
 	}
 
 	out := filepath.Join(t.TempDir(), "default")
-	renderCmd([]string{"--dir", in, "--secrets", secrets, "--out", out})
+	runRender(t, "--dir", in, "--secrets", secrets, "--out", out)
 	assert.WithinDuration(t, time.Now().Add(24*time.Hour), notAfter(out), 5*time.Minute)
 
 	out = filepath.Join(t.TempDir(), "short")
-	renderCmd([]string{"--dir", in, "--secrets", secrets, "--out", out, "--credentials-ttl", "2h"})
+	runRender(t, "--dir", in, "--secrets", secrets, "--out", out, "--credentials-ttl", "2h")
 	assert.WithinDuration(t, time.Now().Add(2*time.Hour), notAfter(out), 5*time.Minute)
 }
 
 func TestRenderNoCredentials(t *testing.T) {
 	in, secrets := renderInputs(t)
 	out := filepath.Join(t.TempDir(), "out")
-	renderCmd([]string{"--dir", in, "--secrets", secrets, "--out", out, "--no-credentials"})
+	runRender(t, "--dir", in, "--secrets", secrets, "--out", out, "--no-credentials")
 
 	nodes, err := filepath.Glob(filepath.Join(out, "*.yaml"))
 	require.NoError(t, err)
@@ -65,7 +72,7 @@ func TestRenderNoCredentials(t *testing.T) {
 
 func TestRenderRefusesLongCredentials(t *testing.T) {
 	for _, ttl := range []string{"721h", "0s"} {
-		code, stderr := runCLI(t, "render", "--dir=d", "--secrets=s", "--credentials-ttl="+ttl)
+		code, stderr := runTree(t, "render", "--dir=d", "--secrets=s", "--credentials-ttl="+ttl)
 		assert.Equal(t, 1, code, stderr)
 		assert.Contains(t, stderr, "--credentials-ttl must be more than 0 and at most 720h")
 	}

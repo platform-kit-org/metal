@@ -23,9 +23,9 @@ Each command has one page with its flags, its steps and the objects that it read
   <dt>Program</dt>
   <dd>`pk-metal`, one binary.</dd>
   <dt>Form</dt>
-  <dd>`pk-metal [--kubeconfig file] [--context name] <command> [flags] [arguments]`</dd>
+  <dd>`pk-metal <command> [flags] [arguments]`</dd>
   <dt>Help</dt>
-  <dd>`pk-metal help <command>`, or `pk-metal <command> -h`.</dd>
+  <dd>`pk-metal help <command>`, or `pk-metal <command> --help`.</dd>
   <dt>Cluster access</dt>
   <dd>The [](cli:global-flags) select the cluster, as for `kubectl`.</dd>
   <dt>Approval</dt>
@@ -62,25 +62,26 @@ Each command prints its own help. The help of the program lists all commands.
 title="help"
 text={`
     $ pk-metal help approve
-    pk-metal approve: show what a proposed operation will do to a machine, then let it run; without a name, list the operations that wait for approval
-
-    usage: pk-metal approve [-n namespace] [--yes] [<operation> | <namespace>/<operation>]
+    show what a proposed operation will do to a machine, then let it run; several names: one plan and one answer each; without a name, list the operations that wait for approval
     ...
-    flags:
-      -n string
-        	namespace of the operation (default "pk-metal")
-      -yes
-        	approve without asking (for scripts); the plan is still printed
+    Usage:
+      pk-metal approve [-n namespace] [--yes] [<operation> | <namespace>/<operation> ...] [flags]
+    ...
+    Flags:
+      -h, --help               help for approve
+      -n, --namespace string   namespace of the operation (default "pk-metal")
+          --yes                approve without asking (for scripts); the plan is still printed
+    ...
 `}
 />
 
-A flag can have one dash or two dashes: `-yes` and `--yes` are the same flag.
+A long flag has two dashes: `--yes`. A short flag has one dash: `-n`. See [](cli:global-flags).
 
 ## Exit status
 
 <CliExit />
 
-A wrong flag or a wrong argument also gives code 1. The program then prints the usage line of the command.
+A wrong command, flag or argument also gives code 1. The program then names the help of the command, for example `run: pk-metal approve --help`.
 
 ## Related
 

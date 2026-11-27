@@ -1,6 +1,6 @@
 ---
 title: Global flags
-description: The flags that all pk-metal commands that talk to the cluster accept.
+description: The flags that all pk-metal commands accept, and that select the cluster.
 type: cli
 eyebrow: Reference · pk-metal
 xref: { cat: cli, id: global-flags }
@@ -43,6 +43,9 @@ They follow the rules of `kubectl`.
 Put the global flags before the command or after it. The two forms are equal.
 The flags of a command can also come after its arguments. After `--`, each word is an argument.
 
+A long flag has two dashes, as in `kubectl`: `--context`. A short flag has one dash: `-n`.
+The program reads `-context` as a group of short flags, and it stops with an error.
+
 <Terminal
 title="global flags"
 text={`
@@ -52,9 +55,9 @@ text={`
 `}
 />
 
-## Commands that accept them
+## Commands that use them
 
-All commands that talk to the Kubernetes API accept the global flags:
+All commands accept the global flags. These commands talk to the Kubernetes API and use them:
 
 - [](cli:status) and [](cli:top)
 - [](cli:approve), [](cli:retry), [](cli:abort), [](cli:hold), [](cli:unhold) and [](cli:rollout)
@@ -62,7 +65,7 @@ All commands that talk to the Kubernetes API accept the global flags:
 - [](cli:backup) and [](cli:restore)
 - [](cli:pivot)
 
-These commands do not talk to the Kubernetes API, and they refuse the global flags after the command:
+These commands do not talk to the Kubernetes API, and they ignore the global flags:
 [](cli:check), [](cli:inventory), [](cli:render), [](cli:boot), [](cli:bootstrap), [](cli:relay), [](cli:sim) and [](cli:version).
 
 <Callout type="note">

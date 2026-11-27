@@ -355,7 +355,7 @@ func approvalPlan(ctx context.Context, cl client.Client, namespace, name, user s
 	case op.Spec.Approval.ApprovedBy != "":
 		return nil, "", fmt.Errorf("operation %s is already approved by %s (an approval cannot be changed)",
 			ref, op.Spec.Approval.ApprovedBy)
-	case finished(op):
+	case op.Finished():
 		return nil, "", fmt.Errorf("operation %s has finished (%s); there is nothing to approve", ref, opPhase(op))
 	case !op.ApprovalRequired():
 		return nil, "", fmt.Errorf("operation %s does not need approval; the operator runs it on its own", ref)
@@ -383,19 +383,13 @@ func opPhase(op *metalv1alpha1.HostOperation) metalv1alpha1.OperationPhase {
 	return p
 }
 
-// finished: the executor recorded an outcome: success, failure or abort.
-func finished(op *metalv1alpha1.HostOperation) bool { return op.Finished() }
-
-// waitsForApproval: the operation needs a person and nobody has approved it.
-func waitsForApproval(op *metalv1alpha1.HostOperation) bool { return op.AwaitsApproval() }
-
 // listPending prints one line for each operation that waits for approval.
 func listPending(ctx context.Context, cl client.Client, w io.Writer, now time.Time) error {
 	ops := &metalv1alpha1.HostOperationList{}
 	if err := cl.List(ctx, ops); err != nil {
 		return fmt.Errorf("list operations: %w", err)
 	}
-	pending := slices.DeleteFunc(ops.Items, func(op metalv1alpha1.HostOperation) bool { return !waitsForApproval(&op) })
+	pending := slices.DeleteFunc(ops.Items, func(op metalv1alpha1.HostOperation) bool { return !op.AwaitsApproval() })
 	if len(pending) == 0 {
 		fmt.Fprintln(w, "no operation waits for approval")
 		return nil

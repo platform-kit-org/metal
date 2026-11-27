@@ -355,7 +355,7 @@ func buildReport(hosts []metalv1alpha1.Host, eps []metalv1alpha1.ManagementEndpo
 		if c.Status.HostRef != nil {
 			row.Host = c.Status.HostRef.Name
 		}
-		_, row.OnHold = c.Annotations[holdAnnotation]
+		_, row.OnHold = c.Annotations[metalv1alpha1.AnnotationHold]
 		row.Message = explain(c.Status.Conditions, c.Status.BlockedOn)
 		row.NeedsAttention = row.BlockedOn != "" || c.Status.Phase == metalv1alpha1.ClaimAmbiguous
 		rep.Claims = append(rep.Claims, row)

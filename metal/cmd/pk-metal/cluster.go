@@ -12,7 +12,6 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
 	pkscheme "github.com/dennisklein/platform-kit/metal/internal/scheme"
 )
 
@@ -20,10 +19,6 @@ import (
 // manager's --credentials-namespace default). HostClaims usually live
 // elsewhere, so the claim verbs default to "default".
 const operatorNamespace = "pk-metal"
-
-// holdAnnotation on a HostClaim tells the operator to propose no new
-// operation for it. Its value is the reason a person gave, possibly empty.
-const holdAnnotation = metalv1alpha1.AnnotationHold
 
 // The labels the operator puts on the operations it proposes for a claim.
 const (

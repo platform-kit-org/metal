@@ -32,7 +32,7 @@ func TestRetry(t *testing.T) {
 	op.Status.Conditions = []metav1.Condition{{Type: metalv1alpha1.ConditionExecuted, Status: metav1.ConditionFalse,
 		Reason: metalv1alpha1.ReasonStepFailed, Message: "step 7/9 awaitCheckIn: gave up after 30m0s"}}
 	claim := &metalv1alpha1.HostClaim{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "node-1", Annotations: map[string]string{holdAnnotation: ""}},
+		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "node-1", Annotations: map[string]string{metalv1alpha1.AnnotationHold: ""}},
 	}
 	cl := fakeClient(append(objs, claim)...)
 	out.Reset()
@@ -61,12 +61,12 @@ func TestHold(t *testing.T) {
 
 	var out bytes.Buffer
 	require.NoError(t, hold(ctx, cl, "default", "node-1", "disk swap", true, &out))
-	assert.Equal(t, map[string]string{holdAnnotation: "disk swap"}, annotations())
+	assert.Equal(t, map[string]string{metalv1alpha1.AnnotationHold: "disk swap"}, annotations())
 	assert.Contains(t, out.String(), "pk-metal unhold default/node-1")
 
 	out.Reset()
 	require.NoError(t, hold(ctx, cl, "default", "node-1", "", false, &out))
-	assert.NotContains(t, annotations(), holdAnnotation)
+	assert.NotContains(t, annotations(), metalv1alpha1.AnnotationHold)
 	assert.Contains(t, out.String(), "no longer on hold")
 
 	out.Reset()

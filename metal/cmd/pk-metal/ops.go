@@ -130,7 +130,7 @@ func retry(ctx context.Context, cl client.Client, namespace, name string, w io.W
 		"it then waits for approval: pk-metal approve\n", claim)
 	c := &metalv1alpha1.HostClaim{}
 	if err := cl.Get(ctx, client.ObjectKey{Namespace: op.Labels[labelClaimNamespace], Name: op.Labels[labelClaimName]}, c); err == nil {
-		if _, held := c.Annotations[holdAnnotation]; held {
+		if _, held := c.Annotations[metalv1alpha1.AnnotationHold]; held {
 			fmt.Fprintf(w, "Claim %s is on hold, so nothing is proposed until: pk-metal unhold %s\n", claim, claim)
 		}
 	}
@@ -237,11 +237,11 @@ func hold(ctx context.Context, cl client.Client, namespace, name, reason string,
 	var value any // JSON null removes the annotation in a merge patch
 	if on {
 		value = reason
-	} else if _, held := c.Annotations[holdAnnotation]; !held {
+	} else if _, held := c.Annotations[metalv1alpha1.AnnotationHold]; !held {
 		fmt.Fprintf(w, "claim %s is not on hold; nothing changed\n", ref)
 		return nil
 	}
-	patch, err := json.Marshal(map[string]any{"metadata": map[string]any{"annotations": map[string]any{holdAnnotation: value}}})
+	patch, err := json.Marshal(map[string]any{"metadata": map[string]any{"annotations": map[string]any{metalv1alpha1.AnnotationHold: value}}})
 	if err != nil {
 		return err
 	}

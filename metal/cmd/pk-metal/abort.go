@@ -72,7 +72,7 @@ func abort(ctx context.Context, cl client.Client, namespace, name, user, reason 
 		return err
 	}
 	ref := op.Namespace + "/" + op.Name
-	if finished(op) {
+	if op.Finished() {
 		return fmt.Errorf("operation %s has finished (%s); there is nothing to abort", ref, opPhase(op))
 	}
 	if by, asked := op.Annotations[metalv1alpha1.AnnotationAbort]; asked {

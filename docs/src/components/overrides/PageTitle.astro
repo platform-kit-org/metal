@@ -6,11 +6,13 @@ import { byId } from '../../data/categories.mjs';
 const route = Astro.locals.starlightRoute;
 const data = route.entry.data as any;
 const typeLabel: Record<string, string> = {
-  start: 'Start', kind: 'Kind', controller: 'Controller', cli: 'Command', lab: 'Lab',
-  concept: 'Concept', workflow: 'Workflow', howto: 'How-to', runbook: 'Runbook',
-  tutorial: 'Tutorial', reference: 'Reference', project: 'Project',
+  start: 'Start', kind: 'Kind', controller: 'Controller · manager', cli: 'Command · pk-metal',
+  lab: 'Lab · reference', concept: 'Concept', workflow: 'Workflow', howto: 'How-to',
+  runbook: 'Runbook', tutorial: 'Tutorial', reference: 'Reference', project: 'Project',
 };
-const eyebrow = data.eyebrow ?? (data.day ? `Day ${data.day}` : typeLabel[data.type] ?? '');
+// A page in operate/day-1 or operate/day-2 shows its day.
+const day = /^operate\/day-([12])(\/|$)/.exec(route.entry.id)?.[1];
+const eyebrow = data.eyebrow ?? (day ? `Day ${day}` : typeLabel[data.type] ?? '');
 const cat = data.xref ? byId.get(data.xref.cat) : undefined;
 ---
 

@@ -41,10 +41,8 @@ export const collections = {
             ]),
           )
           .optional(),
-        /** Text above the title. The default comes from the page type. */
+        /** Text above the title. The default comes from the folder (day 1, day 2) or the page type. */
         eyebrow: z.string().optional(),
-        /** Day 1 (install) or day 2 (operation) for how-to pages. */
-        day: z.union([z.literal(1), z.literal(2)]).optional(),
       }),
     }),
   }),

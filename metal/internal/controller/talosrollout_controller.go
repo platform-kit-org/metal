@@ -15,7 +15,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -57,7 +56,6 @@ type ImageResolver func(ctx context.Context, ref string) (string, error)
 // status polled minutes ago).
 type TalosRolloutReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
 	// Namespace is the operator's: config Secrets and credentials live
 	// there.
 	Namespace string
@@ -523,7 +521,7 @@ func (r *TalosRolloutReconciler) startStep(ctx context.Context, ro *osv1alpha1.T
 			RolloutRef: &metalv1alpha1.RolloutReference{Name: ro.Name, PlanHash: ro.Status.PlanHash},
 		},
 	}
-	if err := controllerutil.SetControllerReference(ro, op, r.Scheme); err != nil {
+	if err := controllerutil.SetControllerReference(ro, op, r.Scheme()); err != nil {
 		return err
 	}
 	err := r.Create(ctx, op)
@@ -685,13 +683,7 @@ func rolloutStarted(ro *osv1alpha1.TalosRollout) bool {
 	})
 }
 
-// reader is the uncached reader when one is wired, the client otherwise.
-func (r *TalosRolloutReconciler) reader() client.Reader {
-	if r.APIReader != nil {
-		return r.APIReader
-	}
-	return r.Client
-}
+func (r *TalosRolloutReconciler) reader() client.Reader { return uncachedReader(r.APIReader, r.Client) }
 
 // healthGate checks, live, that the cluster can take the next step: every
 // etcd member answers, votes and reports no error, and every Kubernetes Node
@@ -1090,12 +1082,7 @@ func (r *TalosRolloutReconciler) rolloutsForNode(ctx context.Context, obj client
 	if err := r.List(ctx, rollouts); err != nil {
 		return nil
 	}
-	var reqs []ctrl.Request
-	for i := range rollouts.Items {
-		ro := &rollouts.Items[i]
-		if ro.Spec.ClusterRef.Name == cluster && ro.Spec.Approval.ApprovedBy == "" && !rolloutFinished(ro) {
-			reqs = append(reqs, requestFor(ro.Name))
-		}
-	}
-	return reqs
+	return requestsOf(rollouts.Items, func(ro *osv1alpha1.TalosRollout) bool {
+		return ro.Spec.ClusterRef.Name == cluster && ro.Spec.Approval.ApprovedBy == "" && !rolloutFinished(ro)
+	})
 }

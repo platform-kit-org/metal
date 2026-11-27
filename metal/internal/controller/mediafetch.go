@@ -30,17 +30,10 @@ const fetchTimeout = 30 * time.Minute
 // of a finished one once.
 type mediaFetcher struct {
 	mu   sync.Mutex
-	jobs map[string]*fetchJob
+	jobs map[string]*fetchState
 	// running holds each download until it ends, so that a caller can wait
 	// for the downloads before the store goes.
 	running sync.WaitGroup
-}
-
-type fetchJob struct {
-	done bool
-	sum  string
-	size int64
-	err  error
 }
 
 // fetchState is what start reports: a download runs, or it ended with the
@@ -60,16 +53,15 @@ func (f *mediaFetcher) start(store *asset.Store, hc *http.Client, url, name, key
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.jobs == nil {
-		f.jobs = map[string]*fetchJob{}
+		f.jobs = map[string]*fetchState{}
 	}
 	if j, ok := f.jobs[id]; ok {
-		if !j.done {
-			return fetchState{running: true}
+		if !j.running {
+			delete(f.jobs, id)
 		}
-		delete(f.jobs, id)
-		return fetchState{sum: j.sum, size: j.size, err: j.err}
+		return *j
 	}
-	j := &fetchJob{}
+	j := &fetchState{running: true}
 	f.jobs[id] = j
 	f.running.Go(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
@@ -85,7 +77,7 @@ func (f *mediaFetcher) start(store *asset.Store, hc *http.Client, url, name, key
 		}
 		f.mu.Lock()
 		defer f.mu.Unlock()
-		j.done, j.sum, j.size, j.err = true, sum, size, err
+		j.running, j.sum, j.size, j.err = false, sum, size, err
 	})
 	return fetchState{running: true}
 }

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -88,10 +87,8 @@ func (r *TalosNodeMemberReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	if reason != "" {
 		orig := node.Status.DeepCopy()
 		setCondition(&node.Status.Conditions, node.Generation, osv1alpha1.ConditionRemovalBlocked, metav1.ConditionTrue, reason, msg)
-		if !equality.Semantic.DeepEqual(orig, &node.Status) {
-			if err := r.Status().Update(ctx, node); err != nil {
-				return ctrl.Result{}, client.IgnoreNotFound(err)
-			}
+		if err := updateStatusIfChanged(ctx, r.Client, node, orig, &node.Status); err != nil {
+			return ctrl.Result{}, client.IgnoreNotFound(err)
 		}
 		return ctrl.Result{RequeueAfter: removalRecheck}, nil
 	}
@@ -110,14 +107,15 @@ func (r *TalosNodeMemberReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	return ctrl.Result{}, nil
 }
 
+func (r *TalosNodeMemberReconciler) reader() client.Reader {
+	return uncachedReader(r.APIReader, r.Client)
+}
+
 // blocked says what the deletion of node still waits for, "" for nothing.
 //
 //pk:uncached
 func (r *TalosNodeMemberReconciler) blocked(ctx context.Context, node *osv1alpha1.TalosNode) (string, string, error) {
-	reader := client.Reader(r.Client)
-	if r.APIReader != nil {
-		reader = r.APIReader
-	}
+	reader := r.reader()
 	claims := &metalv1alpha1.HostClaimList{}
 	if err := reader.List(ctx, claims); err != nil {
 		return "", "", err

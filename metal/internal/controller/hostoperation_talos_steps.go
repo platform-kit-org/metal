@@ -1,10 +1,12 @@
 package controller
 
 import (
+	"cmp"
 	"context"
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -114,10 +116,7 @@ func (x *exec) progress(i int) *metalv1alpha1.TalosStepProgress {
 // resumed pass continues from.
 func (x *exec) record(p *metalv1alpha1.TalosStepProgress) error {
 	x.op.Status.TalosStep = p
-	if err := x.flush(); err != nil {
-		return &persistError{err}
-	}
-	return nil
+	return x.persist()
 }
 
 // talosStep runs action i when it is one of the Talos or Kubernetes actions;
@@ -206,10 +205,7 @@ func (x *exec) noteCordon(node string, changed bool) error {
 		return nil
 	}
 	x.op.Status.CordonedNode = node
-	if err := x.flush(); err != nil {
-		return &persistError{err}
-	}
-	return nil
+	return x.persist()
 }
 
 func (x *exec) uncordon(ctx context.Context, ref metalv1alpha1.Reference) (stepState, error) {
@@ -323,7 +319,7 @@ func (x *exec) restart(ctx context.Context, i int, node *osv1alpha1.TalosNode, a
 		p = p.DeepCopy()
 		p.RequestedAt = ptrTime(metav1.NewTime(talosClock()))
 		if !took && !restarts {
-			p.Mode = cmpOr(mode, "auto")
+			p.Mode = cmp.Or(mode, "auto")
 		}
 		if err := x.record(p); err != nil {
 			return stepState{}, err
@@ -364,7 +360,7 @@ func (x *exec) restart(ctx context.Context, i int, node *osv1alpha1.TalosNode, a
 			node.Name, what, before.UTC().Format(time.RFC3339)), nil
 	case st.Stage != "running" || !st.Ready:
 		return waitingOn("node %s restarted at %s and is %s, not ready yet%s", node.Name,
-			booted.UTC().Format(time.RFC3339), cmpOr(st.Stage, "booting"), unmet(st)), nil
+			booted.UTC().Format(time.RFC3339), cmp.Or(st.Stage, "booting"), unmet(st)), nil
 	case ready != nil:
 		return res, rerr
 	}
@@ -388,13 +384,6 @@ func unmet(st talos.Status) string {
 		return ""
 	}
 	return " (waiting for " + strings.Join(st.UnmetConditions, ", ") + ")"
-}
-
-func cmpOr(s, def string) string {
-	if s == "" {
-		return def
-	}
-	return s
 }
 
 func (x *exec) talosReboot(ctx context.Context, i int, a *metalv1alpha1.TalosRebootAction) (stepState, error) {
@@ -529,7 +518,7 @@ func (x *exec) confirmTry(ctx context.Context, node *osv1alpha1.TalosNode, acc *
 		return waitingOn("node %s took the config in Try mode and does not answer now (%v)", node.Name, err), nil
 	}
 	return waitingOn("node %s took the config in Try mode and is %s, not ready yet%s; it is confirmed once ready",
-		node.Name, cmpOr(st.Stage, "booting"), unmet(st)), nil
+		node.Name, cmp.Or(st.Stage, "booting"), unmet(st)), nil
 }
 
 // applyModes maps the action's modes onto the machine API's.
@@ -611,7 +600,7 @@ func (x *exec) talosReset(ctx context.Context, i int, a *metalv1alpha1.TalosRese
 	case err != nil:
 		return waitingOn("asked node %s to reset; its boot time does not read (%v)", node.Name, err), nil
 	}
-	silences.forget(x.silenceKey(i))
+	x.r.silences.forget(x.silenceKey(i))
 	if p.RequestedAt == nil || talosClock().Sub(p.RequestedAt.Time) >= talosResendAfter {
 		return x.askReset(ctx, i, node, acc, opts, p)
 	}
@@ -686,7 +675,7 @@ func (x *exec) talosShutdown(ctx context.Context, i int, a *metalv1alpha1.TalosS
 		case err != nil:
 			return waitingOn("asked node %s to shut down; it answers with an error (%v)", node.Name, err), nil
 		}
-		silences.forget(x.silenceKey(i))
+		x.r.silences.forget(x.silenceKey(i))
 		if p.RequestedAt != nil {
 			return waitingOn("asked node %s to shut down at %s; it still answers",
 				node.Name, p.RequestedAt.UTC().Format(time.RFC3339)), nil
@@ -741,7 +730,6 @@ type silence struct {
 }
 
 type silenceKey struct {
-	r    *HostOperationReconciler
 	op   types.NamespacedName
 	uid  types.UID
 	step int
@@ -754,8 +742,6 @@ type silenceBook struct {
 	mu sync.Mutex
 	m  map[silenceKey]silence
 }
-
-var silences silenceBook
 
 // note adds a silent look and returns the silence so far.
 func (b *silenceBook) note(k silenceKey, now time.Time) silence {
@@ -779,8 +765,15 @@ func (b *silenceBook) forget(k silenceKey) {
 	delete(b.m, k)
 }
 
+// forgetOp drops each silence of the operation op.
+func (b *silenceBook) forgetOp(op types.NamespacedName) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	maps.DeleteFunc(b.m, func(k silenceKey, _ silence) bool { return k.op == op })
+}
+
 func (x *exec) silenceKey(i int) silenceKey {
-	return silenceKey{r: x.r, op: types.NamespacedName{Namespace: x.op.Namespace, Name: x.op.Name}, uid: x.op.UID, step: i}
+	return silenceKey{op: types.NamespacedName{Namespace: x.op.Namespace, Name: x.op.Name}, uid: x.op.UID, step: i}
 }
 
 // silent records one look at a node that did not answer, and reports the
@@ -788,7 +781,7 @@ func (x *exec) silenceKey(i int) silenceKey {
 func (x *exec) silent(i int, node *osv1alpha1.TalosNode, what string, err error) stepState {
 	now := talosClock()
 	gone := min(talosGoneAfter, 6*x.r.waitInterval())
-	s := silences.note(x.silenceKey(i), now)
+	s := x.r.silences.note(x.silenceKey(i), now)
 	if s.looks >= talosGoneLooks && now.Sub(s.since) >= gone {
 		return x.left(i)
 	}
@@ -798,7 +791,7 @@ func (x *exec) silent(i int, node *osv1alpha1.TalosNode, what string, err error)
 
 // left ends a reset or shutdown step: the node is gone.
 func (x *exec) left(i int) stepState {
-	silences.forget(x.silenceKey(i))
+	x.r.silences.forget(x.silenceKey(i))
 	return stepDone
 }
 
@@ -1039,7 +1032,7 @@ func (x *exec) waitNodeReady(ctx context.Context, a *metalv1alpha1.WaitNodeReady
 	case err != nil:
 		return waitingOn("node %s: %v", node.Name, err), nil
 	case st.Stage != "running" || !st.Ready:
-		return waitingOn("node %s is %s, not ready yet%s", node.Name, cmpOr(st.Stage, "booting"), unmet(st)), nil
+		return waitingOn("node %s is %s, not ready yet%s", node.Name, cmp.Or(st.Stage, "booting"), unmet(st)), nil
 	case a.Version != "" && version != a.Version:
 		return waitingOn("node %s runs Talos %s, waiting for %s", node.Name, version, a.Version), nil
 	}
@@ -1066,7 +1059,7 @@ func (x *exec) waitNodeReady(ctx context.Context, a *metalv1alpha1.WaitNodeReady
 			if c.Status == corev1.ConditionTrue {
 				return stepDone, nil
 			}
-			return waitingOn("Kubernetes Node %s is not Ready: %s", node.Name, cmpOr(c.Message, c.Reason)), nil
+			return waitingOn("Kubernetes Node %s is not Ready: %s", node.Name, cmp.Or(c.Message, c.Reason)), nil
 		}
 	}
 	return waitingOn("Kubernetes Node %s reports no Ready condition yet", node.Name), nil

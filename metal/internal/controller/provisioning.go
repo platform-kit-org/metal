@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"slices"
@@ -1469,10 +1470,7 @@ func approvalWaived(claim *metalv1alpha1.HostClaim) bool {
 // releaseShutdownTimeout is how long a release lets the OS shut down before
 // the machine is forced off.
 func (r *HostClaimReconciler) releaseShutdownTimeout() time.Duration {
-	if r.ReleaseShutdownTimeout > 0 {
-		return r.ReleaseShutdownTimeout
-	}
-	return defaultReleaseShutdownTimeout
+	return cmp.Or(r.ReleaseShutdownTimeout, defaultReleaseShutdownTimeout)
 }
 
 func short8(s string) string {

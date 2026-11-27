@@ -517,8 +517,6 @@ func runExecutorCase(t *testing.T, seed uint64, image func(string) string, image
 
 		// Each pass is a fresh reconciler: whatever the last one held in
 		// memory is gone, as after a restart.
-		fetches := &mediaFetcher{}
-		fetchers = append(fetchers, fetches)
 		rc := &HostOperationReconciler{
 			Client:               api,
 			CredentialsNamespace: "pk-metal",
@@ -528,11 +526,11 @@ func runExecutorCase(t *testing.T, seed uint64, image func(string) string, image
 			},
 			Media:          media,
 			Store:          mediaStore,
-			Fetches:        fetches,
 			RegistryClient: images,
 			PowerSettle:    10 * time.Millisecond,
 			PassTimeout:    time.Duration(1+r.IntN(30)) * time.Second,
 		}
+		fetchers = append(fetchers, &rc.fetches)
 		func() {
 			defer func() {
 				if p := recover(); p != nil {
@@ -569,7 +567,7 @@ func runExecutorCase(t *testing.T, seed uint64, image func(string) string, image
 		// Recorded steps are a prefix of the actions; only the last can be Failed.
 		require.LessOrEqual(t, len(cur.Status.Steps), len(actions), desc())
 		for i, s := range cur.Status.Steps {
-			require.Equal(t, actionName(actions[i]), s.Action, "%s: step %d", desc(), i)
+			require.Equal(t, actions[i].Key(), s.Action, "%s: step %d", desc(), i)
 			if s.Phase == "Failed" {
 				require.Equal(t, len(cur.Status.Steps)-1, i, "%s: a failed step is the last record", desc())
 			}
@@ -667,7 +665,7 @@ func imageDigest(url string) string {
 func actionNames(actions []metalv1alpha1.HostOperationAction) []string {
 	out := make([]string, len(actions))
 	for i, a := range actions {
-		out[i] = actionName(a)
+		out[i] = a.Key()
 		switch {
 		case a.InsertMedia != nil && a.InsertMedia.BootAssetRef != nil:
 			out[i] += "(" + a.InsertMedia.MediaID + ":" + a.InsertMedia.BootAssetRef.Name + ")"

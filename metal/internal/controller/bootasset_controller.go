@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/opencontainers/go-digest"
@@ -13,7 +12,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -43,7 +41,6 @@ const (
 // too.
 type BootAssetReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
 	// Namespace receives the artifact Secrets (the operator's namespace).
 	Namespace string
 	// Factory serves the images the factory strategy addresses, and is told
@@ -54,9 +51,8 @@ type BootAssetReconciler struct {
 	// holds those assets with a message naming the flags.
 	Store  *asset.Store
 	Imager *Imager
-	// Fetches downloads the factory installers into Store. Nil makes one.
-	Fetches   *mediaFetcher
-	fetchOnce sync.Once
+	// fetches downloads the factory installers into Store.
+	fetches mediaFetcher
 }
 
 // +kubebuilder:rbac:groups=os.platform-kit.org,resources=bootassets,verbs=get;list;watch
@@ -146,7 +142,7 @@ func (r *BootAssetReconciler) fetchImage(ctx context.Context, ba *osv1alpha1.Boo
 		setCondition(&ba.Status.Conditions, ba.Generation, osv1alpha1.ConditionReady, metav1.ConditionTrue, osv1alpha1.ReasonImageDownloaded, "")
 		return ctrl.Result{}
 	}
-	st := r.fetcher().start(r.Store, r.Factory.ImageClient(), url, ba.Name, key, "")
+	st := r.fetches.start(r.Store, r.Factory.ImageClient(), url, ba.Name, key, "")
 	switch {
 	case st.running:
 		r.hold(ba, osv1alpha1.ReasonBuilding, fmt.Sprintf(
@@ -175,15 +171,6 @@ const (
 func imageKey(url string) string {
 	sum := sha256.Sum256([]byte(url))
 	return hex.EncodeToString(sum[:16])
-}
-
-func (r *BootAssetReconciler) fetcher() *mediaFetcher {
-	r.fetchOnce.Do(func() {
-		if r.Fetches == nil {
-			r.Fetches = &mediaFetcher{}
-		}
-	})
-	return r.Fetches
 }
 
 // nodeConfig loads the rendered config of the asset's node. A missing
@@ -255,7 +242,7 @@ func (r *BootAssetReconciler) build(ctx context.Context, ba *osv1alpha1.BootAsse
 		}
 		artifact.Annotations[configDigestAnnotation] = configDigest
 		artifact.Data = map[string][]byte{artifactKey: iso}
-		return controllerutil.SetControllerReference(ba, artifact, r.Scheme)
+		return controllerutil.SetControllerReference(ba, artifact, r.Scheme())
 	})
 	if err != nil {
 		return fmt.Errorf("write artifact secret for %s: %w", ba.Name, err)
@@ -288,11 +275,7 @@ func (r *BootAssetReconciler) assetsForNode(ctx context.Context, obj client.Obje
 	if err := r.List(ctx, assets); err != nil {
 		return nil
 	}
-	var reqs []ctrl.Request
-	for i := range assets.Items {
-		if ref := assets.Items[i].Spec.NodeRef; ref != nil && ref.Name == obj.GetName() {
-			reqs = append(reqs, ctrl.Request{NamespacedName: types.NamespacedName{Name: assets.Items[i].Name}})
-		}
-	}
-	return reqs
+	return requestsOf(assets.Items, func(a *osv1alpha1.BootAsset) bool {
+		return a.Spec.NodeRef != nil && a.Spec.NodeRef.Name == obj.GetName()
+	})
 }

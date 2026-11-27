@@ -214,7 +214,7 @@ func endMaintenanceCommand(host *metalv1alpha1.Host) string {
 
 // projectMaintenance mirrors the maintenance annotation into the Maintenance
 // condition, so the reason reads next to every other condition.
-func projectMaintenance(host *metalv1alpha1.Host, setCond func(string, metav1.ConditionStatus, string, string)) {
+func projectMaintenance(host *metalv1alpha1.Host, setCond conditionSetter) {
 	why, ok := inMaintenance(host)
 	if !ok {
 		meta.RemoveStatusCondition(&host.Status.Conditions, metalv1alpha1.ConditionMaintenance)
@@ -258,9 +258,7 @@ func (r *HostReconciler) applyStatus(ctx context.Context, host *metalv1alpha1.Ho
 // the drift check compares against (the same status-as-cache pattern as the
 // endpoint's AssetSnapshot).
 func projectHost(host *metalv1alpha1.Host, paths []hostPath, ops []metalv1alpha1.HostOperation, node *osv1alpha1.TalosNode) {
-	setCond := func(t string, s metav1.ConditionStatus, reason, msg string) {
-		setCondition(&host.Status.Conditions, host.Generation, t, s, reason, msg)
-	}
+	setCond := setterFor(&host.Status.Conditions, host.Generation)
 
 	// Identity must byte-agree across paths — divergence means the same serial
 	// anchor resolves to different machine facts, so inspection cannot produce a
@@ -350,7 +348,7 @@ func projectOS(host *metalv1alpha1.Host, setCond func(string, metav1.ConditionSt
 
 // projectApproval surfaces a proposed operation's human gate on the Host —
 // blockedOn renders it as Approval(<domain>) via the phase derivation.
-func projectApproval(setCond func(string, metav1.ConditionStatus, string, string), ops []metalv1alpha1.HostOperation) {
+func projectApproval(setCond conditionSetter, ops []metalv1alpha1.HostOperation) {
 	var pending []metalv1alpha1.HostOperation
 	for _, op := range ops {
 		if op.AwaitsApproval() {
@@ -372,7 +370,7 @@ func projectApproval(setCond func(string, metav1.ConditionStatus, string, string
 // projectDrift advances the reset-time memory and raises Drifted when the world
 // moved with no operation explaining it — information, not error. An advance is explained by an active operation (in flight over the
 // machine) or by a finished one whose closing observation covers it.
-func projectDrift(host *metalv1alpha1.Host, setCond func(string, metav1.ConditionStatus, string, string), paths []hostPath, ops []metalv1alpha1.HostOperation) {
+func projectDrift(host *metalv1alpha1.Host, setCond conditionSetter, paths []hostPath, ops []metalv1alpha1.HostOperation) {
 	var newest *metav1.MicroTime
 	for _, p := range paths {
 		if t := p.sys.LastResetTime; t != nil && (newest == nil || t.After(newest.Time)) {
@@ -474,7 +472,7 @@ func (r *HostReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&metalv1alpha1.Host{}).
-		Watches(&metalv1alpha1.ManagementEndpoint{}, handler.EnqueueRequestsFromMapFunc(r.hostsForEndpoint)).
+		Watches(&metalv1alpha1.ManagementEndpoint{}, handler.EnqueueRequestsFromMapFunc(hostsOfEndpoint)).
 		Watches(&metalv1alpha1.HostOperation{}, handler.EnqueueRequestsFromMapFunc(hostForOperation)).
 		Watches(&metalv1alpha1.HostClaim{}, handler.EnqueueRequestsFromMapFunc(r.hostsForClaim)).
 		Watches(&osv1alpha1.TalosNode{}, handler.EnqueueRequestsFromMapFunc(r.hostsForNode)).
@@ -486,52 +484,23 @@ func (r *HostReconciler) SetupWithManager(mgr ctrl.Manager) error {
 // edited. List-and-filter, same rationale as hostsForNode — and no dependence
 // on another reconciler's field index.
 func (r *HostReconciler) hostsForClaim(ctx context.Context, obj client.Object) []ctrl.Request {
-	hosts := &metalv1alpha1.HostList{}
-	if err := r.List(ctx, hosts); err != nil {
-		return nil
-	}
-	var reqs []ctrl.Request
-	for i := range hosts.Items {
-		if ref := hosts.Items[i].Spec.ClaimRef; ref != nil &&
-			ref.Namespace == obj.GetNamespace() && ref.Name == obj.GetName() {
-			reqs = append(reqs, ctrl.Request{NamespacedName: types.NamespacedName{Name: hosts.Items[i].Name}})
-		}
-	}
-	return reqs
+	return hostsWhere(ctx, r.Client, func(h *metalv1alpha1.Host) bool {
+		ref := h.Spec.ClaimRef
+		return ref != nil && ref.Namespace == obj.GetNamespace() && ref.Name == obj.GetName()
+	})
 }
 
 // hostsForNode re-projects the Hosts whose hand-off names the node — its
 // check-in observations feed Booted/OSReady. List-and-filter, same rationale
 // as nodeHandedOff.
 func (r *HostReconciler) hostsForNode(ctx context.Context, obj client.Object) []ctrl.Request {
-	hosts := &metalv1alpha1.HostList{}
-	if err := r.List(ctx, hosts); err != nil {
-		return nil
-	}
-	var reqs []ctrl.Request
-	for i := range hosts.Items {
-		if os := hosts.Items[i].Spec.OS; os != nil && os.NodeRef.Name == obj.GetName() {
-			reqs = append(reqs, ctrl.Request{NamespacedName: types.NamespacedName{Name: hosts.Items[i].Name}})
-		}
-	}
-	return reqs
+	return hostsWhere(ctx, r.Client, func(h *metalv1alpha1.Host) bool {
+		return h.Spec.OS != nil && h.Spec.OS.NodeRef.Name == obj.GetName()
+	})
 }
 
 // hostForOperation re-projects the host when an operation appears, gets
 // approved, or finishes — ApprovalPending and Drifted depend on them.
 func hostForOperation(_ context.Context, obj client.Object) []ctrl.Request {
-	op := obj.(*metalv1alpha1.HostOperation)
-	return []ctrl.Request{{NamespacedName: types.NamespacedName{Name: op.Spec.HostRef.Name}}}
-}
-
-// hostsForEndpoint fans an endpoint event out to the Hosts it fronts; on
-// endpoint deletion the last-known status still names them, so the projection
-// re-runs against the surviving paths.
-func (r *HostReconciler) hostsForEndpoint(_ context.Context, obj client.Object) []ctrl.Request {
-	names := hostNames(obj.(*metalv1alpha1.ManagementEndpoint))
-	reqs := make([]ctrl.Request, 0, len(names))
-	for _, n := range names {
-		reqs = append(reqs, ctrl.Request{NamespacedName: types.NamespacedName{Name: n}})
-	}
-	return reqs
+	return []ctrl.Request{requestFor(obj.(*metalv1alpha1.HostOperation).Spec.HostRef.Name)}
 }

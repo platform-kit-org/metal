@@ -169,7 +169,7 @@ func (r *BootAssetReconciler) startBuild(ctx context.Context, ba *osv1alpha1.Boo
 		return fmt.Errorf("prepare build %s: %w", jobName, err)
 	}
 	job := r.Imager.imagerJob(ba, r.Namespace, jobName, node.Status.ConfigSecretRef.Name, in)
-	if err := controllerutil.SetControllerReference(ba, job, r.Scheme); err != nil {
+	if err := controllerutil.SetControllerReference(ba, job, r.Scheme()); err != nil {
 		return err
 	}
 	if err := r.Create(ctx, job); err != nil && !apierrors.IsAlreadyExists(err) {

@@ -92,9 +92,7 @@ func (r *TalosClusterReconciler) publishReader(ctx context.Context, cluster *osv
 // against its Talos version) and VersionsCurrent (what the machines and the
 // API report against the spec).
 func (r *TalosClusterReconciler) observeVersions(cluster *osv1alpha1.TalosCluster, nodes []osv1alpha1.TalosNode) {
-	set := func(t string, s metav1.ConditionStatus, reason, msg string) {
-		setCondition(&cluster.Status.Conditions, cluster.Generation, t, s, reason, msg)
-	}
+	set := setterFor(&cluster.Status.Conditions, cluster.Generation)
 	spec := cluster.Spec
 	if err := render.SupportedPair(spec.TalosVersion, spec.KubernetesVersion); err != nil {
 		set(osv1alpha1.ConditionVersionsSupported, metav1.ConditionFalse, osv1alpha1.ReasonUnsupportedVersion,

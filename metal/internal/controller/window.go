@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -144,15 +143,12 @@ func guardOverride(op *metalv1alpha1.HostOperation, key string) (string, bool) {
 	return why, why != ""
 }
 
-// windowExempt reports why an operation is not held by any window, or "".
-func windowExempt(op *metalv1alpha1.HostOperation) string {
-	if why, ok := guardOverride(op, metalv1alpha1.AnnotationIgnoreWindow); ok {
-		return "annotated " + metalv1alpha1.AnnotationIgnoreWindow + ": " + why
-	}
-	if op.Spec.Reason == reasonProvisioning {
-		return "a new install disturbs no running workload"
-	}
-	return ""
+// windowExempt reports that no window holds op: a person lifted the windows
+// for it with a reason, or it is a new install, which disturbs no running
+// workload.
+func windowExempt(op *metalv1alpha1.HostOperation) bool {
+	_, lifted := guardOverride(op, metalv1alpha1.AnnotationIgnoreWindow)
+	return lifted || op.Spec.Reason == reasonProvisioning
 }
 
 // windowVerdict is what the gate decided for one operation.
@@ -167,7 +163,7 @@ type windowVerdict struct {
 // an operation on this host start at now?
 func decideWindow(windows []metalv1alpha1.MaintenanceWindow, op *metalv1alpha1.HostOperation,
 	host *metalv1alpha1.Host, cluster string, now time.Time) windowVerdict {
-	if windowExempt(op) != "" {
+	if windowExempt(op) {
 		return windowVerdict{}
 	}
 	var covering, broken []string
@@ -235,30 +231,29 @@ func hostCluster(ctx context.Context, c client.Reader, host *metalv1alpha1.Host)
 // starts. held reports that the operation waits: its Executed condition
 // says why (OutsideMaintenanceWindow, which becomes its blockedOn), and the
 // result brings it back when the next window opens.
-func (r *HostOperationReconciler) holdForWindow(ctx context.Context, op *metalv1alpha1.HostOperation, host *metalv1alpha1.Host,
-	setCond func(string, metav1.ConditionStatus, string, string), flush func() error) (ctrl.Result, bool, error) {
-	if windowExempt(op) != "" {
+func (p *opPass) holdForWindow() (ctrl.Result, bool, error) {
+	if windowExempt(p.op) {
 		return ctrl.Result{}, false, nil
 	}
 	windows := &metalv1alpha1.MaintenanceWindowList{}
-	if err := r.List(ctx, windows); err != nil {
+	if err := p.r.List(p.ctx, windows); err != nil {
 		return ctrl.Result{}, true, err
 	}
 	if len(windows.Items) == 0 {
 		return ctrl.Result{}, false, nil
 	}
-	cluster, err := hostCluster(ctx, r.Client, host)
+	cluster, err := hostCluster(p.ctx, p.r.Client, p.host)
 	if err != nil {
 		return ctrl.Result{}, true, err
 	}
 	now := windowNow()
-	v := decideWindow(windows.Items, op, host, cluster, now)
+	v := decideWindow(windows.Items, p.op, p.host, cluster, now)
 	if v.held == "" {
 		return ctrl.Result{}, false, nil
 	}
-	setCond(metalv1alpha1.ConditionExecuted, metav1.ConditionUnknown, metalv1alpha1.ReasonOutsideMaintenanceWindow, v.held)
 	// A second past the opening, so the pass lands inside the window.
-	return ctrl.Result{RequeueAfter: v.until.Sub(now) + time.Second}, true, client.IgnoreNotFound(flush())
+	res, err := p.hold(metalv1alpha1.ReasonOutsideMaintenanceWindow, v.held, v.until.Sub(now)+time.Second)
+	return res, true, err
 }
 
 // MaintenanceWindowReconciler keeps a window's status current: whether it is
@@ -293,10 +288,8 @@ func (r *MaintenanceWindowReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		setCondition(&w.Status.Conditions, w.Generation, metalv1alpha1.ConditionValid, metav1.ConditionTrue,
 			metalv1alpha1.ReasonWindowValid, "")
 	}
-	if !equality.Semantic.DeepEqual(orig, &w.Status) {
-		if err := r.Status().Update(ctx, w); err != nil {
-			return ctrl.Result{}, client.IgnoreNotFound(err)
-		}
+	if err := updateStatusIfChanged(ctx, r.Client, w, orig, &w.Status); err != nil {
+		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 	if next.IsZero() {
 		return ctrl.Result{}, nil

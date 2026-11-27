@@ -245,8 +245,8 @@ func (x *exec) powerOff(ctx context.Context, a *metalv1alpha1.PowerOffAction) (s
 		x.op.Status.ShutdownRequested = &metav1.MicroTime{Time: time.Now()}
 		// Persist before waiting: a resumed pass must not ask again, nor
 		// start the window over.
-		if err := x.flush(); err != nil {
-			return stepState{}, &persistError{err}
+		if err := x.persist(); err != nil {
+			return stepState{}, err
 		}
 		if cur, err = x.settle(ctx, bmc.PowerOff); err != nil {
 			return stepState{}, err
@@ -286,8 +286,8 @@ func (x *exec) powerCycle(ctx context.Context) (stepState, error) {
 		x.op.Status.OffObserved = &metav1.MicroTime{Time: time.Now()}
 		// Persist before turning it on: from here on, a resumed pass must
 		// only ever finish this cycle.
-		if err := x.flush(); err != nil {
-			return stepState{}, &persistError{err}
+		if err := x.persist(); err != nil {
+			return stepState{}, err
 		}
 	}
 	return x.powerTo(ctx, bmc.PowerOn)
@@ -379,7 +379,7 @@ func (x *exec) insertURL(ctx context.Context, cl bmc.Client, i int, a *metalv1al
 	key := types.NamespacedName{Namespace: x.op.Namespace, Name: x.op.Name}
 	name, sum := urlStoreName(key), strings.TrimPrefix(a.Digest, "sha256:")
 	if !x.r.Store.Has(name, sum) {
-		st := x.r.fetcher().start(x.r.Store, x.r.imageClient(), a.ImageURL, name, sum, a.Digest)
+		st := x.r.fetches.start(x.r.Store, x.r.imageClient(), a.ImageURL, name, sum, a.Digest)
 		switch {
 		case st.running:
 			return &artifactPending{msg: fmt.Sprintf("the operator downloads %s into its media store", redact.String(a.ImageURL))}
@@ -828,11 +828,5 @@ func (x *exec) upload(i int) *metalv1alpha1.FirmwareUploadProgress {
 // recordUpload persists the upload record before the upload is sent.
 func (x *exec) recordUpload(p *metalv1alpha1.FirmwareUploadProgress) error {
 	x.op.Status.UploadAccepted = p
-	if x.flush == nil {
-		return nil
-	}
-	if err := x.flush(); err != nil {
-		return &persistError{err}
-	}
-	return nil
+	return x.persist()
 }

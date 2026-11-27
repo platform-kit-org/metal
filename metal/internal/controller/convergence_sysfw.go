@@ -130,7 +130,7 @@ func orUnknown(v string) string {
 // to apply at the next reset, inside the plan disruptivePlan builds, and the
 // inventory reading back the version afterwards is the only proof taken.
 func (r *ConvergenceReconciler) systemFirmware(ctx context.Context, host *metalv1alpha1.Host, profiles []metalv1alpha1.FirmwareProfile,
-	managerConverged bool, setCond func(string, metav1.ConditionStatus, string, string)) (bool, error) {
+	managerConverged bool, setCond conditionSetter) (bool, error) {
 	targets, conflicts := mergeSystemFirmware(profiles)
 	cond := metalv1alpha1.ConditionSystemFirmwareConverged
 	if len(targets) == 0 && len(conflicts) == 0 {

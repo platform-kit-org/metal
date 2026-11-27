@@ -968,7 +968,7 @@ func adapterPortMACs(a *schemas.NetworkAdapter) []string {
 	if fns, err := a.NetworkDeviceFunctions(); err == nil {
 		slices.SortFunc(fns, func(x, y *schemas.NetworkDeviceFunction) int { return compareIDs(x.ID, y.ID) })
 		for _, fn := range fns {
-			if mac := cmpOr(fn.Ethernet.MACAddress, fn.Ethernet.PermanentMACAddress); mac != "" {
+			if mac := cmp.Or(fn.Ethernet.MACAddress, fn.Ethernet.PermanentMACAddress); mac != "" {
 				macs = append(macs, strings.ToLower(mac))
 			}
 		}
@@ -1179,7 +1179,7 @@ func (c *client) SetBootOverride(ctx context.Context, systemID string, o bmc.Boo
 	}
 	boot := map[string]any{
 		"BootSourceOverrideTarget":  o.Target,
-		"BootSourceOverrideEnabled": cmpOr(o.Enabled, bmc.OverrideOnce),
+		"BootSourceOverrideEnabled": cmp.Or(o.Enabled, bmc.OverrideOnce),
 	}
 	if o.Mode != "" {
 		boot["BootSourceOverrideMode"] = o.Mode
@@ -1238,13 +1238,6 @@ func compareIDs(a, b string) int {
 		return an - bn
 	}
 	return strings.Compare(a, b)
-}
-
-func cmpOr(a, b string) string {
-	if a != "" {
-		return a
-	}
-	return b
 }
 
 func derefF(p *float64) float64 {

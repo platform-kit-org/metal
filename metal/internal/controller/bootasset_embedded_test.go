@@ -62,7 +62,7 @@ func newEmbedFixture(t *testing.T, config string) *embedFixture {
 		WithObjects(node, sec, ba).WithStatusSubresource(ba).Build()
 	return &embedFixture{
 		r: &BootAssetReconciler{
-			Client: cl, Scheme: testScheme(t), Namespace: testNS, Store: store,
+			Client: cl, Namespace: testNS, Store: store,
 			Imager: &Imager{Repository: DefaultImagerRepository, Digests: DefaultImagerDigests(), StoreClaim: "media",
 				HelperImage: "registry.example/pk-metal:test"},
 		},

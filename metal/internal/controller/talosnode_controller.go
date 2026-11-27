@@ -13,7 +13,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -33,7 +32,6 @@ import (
 // a machine.
 type TalosNodeReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
 	// Namespace receives the rendered config Secrets: the operator's
 	// namespace, since TalosNodes are cluster-scoped and Secrets are not.
 	Namespace string
@@ -233,9 +231,7 @@ func (r *TalosNodeReconciler) checkin(ctx context.Context, node *osv1alpha1.Talo
 		return ctrl.Result{}, nil
 	}
 
-	set := func(t string, s metav1.ConditionStatus, reason, msg string) {
-		setCondition(&node.Status.Conditions, node.Generation, t, s, reason, msg)
-	}
+	set := setterFor(&node.Status.Conditions, node.Generation)
 	retry := ctrl.Result{RequeueAfter: cmp.Or(r.CheckInterval, defaultCheckInterval)}
 
 	endpoint := node.Status.Address
@@ -374,11 +370,7 @@ func (r *TalosNodeReconciler) nodesForCluster(ctx context.Context, obj client.Ob
 	if err != nil {
 		return nil
 	}
-	reqs := make([]ctrl.Request, 0, len(nodes))
-	for _, n := range nodes {
-		reqs = append(reqs, requestFor(n.Name))
-	}
-	return reqs
+	return requestsOf(nodes, nil)
 }
 
 // nodesForBundle re-renders a cluster's members when its secrets bundle
@@ -403,11 +395,7 @@ func (r *TalosNodeReconciler) nodesForConfigMap(ctx context.Context, obj client.
 	for _, c := range clusters.Items {
 		affected[c.Name] = patchesUse(c.Spec.Patches, obj)
 	}
-	var reqs []ctrl.Request
-	for _, n := range nodes.Items {
-		if affected[n.Spec.ClusterRef.Name] || patchesUse(n.Spec.Patches, obj) {
-			reqs = append(reqs, requestFor(n.Name))
-		}
-	}
-	return reqs
+	return requestsOf(nodes.Items, func(n *osv1alpha1.TalosNode) bool {
+		return affected[n.Spec.ClusterRef.Name] || patchesUse(n.Spec.Patches, obj)
+	})
 }

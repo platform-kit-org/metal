@@ -147,10 +147,7 @@ func imagerJobName(asset, key string) string {
 // to anyone who can read the Job.
 func imagerArgs(job string, in imagerInputs) []string {
 	cfg := path.Join(imagerConfigMount, asset.ConfigFilename)
-	arch := in.Arch
-	if arch == "" {
-		arch = render.ArchAMD64
-	}
+	arch := cmp.Or(in.Arch, render.ArchAMD64)
 	args := []string{
 		path.Join(imagerHelperDir, "manager"), "imager-run", cfg,
 		imagerBinary, "iso",

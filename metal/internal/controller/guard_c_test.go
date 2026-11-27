@@ -34,7 +34,7 @@ func TestDecideWindowEmptyIgnoreWindowHolds(t *testing.T) {
 	v := decideWindow([]metalv1alpha1.MaintenanceWindow{sat}, op, host, "", now)
 	require.NotEmpty(t, v.held, "an empty reason does not lift the window")
 	assert.Contains(t, v.held, "an empty reason does not count")
-	assert.Empty(t, windowExempt(op))
+	assert.False(t, windowExempt(op))
 }
 
 func TestClusterGuardEmptyOverrideHolds(t *testing.T) {

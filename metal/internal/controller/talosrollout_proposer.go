@@ -122,6 +122,8 @@ func (r *RolloutProposer) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	return ctrl.Result{}, nil
 }
 
+func (r *RolloutProposer) reader() client.Reader { return uncachedReader(r.APIReader, r.Client) }
+
 // clusterRollouts lists the rollouts of cluster from the API server, not
 // the cache. The event of a node whose drift moves on can arrive before the
 // cache shows the rollout this lane proposed a moment ago; from the cache,
@@ -129,12 +131,8 @@ func (r *RolloutProposer) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 //
 //pk:uncached
 func (r *RolloutProposer) clusterRollouts(ctx context.Context, cluster string) ([]osv1alpha1.TalosRollout, error) {
-	reader := client.Reader(r.Client)
-	if r.APIReader != nil {
-		reader = r.APIReader
-	}
 	rollouts := &osv1alpha1.TalosRolloutList{}
-	if err := reader.List(ctx, rollouts, client.MatchingFields{rolloutClusterField: cluster}); err != nil {
+	if err := r.reader().List(ctx, rollouts, client.MatchingFields{rolloutClusterField: cluster}); err != nil {
 		return nil, err
 	}
 	return rollouts.Items, nil
@@ -232,17 +230,4 @@ func (r *RolloutProposer) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&osv1alpha1.TalosRollout{}, handler.EnqueueRequestsFromMapFunc(clusterForRollout)).
 		Named("rolloutproposer").
 		Complete(r)
-}
-
-// rolloutLane wires the rollout controller and its proposer together.
-type rolloutLane struct {
-	run     *TalosRolloutReconciler
-	propose *RolloutProposer
-}
-
-func (l rolloutLane) SetupWithManager(mgr ctrl.Manager) error {
-	if err := l.run.SetupWithManager(mgr); err != nil {
-		return err
-	}
-	return l.propose.SetupWithManager(mgr)
 }

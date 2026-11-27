@@ -38,7 +38,7 @@ func TestReleaseOfAnInstalledNodeWaitsWhileItIsNotReady(t *testing.T) {
 		claim := testClaim("node-b")
 		boot := bootOp("boot", "node-b", false, true)
 		for _, a := range boot.Spec.Actions {
-			boot.Status.Steps = append(boot.Status.Steps, metalv1alpha1.OperationStep{Action: actionName(a), Phase: "Succeeded"})
+			boot.Status.Steps = append(boot.Status.Steps, metalv1alpha1.OperationStep{Action: a.Key(), Phase: "Succeeded"})
 		}
 		host := boundHost(claim)
 		host.Status.Conditions = notReady

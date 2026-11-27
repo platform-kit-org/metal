@@ -13,7 +13,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -32,7 +31,6 @@ import (
 // machine that never shows up says why on the object a person created.
 type AssetReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
 	Ledger *ledger.Ledger
 	// LedgerSource tells a person where the ledger comes from, for the
 	// message of an Asset whose bmcMac is missing from it. Empty says "the
@@ -121,7 +119,7 @@ func (r *AssetReconciler) materialize(ctx context.Context, asset *metalv1alpha1.
 			CredentialsRef: asset.Spec.CredentialsRef.DeepCopy(),
 			TLS:            r.TLS.DeepCopy(),
 		}
-		return controllerutil.SetControllerReference(asset, ep, r.Scheme)
+		return controllerutil.SetControllerReference(asset, ep, r.Scheme())
 	})
 	if err != nil {
 		// A same-named endpoint owned by another Asset is an asset collision —

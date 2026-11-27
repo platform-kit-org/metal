@@ -47,15 +47,13 @@ const (
 	laneCount
 )
 
-// AllLanes is every lane: what the manager runs.
-var AllLanes = []Lane{
-	LaneAsset, LaneEndpoint, LaneHost, LaneHostClaim, LaneProtection, LaneHostOperation,
-	LaneConvergence, LaneEndpointConvergence, LaneTalosNode, LaneTalosCluster, LaneBootAsset,
-	LaneEtcdBackup,
-	LaneTalosRollout,
-	LaneMaintenanceWindow,
-	LaneSettings,
-}
+// AllLanes is every lane, in lane order: what the manager runs.
+var AllLanes = func() (all []Lane) {
+	for l := range laneCount {
+		all = append(all, l)
+	}
+	return all
+}()
 
 // Options is what the reconcilers are configured with. The manager fills it
 // from its flags. A test fills what its lanes need; a field left at its zero
@@ -199,9 +197,20 @@ func SetupAll(mgr ctrl.Manager, o Options, lanes ...Lane) error {
 	return nil
 }
 
+// uncachedReader is the reader of a decision that a later pass cannot
+// undo: the API reader when one is wired, the client otherwise.
+// SetupWithManager wires the manager's API reader. A unit test that builds
+// a reconciler without one reads the cache.
+func uncachedReader(api client.Reader, c client.Client) client.Reader {
+	if api != nil {
+		return api
+	}
+	return c
+}
+
 // reconciler builds the reconciler of one lane from o.
 func (o Options) reconciler(mgr ctrl.Manager, l Lane) (string, reconciler) {
-	c, scheme := mgr.GetClient(), mgr.GetScheme()
+	c := mgr.GetClient()
 	var self *SelfGuard
 	if o.NodeName != "" {
 		self = &SelfGuard{Reader: mgr.GetAPIReader(), NodeName: o.NodeName, Dial: o.TalosDial, Namespace: o.CredentialsNamespace}
@@ -212,7 +221,7 @@ func (o Options) reconciler(mgr ctrl.Manager, l Lane) (string, reconciler) {
 	switch l {
 	case LaneAsset:
 		return "asset", &AssetReconciler{
-			Client: c, Scheme: scheme, Ledger: o.Ledger,
+			Client: c, Ledger: o.Ledger,
 			LedgerSource: o.LedgerSource, LedgerReload: o.LedgerReload,
 			TLS: o.TLS, Recorder: recorder(),
 		}
@@ -259,7 +268,7 @@ func (o Options) reconciler(mgr ctrl.Manager, l Lane) (string, reconciler) {
 		// The member finalizer rides with the node lane: every setup that
 		// renders nodes also holds their deletion until they left.
 		return "talosnode", reconcilers{&TalosNodeReconciler{
-			Client: c, Scheme: scheme, Namespace: o.CredentialsNamespace,
+			Client: c, Namespace: o.CredentialsNamespace,
 			Factory: o.Factory, Dial: o.TalosDial,
 			CheckInterval: o.CheckInterval, ReadyInterval: o.ReadyInterval, DriftInterval: o.DriftInterval,
 		}, &TalosNodeMemberReconciler{
@@ -268,26 +277,24 @@ func (o Options) reconciler(mgr ctrl.Manager, l Lane) (string, reconciler) {
 		}}
 	case LaneTalosCluster:
 		return "taloscluster", &TalosClusterReconciler{
-			Client: c, Scheme: scheme, Namespace: o.CredentialsNamespace,
+			Client: c, Namespace: o.CredentialsNamespace,
 			Dial: o.TalosDial, ProbeKubernetes: o.ProbeKubernetes,
 			CheckInterval: o.CheckInterval, ReadyInterval: o.ReadyInterval,
 		}
 	case LaneEtcdBackup:
-		return "etcd backup", &EtcdBackups{
+		b := &EtcdBackups{
 			Client: c, Namespace: o.CredentialsNamespace, Dial: o.TalosDial,
 			Dir: o.EtcdBackupDir, VolumeName: o.EtcdBackupVolume, Self: self,
 			RetryInterval: o.CheckInterval,
 		}
+		return "etcd backup", reconcilers{&EtcdBackupPolicyReconciler{b}, &EtcdSnapshotReconciler{b}}
 	case LaneTalosRollout:
-		return "talosrollout", rolloutLane{
-			run: &TalosRolloutReconciler{
-				Client: c, Scheme: scheme, Namespace: o.CredentialsNamespace,
-				OperationsNamespace: o.OperationsNamespace, Proposer: o.Proposer,
-				Factory: o.Factory, ResolveImage: o.ResolveImage, Dial: o.TalosDial,
-				Workload: o.Workload, GateInterval: o.GateInterval, Audit: o.Audit,
-			},
-			propose: &RolloutProposer{Client: c, Proposer: o.Proposer, Namespace: o.CredentialsNamespace},
-		}
+		return "talosrollout", reconcilers{&TalosRolloutReconciler{
+			Client: c, Namespace: o.CredentialsNamespace,
+			OperationsNamespace: o.OperationsNamespace, Proposer: o.Proposer,
+			Factory: o.Factory, ResolveImage: o.ResolveImage, Dial: o.TalosDial,
+			Workload: o.Workload, GateInterval: o.GateInterval, Audit: o.Audit,
+		}, &RolloutProposer{Client: c, Proposer: o.Proposer, Namespace: o.CredentialsNamespace}}
 	case LaneMaintenanceWindow:
 		return "maintenancewindow", &MaintenanceWindowReconciler{Client: c}
 	case LaneSettings:
@@ -295,7 +302,7 @@ func (o Options) reconciler(mgr ctrl.Manager, l Lane) (string, reconciler) {
 			Namespace: o.CredentialsNamespace, Audit: o.Audit, Interval: o.SettingsInterval}
 	default: // LaneBootAsset; SetupAll has checked the range
 		return "bootasset", &BootAssetReconciler{
-			Client: c, Scheme: scheme, Namespace: o.CredentialsNamespace, Factory: o.Factory,
+			Client: c, Namespace: o.CredentialsNamespace, Factory: o.Factory,
 			Store: o.MediaStore, Imager: o.Imager,
 		}
 	}

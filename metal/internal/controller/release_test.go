@@ -234,13 +234,13 @@ func TestClaimDeletedMidBootProposesTheReleaseBeforeStoppingTheBoot(t *testing.T
 		{AwaitCheckIn: &metalv1alpha1.AwaitCheckInAction{NodeRef: metalv1alpha1.Reference{Name: "node-b"}}},
 	}
 	for done := range len(boot) {
-		t.Run(actionName(boot[done]), func(t *testing.T) {
+		t.Run(boot[done].Key(), func(t *testing.T) {
 			claim := testClaim("node-b")
 			op := bootOp("boot", "node-b", false, true)
 			op.Spec.Actions = boot
 			// The steps before this one are recorded; this one is in flight.
 			for _, a := range boot[:done] {
-				op.Status.Steps = append(op.Status.Steps, metalv1alpha1.OperationStep{Action: actionName(a), Phase: "Succeeded"})
+				op.Status.Steps = append(op.Status.Steps, metalv1alpha1.OperationStep{Action: a.Key(), Phase: "Succeeded"})
 			}
 			var writes []string
 			cl := fake.NewClientBuilder().WithScheme(testScheme(t)).

@@ -13,7 +13,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/version"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/tools/clientcmd"
@@ -56,7 +55,6 @@ type KubernetesProber func(ctx context.Context, kubeconfig []byte) (string, erro
 // reports member readiness and whether the Kubernetes API answers.
 type TalosClusterReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
 	// Namespace receives the credential Secrets (the operator's namespace).
 	Namespace string
 	// Dial opens machine-API connections; nil disables bootstrapping and the
@@ -140,9 +138,7 @@ func (r *TalosClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request
 }
 
 func (r *TalosClusterReconciler) reconcile(ctx context.Context, cluster *osv1alpha1.TalosCluster) (ctrl.Result, error) {
-	set := func(t string, s metav1.ConditionStatus, reason, msg string) {
-		setCondition(&cluster.Status.Conditions, cluster.Generation, t, s, reason, msg)
-	}
+	set := setterFor(&cluster.Status.Conditions, cluster.Generation)
 	retry := ctrl.Result{RequeueAfter: cmp.Or(r.CheckInterval, defaultCheckInterval)}
 
 	nodes, err := clusterMembers(ctx, r.Client, cluster.Name)
@@ -344,7 +340,7 @@ func (r *TalosClusterReconciler) credential(ctx context.Context, cluster *osv1al
 			data = minted
 			secret.Data = map[string][]byte{key: minted}
 		}
-		return controllerutil.SetControllerReference(cluster, secret, r.Scheme)
+		return controllerutil.SetControllerReference(cluster, secret, r.Scheme())
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("publish %s for %s: %w", key, cluster.Name, err)

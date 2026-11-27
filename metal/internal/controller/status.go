@@ -14,11 +14,12 @@ import (
 	metalv1alpha1 "github.com/dennisklein/platform-kit/metal/api/v1alpha1"
 )
 
-// Two objects here have their status written by two reconcilers each: the
-// ManagementEndpoint, observed by one lane and converged by another, and the
-// Host, projected by one and converged by another. Both pairs used to write the
-// whole status from a cached read, which meant whichever wrote second erased
-// whatever the other had learned since its own read.
+// Two objects here have their status written by more than one reconciler:
+// the ManagementEndpoint, observed by one lane and converged by another, and
+// the Host, projected by one and converged by another. The protection lane
+// writes a third part of the endpoint, its DeletionHeld condition. Both pairs
+// used to write the whole status from a cached read, which meant whichever
+// wrote second erased whatever the other had learned since its own read.
 //
 // For most of these fields that only cost a poll — they are conclusions the
 // next pass recomputes. It is not true of the memories: status.identityPushed
@@ -37,6 +38,10 @@ const (
 	fieldOwnerConvergence     = "pk-metal-endpoint-convergence"
 	fieldOwnerHost            = "pk-metal-host"
 	fieldOwnerHostConvergence = "pk-metal-host-convergence"
+	// fieldOwnerProtection owns the endpoint's DeletionHeld condition. The
+	// endpoint's observer stops writing once deletion starts, so nothing else
+	// names it; a distinct owner keeps that true by construction.
+	fieldOwnerProtection = "pk-metal-protection"
 )
 
 // convergenceHostConditions are the host conditions the convergence reconciler
@@ -57,7 +62,7 @@ func isConvergenceHostCondition(c metav1.Condition) bool {
 // they apply it; ApplyStatusShares writes a whole status at once.
 
 // hostProjectedShare is the host reconciler's part of a host's status: all of
-// it but the convergence lane's conditions and plan memory.
+// it but the convergence lane's conditions and plan memories.
 func hostProjectedShare(host *metalv1alpha1.Host) *metalv1alpha1.Host {
 	apply := &metalv1alpha1.Host{
 		ObjectMeta: metav1.ObjectMeta{Name: host.Name},
@@ -69,8 +74,8 @@ func hostProjectedShare(host *metalv1alpha1.Host) *metalv1alpha1.Host {
 	return apply
 }
 
-// hostConvergenceShare is the convergence lane's part: its two conditions and
-// the firmware plan memory.
+// hostConvergenceShare is the convergence lane's part: its three conditions
+// and the two firmware plan memories.
 func hostConvergenceShare(host *metalv1alpha1.Host) *metalv1alpha1.Host {
 	apply := &metalv1alpha1.Host{
 		ObjectMeta: metav1.ObjectMeta{Name: host.Name},
@@ -152,6 +157,16 @@ func setCondition(conds *[]metav1.Condition, gen int64, t string, s metav1.Condi
 	meta.SetStatusCondition(conds, metav1.Condition{
 		Type: t, Status: s, Reason: reason, Message: msg, ObservedGeneration: gen,
 	})
+}
+
+// conditionSetter sets one condition of an object (see setCondition).
+type conditionSetter func(t string, s metav1.ConditionStatus, reason, msg string)
+
+// setterFor is the conditionSetter of conds, stamped with gen.
+func setterFor(conds *[]metav1.Condition, gen int64) conditionSetter {
+	return func(t string, s metav1.ConditionStatus, reason, msg string) {
+		setCondition(conds, gen, t, s, reason, msg)
+	}
 }
 
 // updateStatusIfChanged writes obj's status when after differs from before,

@@ -6,7 +6,6 @@ import (
 
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -19,11 +18,6 @@ import (
 // claimProtection keeps a claimed machine's Host and every endpoint fronting it
 // alive until the claim lets go — the pvc-protection pattern.
 const claimProtection = "metal.platform-kit.org/claim-protection"
-
-// fieldOwnerProtection owns the endpoint's DeletionHeld condition. The
-// endpoint's observer stops writing once deletion starts, so nothing else
-// names it; a distinct owner keeps that true by construction.
-const fieldOwnerProtection = "pk-metal-protection"
 
 // ProtectionReconciler holds claimed machines against garbage collection. An
 // Asset owns its ManagementEndpoint, which owns the Hosts it fronts, so
@@ -91,6 +85,8 @@ func (r *ProtectionReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	return ctrl.Result{}, nil
 }
 
+func (r *ProtectionReconciler) reader() client.Reader { return uncachedReader(r.APIReader, r.Client) }
+
 // liveHosts lists the hosts from the API server. The protection finalizer
 // on a deleting endpoint is the last thing that holds it: once it comes off,
 // the endpoint goes, and the release can no longer power the machine off
@@ -99,12 +95,8 @@ func (r *ProtectionReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 //
 //pk:uncached
 func (r *ProtectionReconciler) liveHosts(ctx context.Context) ([]metalv1alpha1.Host, error) {
-	reader := client.Reader(r.Client)
-	if r.APIReader != nil {
-		reader = r.APIReader
-	}
 	hosts := &metalv1alpha1.HostList{}
-	if err := reader.List(ctx, hosts); err != nil {
+	if err := r.reader().List(ctx, hosts); err != nil {
 		return nil, err
 	}
 	return hosts.Items, nil
@@ -177,15 +169,7 @@ func (r *ProtectionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&metalv1alpha1.Host{}).
-		Watches(&metalv1alpha1.ManagementEndpoint{}, handler.EnqueueRequestsFromMapFunc(
-			func(_ context.Context, obj client.Object) []ctrl.Request {
-				names := hostNames(obj.(*metalv1alpha1.ManagementEndpoint))
-				reqs := make([]ctrl.Request, 0, len(names))
-				for _, n := range names {
-					reqs = append(reqs, ctrl.Request{NamespacedName: types.NamespacedName{Name: n}})
-				}
-				return reqs
-			})).
+		Watches(&metalv1alpha1.ManagementEndpoint{}, handler.EnqueueRequestsFromMapFunc(hostsOfEndpoint)).
 		Named("protection").
 		Complete(r)
 }

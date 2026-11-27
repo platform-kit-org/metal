@@ -273,7 +273,7 @@ A BMC [](act:PowerCycle) cuts the power instead.
 
 <Badge text="Talos API" variant="tip" /> <Badge text="Disruptive" variant="caution" /> <Badge text="Budget 20 min" />
 
-Asks Talos to shut the node down. The node stays off until the BMC turns it on.
+Asks Talos to shut the node down. The machine stays off until the BMC turns it on.
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -322,7 +322,7 @@ Wipes the node through Talos. A node that does not answer cannot do a reset: ins
 | --- | --- | --- | --- |
 | `nodeRef` | object | — | The TalosNode to reset. |
 | `graceful` | boolean | `true` | Leaves etcd, cordons and drains first. A node that cannot reach its peers needs `false`. |
-| `reboot` | boolean | `false` | Boots into maintenance mode after the wipe. `false` leaves the node off. |
+| `reboot` | boolean | `false` | Boots into maintenance mode after the wipe. `false` leaves the machine off. |
 | `mode` | `All`, `SystemDisk`, `UserDisks` | `All` | The disks to wipe. `All` wipes the system disk and the disks in `userDisks`. `UserDisks` wipes only the disks in `userDisks`. |
 | `systemPartitions` | list, up to 3 | all | Wipes only these system partitions. STATE holds the machine config. EPHEMERAL holds pod data and etcd. |
 | `userDisks` | list of device paths, up to 16 | none | The data disks to wipe, for example `/dev/sdb`. Talos does not find user disks itself. A disk that is not in this list keeps its data. Mode `UserDisks` needs at least one disk. Mode `SystemDisk` takes none. |

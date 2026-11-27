@@ -938,7 +938,7 @@ terms:
     related: [talosnode, host]
     def: >-
       A Kubernetes member that runs Talos. A node runs on a Host. Do not use
-      "node" for the hardware.
+      "node" for the hardware: write "machine".
 
   - id: control-plane
     term: control plane

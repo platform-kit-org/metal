@@ -167,8 +167,8 @@ func (r *TalosNodeMemberReconciler) blocked(ctx context.Context, node *osv1alpha
 	switch m := v.member(node.Name); {
 	case !v.known() && !acked:
 		return osv1alpha1.ReasonEtcdUnreadable, fmt.Sprintf(
-			"nothing says whether etcd still lists this node: %s. To let it go anyway: kubectl annotate talosnode %s %s=\"<reason>\"",
-			why, node.Name, metalv1alpha1.AnnotationAckEtcdRisk), nil
+			"nothing says whether etcd still lists this node: %s. To let it go anyway: %s",
+			why, liftHint("talosnode", "", node.Name, metalv1alpha1.AnnotationAckEtcdRisk)), nil
 	case m != nil:
 		return osv1alpha1.ReasonEtcdMemberRemains, fmt.Sprintf(
 			"etcd of cluster %s still lists member %s (ID %s); a removal of the node takes it out. If no machine runs the node any more, "+

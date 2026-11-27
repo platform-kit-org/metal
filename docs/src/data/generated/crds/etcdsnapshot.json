@@ -187,16 +187,6 @@
       "description": "The type of the condition."
     },
     {
-      "path": "status.databaseTxID",
-      "name": "databaseTxID",
-      "parent": "status",
-      "depth": 1,
-      "type": "integer",
-      "format": "int64",
-      "required": false,
-      "description": "DatabaseTxID is the bbolt transaction id of the database's newest meta page, and PageSize its page size: read off the snapshot as it passed, as evidence that it is a bbolt database."
-    },
-    {
       "path": "status.encryptedSHA256",
       "name": "encryptedSHA256",
       "parent": "status",
@@ -213,7 +203,7 @@
       "type": "integer",
       "format": "int64",
       "required": false,
-      "description": "EncryptedSize and EncryptedSHA256 describe the object in the sink."
+      "description": "EncryptedSize and EncryptedSHA256 describe the object in the sink. pk-metal backup get checks the downloaded object against both."
     },
     {
       "path": "status.key",
@@ -241,26 +231,6 @@
       "type": "string",
       "required": false,
       "description": ""
-    },
-    {
-      "path": "status.pageSize",
-      "name": "pageSize",
-      "parent": "status",
-      "depth": 1,
-      "type": "integer",
-      "format": "int32",
-      "required": false,
-      "description": ""
-    },
-    {
-      "path": "status.raftIndex",
-      "name": "raftIndex",
-      "parent": "status",
-      "depth": 1,
-      "type": "integer",
-      "format": "int64",
-      "required": false,
-      "description": "RaftIndex is the member's raft index just before the snapshot: the snapshot holds at least everything up to it."
     },
     {
       "path": "status.recipients",

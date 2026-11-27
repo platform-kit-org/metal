@@ -434,16 +434,6 @@
       "format": "date-time",
       "required": true,
       "description": ""
-    },
-    {
-      "path": "status.verifiedSnapshots",
-      "name": "verifiedSnapshots",
-      "parent": "status",
-      "depth": 1,
-      "type": "integer",
-      "format": "int32",
-      "required": false,
-      "description": "VerifiedSnapshots counts the verified snapshots kept."
     }
   ]
 }

@@ -73,8 +73,9 @@ func TestRemovalVerdict(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			reason, msg := removalVerdict(tc.v, "no answer", tc.node, "lab", tc.leaving, tc.acked)
 			assert.Equal(t, tc.want, reason, msg)
-			if reason == metalv1alpha1.ReasonEtcdRiskRefused {
-				assert.Contains(t, msg, metalv1alpha1.AnnotationAckEtcdRisk, "the refusal says how to acknowledge it")
+			if reason == metalv1alpha1.ReasonEtcdRiskRefused || name == "etcd unreadable waits" {
+				assert.Contains(t, msg, "hostclaim -n <namespace> <claim> "+metalv1alpha1.AnnotationAckEtcdRisk+namedLift,
+					"the refusal says how to acknowledge it")
 			}
 		})
 	}
@@ -403,6 +404,23 @@ func TestFinalizerWaitsForTheEtcdMember(t *testing.T) {
 	_, err = fin.Reconcile(t.Context(), ctrl.Request{NamespacedName: client.ObjectKey{Name: "cp-2"}})
 	require.NoError(t, err)
 	assert.Error(t, lab.r.Get(t.Context(), client.ObjectKey{Name: "cp-2"}, node), "gone")
+}
+
+// With no control plane to ask, the finalizer says how to let the node go,
+// in the form that admission accepts.
+func TestFinalizerHintWhenEtcdIsUnreadable(t *testing.T) {
+	lab := newLifecycleLab(t, []string{"cp-1", "cp-2"}, nil)
+	for _, m := range lab.machines {
+		m.SetUnreachable(true)
+	}
+	node := &osv1alpha1.TalosNode{}
+	require.NoError(t, lab.r.Get(t.Context(), client.ObjectKey{Name: "cp-2"}, node))
+	fin := &TalosNodeMemberReconciler{Client: lab.r.Client, Dial: lab.fleet.Dialer(), CredentialsNamespace: "pk-metal", OperationsNamespace: "pk-metal"}
+
+	reason, msg, err := fin.blocked(t.Context(), node)
+	require.NoError(t, err)
+	assert.Equal(t, osv1alpha1.ReasonEtcdUnreadable, reason, msg)
+	assert.Contains(t, msg, "kubectl annotate --overwrite talosnode cp-2 "+metalv1alpha1.AnnotationAckEtcdRisk+namedLift)
 }
 
 // ---- joining ---------------------------------------------------------------

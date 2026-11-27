@@ -159,19 +159,19 @@ func TestDisruptionVerdict(t *testing.T) {
 		},
 		"the machine the operator runs on": {
 			in:   disruptionInput{host: ptr.To(runsNodeHost("h-5", "w-1")), self: onW1, nodes: nodes, cluster: cluster(3, 3)},
-			want: []string{"this operator runs on it (address 10.0.0.4)", "kubectl annotate host h-5 metal.platform-kit.org/allow-self-disruption=\"<you>: <reason>\"", "pk-metal pivot"},
+			want: []string{"this operator runs on it (address 10.0.0.4)", "kubectl annotate --overwrite host h-5 metal.platform-kit.org/allow-self-disruption" + namedLift, "pk-metal pivot"},
 		},
 		"the machine the operator runs on, allowed": {
 			in: disruptionInput{host: ptr.To(allowed(runsNodeHost("h-5", "w-1"))), self: onW1, nodes: nodes, cluster: cluster(3, 3)},
 		},
 		"a control plane of the operator's cluster": {
 			in:   disruptionInput{host: ptr.To(runsNodeHost("h-2", "cp-2")), self: onCP1, nodes: nodes, cluster: cluster(3, 3), hosts: hosts},
-			want: []string{"a control plane of cluster mgmt", "kubectl annotate host h-2"},
+			want: []string{"a control plane of cluster mgmt", "kubectl annotate --overwrite host h-2"},
 		},
 		"an installed control plane that does not answer now": {
 			in: disruptionInput{host: ptr.To(runsNodeHost("h-2", "cp-2")), self: onCP1, nodes: withSilent, handedOff: true,
 				cluster: cluster(3, 3), hosts: hosts},
-			want: []string{"a control plane of cluster mgmt", "kubectl annotate host h-2"},
+			want: []string{"a control plane of cluster mgmt", "kubectl annotate --overwrite host h-2"},
 		},
 		"a control plane, allowed, with a majority left": {
 			in: disruptionInput{host: ptr.To(allowed(runsNodeHost("h-2", "cp-2"))), self: onCP1, nodes: settled, cluster: cluster(3, 3), hosts: hosts},
@@ -202,6 +202,10 @@ func TestDisruptionVerdict(t *testing.T) {
 			in: disruptionInput{host: ptr.To(allowed(runsNodeHost("h-2", "cp-2"))), self: onCP1, nodes: nodes, cluster: cluster(3, 3), hosts: hosts,
 				ops: []metalv1alpha1.HostOperation{running("h-3", "bios-h-3")}},
 			want: []string{"pk-metal/bios-h-3 is taking down control plane h-3", "one at a time"},
+		},
+		"a control plane, allowed, while a control plane of another cluster is cycled": {
+			in: disruptionInput{host: ptr.To(allowed(runsNodeHost("h-2", "cp-2"))), self: onCP1, nodes: settled, cluster: cluster(3, 3),
+				hosts: append(slices.Clone(hosts), runsNodeHost("h-6", "o-1")), ops: []metalv1alpha1.HostOperation{running("h-6", "bios-h-6")}},
 		},
 		"a control plane, allowed, its cluster unknown": {
 			in:   disruptionInput{host: ptr.To(allowed(runsNodeHost("h-2", "cp-2"))), self: onCP1, nodes: nodes, hosts: hosts},
@@ -342,7 +346,7 @@ func TestSelfGuardStopsReinstallAndPowerOff(t *testing.T) {
 	c := meta.FindStatusCondition(claim.Status.Conditions, metalv1alpha1.ConditionProvisioned)
 	require.NotNil(t, c)
 	assert.Equal(t, metalv1alpha1.ReasonSelfDisruption, c.Reason)
-	assert.Contains(t, c.Message, "kubectl annotate host host-a")
+	assert.Contains(t, c.Message, "kubectl annotate --overwrite host host-a")
 	assert.True(t, hostBound(t, r))
 
 	require.NoError(t, r.Get(t.Context(), client.ObjectKey{Name: "host-a"}, host))

@@ -398,7 +398,7 @@ func (p *restorePlan) planRecovery(ctx context.Context, cl client.Client, cluste
 		}}}))
 	p.Notes = append(p.Notes,
 		fmt.Sprintf("restores snapshot %s (taken %s from %s, %s); every change made to the cluster after it is lost",
-			snap.Name, snapTime(snap).UTC().Format(time.RFC3339), orDash(snap.Status.TakenFrom), snap.Status.SHA256),
+			snap.Name, snap.TakenOrCreated().UTC().Format(time.RFC3339), orDash(snap.Status.TakenFrom), snap.Status.SHA256),
 		fmt.Sprintf("after the restore operation is approved, upload the snapshot: pk-metal restore upload %s/%s "+
 			"--identity <age identity file>", operatorNamespace, p.Ops[len(p.Ops)-1].Name),
 		"the other control planes join the restored etcd by themselves once their etcd data is gone; "+
@@ -427,7 +427,7 @@ func (p *restorePlan) chooseSnapshot(ctx context.Context, cl client.Client) (*os
 	var best *osv1alpha1.EtcdSnapshot
 	for i := range l.Items {
 		s := &l.Items[i]
-		if snapState(s) == "Verified" && (best == nil || snapTime(s).After(snapTime(best))) {
+		if snapState(s) == "Verified" && (best == nil || s.TakenOrCreated().After(best.TakenOrCreated())) {
 			best = s
 		}
 	}

@@ -1,6 +1,8 @@
 package v1alpha1
 
 import (
+	"time"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )
@@ -189,10 +191,6 @@ type EtcdBackupPolicyStatus struct {
 	// verified one.
 	// +optional
 	ConsecutiveFailures int32 `json:"consecutiveFailures,omitempty"`
-
-	// VerifiedSnapshots counts the verified snapshots kept.
-	// +optional
-	VerifiedSnapshots int32 `json:"verifiedSnapshots,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -261,11 +259,6 @@ type EtcdSnapshotStatus struct {
 	// +optional
 	MemberID string `json:"memberID,omitempty"`
 
-	// RaftIndex is the member's raft index just before the snapshot: the
-	// snapshot holds at least everything up to it.
-	// +optional
-	RaftIndex int64 `json:"raftIndex,omitempty"`
-
 	// Location is where the ciphertext is (s3://bucket/key,
 	// pvc://claim/key), and Key its key in the sink.
 	// +optional
@@ -282,18 +275,11 @@ type EtcdSnapshotStatus struct {
 	SHA256 string `json:"sha256,omitempty"`
 
 	// EncryptedSize and EncryptedSHA256 describe the object in the sink.
+	// pk-metal backup get checks the downloaded object against both.
 	// +optional
 	EncryptedSize int64 `json:"encryptedSize,omitempty"`
 	// +optional
 	EncryptedSHA256 string `json:"encryptedSHA256,omitempty"`
-
-	// DatabaseTxID is the bbolt transaction id of the database's newest
-	// meta page, and PageSize its page size: read off the snapshot as it
-	// passed, as evidence that it is a bbolt database.
-	// +optional
-	DatabaseTxID int64 `json:"databaseTxID,omitempty"`
-	// +optional
-	PageSize int32 `json:"pageSize,omitempty"`
 
 	// Recipients are the age public keys it was encrypted to.
 	// +optional
@@ -322,6 +308,15 @@ type EtcdSnapshot struct {
 	Spec EtcdSnapshotSpec `json:"spec"`
 	// +optional
 	Status EtcdSnapshotStatus `json:"status,omitempty"`
+}
+
+// TakenOrCreated is when the snapshot was taken, or when the record was
+// created if it never was.
+func (s *EtcdSnapshot) TakenOrCreated() time.Time {
+	if s.Status.TakenAt != nil {
+		return s.Status.TakenAt.Time
+	}
+	return s.CreationTimestamp.Time
 }
 
 // +kubebuilder:object:root=true

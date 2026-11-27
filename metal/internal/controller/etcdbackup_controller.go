@@ -55,8 +55,6 @@ const (
 	memberWait = 10 * time.Minute
 	// keepFailedSnapshots failures are kept for a person to read why.
 	keepFailedSnapshots = 3
-	// defaultBackupVolumeName names the backup volume in pvc:// URLs.
-	defaultBackupVolumeName = "pk-metal-etcd-backups"
 )
 
 // EtcdBackups is what both backup reconcilers need.
@@ -98,28 +96,11 @@ func (e *sinkError) Error() string { return e.msg }
 // ownCluster names the TalosCluster the operator's pod runs on, "" when
 // none of them (kind, a cluster built otherwise).
 func (b *EtcdBackups) ownCluster(ctx context.Context) (string, error) {
-	if b.Self == nil || b.Self.NodeName == "" {
-		return "", nil
-	}
-	var reader client.Reader = b.Client
-	if b.Self.Reader != nil {
-		reader = b.Self.Reader
-	}
-	var k8sNode *corev1.Node
-	n := &corev1.Node{}
-	if err := reader.Get(ctx, types.NamespacedName{Name: b.Self.NodeName}, n); err == nil {
-		k8sNode = n
-	} else if !apierrors.IsNotFound(err) {
+	self, _, err := b.Self.locate(ctx)
+	if err != nil || self.node == nil {
 		return "", err
 	}
-	nodes := &osv1alpha1.TalosNodeList{}
-	if err := reader.List(ctx, nodes); err != nil {
-		return "", err
-	}
-	if loc := locateSelf(b.Self.NodeName, k8sNode, nodes.Items); loc.node != nil {
-		return loc.node.Spec.ClusterRef.Name, nil
-	}
-	return "", nil
+	return self.node.Spec.ClusterRef.Name, nil
 }
 
 // sink builds the policy's sink and the key prefix of its cluster. A
@@ -142,23 +123,11 @@ func (b *EtcdBackups) sink(ctx context.Context, p *osv1alpha1.EtcdBackupPolicy) 
 				"no backup volume is mounted into the manager: add the config/etcd-backup component " +
 					"(it sets --etcd-backup-dir), or use an s3 sink"}
 		}
-		return etcdbackup.FileSink{Root: b.Dir, Name: cmp.Or(b.VolumeName, defaultBackupVolumeName)}, cluster + "/", nil
+		return etcdbackup.FileSink{Root: b.Dir, Name: b.VolumeName}, cluster + "/", nil
 	case s.S3 != nil:
-		creds, err := b.secretData(ctx, s.S3.CredentialsSecretRef.Name)
+		cfg, err := etcdbackup.S3ConfigFor(s.S3, func(name string) (map[string][]byte, error) { return b.secretData(ctx, name) })
 		if err != nil {
 			return nil, "", err
-		}
-		cfg := etcdbackup.S3Config{
-			Endpoint: strings.TrimSuffix(s.S3.Endpoint, "/"), Bucket: s.S3.Bucket, Region: s.S3.Region,
-			PathStyle: s.S3.PathStyle, AccessKeyID: string(creds["accessKeyID"]),
-			SecretAccessKey: string(creds["secretAccessKey"]),
-		}
-		if s.S3.CASecretRef != nil {
-			ca, err := b.secretData(ctx, s.S3.CASecretRef.Name)
-			if err != nil {
-				return nil, "", err
-			}
-			cfg.CA = ca["ca.crt"]
 		}
 		sink, err := etcdbackup.NewS3Sink(cfg)
 		if err != nil {
@@ -181,12 +150,35 @@ func (b *EtcdBackups) secretData(ctx context.Context, name string) (map[string][
 	return s.Data, nil
 }
 
-func recipients(p *osv1alpha1.EtcdBackupPolicy) ([]age.Recipient, error) {
-	rs, err := etcdbackup.ParseRecipients(p.Spec.Encryption.AgeRecipients)
-	if err != nil {
-		return nil, &sinkError{osv1alpha1.ReasonRecipientsInvalid, err.Error()}
+// backupTarget is what a snapshot of a policy goes to.
+type backupTarget struct {
+	sink       etcdbackup.Sink
+	prefix     string
+	recipients []age.Recipient
+	cluster    *osv1alpha1.TalosCluster
+}
+
+// target checks, in order, what the snapshots of a policy need: the sink,
+// the recipients and the TalosCluster. The policy's Ready condition and each
+// snapshot use it, so the two agree. A *sinkError says what is wrong; the
+// fields read before it stay set.
+func (b *EtcdBackups) target(ctx context.Context, p *osv1alpha1.EtcdBackupPolicy) (backupTarget, error) {
+	var t backupTarget
+	var err error
+	if t.sink, t.prefix, err = b.sink(ctx, p); err != nil {
+		return t, err
 	}
-	return rs, nil
+	if t.recipients, err = etcdbackup.ParseRecipients(p.Spec.Encryption.AgeRecipients); err != nil {
+		return t, &sinkError{osv1alpha1.ReasonRecipientsInvalid, err.Error()}
+	}
+	cluster := &osv1alpha1.TalosCluster{}
+	if err := b.Get(ctx, types.NamespacedName{Name: p.Spec.ClusterRef.Name}, cluster); apierrors.IsNotFound(err) {
+		return t, &sinkError{osv1alpha1.ReasonClusterNotFound, "TalosCluster " + p.Spec.ClusterRef.Name + " not found"}
+	} else if err != nil {
+		return t, err
+	}
+	t.cluster = cluster
+	return t, nil
 }
 
 // snapshotState reads a snapshot record for retention and summaries.
@@ -200,14 +192,6 @@ func snapshotState(s *osv1alpha1.EtcdSnapshot) etcdbackup.State {
 		return etcdbackup.Verified
 	}
 	return etcdbackup.Failed
-}
-
-// snapshotTime is when a snapshot was taken, or created when it never was.
-func snapshotTime(s *osv1alpha1.EtcdSnapshot) time.Time {
-	if s.Status.TakenAt != nil {
-		return s.Status.TakenAt.Time
-	}
-	return s.CreationTimestamp.Time
 }
 
 // +kubebuilder:rbac:groups=os.platform-kit.org,resources=etcdbackuppolicies,verbs=get;list;watch
@@ -256,18 +240,8 @@ func (r *EtcdBackupPolicyReconciler) reconcile(ctx context.Context, p *osv1alpha
 
 	// Ready: can snapshots be taken at all?
 	ready := true
-	sink, _, err := r.sink(ctx, p)
-	if err == nil {
-		_, err = recipients(p)
-	}
-	if err == nil {
-		cluster := &osv1alpha1.TalosCluster{}
-		if gerr := r.Get(ctx, types.NamespacedName{Name: p.Spec.ClusterRef.Name}, cluster); apierrors.IsNotFound(gerr) {
-			err = &sinkError{osv1alpha1.ReasonClusterNotFound, "TalosCluster " + p.Spec.ClusterRef.Name + " not found"}
-		} else if gerr != nil {
-			return ctrl.Result{}, gerr
-		}
-	}
+	target, err := r.target(ctx, p)
+	sink := target.sink
 	if se := (*sinkError)(nil); errors.As(err, &se) {
 		ready = false
 		set(osv1alpha1.ConditionReady, metav1.ConditionFalse, se.reason, se.msg)
@@ -285,7 +259,7 @@ func (r *EtcdBackupPolicyReconciler) reconcile(ctx context.Context, p *osv1alpha
 	for i := range snaps.Items {
 		s := &snaps.Items[i]
 		byName[s.Name] = s
-		recs = append(recs, etcdbackup.Record{Name: s.Name, Time: snapshotTime(s), State: snapshotState(s)})
+		recs = append(recs, etcdbackup.Record{Name: s.Name, Time: s.TakenOrCreated(), State: snapshotState(s)})
 	}
 	ret := etcdbackup.Retention{Count: int(cmp.Or(p.Spec.Retention.Count, 14)), KeepFailed: keepFailedSnapshots}
 	if p.Spec.Retention.MaxAge != nil {
@@ -313,10 +287,10 @@ func (r *EtcdBackupPolicyReconciler) reconcile(ctx context.Context, p *osv1alpha
 	// The summary, newest first.
 	kept := slices.DeleteFunc(slices.Clone(snaps.Items), func(s osv1alpha1.EtcdSnapshot) bool { return pruned[s.Name] })
 	slices.SortFunc(kept, func(a, b osv1alpha1.EtcdSnapshot) int {
-		return cmp.Or(snapshotTime(&b).Compare(snapshotTime(&a)), strings.Compare(b.Name, a.Name))
+		return cmp.Or(b.TakenOrCreated().Compare(a.TakenOrCreated()), strings.Compare(b.Name, a.Name))
 	})
 	st := &p.Status
-	st.LastSuccessfulSnapshot, st.ConsecutiveFailures, st.VerifiedSnapshots = nil, 0, 0
+	st.LastSuccessfulSnapshot, st.ConsecutiveFailures = nil, 0
 	inProgress := false
 	lastFailure := ""
 	for i := range kept {
@@ -325,9 +299,8 @@ func (r *EtcdBackupPolicyReconciler) reconcile(ctx context.Context, p *osv1alpha
 		case etcdbackup.InProgress:
 			inProgress = true
 		case etcdbackup.Verified:
-			st.VerifiedSnapshots++
 			if st.LastSuccessfulSnapshot == nil {
-				st.LastSuccessfulSnapshot = &osv1alpha1.SnapshotReference{Name: s.Name, TakenAt: metav1.NewTime(snapshotTime(s))}
+				st.LastSuccessfulSnapshot = &osv1alpha1.SnapshotReference{Name: s.Name, TakenAt: metav1.NewTime(s.TakenOrCreated())}
 			}
 		case etcdbackup.Failed:
 			if st.LastSuccessfulSnapshot == nil {
@@ -482,24 +455,13 @@ func (r *EtcdSnapshotReconciler) take(ctx context.Context, s *osv1alpha1.EtcdSna
 		return ctrl.Result{}, err
 	}
 	st.ClusterName = p.Spec.ClusterRef.Name
-	sink, prefix, err := r.sink(ctx, p)
+	target, err := r.target(ctx, p)
 	if se := (*sinkError)(nil); errors.As(err, &se) {
 		return fail(se.msg)
 	} else if err != nil {
 		return ctrl.Result{}, err
 	}
-	rcpt, err := recipients(p)
-	if err != nil {
-		return fail(err.Error())
-	}
-
-	cluster := &osv1alpha1.TalosCluster{}
-	if err := r.Get(ctx, types.NamespacedName{Name: p.Spec.ClusterRef.Name}, cluster); err != nil {
-		if apierrors.IsNotFound(err) {
-			return fail("TalosCluster " + p.Spec.ClusterRef.Name + " not found")
-		}
-		return ctrl.Result{}, err
-	}
+	sink, cluster := target.sink, target.cluster
 	bundle, err := loadBundle(ctx, r.Client, r.Namespace, cluster)
 	if unavailable := (*bundleUnavailable)(nil); errors.As(err, &unavailable) {
 		return fail(unavailable.msg)
@@ -510,17 +472,11 @@ func (r *EtcdSnapshotReconciler) take(ctx context.Context, s *osv1alpha1.EtcdSna
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	var cps []osv1alpha1.TalosNode
-	var endpoints []string
-	for _, n := range nodes {
-		if addr := render.NodeAddress(&n); n.Spec.Role == osv1alpha1.RoleControlPlane && addr != "" {
-			cps = append(cps, n)
-			endpoints = append(endpoints, addr)
-		}
-	}
 	// Two short-lived certificates with the least each call needs: os:reader
-	// asks every member for its etcd status, os:etcd:backup streams the
-	// snapshot and can do nothing else. Neither can change a machine.
+	// asks etcd how it is, os:etcd:backup streams the snapshot and can do
+	// nothing else. Neither can change a machine. The endpoint in a config
+	// does not matter: every dial names its own.
+	endpoints := []string{cluster.Spec.Endpoint}
 	reader, err := render.TalosconfigWithRole(bundle, cluster.Name, endpoints, checkinCertTTL, role.Reader)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("mint talosconfig for %s: %w", cluster.Name, err)
@@ -530,7 +486,16 @@ func (r *EtcdSnapshotReconciler) take(ctx context.Context, s *osv1alpha1.EtcdSna
 		return ctrl.Result{}, fmt.Errorf("mint talosconfig for %s: %w", cluster.Name, err)
 	}
 
-	src, why := r.pickMember(ctx, reader, cps)
+	// etcd is read through the same path as the cluster guard's.
+	cps := controlPlanes(nodes, "")
+	rep, err := (&talosAccess{dial: r.Dial, cluster: cluster, talosconfig: reader}).etcdHealth(ctx, cps, nodes)
+	var src *memberSource
+	var why string
+	if err == nil {
+		src, why = pickMember(rep, cps)
+	} else {
+		why = err.Error()
+	}
 	if src == nil {
 		if r.now().Sub(s.CreationTimestamp.Time) > memberWait {
 			return fail("no healthy etcd member to take the snapshot from: " + why)
@@ -541,10 +506,9 @@ func (r *EtcdSnapshotReconciler) take(ctx context.Context, s *osv1alpha1.EtcdSna
 	}
 
 	// Record the start before streaming: the crash rail above reads it.
-	key := prefix + s.Name + ".db.age"
+	key := target.prefix + s.Name + ".db.age"
 	st.TakenAt = &metav1.Time{Time: r.now()}
-	st.TakenFrom, st.MemberID = src.node, strconv.FormatUint(src.status.MemberID, 16)
-	st.RaftIndex = int64(min(src.status.RaftIndex, uint64(1<<63-1)))
+	st.TakenFrom, st.MemberID = src.node, strconv.FormatUint(src.id, 16)
 	st.Key, st.Location = key, sink.URL(key)
 	st.Recipients = slices.Clone(p.Spec.Encryption.AgeRecipients)
 	set(osv1alpha1.ConditionComplete, metav1.ConditionUnknown, osv1alpha1.ReasonTaking,
@@ -558,7 +522,7 @@ func (r *EtcdSnapshotReconciler) take(ctx context.Context, s *osv1alpha1.EtcdSna
 	var stored etcdbackup.Stored
 	err = talos.With(sctx, r.Dial, talos.Target{Endpoint: src.endpoint, Talosconfig: backup}, func(c talos.Client) error {
 		var serr error
-		stored, serr = etcdbackup.Store(sctx, sink, key, rcpt, c.EtcdSnapshot)
+		stored, serr = etcdbackup.Store(sctx, sink, key, target.recipients, c.EtcdSnapshot)
 		return serr
 	})
 	if err != nil {
@@ -566,8 +530,6 @@ func (r *EtcdSnapshotReconciler) take(ctx context.Context, s *osv1alpha1.EtcdSna
 	}
 	st.Size, st.SHA256 = stored.Plain.Size, "sha256:"+stored.Plain.SHA256
 	st.EncryptedSize, st.EncryptedSHA256 = stored.CipherSize, "sha256:"+stored.CipherSHA256
-	st.PageSize = int32(stored.Plain.PageSize)
-	st.DatabaseTxID = int64(min(stored.Plain.TxID, uint64(1<<63-1)))
 	set(osv1alpha1.ConditionComplete, metav1.ConditionTrue, osv1alpha1.ReasonStored,
 		fmt.Sprintf("%d bytes from %s, encrypted to %d recipient(s), stored at %s",
 			st.Size, src.node, len(st.Recipients), st.Location))
@@ -602,53 +564,35 @@ func (r *EtcdSnapshotReconciler) policy(ctx context.Context, s *osv1alpha1.EtcdS
 
 type memberSource struct {
 	node, endpoint string
-	status         talos.EtcdStatus
+	id             uint64
 }
 
-// pickMember asks every control plane for its etcd status and picks the
-// member to snapshot: a healthy voting member that follows a leader, a
-// follower before the leader (the snapshot reads the whole database, which
-// the leader should not spend its time on), by name among equals. why says
-// what was wrong with each when none qualifies.
-func (r *EtcdSnapshotReconciler) pickMember(ctx context.Context, talosconfig []byte,
-	cps []osv1alpha1.TalosNode) (*memberSource, string) {
-	var leaders, followers []memberSource
-	var problems []string
-	for _, n := range cps {
-		endpoint := render.NodeAddress(&n)
-		var es talos.EtcdStatus
-		pctx, cancel := context.WithTimeout(ctx, probeTimeout)
-		err := talos.With(pctx, r.Dial, talos.Target{Endpoint: endpoint, Talosconfig: talosconfig}, func(c talos.Client) error {
-			var err error
-			es, err = c.EtcdStatus(pctx)
-			return err
-		})
-		cancel()
-		switch {
-		case err != nil:
-			problems = append(problems, fmt.Sprintf("%s: %v", n.Name, err))
-		case len(es.Errors) > 0:
-			problems = append(problems, fmt.Sprintf("%s: %s", n.Name, strings.Join(es.Errors, "; ")))
-		case es.IsLearner:
-			problems = append(problems, n.Name+": a learner, not yet in sync")
-		case es.LeaderID == 0:
-			problems = append(problems, n.Name+": knows no leader (quorum lost?)")
-		case es.LeaderID == es.MemberID:
-			leaders = append(leaders, memberSource{n.Name, endpoint, es})
-		default:
-			followers = append(followers, memberSource{n.Name, endpoint, es})
+// pickMember picks the etcd member to snapshot: a healthy voting member on
+// one of the control planes, a follower before the leader (the snapshot
+// reads the whole database, which the leader should not spend its time
+// on), by name among equals. why says what is wrong when none qualifies.
+func pickMember(rep *etcdReport, cps []osv1alpha1.TalosNode) (*memberSource, string) {
+	members := slices.Clone(rep.members)
+	slices.SortFunc(members, func(a, b talos.EtcdMember) int { return strings.Compare(a.Hostname, b.Hostname) })
+	var leader *memberSource
+	for _, m := range members {
+		i := slices.IndexFunc(cps, func(n osv1alpha1.TalosNode) bool { return n.Name == m.Hostname })
+		if i < 0 || !rep.healthy(m.ID) {
+			continue
 		}
+		src := &memberSource{node: m.Hostname, endpoint: nodeEndpoint(&cps[i]), id: m.ID}
+		if m.ID != rep.leader {
+			return src, ""
+		}
+		leader = src
 	}
-	if len(followers) > 0 {
-		return &followers[0], ""
+	if leader != nil {
+		return leader, ""
 	}
-	if len(leaders) > 0 {
-		return &leaders[0], ""
+	if probs := rep.problems(0); len(probs) > 0 {
+		return nil, strings.Join(probs, "; ")
 	}
-	if len(cps) == 0 {
-		return nil, "the cluster has no control-plane TalosNode with an address"
-	}
-	return nil, strings.Join(problems, ", ")
+	return nil, "no healthy etcd member runs on a control-plane TalosNode"
 }
 
 // SetupWithManager wires both backup reconcilers: they are one lane.

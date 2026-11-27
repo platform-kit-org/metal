@@ -861,6 +861,23 @@ func (r *HostOperationReconciler) finishAborted(op *metalv1alpha1.HostOperation,
 	return ctrl.Result{}, client.IgnoreNotFound(flush())
 }
 
+// refuse fails an operation before it starts, for a gate: a Failed step
+// for its first action (fallbackKey when it has none), Executed=False with
+// reason, and a Warning event. stop is true: Reconcile returns.
+func (r *HostOperationReconciler) refuse(op *metalv1alpha1.HostOperation, setCond func(string, metav1.ConditionStatus, string, string),
+	flush func() error, fallbackKey, reason, msg string) (res ctrl.Result, stop bool, err error) {
+	key := fallbackKey
+	if len(op.Spec.Actions) > 0 {
+		key = op.Spec.Actions[0].Key()
+	}
+	op.Status.Steps = append(op.Status.Steps, metalv1alpha1.OperationStep{
+		Action: key, Phase: "Failed", Message: msg, FinishedAt: ptrTime(metav1.Now()),
+	})
+	setCond(metalv1alpha1.ConditionExecuted, metav1.ConditionFalse, reason, msg)
+	r.Recorder.Eventf(op, nil, corev1.EventTypeWarning, reason, "Execute", "%s", msg)
+	return ctrl.Result{}, true, client.IgnoreNotFound(flush())
+}
+
 // abortMessage says who stopped the operation, where, and what was undone.
 func abortMessage(by, where string, undone, failed []string) string {
 	msg := "aborted " + where

@@ -119,14 +119,10 @@ spec:
                   x-kubernetes-list-map-keys:
                     - type
                   x-kubernetes-list-type: map
-                databaseTxID:
-                  description: 'DatabaseTxID is the bbolt transaction id of the database''s newest meta page, and PageSize its page size: read off the snapshot as it passed, as evidence that it is a bbolt database.'
-                  format: int64
-                  type: integer
                 encryptedSHA256:
                   type: string
                 encryptedSize:
-                  description: EncryptedSize and EncryptedSHA256 describe the object in the sink.
+                  description: EncryptedSize and EncryptedSHA256 describe the object in the sink. pk-metal backup get checks the downloaded object against both.
                   format: int64
                   type: integer
                 key:
@@ -136,13 +132,6 @@ spec:
                   type: string
                 memberID:
                   type: string
-                pageSize:
-                  format: int32
-                  type: integer
-                raftIndex:
-                  description: 'RaftIndex is the member''s raft index just before the snapshot: the snapshot holds at least everything up to it.'
-                  format: int64
-                  type: integer
                 recipients:
                   description: Recipients are the age public keys it was encrypted to.
                   items:

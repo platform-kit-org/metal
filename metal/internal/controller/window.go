@@ -144,6 +144,17 @@ func guardOverride(op *metalv1alpha1.HostOperation, key string) (string, bool) {
 	return why, why != ""
 }
 
+// liftHint is the command that lifts a guard: it sets key on the object to
+// "<your username>: <reason>". Admission accepts only this form when no name
+// stamp is installed (config/policy/guard-lift.yaml). namespace is "" for a
+// cluster-scoped kind; name may be a placeholder such as "<claim>".
+func liftHint(kind, namespace, name, key string) string {
+	if namespace != "" {
+		name = "-n " + namespace + " " + name
+	}
+	return fmt.Sprintf("kubectl annotate --overwrite %s %s %s=\"<your username>: <reason>\"", kind, name, key)
+}
+
 // windowExempt reports why an operation is not held by any window, or "".
 func windowExempt(op *metalv1alpha1.HostOperation) string {
 	if why, ok := guardOverride(op, metalv1alpha1.AnnotationIgnoreWindow); ok {
@@ -206,9 +217,7 @@ func decideWindow(windows []metalv1alpha1.MaintenanceWindow, op *metalv1alpha1.H
 	if len(broken) > 0 {
 		msg += "; cannot read " + strings.Join(broken, ", ")
 	}
-	msg += fmt.Sprintf(". To start it now: kubectl annotate --overwrite hostoperation -n %s %s %s=\"<reason>\""+
-		" (an empty reason does not count)",
-		op.Namespace, op.Name, metalv1alpha1.AnnotationIgnoreWindow)
+	msg += ". To start it now: " + liftHint("hostoperation", op.Namespace, op.Name, metalv1alpha1.AnnotationIgnoreWindow)
 	until := now.Add(windowRecheck)
 	if !next.IsZero() && next.Before(until) {
 		until = next

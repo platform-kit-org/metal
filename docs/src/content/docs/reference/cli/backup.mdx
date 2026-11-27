@@ -67,6 +67,7 @@ The `STATE` column is `Taking`, `Failed`, `Unverified` or `Verified`.
 
 The command downloads from an S3 sink. It reads the credentials of the sink from a Secret in the namespace `pk-metal`.
 It cannot read a snapshot on the backup volume of the operator (a `pvc` sink). Copy the file from the volume first.
+The command compares the size and the SHA-256 of the file with the record in the EtcdSnapshot. If they are not the same, it removes the file.
 
 ### decrypt
 

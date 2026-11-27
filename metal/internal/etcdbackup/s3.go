@@ -13,6 +13,8 @@ import (
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
+
+	osv1alpha1 "github.com/dennisklein/platform-kit/metal/api/os/v1alpha1"
 )
 
 // S3Config says how to reach one bucket of an S3-compatible store (AWS S3,
@@ -33,6 +35,28 @@ type S3Config struct {
 	// most stores other than AWS need; the default asks the client to tell
 	// from the endpoint.
 	PathStyle bool
+}
+
+// S3ConfigFor is the config of an EtcdBackupPolicy's S3 sink. secret reads
+// the data of a Secret in the operator's namespace: the credentials
+// (accessKeyID, secretAccessKey) and the CA (ca.crt).
+func S3ConfigFor(s *osv1alpha1.S3Sink, secret func(name string) (map[string][]byte, error)) (S3Config, error) {
+	creds, err := secret(s.CredentialsSecretRef.Name)
+	if err != nil {
+		return S3Config{}, err
+	}
+	c := S3Config{
+		Endpoint: strings.TrimSuffix(s.Endpoint, "/"), Bucket: s.Bucket, Region: s.Region, PathStyle: s.PathStyle,
+		AccessKeyID: string(creds["accessKeyID"]), SecretAccessKey: string(creds["secretAccessKey"]),
+	}
+	if s.CASecretRef != nil {
+		ca, err := secret(s.CASecretRef.Name)
+		if err != nil {
+			return S3Config{}, err
+		}
+		c.CA = ca["ca.crt"]
+	}
+	return c, nil
 }
 
 // partSize is the multipart chunk the client buffers in memory while the

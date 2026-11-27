@@ -228,8 +228,8 @@ func ackedEtcdRisk(claim *metalv1alpha1.HostClaim, node *osv1alpha1.TalosNode) b
 //
 // A node etcd does not list leaves nothing behind, and goes ahead.
 func removalVerdict(v etcdView, why, node, cluster string, leaving []string, acked bool) (string, string) {
-	ackHint := fmt.Sprintf("To remove it anyway, acknowledge it: kubectl annotate hostclaim <claim> %s=\"<reason>\" "+
-		"(or the same on TalosNode %s)", metalv1alpha1.AnnotationAckEtcdRisk, node)
+	ackHint := "To remove it anyway, acknowledge it: " +
+		liftHint("hostclaim", "<namespace>", "<claim>", metalv1alpha1.AnnotationAckEtcdRisk) + " (or the same on TalosNode " + node + ")"
 	if !v.known() {
 		if acked {
 			return "", ""

@@ -33,7 +33,6 @@ var settingsKeys = []string{"selfApproval", "retention", "adminGroup", "operator
 // parameters are missing. The settings controller checks each of them.
 var GatePolicies = []string{
 	"hostoperation-approval",
-	"talosrollout-approval",
 	"hostclaim-provisioning",
 	"etcdbackuppolicy-guard",
 	"endpointprofile-guard",

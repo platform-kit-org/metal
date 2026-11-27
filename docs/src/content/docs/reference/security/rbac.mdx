@@ -139,7 +139,7 @@ subjects:
 | Propose a HostOperation | Anyone with `create`. The manager does it for you. | RBAC, and `proposedBy` must be your name. |
 | Approve a HostOperation | A holder of `patch`. Also the proposer, unless `selfApproval` is `Forbidden`. Never the manager. | RBAC, and [](ref:admission-policies). |
 | Create a HostOperation that needs no approval | The manager, or a member of the admin group. | `hostoperation-approval` |
-| Approve a TalosRollout | A holder of `patch`. Also the proposer, unless `selfApproval` is `Forbidden`. Never the manager. | RBAC, and `talosrollout-approval` |
+| Approve a TalosRollout | A holder of `patch`. Also the proposer, unless `selfApproval` is `Forbidden`. Never the manager. | RBAC, and `hostoperation-approval` |
 | Pause, resume or abort a rollout | A holder of `patch`. | RBAC |
 | Name the TalosNode that a claim installs | A member of the admin group. | `hostclaim-provisioning` |
 | Set `provisioning.approval: Automatic` on a claim | A member of the admin group. | `hostclaim-provisioning` |

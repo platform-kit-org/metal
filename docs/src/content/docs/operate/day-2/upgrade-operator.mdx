@@ -103,6 +103,7 @@ Apply the overlay with the old tag.
 | The component `config/name-stamp` writes your username into `requested-by` and into guard lifts. It needs Kubernetes 1.36 or later. | The sample site overlay includes it. On an older release, remove it from `components`. See [](ref:admission-policies#the-name-stamps). |
 | `status.managerType` of [](kind:ManagementEndpoint) goes. | Nothing. The operator did not read it. |
 | The CRDs of [](kind:HostOperation) and [](kind:TalosRollout) declare selectable fields. The management cluster needs Kubernetes 1.32 or later. | On 1.30 or 1.31, upgrade Kubernetes first. See [](ref:versions). |
+| The policy `hostoperation-approval` also checks [](kind:TalosRollout). The policy `talosrollout-approval` goes. | After the apply, delete the old policy and its binding: `kubectl delete validatingadmissionpolicy,validatingadmissionpolicybinding talosrollout-approval`. The old policy has the same rules, but it does not get later changes. |
 | The binding `pk-metal-metrics-reader` of `config/prometheus` names the built-in ClusterRole `system:monitoring`. The ClusterRole `pk-metal-metrics-reader` goes. | Kubernetes does not change the role of a binding. Before you apply `metal/config/prometheus` again, delete the old objects: `kubectl delete clusterrolebinding,clusterrole pk-metal-metrics-reader`. |
 
 <Callout type="note">

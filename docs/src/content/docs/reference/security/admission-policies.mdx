@@ -1,13 +1,12 @@
 ---
 title: Admission policies
-description: The ten ValidatingAdmissionPolicies that guard approval, provisioning, backups, BMC settings, guard lifts, the name of the requester and the site settings, rule by rule, and the MutatingAdmissionPolicies that write your username for you.
+description: The nine ValidatingAdmissionPolicies that guard approval, provisioning, backups, BMC settings, guard lifts, the name of the requester and the site settings, rule by rule, and the MutatingAdmissionPolicies that write your username for you.
 type: reference
 eyebrow: Reference · security
 xref: { cat: ref, id: admission-policies }
 sources:
   - /repo/metal/config/policy/hostoperation-approval.yaml
   - /repo/metal/config/policy/hostclaim-provisioning.yaml
-  - /repo/metal/config/policy/talosrollout-approval.yaml
   - /repo/metal/config/policy/etcdbackuppolicy-guard.yaml
   - /repo/metal/config/policy/endpointprofile-guard.yaml
   - /repo/metal/config/policy/taloscluster-credentials-guard.yaml
@@ -26,15 +25,14 @@ import Edge from '../../../../components/diagram/Edge.astro';
 import Callout from '../../../../components/Callout.astro';
 
 RBAC says who may create or patch an object. It cannot see the name that a person writes into a field.
-Ten [ValidatingAdmissionPolicies](term:vap) close that gap. They are [CEL](term:cel) in the API server: no webhook, no certificate, no pod.
+Nine [ValidatingAdmissionPolicies](term:vap) close that gap. They are [CEL](term:cel) in the API server: no webhook, no certificate, no pod.
 Three MutatingAdmissionPolicies write your username into the annotations that these policies check. See [The name stamps](#the-name-stamps).
 
 ## At a glance
 
 | Policy | Kind | Operations | Purpose |
 | --- | --- | --- | --- |
-| `hostoperation-approval` | [](kind:HostOperation) | CREATE, UPDATE | The approval gate of one operation. |
-| `talosrollout-approval` | [](kind:TalosRollout) | CREATE, UPDATE | The approval gate of one rollout plan. |
+| `hostoperation-approval` | [](kind:HostOperation), [](kind:TalosRollout) | CREATE, UPDATE | The approval gate of one operation or one rollout plan. |
 | `hostclaim-provisioning` | [](kind:HostClaim) | CREATE, UPDATE | Who may choose the OS of a machine, and who may skip the boot approval. |
 | `etcdbackuppolicy-guard` | [](kind:EtcdBackupPolicy) | CREATE, UPDATE | Who may choose who can read the etcd backups, and where they go. |
 | `endpointprofile-guard` | [](kind:EndpointProfile) | CREATE, UPDATE | Who may change what the operator writes to the BMCs. |
@@ -44,7 +42,7 @@ Three MutatingAdmissionPolicies write your username into the annotations that th
 | `requested-by-patches` | ConfigMaps with `os.platform-kit.org/patch` | CREATE, UPDATE, DELETE | The rules of `requested-by` for the Talos config patches. |
 | `settings-guard` | The ConfigMap `pk-metal/hostoperation-approval` | CREATE, UPDATE, DELETE | Only the admin group changes or deletes the site settings. |
 
-All ten have these settings:
+All nine have these settings:
 
 <dl>
   <dt>`failurePolicy: Fail`</dt>
@@ -71,7 +69,7 @@ data:
 
 ## The `selfApproval` setting
 
-The two approval policies read the key `selfApproval`. It applies to operations and to rollouts.
+The approval policy reads the key `selfApproval`. It applies to operations and to rollouts.
 
 | Value | A person approves their own proposal | Use it when |
 | --- | --- | --- |
@@ -103,14 +101,15 @@ The operator never approves, with each value. [](howto:approval-permissions) tel
 
 ## `hostoperation-approval`
 
-The CRD schema freezes the target, the actions, `approval.required` and `proposedBy`. The policy checks the rules that need the name of the requester.
+The policy checks operations and rollouts. The CRD schema freezes the target, the actions, `approval.required` and `proposedBy`. The policy checks the rules that need the name of the requester.
+The approval of a rollout also names the `planHash` that you read. The [](ctrl:talosrollout) runs the rollout only while that hash is the plan.
 
 | # | Rule | When | Message |
 | --- | --- | --- | --- |
-| 1 | Nobody creates an operation that is already approved. | CREATE | an operation cannot be created pre-approved |
+| 1 | Nobody creates an operation or a rollout that is already approved. | CREATE | a HostOperation cannot be created pre-approved, or a TalosRollout … |
 | 2 | `spec.proposedBy` is your own name. | CREATE | spec.proposedBy must name you |
-| 3 | Only the operator or an admin creates an operation with `approval.required: false`. | CREATE | only the operator or an admin may create an operation that needs no approval |
-| 4 | An approval, once set, does not change. | UPDATE | approval is write-once |
+| 3 | Only the operator or an admin creates an operation with `approval.required: false`. A rollout has no such field. | CREATE | only the operator or an admin may create an operation that needs no approval |
+| 4 | An approval, once set, does not change. For a rollout, this includes the `planHash`. | UPDATE | approval is write-once |
 | 5 | You approve as yourself: `approvedBy` is your name. | Approval write | you may only approve as yourself |
 | 6 | The operator approves nothing. | Approval write | the operator approves nothing: a person with the pk-metal-approver role must approve |
 | 7 | You approve your own proposal only if `selfApproval` is `Allowed` or not set. | Approval write | this site forbids approving your own proposal (selfApproval: Forbidden in ConfigMap pk-metal/hostoperation-approval): another person must approve |
@@ -120,7 +119,7 @@ The CRD schema freezes the target, the actions, `approval.required` and `propose
   <dt>Why rule 3</dt>
   <dd>Anybody else could skip the gate. The operator itself creates such operations in three cases. These are the node steps of an approved rollout, an install of a claim with `provisioning.approval: Automatic`, and a release that needs no person.</dd>
   <dt>Why rule 6 names the operator</dt>
-  <dd>The operator proposes most operations. A person must approve them. RBAC also stops the operator: it has no `patch` on operations. See [](ref:rbac). Rule 6 is the second lock. It is the same rule as rule 5 of `talosrollout-approval`. No setting changes it.</dd>
+  <dd>The operator proposes most operations. A person must approve them. RBAC also stops the operator: it has no `patch` on operations. See [](ref:rbac). Rule 6 is the second lock. No setting changes it.</dd>
   <dt>Why rule 7 is a setting</dt>
   <dd>A small team cannot always find a second person. With `Allowed`, the record still names who proposed and who approved. A value that is not `Allowed` or `Forbidden` closes the gate. The message names the value.</dd>
   <dt>Why rule 8</dt>
@@ -135,22 +134,6 @@ kubectl -n pk-metal patch hostoperation install-node-07 --type merge \
 ```
 
 The policy accepts this only if the username of `jo` is `jo`. Use [](cli:approve). It writes your name.
-
-## `talosrollout-approval`
-
-One approval covers each node of a rollout plan. So the rules are the rules of an operation, plus the plan hash.
-
-| # | Rule | When | Message |
-| --- | --- | --- | --- |
-| 1 | Nobody creates a rollout with `approvedBy` or `planHash`. | CREATE | a rollout cannot be created pre-approved |
-| 2 | `spec.proposedBy` is your own name. | CREATE | spec.proposedBy must name you |
-| 3 | `approvedBy` and `planHash`, once set, do not change. | UPDATE | approval is write-once |
-| 4 | You approve as yourself. | Approval write | you may only approve as yourself |
-| 5 | The operator approves nothing. | Approval write | the operator approves nothing: a person with the pk-metal-approver role must approve |
-| 6 | You approve your own proposal only if `selfApproval` is `Allowed` or not set. | Approval write | this site forbids approving your own proposal (selfApproval: Forbidden in ConfigMap pk-metal/hostoperation-approval): another person must approve |
-| 7 | You approve a change that you asked for (`spec.requestedBy` names you) only if `selfApproval` is `Allowed` or not set. | Approval write | you asked for this change (spec.requestedBy names you: your edit made the operator propose it), and this site does not allow approving your own change |
-
-The approval names the `planHash` that you read. The [](ctrl:talosrollout) runs the rollout only while that hash is the plan.
 
 ## `hostclaim-provisioning`
 
@@ -220,7 +203,7 @@ These annotations lift a safety rule of the operator, or decide a step of a chan
 
 ## `requested-by`
 
-The operator proposes most changes itself, as the result of an edit. The proposal names the operator as proposer. If the site forbids self-approval, this policy makes each such edit name the user who made it, in the annotation `metal.platform-kit.org/requested-by`. The operator copies the names into `spec.requestedBy` of the proposal. Rule 8 of `hostoperation-approval` and rule 7 of `talosrollout-approval` then apply.
+The operator proposes most changes itself, as the result of an edit. The proposal names the operator as proposer. If the site forbids self-approval, this policy makes each such edit name the user who made it, in the annotation `metal.platform-kit.org/requested-by`. The operator copies the names into `spec.requestedBy` of the proposal. Rule 8 of `hostoperation-approval` then applies.
 
 The policy `requested-by-patches` has the same rules for the ConfigMaps with the label `os.platform-kit.org/patch`. It is a separate policy because it selects these ConfigMaps by their label before the API server reads the parameters. So without the parameters, a request on another ConfigMap passes.
 

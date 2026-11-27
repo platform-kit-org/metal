@@ -32,7 +32,6 @@ func TestRequestedBy(t *testing.T) {
 
 	const operator = "op-sa"
 	installApprovalPolicy(t, ctx, cl, operator)
-	installRolloutPolicy(t, ctx, cl)
 	installPolicy(t, ctx, cl, "requested-by.yaml")
 	installPolicy(t, ctx, cl, "requested-by-patches.yaml")
 	// The base settings allow self-approval; the first subtests are the

@@ -163,18 +163,6 @@ func (r *HostClaimReconciler) removeNode(ctx context.Context, claim *metalv1alph
 			boots = append(boots, ops[i])
 		}
 	}
-	// No boot of a node on its way out goes on: one waiting for approval is
-	// withdrawn, one running stops between steps.
-	for i := range boots {
-		if boots[i].Finished() || !boots[i].DeletionTimestamp.IsZero() {
-			continue
-		}
-		logf.FromContext(ctx).Info("stopped boot operation of a deleted node", "operation", boots[i].Namespace+"/"+boots[i].Name)
-		if err := deleteOp(ctx, r.Client, r.Audit, &boots[i], audit.DeleteStopped,
-			"TalosNode "+node.Name+" is being deleted"); client.IgnoreNotFound(err) != nil {
-			return err
-		}
-	}
 	h := claim.Status.HandOff
 	touched := (h != nil && h.Host == host.Name && h.Node == node.Name) || bootRan(boots, host.Name)
 	removals, err := r.claimOps(ctx, claim, purposeRemove)
@@ -189,10 +177,32 @@ func (r *HostClaimReconciler) removeNode(ctx context.Context, claim *metalv1alph
 		}
 	}
 	if !touched && op == nil {
-		set(metalv1alpha1.ReasonNodeRemoved, fmt.Sprintf(
-			"TalosNode %s is being deleted, and host %s never ran it: nothing to remove. The claim keeps the machine for the node it names next",
-			node.Name, host.Name))
-		return nil
+		// Nothing to remove lets the TalosNode go, which cannot be taken
+		// back: confirm against the API server that no boot of the node
+		// ran. That also stops, fenced, the boots that did not start.
+		ran, err := r.bootRanUncached(ctx, claim, host.Name, node.Name,
+			"TalosNode "+node.Name+" is being deleted before this boot started")
+		if err != nil {
+			return err
+		}
+		if !ran {
+			set(metalv1alpha1.ReasonNodeRemoved, fmt.Sprintf(
+				"TalosNode %s is being deleted, and host %s never ran it: nothing to remove. The claim keeps the machine for the node it names next",
+				node.Name, host.Name))
+			return nil
+		}
+	}
+	// No boot of a node on its way out goes on: one waiting for approval is
+	// withdrawn, one running stops between steps.
+	for i := range boots {
+		if boots[i].Finished() || !boots[i].DeletionTimestamp.IsZero() {
+			continue
+		}
+		logf.FromContext(ctx).Info("stopped boot operation of a deleted node", "operation", boots[i].Namespace+"/"+boots[i].Name)
+		if err := deleteOp(ctx, r.Client, r.Audit, &boots[i], audit.DeleteStopped,
+			"TalosNode "+node.Name+" is being deleted"); client.IgnoreNotFound(err) != nil {
+			return err
+		}
 	}
 	if op == nil {
 		if why, held := heldBy(claim); held {

@@ -374,6 +374,30 @@ func TestDeletedTalosNodeIsRemovedWhileTheClaimKeepsTheMachine(t *testing.T) {
 	assert.True(t, client.IgnoreNotFound(err) == nil && err != nil, "the finalizer let the node go")
 }
 
+// TestRemovalReadsPastAStaleCache: a removal that finds no boot of the node
+// lets the TalosNode go, which cannot be taken back. A boot that has just
+// captured its baseline, which the cache does not show yet, is seen through
+// the API server, and the machine gets its removal.
+func TestRemovalReadsPastAStaleCache(t *testing.T) {
+	claim, host := claimOn("w-1")
+	claim.Status.HandOff = nil // a first install: no hand-off yet
+	lab := newLifecycleLab(t, []string{"cp-1"}, []string{"w-1"}, host, claim, bootOp("boot", "w-1", false, true))
+	node := &osv1alpha1.TalosNode{}
+	require.NoError(t, lab.r.Get(t.Context(), client.ObjectKey{Name: "w-1"}, node))
+	node.Finalizers = []string{talosNodeMemberFinalizer}
+	require.NoError(t, lab.r.Update(t.Context(), node))
+	require.NoError(t, lab.r.Delete(t.Context(), node))
+	store := lab.r.Client
+	lab.r.APIReader = store
+	lab.r.Client = &staleLists{Client: store, cache: claimReconcilerFor(t, bootOp("boot", "w-1", false, false)).Client}
+
+	require.NoError(t, lab.r.provision(t.Context(), claim, "host-a"))
+	assert.Equal(t, metalv1alpha1.ReasonRemovingNode, provisionedCond(t, claim).Reason)
+	ops := &metalv1alpha1.HostOperationList{}
+	require.NoError(t, store.List(t.Context(), ops, client.MatchingLabels{labelPurpose: purposeRemove}))
+	assert.Len(t, ops.Items, 1, "the boot ran: the machine gets a removal")
+}
+
 func TestFinalizerWaitsForTheEtcdMember(t *testing.T) {
 	lab := newLifecycleLab(t, []string{"cp-1", "cp-2"}, nil)
 	node := &osv1alpha1.TalosNode{}

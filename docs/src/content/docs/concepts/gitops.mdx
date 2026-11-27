@@ -58,7 +58,7 @@ Tell your GitOps tool to ignore these kinds. Do not let it prune them.
 ## The approval stays outside git
 
 A merge is not an approval. The approval is a field that a person writes on a [](kind:HostOperation) or a [](kind:TalosRollout), with that person's own name.
-The API server compares the name with the login. It refuses a person who approves a proposal of their own if the site sets `selfApproval: Forbidden`. See [](concept:approval).
+The API server compares the name with the login. See [](concept:approval).
 
 1. You merge a change, for example a new Talos release on the TalosCluster.
 2. The tool applies it. Nothing changes on a machine.

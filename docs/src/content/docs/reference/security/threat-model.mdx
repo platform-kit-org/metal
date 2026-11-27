@@ -87,9 +87,9 @@ pk-metal can wipe disks, flash firmware and boot any image on a machine. This pa
 
 | Identity | What it can do alone | What checks it |
 | --- | --- | --- |
-| Operator service account | Create an operation that needs no approval. It cannot approve an operation or a rollout, with each `selfApproval` value. | RBAC (no `patch`) and rule 6 of `hostoperation-approval` |
+| Operator service account | Create an operation that needs no approval. It cannot approve an operation or a rollout, with each `selfApproval` value. | RBAC (no `patch`) and rule 6 of the [approval policies](ref:admission-policies#the-approval-policies) |
 | Admin group | Create an operation that needs no approval, and the other admin changes above. | `hostoperation-approval`, `hostclaim-provisioning`, `etcdbackuppolicy-guard`, `endpointprofile-guard` |
-| A person with `create` and `patch` on operations or rollouts, if `selfApproval` is `Allowed` | Propose a change, or make the edit that the operator proposes a change for, and approve it. The record names the person as proposer, and as approver. It names the person as requester if the edit set `metal.platform-kit.org/requested-by`, as the pk-metal commands and the policy `requested-by-stamp` do. | Rules 7 and 8 of `hostoperation-approval`, rules 6 and 7 of `talosrollout-approval`, `requested-by`, `requested-by-patches`, and the `selfApproved` field of the [](ref:audit-trail) |
+| A person with `create` and `patch` on operations or rollouts, if `selfApproval` is `Allowed` | Propose a change, or make the edit that the operator proposes a change for, and approve it. The record names the person as proposer, and as approver. It names the person as requester if the edit set `metal.platform-kit.org/requested-by`, as the pk-metal commands and the policy `requested-by-stamp` do. | Rules 7 and 8 of the approval policies, `requested-by`, `requested-by-patches`, and the `selfApproved` field of the [](ref:audit-trail) |
 | Holder of `patch` on operations | Lift a maintenance window or the cluster guard on an operation that a person approved. The value must name the person and a reason. | RBAC, `guard-lift`, and the [](ref:audit-trail) |
 
 ### Known limits

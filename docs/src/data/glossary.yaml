@@ -1229,8 +1229,8 @@ terms:
     see: concept:approval
     related: [approval, hostoperation, plan-hash]
     def: >-
-      A HostOperation or TalosRollout that the operator makes and that waits
-      for a person. A proposal changes no machine.
+      A HostOperation or TalosRollout that the operator or a person makes and
+      that waits for a person. A proposal changes no machine.
 
   - id: approval
     term: approval
@@ -1242,7 +1242,8 @@ terms:
     related: [proposal, approver, hold, plan-hash]
     def: >-
       The decision of a person that a proposed change can run. You approve with
-      pk-metal approve. You cannot approve your own proposal.
+      pk-metal approve. A site setting tells if you can approve your own
+      change.
 
   - id: approver
     term: approver

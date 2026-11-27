@@ -31,8 +31,8 @@ func init() {
 	verbHelp["restore"] = `
 restore looks at a cluster's etcd on every control plane and says what is
 wrong and what would fix it. It changes nothing on a machine itself: with
---propose it creates the operations of the plan, and each waits for another
-person's approval like any other.
+--propose it creates the operations of the plan, and each waits for a
+person's approval like any other (selfApproval decides if that can be you).
 
 subcommands:
   plan <cluster> [--snapshot name] [--node name] [--propose]
